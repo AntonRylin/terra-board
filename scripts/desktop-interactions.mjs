@@ -1064,17 +1064,18 @@ try {
   const transformShot = await send('Page.captureScreenshot', { format: 'png' });
   writeFileSync(join(root, 'transform-controls.png'), Buffer.from(transformShot.data, 'base64'));
   const title = await rect('.board-title');
-  await doubleClick(title.x + title.width / 2, title.y + title.height / 2);
+  await click(title.x + title.width / 2, title.y + title.height / 2);
+  await sleep(100);
   assert.equal(
     await read(`document.querySelector('.board-title').isContentEditable`),
     true,
-    'board name double click failed',
+    'board name single click failed',
   );
   await key('a', 'KeyA', 2);
-  await send('Input.insertText', { text: 'Renamed with actual double click' });
+  await send('Input.insertText', { text: 'Renamed with one click' });
   await key('Enter', 'Enter');
   await until(
-    async () => (await documentState()).board.name === 'Renamed with actual double click',
+    async () => (await documentState()).board.name === 'Renamed with one click',
     'board name saved',
   );
   await click(host.x + 900, host.y + 460, 'right');

@@ -418,15 +418,12 @@ p {
 .board-title {
   background: none;
   padding: 3px 0;
-  font-size: 15px;
+  font-size: 18px;
   font-weight: 500;
   text-overflow: ellipsis;
   overflow: hidden;
   white-space: nowrap;
   max-width: 60%;
-}
-.board-title:hover {
-  color: var(--accent);
 }
 .inline-name {
   display: inline-block;

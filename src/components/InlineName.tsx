@@ -12,6 +12,7 @@ interface Props {
   label: string;
   className?: string;
   editRequest?: number;
+  singleClick?: boolean;
   onCommit: (value: string) => Promise<void>;
 }
 
@@ -21,6 +22,7 @@ export default function InlineName({
   label,
   className = '',
   editRequest = 0,
+  singleClick = false,
   onCommit,
 }: Props) {
   const ref = useRef<HTMLSpanElement>(null),
@@ -126,7 +128,7 @@ export default function InlineName({
       aria-label={label}
       aria-invalid={!!error}
       aria-busy={saving}
-      title={error || 'Double-click to rename'}
+      title={error || (singleClick ? 'Click to rename' : 'Double-click to rename')}
       tabIndex={0}
       contentEditable={editing && !saving ? 'plaintext-only' : false}
       suppressContentEditableWarning
@@ -135,7 +137,10 @@ export default function InlineName({
         e.stopPropagation();
         begin();
       }}
-      onClick={(e) => e.stopPropagation()}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (singleClick) begin();
+      }}
       onPointerDown={(e) => e.stopPropagation()}
       onDragStart={(e) => {
         e.preventDefault();

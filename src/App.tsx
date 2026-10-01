@@ -404,11 +404,12 @@ export default function App() {
           {doc && (
             <>
               <span className="board-glyph">
-                <BoardGlyph name={doc.board.icon} size={17} />
+                <BoardGlyph name={doc.board.icon} size={34} />
               </span>
               <InlineName
                 key={doc.board.id}
                 className="board-title"
+                singleClick
                 label="Board name"
                 value={doc.board.name}
                 editRequest={
