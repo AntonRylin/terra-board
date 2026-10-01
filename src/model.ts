@@ -19,6 +19,8 @@ export interface CanvasObject {
   fontSize?: number;
   centerX?: boolean;
   centerY?: boolean;
+  rotation?: number;
+  textBox?: boolean;
   groupId?: string;
   assetId?: string;
   crop?: ImageCrop;

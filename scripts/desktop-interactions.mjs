@@ -792,6 +792,168 @@ try {
     async () => (await documentState()).objects.length === beforeBlank,
     'new blank text discarded on blur',
   );
+  // Exercise transform handles through the packaged window's trusted input path.
+  const object = async (id) => (await documentState()).objects.find((o) => o.id === id);
+  const point = (o, u, v, extra = 0) => {
+    const a = ((o.rotation || 0) * Math.PI) / 180;
+    const x = (u - 0.5) * o.width,
+      y = (v - 0.5) * o.height + extra;
+    return {
+      x: host.x + o.x + o.width / 2 + x * Math.cos(a) - y * Math.sin(a),
+      y: host.y + o.y + o.height / 2 + x * Math.sin(a) + y * Math.cos(a),
+    };
+  };
+  let transformText = await object('text');
+  let p = point(transformText, 0, 0);
+  await doubleClick(p.x + 20, p.y + 20);
+  await key('a', 'KeyA', 2);
+  await send('Input.insertText', { text: 'Rotate me' });
+  await key('Enter', 'Enter', 2);
+  transformText = await until(async () => {
+    const o = await object('text');
+    return o.text === 'Rotate me' ? o : null;
+  }, 'transform text prepared');
+  p = point(transformText, 0.5, 0.5);
+  await drag(p, { x: host.x + 530, y: host.y + 540 });
+  await until(
+    async () => Math.abs((await object('text')).y + (await object('text')).height / 2 - 540) < 0.1,
+    'transform text moved',
+  );
+  for (const id of ['text', 'note']) {
+    let o = await object(id);
+    p = point(o, 0.5, 0.5);
+    await click(host.x + 1100, host.y + 180);
+    await click(p.x, p.y);
+    for (const [edge, u, v, dx, dy] of [
+      ['n', 0.5, 0, 0, -30],
+      ['e', 1, 0.5, 30, 0],
+      ['s', 0.5, 1, 0, 30],
+      ['w', 0, 0.5, -30, 0],
+    ]) {
+      o = await object(id);
+      const from = point(o, u, v),
+        anchor = point(o, 1 - u, 1 - v);
+      await drag(from, { x: from.x + dx, y: from.y + dy });
+      const changed = await until(async () => {
+        const n = await object(id);
+        return Math.abs(n.width - o.width) + Math.abs(n.height - o.height) > 20 ? n : null;
+      }, `${id} ${edge} edge resized`);
+      assert.equal(changed.fontSize, o.fontSize, 'edge changed base font size');
+      assert.ok(
+        Math.abs(changed.width - o.width - (dx ? 30 : 0)) < 0.01 &&
+          Math.abs(changed.height - o.height - (dy ? 30 : 0)) < 0.01,
+        'edge changed wrong dimension',
+      );
+      const fixed = point(changed, 1 - u, 1 - v);
+      assert.ok(Math.hypot(fixed.x - anchor.x, fixed.y - anchor.y) < 0.01, 'opposite edge moved');
+      await key('z', 'KeyZ', 2);
+      await until(
+        async () =>
+          Math.abs((await object(id)).width - o.width) +
+            Math.abs((await object(id)).height - o.height) <
+          0.01,
+        'edge undo',
+      );
+    }
+  }
+  // Rotate the note, verify the angle badge, then resize in its local axes.
+  let noteBefore = await object('note');
+  p = point(noteBefore, 0.5, 0.5);
+  const rotateHandle = (o) => point(o, -28 / o.width, 1, 28);
+  const knob = rotateHandle(noteBefore);
+  await drag(knob, rotateHandle({ ...noteBefore, rotation: 90 }), async () => {
+    assert.equal(
+      await read(`document.querySelector('.rotation-angle').hidden`),
+      false,
+      'rotation angle hidden during drag',
+    );
+    assert.ok(
+      (await read(`document.querySelector('.rotation-angle').textContent`)).includes('90'),
+      'live angle incorrect',
+    );
+  });
+  let rotatedNote = await until(async () => {
+    const o = await object('note');
+    return Math.abs(o.rotation - 90) < 0.1 ? o : null;
+  }, 'note rotation');
+  const east = point(rotatedNote, 1, 0.5),
+    west = point(rotatedNote, 0, 0.5);
+  await drag(east, { x: east.x, y: east.y + 30 });
+  let widerNote = await until(async () => {
+    const o = await object('note');
+    return o.width > rotatedNote.width + 20 ? o : null;
+  }, 'rotated edge resize');
+  const fixedWest = point(widerNote, 0, 0.5);
+  assert.ok(
+    Math.hypot(fixedWest.x - west.x, fixedWest.y - west.y) < 0.01,
+    'rotated opposite edge moved',
+  );
+  await key('z', 'KeyZ', 2);
+  await until(
+    async () => Math.abs((await object('note')).width - noteBefore.width) < 0.01,
+    'rotated resize undo',
+  );
+  await key('z', 'KeyZ', 2);
+  await until(async () => !(await object('note')).rotation, 'rotation undo');
+  // A manual text box keeps its size through editing and a 180-degree rotation.
+  transformText = await object('text');
+  p = point(transformText, 0.5, 0.5);
+  await click(p.x, p.y);
+  const textEast = point(transformText, 1, 0.5);
+  await drag(textEast, { x: textEast.x + 70, y: textEast.y });
+  transformText = await until(async () => {
+    const o = await object('text');
+    return o.textBox ? o : null;
+  }, 'manual text box');
+  p = point(transformText, 0.5, 0.5);
+  const bottom = rotateHandle(transformText),
+    above = rotateHandle({ ...transformText, rotation: 180 });
+  await drag(bottom, above);
+  transformText = await until(async () => {
+    const o = await object('text');
+    return Math.abs(o.rotation - 180) < 0.1 ? o : null;
+  }, 'text rotation 180');
+  await sleep(100);
+  const tools = await rect('.selection-tools');
+  assert.ok(tools.y + tools.height < above.y - 5, 'toolbar covers rotated handle');
+  // Regrab the now upper handle and cancel without changing saved geometry.
+  await mouse('mousePressed', above.x, above.y);
+  await mouse('mouseMoved', above.x + 25, above.y + 20);
+  await key('Escape', 'Escape');
+  await mouse('mouseReleased', above.x + 25, above.y + 20);
+  assert.ok(
+    Math.abs((await object('text')).rotation - 180) < 0.1,
+    'Escape did not cancel rotation',
+  );
+  p = point(transformText, 0.5, 0.5);
+  await click(p.x, p.y);
+  await until(() => rect('.text-editor'), 'rotated editor');
+  assert.ok(
+    await read(
+      `getComputedStyle(document.querySelector('.text-editor')).transform.startsWith('matrix(-1')`,
+    ),
+    'editor not rotated',
+  );
+  await key('a', 'KeyA', 2);
+  await send('Input.insertText', {
+    text: 'Wrapped words that should stay inside this deliberately short manual text box. '.repeat(
+      5,
+    ),
+  });
+  await clickSelector('[aria-label="Center vertically"]');
+  assert.ok(
+    await read(
+      `(()=>{const e=document.querySelector('.text-editor');return e.clientHeight<${transformText.height};})()`,
+    ),
+    'centered manual editor overflows box',
+  );
+  await key('a', 'KeyA', 2);
+  await send('Input.insertText', { text: 'Rotated text' });
+  await key('Enter', 'Enter', 2);
+  await until(async () => (await object('text')).text === 'Rotated text', 'rotated edit saved');
+  assert.equal((await object('text')).width, transformText.width, 'editing reset manual width');
+  const transformShot = await send('Page.captureScreenshot', { format: 'png' });
+  writeFileSync(join(root, 'transform-controls.png'), Buffer.from(transformShot.data, 'base64'));
   const title = await rect('.board-title');
   await doubleClick(title.x + title.width / 2, title.y + title.height / 2);
   assert.equal(
@@ -850,6 +1012,41 @@ try {
     async () => !!(await documentState()).objects.find((o) => o.id === 'image').crop,
     'crop redo',
   );
+  // Cropping follows the image's local axes after rotation.
+  const imageBefore = await object('image');
+  const imageCenter = point(imageBefore, 0.5, 0.5);
+  const imageKnob = rotateHandle(imageBefore);
+  await drag(imageKnob, rotateHandle({ ...imageBefore, rotation: 90 }));
+  await until(async () => Math.abs((await object('image')).rotation - 90) < 0.1, 'image rotated');
+  await click(imageCenter.x, imageCenter.y, 'right');
+  const rotatedCropMenu = await until(
+    () =>
+      read(
+        `(()=>{const e=[...document.querySelectorAll('[role="menuitem"]')].find(e=>e.textContent==='Crop image');if(!e)return null;const r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()`,
+      ),
+    'rotated crop menu',
+  );
+  await click(rotatedCropMenu.x, rotatedCropMenu.y);
+  await until(() => rect('.crop-window'), 'rotated crop overlay');
+  assert.ok(
+    await read(
+      `(()=>{const m=new DOMMatrix(getComputedStyle(document.querySelector('.crop-window')).transform);return Math.abs(m.a)<.001 && Math.abs(m.b-1)<.001;})()`,
+    ),
+    'crop overlay not rotated',
+  );
+  const northCrop = await rect('[data-edge="n"]');
+  const northPoint = {
+    x: northCrop.x + northCrop.width / 2,
+    y: northCrop.y + northCrop.height / 2,
+  };
+  await drag(northPoint, { x: northPoint.x - 40, y: northPoint.y });
+  const rotatedCropShot = await send('Page.captureScreenshot', { format: 'png' });
+  writeFileSync(join(root, 'rotated-crop.png'), Buffer.from(rotatedCropShot.data, 'base64'));
+  await clickSelector('.crop-toolbar .primary');
+  await until(async () => {
+    const o = await object('image');
+    return o.crop.height < imageBefore.crop.height - 0.05 && Math.abs(o.rotation - 90) < 0.1;
+  }, 'rotated crop saved');
   // The active title draft must survive an actual desktop close request.
   const name = await rect('.board-title');
   await doubleClick(name.x + name.width / 2, name.y + name.height / 2);
@@ -879,6 +1076,9 @@ try {
   reopened.close();
   assert.equal(result.board.name, 'Active title saved on close');
   assert.ok(result.objects.find((o) => o.id === 'image').crop);
+  assert.ok(Math.abs(result.objects.find((o) => o.id === 'image').rotation - 90) < 0.1);
+  assert.ok(result.objects.find((o) => o.id === 'text').textBox);
+  assert.ok(Math.abs(result.objects.find((o) => o.id === 'text').rotation - 180) < 0.1);
   assert.ok(
     result.objects
       .filter((o) => ['note', 'shape'].includes(o.id))
@@ -897,6 +1097,8 @@ try {
         selectedTextClick:
           'text, note, frame, shape: first click selects, click 800ms later edits, caret at end, typing appends, no pencil buttons',
         textResize: 'all four corners with real pointer drags, font scaling, opposite anchor, undo',
+        transforms:
+          'all four edges on text and notes; 90/180 degree rotation, angle, local-axis resize, rotated editor, Escape, persistence',
         selectionControls: 'near object and following live movement, pan and zoom',
         textEditing:
           'visible toolbar, live grow/shrink, color keeps focus and draft, empty blur deletes, undo restores, duplicate includes draft',
@@ -910,6 +1112,11 @@ try {
   );
 } catch (error) {
   console.error(error);
+  try {
+    console.error(JSON.stringify(await documentState()));
+    const failure = await send('Page.captureScreenshot', { format: 'png' });
+    writeFileSync(join(root, 'failure.png'), Buffer.from(failure.data, 'base64'));
+  } catch {}
   console.error(diagnostics.slice(-2000));
   process.exitCode = 1;
 } finally {

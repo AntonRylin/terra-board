@@ -36,7 +36,12 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
       (o.groupId && !/^[\w-]{1,100}$/.test(o.groupId))
     )
       throw Error('Invalid identifier');
-    for (const key of ['centerX', 'centerY'])
+    if (
+      o.rotation !== undefined &&
+      !(Number.isFinite(o.rotation) && o.rotation >= 0 && o.rotation <= 360)
+    )
+      throw Error('Invalid clipboard rotation');
+    for (const key of ['centerX', 'centerY', 'textBox'])
       if (o[key] !== undefined && typeof o[key] !== 'boolean')
         throw Error('Invalid clipboard alignment');
     if (o.color !== undefined && !/^#[a-f0-9]{6}$/i.test(o.color))
@@ -90,6 +95,8 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
       ...(o.fontSize === undefined ? {} : { fontSize: o.fontSize }),
       ...(o.centerX === undefined ? {} : { centerX: o.centerX }),
       ...(o.centerY === undefined ? {} : { centerY: o.centerY }),
+      ...(o.rotation === undefined ? {} : { rotation: o.rotation }),
+      ...(o.textBox === undefined ? {} : { textBox: o.textBox }),
       ...(o.groupId ? { groupId: o.groupId } : {}),
       ...(o.assetId ? { assetId: o.assetId } : {}),
       ...(o.crop

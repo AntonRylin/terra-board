@@ -8,12 +8,14 @@ import { History } from './history';
 import { renderText, textRegion } from './text-rendering';
 import { TextureCache } from './textures';
 import { imageTiles } from './image-detail';
-import { corners, resizeObject, type Corner } from './resize';
+import { resizeHandles, handlePoint, resizeObject, type ResizeHandle } from './resize';
+import { localToWorld, worldToLocal, rotationFromDrag, rotationHandlePoint } from './transform';
 interface Callbacks {
   edit: (e: Edit) => void;
   camera: (c: Camera) => void;
   selection: (items: CanvasObject[]) => void;
   selectionView?: (bounds: Bounds | null, viewport: { width: number; height: number }) => void;
+  rotation?: (value: { angle: number; x: number; y: number } | null) => void;
   activate: (o: CanvasObject) => void;
   create: (tool: Tool, p: Point) => void;
   context: (p: Point) => void;
@@ -21,7 +23,7 @@ interface Callbacks {
   error: (message: string) => void;
 }
 type Gesture = {
-  mode: 'pan' | 'move' | 'resize' | 'box';
+  mode: 'pan' | 'move' | 'resize' | 'rotate' | 'box';
   start: Point;
   camera: Camera;
   original: CanvasObject[];
@@ -30,7 +32,7 @@ type Gesture = {
   changed?: boolean;
   secondary?: boolean;
   toggle?: boolean;
-  corner?: Corner;
+  corner?: ResizeHandle;
   editOnClick?: string;
   dragged?: boolean;
 };
@@ -142,24 +144,34 @@ export class Engine {
     return this.index
       .search({ x: p.x, y: p.y, width: 0, height: 0 })
       .sort((a, b) => b.z - a.z)
-      .find(
-        (o) =>
+      .find((o) => {
+        const q = worldToLocal(o, p);
+        if (q.x < 0 || q.y < 0 || q.x > o.width || q.y > o.height) return false;
+        if (
+          o.type === 'ellipse' &&
+          ((q.x - o.width / 2) / (o.width / 2)) ** 2 +
+            ((q.y - o.height / 2) / (o.height / 2)) ** 2 >
+            1
+        )
+          return false;
+        return (
           o.type !== 'frame' ||
-          p.x < o.x + 10 ||
-          p.x > o.x + o.width - 10 ||
-          p.y < o.y + 32 ||
-          p.y > o.y + o.height - 10 ||
+          q.x < 10 ||
+          q.x > o.width - 10 ||
+          q.y < 32 ||
+          q.y > o.height - 10 ||
           this.views
             .get(o.id)
             ?.container.children.some(
               (label) =>
                 label.label === 'board-text' &&
-                p.x >= o.x + label.x &&
-                p.x <= o.x + label.x + label.width &&
-                p.y >= o.y + label.y &&
-                p.y <= o.y + label.y + label.height,
-            ),
-      );
+                q.x >= label.x &&
+                q.x <= label.x + label.width &&
+                q.y >= label.y &&
+                q.y <= label.y + label.height,
+            )
+        );
+      });
   }
   private down = (e: PointerEvent) => {
     if (e.target !== this.app.canvas || e.button > 2 || this.gesture) return;
@@ -187,8 +199,8 @@ export class Engine {
       const resize = !e.ctrlKey && !e.metaKey && this.resizeCorner(p);
       if (resize)
         this.gesture = {
-          mode: 'resize',
-          corner: resize,
+          mode: resize === 'rotate' ? 'rotate' : 'resize',
+          corner: resize === 'rotate' ? undefined : resize,
           start: p,
           world: w,
           camera: { ...this.camera },
@@ -274,6 +286,13 @@ export class Engine {
       for (const o of g.original)
         this.preview({ ...o, x: o.x + dx / this.camera.zoom, y: o.y + dy / this.camera.zoom });
       this.invalidate();
+    } else if (g.mode === 'rotate') {
+      const o = g.original[0];
+      this.preview({
+        ...o,
+        rotation: rotationFromDrag(o, g.world, this.screenPoint(p), e.shiftKey),
+      });
+      this.invalidate();
     } else if (g.mode === 'resize') {
       const o = g.original[0];
       this.preview(resizeObject(o, g.corner!, dx / g.camera.zoom, dy / g.camera.zoom, e.shiftKey));
@@ -301,12 +320,12 @@ export class Engine {
       const hits = new Set(this.index.search(g.box).flatMap((o) => this.members(o)));
       for (const id of hits) g.toggle && next.has(id) ? next.delete(id) : next.add(id);
       this.setSelection([...next]);
-    } else if (g.changed && (g.mode === 'move' || g.mode === 'resize')) {
+    } else if (g.changed && (g.mode === 'move' || g.mode === 'resize' || g.mode === 'rotate')) {
       const after = g.original.map((o) => this.objects.get(o.id)!);
       this.history.push({ upserts: after, deleted: [] }, { upserts: g.original, deleted: [] });
       this.callbacks.edit({ upserts: after, deleted: [] });
       this.callbacks.selection(this.selected);
-    } else if (g.mode === 'move' || g.mode === 'resize') {
+    } else if (g.mode === 'move' || g.mode === 'resize' || g.mode === 'rotate') {
       for (const o of g.original) this.preview(o);
       if (g.editOnClick && !g.dragged) {
         const object = this.objects.get(g.editOnClick);
@@ -347,6 +366,12 @@ export class Engine {
       )
     )
       return;
+    if (e.key === 'Escape' && this.gesture) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      this.cancel();
+      return;
+    }
     if (e.code === 'Space') {
       e.preventDefault();
       this.space = true;
@@ -399,19 +424,17 @@ export class Engine {
     this.cropPreview = image;
     this.setEditing(image?.id || null);
     if (image) {
+      const b = boundsOf([image])!;
       const w = this.host.clientWidth,
         h = this.host.clientHeight,
         c = this.camera;
       if (
-        image.x * c.zoom + c.x < 60 ||
-        image.y * c.zoom + c.y < 60 ||
-        (image.x + image.width) * c.zoom + c.x > w - 60 ||
-        (image.y + image.height) * c.zoom + c.y > h - 100
+        b.x * c.zoom + c.x < 60 ||
+        b.y * c.zoom + c.y < 60 ||
+        (b.x + b.width) * c.zoom + c.x > w - 60 ||
+        (b.y + b.height) * c.zoom + c.y > h - 100
       ) {
-        const zoom = Math.max(
-          0.01,
-          Math.min(c.zoom, (w - 120) / image.width, (h - 160) / image.height),
-        );
+        const zoom = Math.max(0.01, Math.min(c.zoom, (w - 120) / b.width, (h - 160) / b.height));
         this.camera = {
           zoom,
           x: w / 2 - (image.x + image.width / 2) * zoom,
@@ -421,33 +444,55 @@ export class Engine {
       }
     }
   }
-  private resizeCorner(p: Point): Corner | undefined {
+  private resizeCorner(p: Point): ResizeHandle | 'rotate' | undefined {
     if (this.selection.size !== 1 || this.editingId || this.cropPreview) return;
     const o = this.selected[0],
       c = this.camera;
-    let nearest: Corner | undefined,
+    let nearest: ResizeHandle | 'rotate' | undefined,
       distance = Infinity;
-    for (const corner of corners) {
-      const dx = Math.abs(p.x - (o.x + (corner.includes('e') ? o.width : 0)) * c.zoom - c.x);
-      const dy = Math.abs(p.y - (o.y + (corner.includes('s') ? o.height : 0)) * c.zoom - c.y);
-      if (dx < 10 && dy < 10 && dx * dx + dy * dy < distance) {
+    for (const corner of [...resizeHandles, 'rotate'] as const) {
+      const q = localToWorld(
+        o,
+        corner === 'rotate' ? rotationHandlePoint(o, c.zoom) : handlePoint(o, corner),
+      );
+      const dx = Math.abs(p.x - q.x * c.zoom - c.x);
+      const dy = Math.abs(p.y - q.y * c.zoom - c.y);
+      const radius = corner === 'rotate' ? 14 : 10;
+      if (dx < radius && dy < radius && dx * dx + dy * dy < distance) {
         nearest = corner;
         distance = dx * dx + dy * dy;
       }
     }
     return nearest;
   }
-  private updateCursor(hoverCorner?: Corner) {
-    const corner = this.gesture?.mode === 'resize' ? this.gesture.corner : hoverCorner;
+  private updateCursor(hoverCorner?: ResizeHandle | 'rotate') {
+    const corner =
+      this.gesture?.mode === 'rotate'
+        ? 'rotate'
+        : this.gesture?.mode === 'resize'
+          ? this.gesture.corner
+          : hoverCorner;
+    const selectedId = this.selection.values().next().value;
+    const angle =
+      (selectedId ? this.objects.get(selectedId)?.rotation || 0 : 0) +
+      (corner === 'n' || corner === 's'
+        ? 90
+        : corner === 'e' || corner === 'w'
+          ? 0
+          : corner === 'nw' || corner === 'se'
+            ? 45
+            : 135);
     this.host.style.cursor =
       this.gesture?.mode === 'pan'
         ? 'grabbing'
         : this.space || this.tool === 'hand'
           ? 'grab'
           : corner && this.tool === 'select'
-            ? corner === 'nw' || corner === 'se'
-              ? 'nwse-resize'
-              : 'nesw-resize'
+            ? corner === 'rotate'
+              ? this.gesture
+                ? 'grabbing'
+                : 'grab'
+              : ['ew-resize', 'nwse-resize', 'ns-resize', 'nesw-resize'][Math.round(angle / 45) % 4]
             : this.tool === 'select'
               ? 'default'
               : 'crosshair';
@@ -652,6 +697,7 @@ export class Engine {
         o.text,
         o.color,
         o.fontSize,
+        o.textBox,
         o.centerX,
         o.centerY,
         o.type,
@@ -692,7 +738,9 @@ export class Engine {
         this.views.set(o.id, view);
         this.world.addChild(container);
       }
-      view.container.position.set(o.x, o.y);
+      view.container.pivot.set(o.width / 2, o.height / 2);
+      view.container.position.set(o.x + o.width / 2, o.y + o.height / 2);
+      view.container.rotation = ((o.rotation || 0) * Math.PI) / 180;
       this.world.setChildIndex(view.container, i);
     });
     this.drawSelection();
@@ -777,34 +825,74 @@ export class Engine {
     g.clear();
     const c = this.camera,
       b = boundsOf(this.editingPreview ? [this.editingPreview] : this.selected);
-    this.callbacks.selectionView?.(
-      b
-        ? {
-            x: b.x * c.zoom + c.x,
-            y: b.y * c.zoom + c.y,
-            width: b.width * c.zoom,
-            height: b.height * c.zoom,
-          }
-        : null,
-      { width: this.host.clientWidth, height: this.host.clientHeight },
-    );
+    let toolbarBounds = b
+      ? {
+          x: b.x * c.zoom + c.x,
+          y: b.y * c.zoom + c.y,
+          width: b.width * c.zoom,
+          height: b.height * c.zoom,
+        }
+      : null;
+    if (toolbarBounds && this.selection.size === 1) {
+      const o = this.editingPreview || this.selected[0];
+      const handle = localToWorld(o, rotationHandlePoint(o, c.zoom));
+      const hy = handle.y * c.zoom + c.y;
+      const top = Math.min(toolbarBounds.y, hy - 14);
+      toolbarBounds = {
+        ...toolbarBounds,
+        y: top,
+        height: Math.max(toolbarBounds.y + toolbarBounds.height, hy + 14) - top,
+      };
+    }
+    this.callbacks.selectionView?.(toolbarBounds, {
+      width: this.host.clientWidth,
+      height: this.host.clientHeight,
+    });
     if (b && !this.cropPreview) {
       const x = b.x * c.zoom + c.x,
         y = b.y * c.zoom + c.y,
         w = b.width * c.zoom,
         h = b.height * c.zoom;
-      g.rect(x - 2, y - 2, w + 4, h + 4).stroke({ color: '#4486d9', width: 1.5 });
-      if (this.selection.size === 1)
-        for (const corner of corners)
-          g.rect(
-            x + (corner.includes('e') ? w : 0) - 4,
-            y + (corner.includes('s') ? h : 0) - 4,
-            8,
-            8,
-          )
+      if (this.selection.size !== 1)
+        g.rect(x - 2, y - 2, w + 4, h + 4).stroke({ color: '#4486d9', width: 1.5 });
+      else {
+        const o = this.editingPreview || this.selected[0];
+        const screen = (p: Point) => {
+          const q = localToWorld(o, p);
+          return { x: q.x * c.zoom + c.x, y: q.y * c.zoom + c.y };
+        };
+        const outline = ['nw', 'ne', 'se', 'sw'].flatMap((h) => {
+          const p = screen(handlePoint(o, h as ResizeHandle));
+          return [p.x, p.y];
+        });
+        g.poly(outline).stroke({ color: '#4486d9', width: 1.5 });
+        for (const handle of resizeHandles) {
+          const p = screen(handlePoint(o, handle));
+          g.rect(p.x - 4, p.y - 4, 8, 8)
             .fill('#ffffff')
             .stroke({ color: '#4486d9', width: 1.5 });
+        }
+        const rotation = screen(rotationHandlePoint(o, c.zoom));
+        // A compact curved arrow outside the lower-left corner, in screen pixels.
+        g.moveTo(rotation.x + 9, rotation.y)
+          .arc(rotation.x, rotation.y, 9, 0, Math.PI / 2, true)
+          .stroke({ color: '#252d38', width: 1.6 });
+        g.poly([
+          rotation.x + 4,
+          rotation.y + 9,
+          rotation.x - 2,
+          rotation.y + 5,
+          rotation.x - 2,
+          rotation.y + 13,
+        ]).fill('#252d38');
+        this.callbacks.rotation?.(
+          this.gesture?.mode === 'rotate'
+            ? { angle: o.rotation || 0, x: rotation.x, y: rotation.y }
+            : null,
+        );
+      }
     }
+    if (this.gesture?.mode !== 'rotate') this.callbacks.rotation?.(null);
     if (this.gesture?.box) {
       const b = this.gesture.box;
       g.rect(b.x * c.zoom + c.x, b.y * c.zoom + c.y, b.width * c.zoom, b.height * c.zoom)

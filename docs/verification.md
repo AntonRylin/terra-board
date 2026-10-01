@@ -1,5 +1,13 @@
 # Verification — Local Canvas
 
+## 0.1.12 edge resizing and rotation — 2026-10-01
+
+Single objects now have four corner handles, four middle-edge handles, and a curved-arrow rotation handle outside the lower-left corner with a live angle badge, matching the user's Miro reference. Edges change the box dimensions without changing the base font size; plain text switches to a persistent wrapping box. Corners keep proportional plain-text font scaling. Rotation supports Shift snapping in 15-degree steps, Escape cancellation, undo, clipboard, portable export and reopen. Rendering, culling, hit testing, inline editing and image cropping use the same center-based rotation geometry.
+
+All 74 Node tests pass and TypeScript/production packaging pass. Packaged native input in `.local-test/desktop-input-qRPdWV` verifies every edge on text and notes, opposite-edge anchors, unchanged base font, 90/180-degree rotation, the live angle badge, rotated edge resizing, toolbar clearance, Escape cancellation, rotated inline editing, short centered editor containment and saved/reopened transforms. It also rotates a cropped image, opens its real right-click crop menu, drags the rotated top edge, applies and reopens the result. Existing editing, corner scaling, alignment, crop and native-close checks pass with no renderer exceptions. `transform-controls.png` and `rotated-crop.png` were visually inspected. Packaged v0.1.12 renderer assets match `dist` byte for byte.
+
+Review fixes preserve the top-left anchor when rotated automatic text grows, clamp manually sized editor height, avoid materializing large selections during cursor updates, and keep the toolbar clear of the rotation handle. Default unrotated viewport calculations retain their direct arithmetic path; image decode concurrency, viewport culling, detail tiles and texture-cache budgets remain in place. No new large-board frame-time or memory benchmark was performed for this release.
+
 ## 0.1.11 independent text-centering toggles — 2026-10-01
 
 Two binary buttons beside selection/group actions independently toggle horizontal and vertical text centering. They update active drafts without losing the caret, apply together to selected text-bearing objects, expose their state with `aria-pressed`, and are disabled for image-only selections. Boolean alignment fields are validated and retained by clipboard, storage and portable export/import. Renderer and editor use consistent alignment origins, with cached native note height accounting for mixed-script wrapping. Alignment flags invalidate cached views immediately. Centered frame labels remain clickable through their rendered bounds. Text textures intersect the visible ink region, avoiding blank viewport-sized allocations for centered offscreen labels.

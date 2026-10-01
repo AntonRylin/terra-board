@@ -1,5 +1,6 @@
 import RBush from 'rbush';
 import type { Camera, CanvasObject } from '../model';
+import { objectBounds } from './transform.ts';
 export interface Point {
   x: number;
   y: number;
@@ -24,10 +25,11 @@ export function boundsOf(items: CanvasObject[]): Bounds | null {
     right = -Infinity,
     bottom = -Infinity;
   for (const o of items) {
-    x = Math.min(x, o.x);
-    y = Math.min(y, o.y);
-    right = Math.max(right, o.x + o.width);
-    bottom = Math.max(bottom, o.y + o.height);
+    const b = objectBounds(o);
+    x = Math.min(x, b.x);
+    y = Math.min(y, b.y);
+    right = Math.max(right, b.x + b.width);
+    bottom = Math.max(bottom, b.y + b.height);
   }
   return { x, y, width: right - x, height: bottom - y };
 }
@@ -49,7 +51,8 @@ export class SpatialIndex {
     this.tree.load(entries);
   }
   private entry(o: CanvasObject): Entry {
-    return { minX: o.x, minY: o.y, maxX: o.x + o.width, maxY: o.y + o.height, object: o };
+    const b = objectBounds(o);
+    return { minX: b.x, minY: b.y, maxX: b.x + b.width, maxY: b.y + b.height, object: o };
   }
   upsert(o: CanvasObject) {
     this.remove(o.id);

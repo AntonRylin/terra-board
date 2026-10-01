@@ -1,4 +1,5 @@
 import type { Camera, CanvasObject } from '../model';
+import { localViewport } from './transform.ts';
 
 export function imageTiles(o: CanvasObject, c: Camera, width: number, height: number, dpr: number) {
   const crop = o.crop || { x: 0, y: 0, width: 1, height: 1 };
@@ -13,10 +14,7 @@ export function imageTiles(o: CanvasObject, c: Camera, width: number, height: nu
     th = fullHeight / rows;
   const offsetX = crop.x * fullWidth,
     offsetY = crop.y * fullHeight;
-  const left = Math.max(0, (-c.x - 32) / c.zoom - o.x),
-    top = Math.max(0, (-c.y - 32) / c.zoom - o.y);
-  const right = Math.min(o.width, (width - c.x + 32) / c.zoom - o.x),
-    bottom = Math.min(o.height, (height - c.y + 32) / c.zoom - o.y);
+  const { left, top, right, bottom } = localViewport(o, c, width, height, 32);
   if (right <= left || bottom <= top) return [];
   const x0 = Math.max(0, Math.floor((left + offsetX) / tw)),
     y0 = Math.max(0, Math.floor((top + offsetY) / th));

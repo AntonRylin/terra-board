@@ -1,6 +1,7 @@
 import { CanvasTextMetrics, TextStyle } from 'pixi.js';
 import type { CanvasObject } from '../model';
 import { textAppearance } from './text-style';
+import { localToWorld } from './transform';
 
 type Layout = {
   appearance: ReturnType<typeof textAppearance> & { wrapWidth: number };
@@ -32,7 +33,7 @@ function editorHeight(text: string, a: Layout['appearance']) {
 // Fit in board units, independent of pan/zoom. Reuse layouts while rendering and
 // editing so fitting does not run again for each GPU frame or change the note size.
 export function textLayout(o: CanvasObject, text = o.text || ''): Layout {
-  const key = JSON.stringify([o.type, o.width, o.height, o.fontSize, o.color, text]);
+  const key = JSON.stringify([o.type, o.width, o.height, o.fontSize, o.color, o.textBox, text]);
   const cached = cache.get(key);
   if (cached) {
     cache.delete(key);
@@ -58,7 +59,7 @@ export function textLayout(o: CanvasObject, text = o.text || ''): Layout {
         fontSize,
         fontWeight: '400',
         lineHeight: appearance.lineHeight,
-        wordWrap: o.type !== 'text',
+        wordWrap: o.type !== 'text' || !!o.textBox,
         breakWords: true,
         whiteSpace: 'pre',
         wordWrapWidth: wrapWidth,
@@ -101,9 +102,9 @@ export function textLayout(o: CanvasObject, text = o.text || ''): Layout {
 // Plain text grows with its explicit lines, rather than retaining an arbitrary
 // creation rectangle. Keep a little room for ink overhang and the editor caret.
 export function fitTextObject(o: CanvasObject, text = o.text || ''): CanvasObject {
-  if (o.type !== 'text') return { ...o, text };
+  if (o.type !== 'text' || o.textBox) return { ...o, text };
   const { appearance: a, metrics } = textLayout(o, text);
-  return {
+  const fitted = {
     ...o,
     text,
     width: Math.min(
@@ -112,4 +113,11 @@ export function fitTextObject(o: CanvasObject, text = o.text || ''): CanvasObjec
     ),
     height: Math.min(1e6, Math.max(1, metrics.lines.length) * a.lineHeight + a.padding * 2),
   };
+  if (o.rotation) {
+    const before = localToWorld(o, { x: 0, y: 0 }),
+      after = localToWorld(fitted, { x: 0, y: 0 });
+    fitted.x += before.x - after.x;
+    fitted.y += before.y - after.y;
+  }
+  return fitted;
 }

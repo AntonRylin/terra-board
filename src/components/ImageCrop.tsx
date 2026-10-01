@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import { Check, RotateCcw, X } from 'lucide-react';
 import type { Camera, CanvasObject, ImageCrop as Crop } from '../model';
 import { adjustCrop, fullCrop } from '../canvas/crop';
+import { localToWorld, rotatePoint, objectBounds } from '../canvas/transform';
 
 type Edge = 'move' | 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
 const handles: [Edge, string, number, number][] = [
@@ -44,19 +45,29 @@ export default function ImageCrop({
   }, []);
   const width = image.width * camera.zoom,
     height = image.height * camera.zoom;
-  const left = image.x * camera.zoom + camera.x,
-    top = image.y * camera.zoom + camera.y;
   const minWidth = Math.min(1, Math.max(1e-6, 1 / image.width, 12 / width));
   const minHeight = Math.min(1, Math.max(1e-6, 1 / image.height, 12 / height));
   const adjust = (before: Crop, edge: Edge, dx: number, dy: number) => {
     onChange(adjustCrop(before, edge, dx, dy, minWidth, minHeight));
   };
+  const center = localToWorld(image, {
+    x: (value.x + value.width / 2) * image.width,
+    y: (value.y + value.height / 2) * image.height,
+  });
   const box = {
-    left: left + value.x * width,
-    top: top + value.y * height,
+    left: center.x * camera.zoom + camera.x - (value.width * width) / 2,
+    top: center.y * camera.zoom + camera.y - (value.height * height) / 2,
     width: value.width * width,
     height: value.height * height,
+    transform: `rotate(${image.rotation || 0}deg)`,
   };
+  const bounds = objectBounds({
+    ...image,
+    x: box.left,
+    y: box.top,
+    width: box.width,
+    height: box.height,
+  });
   const start = (e: React.PointerEvent, edge: Edge) => {
     if (e.button !== 0) return;
     e.preventDefault();
@@ -82,7 +93,13 @@ export default function ImageCrop({
       onContextMenu={(e) => e.preventDefault()}
       onPointerMove={(e) => {
         const d = drag.current;
-        if (d) adjust(d.crop, d.edge, (e.clientX - d.x) / width, (e.clientY - d.y) / height);
+        if (d) {
+          const delta = rotatePoint(
+            { x: e.clientX - d.x, y: e.clientY - d.y },
+            -(image.rotation || 0),
+          );
+          adjust(d.crop, d.edge, delta.x / width, delta.y / height);
+        }
       }}
       onPointerUp={() => {
         drag.current = null;
@@ -138,8 +155,8 @@ export default function ImageCrop({
       <div
         className="crop-toolbar"
         style={{
-          left: clamp(box.left + box.width / 2, 160, viewport.width - 160),
-          top: clamp(box.top + box.height + 18, 12, viewport.height - 62),
+          left: clamp(bounds.x + bounds.width / 2, 160, viewport.width - 160),
+          top: clamp(bounds.y + bounds.height + 18, 12, viewport.height - 62),
         }}
       >
         <button

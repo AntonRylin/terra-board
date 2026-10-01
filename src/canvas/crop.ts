@@ -1,4 +1,5 @@
 import type { CanvasObject, ImageCrop } from '../model';
+import { localToWorld } from './transform.ts';
 
 export const fullCrop: ImageCrop = { x: 0, y: 0, width: 1, height: 1 };
 export function adjustCrop(
@@ -34,7 +35,8 @@ export function uncroppedImage(o: CanvasObject): CanvasObject {
   if (!crop) return image;
   const width = o.width / crop.width,
     height = o.height / crop.height;
-  return { ...image, x: o.x - crop.x * width, y: o.y - crop.y * height, width, height };
+  const center = localToWorld(o, { x: (0.5 - crop.x) * width, y: (0.5 - crop.y) * height });
+  return { ...image, x: center.x - width / 2, y: center.y - height / 2, width, height };
 }
 
 // Crop coordinates always refer to the original source, including on re-edit.
@@ -42,10 +44,14 @@ export function uncroppedImage(o: CanvasObject): CanvasObject {
 export function cropImage(o: CanvasObject, crop: ImageCrop): CanvasObject {
   const image = uncroppedImage(o);
   if (crop.x === 0 && crop.y === 0 && crop.width === 1 && crop.height === 1) return image;
+  const center = localToWorld(image, {
+    x: (crop.x + crop.width / 2) * image.width,
+    y: (crop.y + crop.height / 2) * image.height,
+  });
   return {
     ...image,
-    x: image.x + crop.x * image.width,
-    y: image.y + crop.y * image.height,
+    x: center.x - (image.width * crop.width) / 2,
+    y: center.y - (image.height * crop.height) / 2,
     width: image.width * crop.width,
     height: image.height * crop.height,
     crop: { ...crop },

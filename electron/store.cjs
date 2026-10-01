@@ -63,7 +63,11 @@ function objectValue(o) {
     if (!number(o.fontSize, 8, 300)) throw Error('Invalid font size');
     result.fontSize = o.fontSize;
   }
-  for (const key of ['centerX', 'centerY']) {
+  if (o.rotation !== undefined) {
+    if (!number(o.rotation, 0, 360)) throw Error('Invalid rotation');
+    result.rotation = o.rotation;
+  }
+  for (const key of ['centerX', 'centerY', 'textBox']) {
     if (o[key] !== undefined) {
       if (typeof o[key] !== 'boolean') throw Error('Invalid text alignment');
       result[key] = o[key];

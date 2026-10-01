@@ -831,6 +831,18 @@ kbd {
   z-index: 8;
   cursor: text;
 }
+.rotation-angle {
+  position: absolute;
+  z-index: 14;
+  pointer-events: none;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: #29313b;
+  color: white;
+  font:
+    12px 'Segoe UI',
+    sans-serif;
+}
 .video-player {
   display: block;
   width: 100%;

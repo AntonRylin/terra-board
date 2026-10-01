@@ -1,6 +1,6 @@
 # Local Canvas
 
-A Windows-first local whiteboard with a minimal, iOS-inspired board launcher. Version 0.1.11 is a working preview release; the original product roadmap is broader than this implementation.
+A Windows-first local whiteboard with a minimal, iOS-inspired board launcher. Version 0.1.12 is a working preview release; the original product roadmap is broader than this implementation.
 
 ## Run
 
@@ -25,7 +25,9 @@ Right-click board and folder icons for their actions. The three-dot menus expose
 
 Double-click a board name, folder name, or canvas title to rename it directly where it appears. Enter saves a name, Escape cancels; canvas text uses Ctrl+Enter to save. Link and video titles also edit in place; use the selection toolbar to open a link or play a video. Notes keep their dimensions and automatically shrink long text to fit, expanding the text back toward its chosen size as content is removed.
 
-The selection outline, corner handles and nearby actions remain visible during text editing. Plain-text boxes fit their content with a small margin and resize as you type; Enter adds a new line. Existing plain-text boxes are fitted when the board opens. Clicking away from empty or whitespace-only plain text removes it; Ctrl+Z restores deleted content. Empty notes, frames and shapes remain on the board.
+The selection outline, handles and nearby actions remain visible during text editing. Plain-text boxes initially fit their content with a small margin and resize as you type; Enter adds a new line. Drag a middle edge handle to change only the box width or height without scaling its font. Manually sized text boxes keep those dimensions and wrap text, including after reopening the board. Notes continue to shrink their text to fit. Clicking away from empty or whitespace-only plain text removes it; Ctrl+Z restores deleted content. Empty notes, frames and shapes remain on the board.
+
+Drag the curved-arrow handle just outside the lower-left corner of a selected object to rotate it; the angle appears beside the handle while dragging. Hold Shift for 15° steps, or press Escape to cancel the gesture. Resize handles follow the rotated edges, and images can still be cropped in place after rotating. Each resize or rotation is one undo step.
 
 Click a text-bearing object once to select it; click it again to edit, with no double-click timing required. This includes plain text, notes, shapes, frames, link titles and video titles. The cursor starts at the end, with no text selected, and the selection toolbar has no pencil button. Dragging still moves objects, corner dragging resizes them, and modifier clicks or clicks within a multi-selection keep their selection behavior. Board and folder name editors also place the cursor at the end.
 

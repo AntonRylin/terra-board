@@ -2,8 +2,18 @@ import { CanvasSource, Sprite, Texture } from 'pixi.js';
 import type { Camera, CanvasObject } from '../model';
 import { textLayout } from './text-layout';
 import { textPlacement } from './text-alignment';
+import { localViewport } from './transform';
 
 export function textRegion(o: CanvasObject, c: Camera, width: number, height: number) {
+  if (o.rotation) {
+    const b = localViewport(o, c, width, height, 64);
+    return {
+      x: Math.floor(b.left),
+      y: Math.floor(b.top),
+      width: Math.max(0, b.right - Math.floor(b.left)),
+      height: Math.max(0, b.bottom - Math.floor(b.top)),
+    };
+  }
   const x = Math.max(0, Math.floor((-c.x - 64) / c.zoom - o.x));
   const y = Math.max(0, Math.floor((-c.y - 64) / c.zoom - o.y));
   return {

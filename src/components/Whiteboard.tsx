@@ -40,6 +40,7 @@ import { Engine } from '../canvas/engine';
 import { textAppearance } from '../canvas/text-style';
 import { textLayout, fitTextObject } from '../canvas/text-layout';
 import { textPlacement } from '../canvas/text-alignment';
+import { localToWorld } from '../canvas/transform';
 import { SaveQueue, type SaveState } from '../canvas/save-queue';
 import { importFiles, pickMedia, openLink, mediaUrl, download, invoke } from '../bridge';
 import { ContextMenu, Modal, type MenuItem } from './Dialogs';
@@ -81,6 +82,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     imports = useRef(new Set<Promise<void>>());
   const cropSession = useRef<{ object: CanvasObject; crop: CropBounds } | null>(null);
   const toolsRef = useRef<HTMLDivElement>(null);
+  const angleRef = useRef<HTMLDivElement>(null);
   const toolsSize = useRef({ width: 0, height: 0 });
   const selectionView = useRef<{
     bounds: Bounds | null;
@@ -129,6 +131,10 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   const alignmentSelection = (editingObject ? [editingObject] : selected).filter(
     (o) => o.type !== 'image',
   );
+  const editorOrigin =
+    editingObject && editingPlacement
+      ? localToWorld(editingObject, { x: editingPlacement.left, y: editingPlacement.top })
+      : null;
   const toggleAlignment = (axis: 'centerX' | 'centerY') => {
     const session = editingSession.current;
     if (session) {
@@ -274,6 +280,16 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         queue.current!.enqueue({ upserts: [], deleted: [] }, c);
       },
       selection: setSelected,
+      rotation: (value) => {
+        const el = angleRef.current;
+        if (!el) return;
+        el.hidden = !value;
+        if (value) {
+          el.textContent = `${Math.round(value.angle * 10) / 10}°`;
+          el.style.left = `${value.x + 14}px`;
+          el.style.top = `${value.y - 12}px`;
+        }
+      },
       selectionView: (bounds, viewport) => {
         selectionView.current = { bounds, viewport };
         positionTools();
@@ -321,7 +337,9 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     const el = editorRef.current;
     if (!editing || !el || !editingAppearance) return;
     if (editing.centerY && editingPlacement) {
-      el.style.height = `${Math.max(1, editingPlacement.height) * camera.zoom}px`;
+      const available =
+        (editingObject || editing).height - editingPlacement.top - editingAppearance.padding;
+      el.style.height = `${Math.max(1, Math.min(editingPlacement.height, available)) * camera.zoom}px`;
       return;
     }
     if (editing.type === 'note' || editing.type === 'text') {
@@ -750,14 +768,12 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             }
           }}
           style={{
-            whiteSpace: editing.type === 'text' ? 'pre' : 'pre-wrap',
-            overflowWrap: editing.type === 'text' ? 'normal' : 'break-word',
-            left:
-              (editing.x + (editingPlacement?.left ?? editingAppearance.padding)) * camera.zoom +
-              camera.x,
-            top:
-              (editing.y + (editingPlacement?.top ?? editingAppearance.padding)) * camera.zoom +
-              camera.y,
+            whiteSpace: editing.type === 'text' && !editing.textBox ? 'pre' : 'pre-wrap',
+            overflowWrap: editing.type === 'text' && !editing.textBox ? 'normal' : 'break-word',
+            left: (editorOrigin?.x ?? editing.x) * camera.zoom + camera.x,
+            top: (editorOrigin?.y ?? editing.y) * camera.zoom + camera.y,
+            transform: `rotate(${editing.rotation || 0}deg)`,
+            transformOrigin: '0 0',
             textAlign: editing.centerX ? 'center' : 'left',
             width: editingAppearance.wrapWidth * camera.zoom,
             fontSize: editingAppearance.fontSize * camera.zoom,
@@ -767,6 +783,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           }}
         />
       )}
+      <div ref={angleRef} className="rotation-angle" aria-label="Rotation angle" hidden />
       {cropping && (
         <ImageCrop
           image={uncroppedImage(cropping.object)}
