@@ -73,6 +73,13 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
         throw Error('Invalid image crop');
     }
     if (o.type === 'link') {
+      if (
+        o.linkDescription !== undefined &&
+        (typeof o.linkDescription !== 'string' || o.linkDescription.length > 500)
+      )
+        throw Error('Invalid link description');
+      if (o.assetId && !/^[a-f0-9]{64}$/.test(o.assetId)) throw Error('Invalid preview image');
+      if (o.linkIconId && !/^[a-f0-9]{64}$/.test(o.linkIconId)) throw Error('Invalid site icon');
       let u;
       try {
         u = new URL(o.url);
@@ -99,10 +106,14 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
       ...(o.textBox === undefined ? {} : { textBox: o.textBox }),
       ...(o.groupId ? { groupId: o.groupId } : {}),
       ...(o.assetId ? { assetId: o.assetId } : {}),
+      ...(o.type === 'link' && o.linkIconId ? { linkIconId: o.linkIconId } : {}),
       ...(o.crop
         ? { crop: { x: o.crop.x, y: o.crop.y, width: o.crop.width, height: o.crop.height } }
         : {}),
       ...(o.url ? { url: o.url } : {}),
+      ...(o.type === 'link' && o.linkDescription !== undefined
+        ? { linkDescription: o.linkDescription }
+        : {}),
     };
   });
 }

@@ -1,12 +1,12 @@
 # Local Canvas
 
-A Windows-first local whiteboard with a minimal, iOS-inspired board launcher. Version 0.1.17 is a working preview release; the original product roadmap is broader than this implementation.
+A Windows-first local whiteboard with a minimal, iOS-inspired board launcher. Version 0.1.22 is a working preview release; the original product roadmap is broader than this implementation.
 
 ## Run
 
 The project lives at `D:\Projects\terra`. Double-click `Open Local Canvas.cmd` in that folder, or open `D:\Projects\terra\release\win-unpacked\Local Canvas.exe`. Keep the executable's support files alongside it.
 
-The application stores boards, original media, settings, browser caches, logs and temporary runtime files in `D:\Projects\terra\Library`. Development and packaged builds share this repository-local library, outside the replaceable `release` directory. `Library` and compiled builds are ignored by Git. No account, server, telemetry, external fonts, or network connection is needed. A link opens your default browser only when you activate it.
+The application stores boards, original media, settings, browser caches, logs and temporary runtime files in `D:\Projects\terra\Library`. Development and packaged builds share this repository-local library, outside the replaceable `release` directory. `Library` and compiled builds are ignored by Git. Core board editing works offline without an account, server or telemetry. Pasting a web link now fetches its public preview metadata and image; cached previews remain local. YouTube playback requires a connection and contacts YouTube. Ordinary links open the default browser when activated.
 
 ## Working features
 
@@ -18,6 +18,8 @@ The application stores boards, original media, settings, browser caches, logs an
 - Frosted floating controls, animated folders/dialogs, keyboard focus handling and reduced-motion support.
 - A soft, wider Windows window shadow, with native title bar and resizing. The extra shadow hides when maximized, snapped or fullscreen.
 
+Pasted web links start as compact title/website cards with an open-link button. A spinner and loading label appear while fetching. Cards expand if a preview image arrives; without an image, available descriptions appear in a short text card and title-only links stay compact. Site icons are cached locally. Reduced-motion settings disable spinner rotation. Missing thumbnails retry automatically when opening a board or reconnecting. YouTube links briefly autoplay muted on the board (the first eight seconds); click **Play with sound**, the central play button or the selection play action for full inline playback. Close the player to return to its cached thumbnail. The external-link action opens YouTube in your browser. Private, offline or metadata-blocking pages retain a basic link card. Preview metadata, site icons and images travel with editable exports.
+
 ## Useful controls
 
 Hold the **right mouse button and drag** to move around the board. A plain right-click opens the canvas menu. Use **V** to select, **H** or hold **Space** to pan, **T** for text, **N** for a note, **R** for a shape, **F** for a frame, **L** for a link, and **0** to fit the board. Use the **mouse wheel** to zoom in and out toward the cursor, **Ctrl+K** to search, **Ctrl+Z / Ctrl+Shift+Z** for undo/redo, and **Ctrl+Enter** to finish editing. Double-click text to edit it. Drag any of the four selection corners to resize. Plain text scales its font and box together, keeping the opposite corner fixed; images keep their proportions unless Shift is held. Selection actions stay beside the selected object or group and follow movement, pan and zoom.
@@ -26,13 +28,13 @@ Right-click board and folder icons for their actions. The three-dot menus expose
 
 Drag any empty space in the board panel toward the left, right, top or bottom window edge. A translucent preview marks the destination; release to glide into place. Top and bottom placements use a horizontal strip. Escape or releasing away from an edge returns the panel to its original position. Placement is remembered on this computer. Board icons still drag into folders or into a new order; the mouse wheel scrolls a horizontal strip.
 
-Double-click a board name, folder name, or canvas title to rename it directly where it appears. Enter saves a name, Escape cancels; canvas text uses Ctrl+Enter to save. Link and video titles also edit in place; use the selection toolbar to open a link or play a video. Notes keep their dimensions and automatically shrink long text to fit, expanding the text back toward its chosen size as content is removed.
+Double-click a board name, folder name, or canvas title to rename it directly where it appears. Enter saves a name, Escape cancels; canvas text uses Ctrl+Enter to save. Local video titles also edit in place; use the selection toolbar to play a video. Notes keep their dimensions and automatically shrink long text to fit, expanding the text back toward its chosen size as content is removed.
 
 The selection outline, handles and nearby actions remain visible during text editing. Plain-text boxes initially fit their content with a small margin and resize as you type; Enter adds a new line. Drag a middle edge handle to change only the box width or height without scaling its font. Manually sized text boxes keep those dimensions and wrap text, including after reopening the board. Notes continue to shrink their text to fit. Clicking away from empty or whitespace-only plain text removes it; Ctrl+Z restores deleted content. Empty notes, frames and shapes remain on the board.
 
 Drag the curved-arrow handle just outside the lower-left corner of a selected object to rotate it; the angle appears beside the handle while dragging. Hold Shift for 15° steps, or press Escape to cancel the gesture. Resize handles follow the rotated edges, and images can still be cropped in place after rotating. Each resize or rotation is one undo step.
 
-Click a text-bearing object once to select it; click it again to edit, with no double-click timing required. This includes plain text, notes, shapes, frames, link titles and video titles. The cursor starts at the end, with no text selected, and the selection toolbar has no pencil button. Dragging still moves objects, corner dragging resizes them, and modifier clicks or clicks within a multi-selection keep their selection behavior. Board and folder name editors also place the cursor at the end.
+Click a text-bearing object once to select it; click it again to edit, with no double-click timing required. This includes plain text, notes, shapes, frames and local video titles. The cursor starts at the end, with no text selected, and the selection toolbar has no pencil button. Dragging still moves objects, corner dragging resizes them, and modifier clicks or clicks within a multi-selection keep their selection behavior. Board and folder name editors also place the cursor at the end.
 
 Use **Center horizontally** and **Center vertically** beside the selection/group actions to toggle text alignment independently. Each button highlights when enabled; toggle it off to return to left or top alignment. They work while editing or across selected text-bearing objects, and alignment survives copying, exporting and reopening. Image-only selections disable both buttons.
 

@@ -4,6 +4,84 @@ import { textLayout } from './text-layout';
 import { textPlacement } from './text-alignment';
 import { localViewport } from './transform';
 import { frameLabel } from './frame-label';
+import { linkLayout } from './link-preview';
+
+export function renderLinkCaption(
+  o: CanvasObject,
+  resolution: number,
+  region: { x: number; y: number; width: number; height: number },
+  loading = false,
+) {
+  const compact = !o.assetId;
+  const summary = compact && !!o.linkDescription?.trim();
+  const box = linkLayout(o.width, o.height);
+  const captionTop = compact ? 0 : box.y + box.height;
+  const left = Math.max(0, region.x),
+    top = Math.max(captionTop, region.y);
+  const width = Math.min(o.width, region.x + region.width) - left;
+  const height = Math.min(o.height, region.y + region.height) - top;
+  if (width <= 0 || height <= 0) return null;
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.ceil(width * resolution));
+  canvas.height = Math.max(1, Math.ceil(height * resolution));
+  const ctx = canvas.getContext('2d')!;
+  ctx.scale(resolution, resolution);
+  ctx.translate(-left, -top);
+  const scale = Math.min(1, o.width / 440, compact ? o.height / 76 : box.footer / 56),
+    pad = (compact ? 52 : 14) * scale;
+  const available = o.width - pad - (compact ? 62 * scale : pad);
+  const line = (text: string, y: number, font: number, color: string, weight = 400) => {
+    ctx.font = `${weight} ${font * scale}px "Segoe UI", sans-serif`;
+    ctx.fillStyle = color;
+    let value = text.replace(/\s+/g, ' ').trim();
+    if (ctx.measureText(value).width > available) {
+      while (value.length && ctx.measureText(value + '…').width > available)
+        value = value.slice(0, -1);
+      value += '…';
+    }
+    ctx.fillText(value, pad, captionTop + y * scale);
+  };
+  const domain = (() => {
+    try {
+      return new URL(o.url!).hostname.replace(/^www\./, '');
+    } catch {
+      return 'Link';
+    }
+  })();
+  line(
+    o.text || o.url || domain,
+    summary ? 28 : compact ? o.height / scale / 2 - 5 : 22,
+    14,
+    '#253040',
+    600,
+  );
+  line(
+    compact && loading ? 'Loading preview…' : domain,
+    summary ? 46 : compact ? o.height / scale / 2 + 15 : 41,
+    11,
+    '#8893a2',
+  );
+  if (summary) {
+    ctx.font = `${13 * scale}px "Segoe UI", sans-serif`;
+    const words = o.linkDescription!.split(/\s+/);
+    const lines: string[] = [];
+    let row = '';
+    for (const word of words) {
+      if (row && ctx.measureText(row + ' ' + word).width > available) {
+        lines.push(row);
+        row = word;
+      } else row += (row ? ' ' : '') + word;
+    }
+    if (row) lines.push(row);
+    for (let i = 0; i < Math.min(2, lines.length); i++)
+      line(lines[i] + (i === 1 && lines.length > 2 ? ' …' : ''), 72 + i * 18, 13, '#697586');
+  }
+  const texture = new Texture({ source: new CanvasSource({ resource: canvas, resolution }) });
+  const sprite = new Sprite(texture);
+  sprite.position.set(left, top);
+  sprite.once('destroyed', () => texture.destroy(true));
+  return sprite;
+}
 
 export function textRegion(o: CanvasObject, c: Camera, width: number, height: number) {
   if (o.rotation || o.type === 'frame') {

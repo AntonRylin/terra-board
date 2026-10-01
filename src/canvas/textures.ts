@@ -36,6 +36,9 @@ export class TextureCache {
     }
     return null;
   }
+  failed(key: string) {
+    return this.failures.has(key);
+  }
   private evict() {
     if (this.bytes < 160 * 1024 * 1024) return;
     for (const [key, e] of [...this.entries].sort((a, b) => a[1].time - b[1].time)) {

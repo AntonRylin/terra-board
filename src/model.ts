@@ -25,6 +25,8 @@ export interface CanvasObject {
   assetId?: string;
   crop?: ImageCrop;
   url?: string;
+  linkDescription?: string;
+  linkIconId?: string;
 }
 export interface Camera {
   x: number;

@@ -463,6 +463,34 @@ p {
   inset: 0;
   overflow: hidden;
 }
+.board-link-player {
+  position: absolute;
+  z-index: 3;
+  transform-origin: 0 0;
+  background: #111;
+  border-radius: 8px;
+}
+.board-link-player iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 8px;
+}
+.board-player-controls {
+  position: absolute;
+  right: 0;
+  top: -34px;
+  display: flex;
+  gap: 4px;
+}
+.board-player-controls button {
+  background: white;
+  border: 1px solid #dce2eb;
+  border-radius: 7px;
+  padding: 5px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
 .canvas-surface {
   position: absolute;
   inset: 0;

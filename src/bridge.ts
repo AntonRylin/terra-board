@@ -5,6 +5,14 @@ interface DesktopBridge {
   importPortable(): Promise<Board | null>;
   exportPortable(id: string): Promise<boolean>;
   openExternal(url: string): Promise<void>;
+  linkPreview(
+    url: string,
+  ): Promise<{
+    text: string;
+    linkDescription: string;
+    assetId?: string;
+    linkIconId?: string;
+  } | null>;
   dataDirectory(): Promise<string>;
   onClose(callback: () => void): () => void;
   closeReady(): void;

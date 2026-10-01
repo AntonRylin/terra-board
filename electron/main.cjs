@@ -1,5 +1,6 @@
 const { app, BrowserWindow, ipcMain, protocol, net, dialog, shell, Menu } = require('electron');
 const { attachWindowShadow } = require('./window-shadow.cjs');
+const { fetchPreview } = require('./link-preview.cjs');
 const { Worker } = require('node:worker_threads');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -264,13 +265,77 @@ app
     win.webContents.on('will-navigate', (e) => e.preventDefault());
     win.webContents.session.setPermissionRequestHandler((_wc, _p, cb) => cb(false));
     win.webContents.session.webRequest.onBeforeRequest((details, cb) => {
+      const host = new URL(details.url).hostname;
+      const playerHost = [
+        'youtube-nocookie.com',
+        'youtube.com',
+        'ytimg.com',
+        'googlevideo.com',
+        'gstatic.com',
+        'google.com',
+        'doubleclick.net',
+      ].some((domain) => host === domain || host.endsWith('.' + domain));
       const allowed =
         ['canvas-app:', 'canvas-media:', 'data:', 'blob:', 'devtools:'].some((s) =>
           details.url.startsWith(s),
         ) ||
+        (details.url.startsWith('https:') && playerHost && details.resourceType !== 'mainFrame') ||
         (dev &&
           (details.url.startsWith(dev + '/') || details.url.startsWith('ws://127.0.0.1:5173/')));
       cb({ cancel: !allowed });
+    });
+    win.webContents.session.webRequest.onBeforeSendHeaders(
+      { urls: ['https://www.youtube-nocookie.com/embed/*'] },
+      (details, cb) => {
+        cb({
+          requestHeaders: { ...details.requestHeaders, Referer: 'https://local.canvas.desktop/' },
+        });
+      },
+    );
+    let previewActive = 0;
+    const previewWaiters = [];
+    ipcMain.handle('canvas:link-preview', async (e, url) => {
+      trusted(e);
+      if (previewWaiters.length >= 64) return null;
+      if (previewActive >= 4) await new Promise((resolve) => previewWaiters.push(resolve));
+      previewActive++;
+      try {
+        const meta = await fetchPreview(url);
+        let assetId, linkIconId;
+        if (meta.imageBytes) {
+          try {
+            assetId = (
+              await call('importAsset', { name: 'Link preview.jpg', bytes: meta.imageBytes })
+            ).id;
+          } catch {}
+        }
+        if (meta.iconBytes) {
+          try {
+            linkIconId = (
+              await call('importAsset', { name: 'Site icon.png', bytes: meta.iconBytes })
+            ).id;
+          } catch {
+            try {
+              const image = require('electron').nativeImage.createFromBuffer(meta.iconBytes);
+              if (!image.isEmpty())
+                linkIconId = (
+                  await call('importAsset', { name: 'Site icon.png', bytes: image.toPNG() })
+                ).id;
+            } catch {}
+          }
+        }
+        return {
+          text: meta.title,
+          linkDescription: meta.description,
+          ...(assetId ? { assetId } : {}),
+          ...(linkIconId ? { linkIconId } : {}),
+        };
+      } catch {
+        return null;
+      } finally {
+        previewActive--;
+        previewWaiters.shift()?.();
+      }
     });
     ipcMain.handle('canvas:invoke', (e, command, args) => {
       trusted(e);

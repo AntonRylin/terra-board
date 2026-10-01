@@ -8,6 +8,71 @@ import ts from 'typescript';
 const require = createRequire(import.meta.url);
 import { localToWorld } from '../src/canvas/transform.ts';
 
+test('YouTube play badge activates on one click while dragging still moves its card', () => {
+  const f = fixture();
+  f.engine.camera = { x: 0, y: 0, zoom: 1 };
+  const o = {
+    id: 'youtube',
+    type: 'link',
+    url: 'https://youtu.be/abcdefghijk',
+    x: 100,
+    y: 100,
+    width: 440,
+    height: 360,
+    z: 1,
+  };
+  f.engine.apply({ upserts: [o], deleted: [] });
+  f.engine.down(f.event(320, 226, 0));
+  f.engine.up(f.event(320, 226, 0));
+  assert.deepEqual(f.activations, ['youtube']);
+  f.engine.down(f.event(320, 226, 0));
+  f.engine.move(f.event(370, 256, 0));
+  f.engine.up(f.event(370, 256, 0));
+  assert.equal(f.engine.objects.get(o.id).x, 150);
+  assert.deepEqual(f.activations, ['youtube']);
+});
+
+test('late link metadata preserves moves, undo, redo and never resurrects deleted cards', () => {
+  const f = fixture();
+  const o = {
+    id: 'link',
+    type: 'link',
+    url: 'https://example.com',
+    text: 'example.com',
+    x: 10,
+    y: 10,
+    width: 440,
+    height: 360,
+    z: 1,
+  };
+  const meta = {
+    url: o.url,
+    text: 'Example title',
+    linkDescription: 'Summary',
+    assetId: 'a'.repeat(64),
+  };
+  f.engine.apply({ upserts: [o], deleted: [] });
+  f.engine.apply({ upserts: [{ ...o, x: 200 }], deleted: [] });
+  f.engine.hydrateLink(o.id, meta);
+  assert.equal(f.engine.objects.get(o.id).x, 200);
+  f.engine.undo();
+  assert.equal(f.engine.objects.get(o.id).x, 10);
+  assert.equal(f.engine.objects.get(o.id).text, meta.text);
+  f.engine.undo();
+  f.engine.hydrateLink(o.id, meta);
+  assert.equal(f.engine.objects.has(o.id), false);
+  f.engine.redo();
+  assert.equal(f.engine.objects.get(o.id).assetId, meta.assetId);
+  f.engine.camera = { x: 0, y: 0, zoom: 1 };
+  f.engine.down(f.event(50, 50, 0));
+  f.engine.move(f.event(90, 90, 0));
+  f.engine.hydrateLink(o.id, meta);
+  assert.equal(f.engine.objects.get(o.id).x, 50, 'live drag remains visible');
+  assert.equal(f.edits.at(-1).upserts[0].x, 10, 'metadata saves committed geometry');
+  f.engine.cancel();
+  assert.equal(f.engine.objects.get(o.id).x, 10);
+});
+
 test('frame drag carries contained objects once, snapshots membership, and supports undo and cancel', () => {
   const f = fixture();
   f.engine.camera = { x: 0, y: 0, zoom: 1 };
@@ -73,6 +138,7 @@ test('frame membership follows current placement, including rotated frame geomet
 // Exercise the actual Engine event handlers without creating a GPU context.
 function fixture(tool = 'select') {
   const canvas = { setAttribute() {} },
+    edits = [],
     menus = [],
     saves = [],
     activations = [];
@@ -164,7 +230,9 @@ function fixture(tool = 'select') {
     [],
     { x: 20, y: 30, zoom: 2 },
     {
-      edit() {},
+      edit(edit) {
+        edits.push(edit);
+      },
       camera: (c) => saves.push({ ...c }),
       selection() {},
       activate(o) {
@@ -189,7 +257,7 @@ function fixture(tool = 'select') {
     pointerId: 1,
     preventDefault() {},
   });
-  return { engine, host, menus, saves, event, activations };
+  return { engine, host, menus, saves, event, activations, edits };
 }
 
 test('double click retargeted to the pointer-capturing surface opens the object editor', () => {

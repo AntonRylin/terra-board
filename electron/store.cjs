@@ -75,6 +75,7 @@ function objectValue(o) {
   }
   if (o.groupId) result.groupId = idValue(o.groupId);
   if (o.assetId) result.assetId = idValue(o.assetId);
+  if (o.type === 'link' && o.linkIconId) result.linkIconId = idValue(o.linkIconId);
   if (o.crop !== undefined) {
     const c = o.crop;
     if (
@@ -103,6 +104,11 @@ function objectValue(o) {
     }
     if (!['http:', 'https:'].includes(u.protocol)) throw Error('Invalid URL protocol');
     result.url = u.href;
+    if (o.linkDescription !== undefined) {
+      if (typeof o.linkDescription !== 'string' || o.linkDescription.length > 500)
+        throw Error('Invalid link description');
+      result.linkDescription = o.linkDescription;
+    }
   }
   return result;
 }
@@ -301,8 +307,10 @@ class Store {
       .update(JSON.stringify({ revision, objects, deleted, camera }))
       .digest('hex');
     const findAsset = this.db.prepare('SELECT id FROM assets WHERE id=?');
-    for (const o of objects)
+    for (const o of objects) {
       if (o.assetId && !findAsset.get(o.assetId)) throw Error('Missing media asset');
+      if (o.linkIconId && !findAsset.get(o.linkIconId)) throw Error('Missing site icon');
+    }
     return this.transaction(() => {
       if (operationId) {
         const prior = this.db
@@ -472,7 +480,7 @@ class Store {
   }
   async exportBoard({ id }) {
     const d = this.loadBoard({ id }),
-      ids = [...new Set(d.objects.map((o) => o.assetId).filter(Boolean))],
+      ids = [...new Set(d.objects.flatMap((o) => [o.assetId, o.linkIconId]).filter(Boolean))],
       assets = ids.map((id) => this.db.prepare('SELECT * FROM assets WHERE id=?').get(id));
     if (assets.reduce((n, a) => n + a.bytes, 0) > MAX_PACKAGE)
       throw Error('Portable exports are limited to 512 MB in this version');
@@ -547,7 +555,12 @@ class Store {
         throw Error('Missing or damaged media');
       assetIds.add(a.id);
     }
-    if (objects.some((o) => o.assetId && !assetIds.has(o.assetId)))
+    if (
+      objects.some(
+        (o) =>
+          (o.assetId && !assetIds.has(o.assetId)) || (o.linkIconId && !assetIds.has(o.linkIconId)),
+      )
+    )
       throw Error('Missing media in portable board');
     if (new Set(objects.map((o) => o.id)).size !== objects.length)
       throw Error('Duplicate object identifiers');

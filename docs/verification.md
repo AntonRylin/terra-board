@@ -1,5 +1,37 @@
 # Verification — Local Canvas
 
+## 0.1.22 compact rounded link cards — 2026-10-01
+
+Text previews default to 440×112, close to the user's manually shortened 440×115 card. Descriptions use at most two lines with ellipsis, tighter spacing, and 16-unit card corners. Open buttons have softer corners. Single-link selection uses the same rounded outline under zoom and rotation, with circular resize handles. Reopening migrates old automatic heights but preserves custom card sizes.
+
+All 95 Node tests and production packaging pass. The packaged live suite passes in `.local-test/desktop-links-3Gvjs8`; `google-summary.png` and `google-rounded-rotated.png` were visually inspected. Real pointer input rotates the selected card 30 degrees while its outline follows the curved perimeter. Existing preview loading, compact fallback, thumbnails, playback and portable export/import checks pass without renderer exceptions.
+
+## 0.1.21 site logos and text previews — 2026-10-01
+
+Cards without thumbnails now display available descriptions in a 168-unit text layout; links without descriptions remain 76 units high. Metadata extraction also reads microdata descriptions and HTML icon links. Site logos are imported as local assets and preserved by clipboard, save and portable export/import. Google's homepage exposes its logo through microdata but currently omits a description, so that exact homepage receives a short built-in product summary when no description is supplied; other pages do not receive this fallback. YouTube still retries missing thumbnails even when author text is already available.
+
+All 94 Node tests and production packaging pass. The live packaged suite passes in `.local-test/desktop-links-kvHzNW`, checking Google's logo and text layout, icon export/import, compact image-free links, loading animation, thumbnail recovery and muted/full YouTube playback, with no renderer exceptions. The Google screenshot was visually inspected in the preceding run `.local-test/desktop-links-qzOdFX`; that run reached the correct Google card but later lost the YouTube debug session when its timed preview closed. A repeat of the complete suite passed.
+
+## 0.1.20 compact links without images and preview loading — 2026-10-01
+
+New links start as 76-unit compact cards with a title, website and single-click open button. Saved links without thumbnail assets are normalized to the compact layout on open. An arriving thumbnail expands the initial card to a 16:9 image area and compact caption; manual sizing is preserved. YouTube autoplay waits for the thumbnail instead of covering an empty placeholder. While fetching metadata or decoding a thumbnail, visible cards show a rotating spinner; compact cards also show “Loading preview…”. Reduced-motion settings keep the indicator static, and offscreen cards do not schedule animation frames.
+
+All 91 Node tests and production packaging pass. The packaged link suite passes in `.local-test/desktop-links-oKEJgO`. It verifies that Example Domain remains 76 units high without an image after fetching completes, compares spinner-region screenshots 160ms apart to confirm motion, and checks busy-state completion. `compact-link.png` and `loading-preview.png` were visually inspected. Thumbnail recovery, image expansion, muted/full YouTube playback and export/import checks also pass without main-renderer errors.
+
+## 0.1.19 thumbnail recovery and compact captions — 2026-10-01
+
+The reported saved YouTube card had neither a thumbnail asset nor fetched title. Its exact URL returned valid metadata when checked, but missing previews were never retried after loading a board. Incomplete cards now recover on board open, reconnection and object paste, with three bounded attempts and guards against stale board responses. Recovery does not start playback. Captions use a 56-unit footer instead of 108, with a 14px title and 11px website line. New cards use 440×314 geometry for a 16:9 preview; existing manually resized geometry remains intact.
+
+All 90 Node tests and production packaging pass. The packaged link suite passes in `.local-test/desktop-links-uajLrQ`: it starts with an incomplete saved card for the reported video, verifies the title and local thumbnail appear before any input, and confirms no video player opens during recovery. `recovered-thumbnail.png` was visually inspected. Eight-second muted preview, full playback, normal website metadata and portable export/import checks also pass with no main-renderer exceptions.
+
+## 0.1.18 rich link cards and inline YouTube — 2026-10-01
+
+Pasting or adding a web URL creates a white preview card. Public Open Graph, Twitter-card and HTML title/description metadata supply its text and thumbnail; YouTube uses oEmbed and its thumbnail endpoint. Images are imported into the local asset library, so cards survive offline use and portable export. Unavailable/private pages retain a basic card. Fetching uses time, byte, redirect and concurrency limits, validates each redirect and pins public DNS results for the request. Metadata HTML never executes. The renderer keeps its local-only script policy; the sandboxed YouTube player has a dedicated frame source and restricted network hosts. Its embed request identifies the desktop app per [YouTube's embedded-player guidance](https://developers.google.com/youtube/terms/required-minimum-functionality#embedded-player-api-client-identity).
+
+YouTube links automatically play a muted eight-second preview on the board. Play with sound or the card's play badge opens full inline playback. The player follows canvas transforms; closing returns to the cached card. An external-link action opens YouTube in the browser. Delayed metadata preserves move/undo/redo and saves committed geometry if it arrives during a cancelled drag.
+
+All 87 Node tests pass, followed by a focused 35-test pointer/history run for the drag-save case. The packaged interaction suite passes in `.local-test/desktop-input-bASQ9o`, covering editing, frame movement, resizing, rotation, cropping and close/save. Live-network `scripts/desktop-links.mjs` passes in `.local-test/desktop-links-z5HUXH`: injected clipboard data exercises the paste handler; real mouse input switches playback and moves cards. It verifies a muted video with advancing time, paused playback at eight seconds, full playback with advancing time, Wikipedia title/description/image, local persistence and portable export/import. Screenshots of both cards and the inline player were inspected. No main-renderer exceptions occurred. Sites may omit metadata or block retrieval, and YouTube may prohibit embedding particular videos; the external URL remains available.
+
 ## 0.1.17 frame contents move together — 2026-10-01
 
 Starting a frame drag captures objects fully contained in its body, using transformed corners for rotated objects and frames. The spatial index limits candidate lookup. Nested frames and their contents come along, and explicitly selected children are deduplicated. Membership follows current geometry, so objects moved out are released and a moving frame does not collect objects along its path. Resizing and rotating only change the frame region. Drag commit, cancellation, undo and redo use the same complete object snapshot.

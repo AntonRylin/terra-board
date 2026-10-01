@@ -114,7 +114,7 @@ An active library consists of SQLite metadata, immutable original assets, derive
 
 Implemented default data destination: `D:\Projects\terra\Library`, inside the repository and outside the replaceable build directory. The project, builds and runtime data live on D: rather than AppData or OneDrive. `CANVAS_DATA_DIR` is an advanced environment override used by isolated tests; a library location picker is not yet implemented.
 
-No account, network service, telemetry, online activation, CDN resources, or automatic remote previews. All runtime dependencies, UI assets, and initial icons ship locally. Clicking an external link later opens the default browser only on an explicit user action. A pasted URL alone is never permission to download its target.
+Core editing remains local, without an account, telemetry or online activation. As requested on 2026-10-01, pasted links fetch public preview metadata and thumbnails, and YouTube cards support a brief muted preview plus full inline playback. Runtime UI assets ship locally; saved thumbnails work offline and are included in portable exports. Remote preview fetching is bounded and rejects private-network destinations; web pages are never executed to extract metadata.
 
 Automatic backups remain local. Snapshot export contains a consistent database image, a manifest, and all referenced original assets. Cache is optional and rebuildable. Restore imports into a new library and validates it before offering to switch.
 

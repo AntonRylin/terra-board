@@ -5,12 +5,19 @@ import type { CanvasObject, Camera, Edit, Tool, ImageCrop } from '../model';
 import { uid } from '../model';
 import { SpatialIndex, screenToWorld, zoomAt, boundsOf, type Point, type Bounds } from './geometry';
 import { History } from './history';
-import { renderText, textRegion } from './text-rendering';
+import { renderText, renderLinkCaption, textRegion } from './text-rendering';
 import { TextureCache } from './textures';
 import { imageTiles } from './image-detail';
 import { resizeHandles, handlePoint, resizeObject, type ResizeHandle } from './resize';
 import { localToWorld, worldToLocal, rotationFromDrag, rotationHandlePoint } from './transform';
 import { hitsFrameLabel, visualBounds } from './frame-label';
+import {
+  youtubeId,
+  linkLayout,
+  hitsLinkPlay,
+  withLinkPreview,
+  linkCornerRadius,
+} from './link-preview';
 interface Callbacks {
   edit: (e: Edit) => void;
   camera: (c: Camera) => void;
@@ -38,6 +45,39 @@ type Gesture = {
   dragged?: boolean;
 };
 export class Engine {
+  private loadingLinks = new Set<string>();
+  setLinkLoading(id: string, loading: boolean) {
+    if (loading) this.loadingLinks.add(id);
+    else this.loadingLinks.delete(id);
+    this.host.setAttribute('aria-busy', String(this.loadingLinks.size > 0));
+    this.invalidate();
+  }
+  private linkPreviews = new Map<
+    string,
+    { url: string; text: string; linkDescription: string; assetId?: string; linkIconId?: string }
+  >();
+  hydrateLink(
+    id: string,
+    preview: {
+      url: string;
+      text: string;
+      linkDescription: string;
+      assetId?: string;
+      linkIconId?: string;
+    },
+  ) {
+    this.linkPreviews.set(id, preview);
+    const object = this.objects.get(id);
+    if (object?.type !== 'link' || object.url !== preview.url) return;
+    const original = this.gesture?.original.find((o) => o.id === id);
+    if (original) {
+      // Metadata may arrive during a drag. Save the committed geometry, so
+      // cancelling the gesture cannot leave a temporary position on disk.
+      this.preview(object);
+      this.callbacks.edit({ upserts: [withLinkPreview(original, preview)], deleted: [] });
+      this.invalidate();
+    } else this.apply({ upserts: [object], deleted: [] }, false);
+  }
   app = new Application();
   camera: Camera;
   tool: Tool = 'select';
@@ -215,7 +255,9 @@ export class Engine {
           const editOnClick =
             !additive &&
             hit.type !== 'image' &&
-            ((!hit.groupId && hitsFrameLabel(hit, worldToLocal(hit, w))) ||
+            ((!hit.groupId &&
+              (hitsFrameLabel(hit, worldToLocal(hit, w)) ||
+                hitsLinkPlay(hit, worldToLocal(hit, w)))) ||
               (this.selection.size === 1 && this.selection.has(hit.id)))
               ? hit.id
               : undefined;
@@ -500,6 +542,8 @@ export class Engine {
               : 'crosshair';
   }
   private preview(o: CanvasObject) {
+    const meta = this.linkPreviews.get(o.id);
+    if (o.type === 'link' && meta && meta.url === o.url) o = withLinkPreview(o, meta);
     this.objects.set(o.id, o);
     this.index.upsert(o);
   }
@@ -546,6 +590,7 @@ export class Engine {
       this.selection.delete(id);
     }
     this.rebuildGroups();
+    edit = { ...edit, upserts: edit.upserts.map((o) => this.objects.get(o.id)!) };
     if (record) this.history.push(edit, inverse);
     this.callbacks.edit(edit);
     this.callbacks.selection(this.selected);
@@ -677,7 +722,7 @@ export class Engine {
     const variants = new Map<string, string>();
     const tiles = new Map<string, ReturnType<typeof imageTiles>>();
     for (const o of [...visible].reverse()) {
-      if (o.type !== 'image' || !o.assetId) continue;
+      if (!['image', 'link'].includes(o.type) || !(o.assetId || o.linkIconId)) continue;
       const fullWidth = o.width / (o.crop?.width || 1),
         fullHeight = o.height / (o.crop?.height || 1);
       let size = Math.max(fullWidth, fullHeight) * c.zoom * devicePixelRatio > 256 ? 1600 : 256;
@@ -687,7 +732,8 @@ export class Engine {
         cost = 256 * 256 * 4;
       }
       if (bytes + cost > 128 * 1024 * 1024) continue;
-      const key = o.assetId + '/' + (size === 256 ? 'thumb' : 'preview');
+      const key =
+        (o.assetId || o.linkIconId) + '/' + (size === 256 || !o.assetId ? 'thumb' : 'preview');
       if (!wanted.has(key)) bytes += cost;
       wanted.add(key);
       variants.set(o.id, key);
@@ -695,7 +741,7 @@ export class Engine {
     // Reserve base images for the whole viewport before spending on close-up
     // detail. Give foreground tiles priority; details cannot starve base images.
     for (const o of [...visible].reverse()) {
-      if (!variants.has(o.id)) continue;
+      if (o.type !== 'image' || !variants.has(o.id)) continue;
       const detailTiles = imageTiles(o, c, w, h, devicePixelRatio).filter((tile) => {
         if (wanted.has(tile.key)) return true;
         if (bytes + 512 * 512 * 4 > 128 * 1024 * 1024) return false;
@@ -706,6 +752,8 @@ export class Engine {
       tiles.set(o.id, detailTiles);
     }
     this.textures.begin(wanted);
+    let animateLoading = false;
+    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     visible.forEach((o, i) => {
       const key = variants.get(o.id),
         texture = key ? this.textures.get(key) : null;
@@ -714,6 +762,9 @@ export class Engine {
         texture: this.textures.get(tile.key),
       }));
       const detail = c.zoom > 0.16;
+      const loading =
+        o.type === 'link' &&
+        (this.loadingLinks.has(o.id) || (!!key && !texture && !this.textures.failed(key)));
       const hasLabel =
         detail &&
         this.editingId !== o.id &&
@@ -726,6 +777,9 @@ export class Engine {
         o.width,
         o.height,
         o.text,
+        o.url,
+        o.linkDescription,
+        loading,
         o.color,
         o.fontSize,
         o.textBox,
@@ -747,7 +801,7 @@ export class Engine {
           this.world.removeChild(view.container);
           view.container.destroy({ children: true });
         }
-        const container = this.makeView(o, texture, detail, resolution, region);
+        const container = this.makeView(o, texture, detail, resolution, region, loading);
         const loadedTiles = detailTiles.filter((tile) => tile.texture);
         if (texture && loadedTiles.length) {
           // Cut detailed regions out of the preview so transparent pixels are
@@ -772,6 +826,11 @@ export class Engine {
       view.container.pivot.set(o.width / 2, o.height / 2);
       view.container.position.set(o.x + o.width / 2, o.y + o.height / 2);
       view.container.rotation = ((o.rotation || 0) * Math.PI) / 180;
+      const spinner = view.container.getChildByLabel('link-loading');
+      if (spinner && loading && !reducedMotion) {
+        spinner.rotation = performance.now() / 180;
+        animateLoading = true;
+      }
       this.world.setChildIndex(view.container, i);
     });
     this.drawSelection();
@@ -779,6 +838,7 @@ export class Engine {
     this.host.style.backgroundSize = `${Math.max(8, gap)}px ${Math.max(8, gap)}px`;
     this.host.style.backgroundPosition = `${c.x}px ${c.y}px`;
     this.app.render();
+    if (animateLoading) this.invalidate();
     if (!this.rendered) {
       this.rendered = true;
       this.callbacks.ready();
@@ -790,11 +850,90 @@ export class Engine {
     detail: boolean,
     resolution: number,
     region: ReturnType<typeof textRegion>,
+    loading = false,
   ) {
     const container = new Container(),
       g = new Graphics(),
       color = o.color || '#e8edf5';
     container.eventMode = 'none';
+    if (o.type === 'link') {
+      const compact = !o.assetId;
+      const iconY = compact && o.linkDescription ? 36 : o.height / 2;
+      const box = linkLayout(o.width, o.height);
+      g.roundRect(0, 0, o.width, o.height, linkCornerRadius)
+        .fill('#ffffff')
+        .stroke({ color: '#dce2eb', width: 1 });
+      if (!compact) g.roundRect(box.x, box.y, box.width, box.height, 8).fill('#eef1f5');
+      if (compact) {
+        g.roundRect(o.width - 48, iconY - 18, 36, 36, 11).fill('#f0f3f7');
+        const x = o.width - 37,
+          y = iconY;
+        g.moveTo(x + 9, y - 7)
+          .lineTo(x + 15, y - 7)
+          .lineTo(x + 15, y - 1)
+          .moveTo(x + 15, y - 7)
+          .lineTo(x + 6, y + 2)
+          .moveTo(x + 3, y - 5)
+          .lineTo(x, y - 5)
+          .lineTo(x, y + 7)
+          .lineTo(x + 12, y + 7)
+          .lineTo(x + 12, y + 4)
+          .stroke({ color: '#536172', width: 1.6 });
+        if (!loading && !texture)
+          g.circle(29, iconY, 10)
+            .stroke({ color: '#8290a3', width: 1.5 })
+            .moveTo(19, iconY)
+            .lineTo(39, iconY)
+            .stroke({ color: '#8290a3', width: 1.5 });
+      }
+      container.addChild(g);
+      if (texture) {
+        const sprite = this.imageSprite(texture);
+        // Preserve the thumbnail's aspect ratio, with a quiet letterbox when needed.
+        const scale = compact
+          ? Math.min(24 / texture.width, 24 / texture.height)
+          : Math.min(box.width / texture.width, box.height / texture.height);
+        sprite.width = texture.width * scale;
+        sprite.height = texture.height * scale;
+        sprite.position.set(
+          compact ? 29 - sprite.width / 2 : box.x + (box.width - sprite.width) / 2,
+          compact ? iconY - sprite.height / 2 : box.y + (box.height - sprite.height) / 2,
+        );
+        container.addChild(sprite);
+      }
+      if (!compact && !loading && youtubeId(o.url || '')) {
+        const cx = o.width / 2,
+          cy = box.y + box.height / 2,
+          size = Math.min(56, box.width / 5, box.height / 2);
+        const play = new Graphics()
+          .roundRect(cx - size * 0.7, cy - size / 2, size * 1.4, size, size / 4)
+          .fill('#ff0033');
+        play
+          .poly([
+            cx - size * 0.15,
+            cy - size * 0.23,
+            cx + size * 0.27,
+            cy,
+            cx - size * 0.15,
+            cy + size * 0.23,
+          ])
+          .fill('#ffffff');
+        container.addChild(play);
+      }
+      if (loading && detail) {
+        const spinner = new Graphics();
+        spinner.label = 'link-loading';
+        spinner.position.set(compact ? 29 : o.width / 2, compact ? iconY : box.y + box.height / 2);
+        spinner.circle(0, 0, 10).stroke({ color: '#d5dde8', width: 2.5 });
+        spinner.arc(0, 0, 10, -Math.PI / 2, Math.PI / 2).stroke({ color: '#6695e5', width: 2.5 });
+        container.addChild(spinner);
+      }
+      if (detail) {
+        const label = renderLinkCaption(o, resolution, region, loading);
+        if (label) container.addChild(label);
+      }
+      return container;
+    }
     if (o.type === 'image' && texture) {
       const sprite = this.imageSprite(texture, o.crop);
       sprite.width = o.width;
@@ -810,14 +949,8 @@ export class Engine {
       if (o.type === 'note')
         g.roundRect(2, 3, o.width, o.height, 2).fill({ color: '#657180', alpha: 0.08 });
       g.roundRect(0, 0, o.width, o.height, o.type === 'note' ? 2 : 7).fill(
-        o.type === 'image' || o.type === 'video'
-          ? '#e8ecf2'
-          : o.type === 'link'
-            ? '#ffffff'
-            : color,
+        o.type === 'image' || o.type === 'video' ? '#e8ecf2' : color,
       );
-      if (o.type === 'link')
-        g.roundRect(0, 0, o.width, o.height, 7).stroke({ color: '#dce2eb', width: 1 });
     }
     container.addChild(g);
     if (detail && this.editingId !== o.id) {
@@ -825,7 +958,6 @@ export class Engine {
       if (o.type === 'frame') text = o.text || 'Untitled frame';
       if (o.type === 'image') text = 'Image';
       if (o.type === 'video') text = o.text || 'Play video';
-      if (o.type === 'link') text = o.text || o.url || 'Link';
       if (text) {
         const label = renderText(o, text, resolution, region);
         if (label) container.addChild(label);
@@ -904,12 +1036,22 @@ export class Engine {
           const p = screen(handlePoint(o, h as ResizeHandle));
           return [p.x, p.y];
         });
-        g.poly(outline).stroke({ color: '#4486d9', width: 1.5 });
+        if (o.type === 'link') {
+          const origin = screen({ x: 0, y: 0 });
+          const angle = ((o.rotation || 0) * Math.PI) / 180;
+          const cos = Math.cos(angle),
+            sin = Math.sin(angle);
+          g.save()
+            .setTransform(cos, sin, -sin, cos, origin.x, origin.y)
+            .roundRect(0, 0, o.width * c.zoom, o.height * c.zoom, linkCornerRadius * c.zoom)
+            .stroke({ color: '#4486d9', width: 1.5 })
+            .restore();
+        } else g.poly(outline).stroke({ color: '#4486d9', width: 1.5 });
         for (const handle of resizeHandles) {
           const p = screen(handlePoint(o, handle));
-          g.rect(p.x - 4, p.y - 4, 8, 8)
-            .fill('#ffffff')
-            .stroke({ color: '#4486d9', width: 1.5 });
+          if (o.type === 'link') g.circle(p.x, p.y, 3.5);
+          else g.rect(p.x - 4, p.y - 4, 8, 8);
+          g.fill('#ffffff').stroke({ color: '#4486d9', width: 1.5 });
         }
         const rotation = screen(rotationHandlePoint(o, c.zoom));
         // A compact curved arrow outside the lower-left corner, in screen pixels.

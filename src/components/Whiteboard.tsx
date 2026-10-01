@@ -36,6 +36,13 @@ import {
 import type { Asset, CanvasObject, Document, Edit, Tool, ImageCrop as CropBounds } from '../model';
 import { uid } from '../model';
 import { clipboardObjects, pastedUrl } from '../canvas/content';
+import {
+  youtubeId,
+  linkLayout,
+  compactLinkHeight,
+  normalizeLinkSize,
+} from '../canvas/link-preview';
+import { loadLinkPreview } from '../canvas/load-link-preview';
 import { Engine } from '../canvas/engine';
 import { textAppearance } from '../canvas/text-style';
 import { textLayout, fitTextObject } from '../canvas/text-layout';
@@ -98,6 +105,35 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     el.style.visibility = 'visible';
   };
   const [cropping, setCropping] = useState<{ object: CanvasObject; crop: CropBounds } | null>(null);
+  const [player, setPlayer] = useState<{ id: string; videoId: string; muted: boolean } | null>(
+    null,
+  );
+  const playerId = useRef<string | null>(null);
+  const playerRef = useRef<HTMLDivElement>(null);
+  const positionPlayer = () => {
+    const el = playerRef.current,
+      e = engine.current;
+    if (!el || !e || !playerId.current) return;
+    const o = e.objects.get(playerId.current);
+    if (!o) {
+      setPlayer(null);
+      return;
+    }
+    const box = linkLayout(o.width, o.height);
+    const origin = localToWorld(o, { x: box.x, y: box.y });
+    el.style.left = `${origin.x * e.camera.zoom + e.camera.x}px`;
+    el.style.top = `${origin.y * e.camera.zoom + e.camera.y}px`;
+    el.style.width = `${box.width}px`;
+    el.style.height = `${box.height}px`;
+    el.style.transform = `rotate(${o.rotation || 0}deg) scale(${e.camera.zoom})`;
+  };
+  useLayoutEffect(() => {
+    playerId.current = player?.id || null;
+    positionPlayer();
+    if (!player?.muted) return;
+    const timer = setTimeout(() => setPlayer(null), 16000);
+    return () => clearTimeout(timer);
+  }, [player]);
   const [ready, setReady] = useState(false),
     [tool, setTool] = useState<Tool>('select'),
     [selected, setSelected] = useState<CanvasObject[]>([]),
@@ -129,7 +165,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         )
       : null;
   const alignmentSelection = (editingObject ? [editingObject] : selected).filter(
-    (o) => o.type !== 'image' && o.type !== 'frame',
+    (o) => !['image', 'frame', 'link'].includes(o.type),
   );
   const editorOrigin =
     editingObject && editingPlacement
@@ -170,10 +206,44 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   };
   const openObject = (o: CanvasObject) => {
     if (o.type === 'video') setVideo(o);
-    else if (o.type === 'link') openLink(o.url!).catch(error);
+    else if (o.type === 'link') {
+      const id = youtubeId(o.url!);
+      if (id) {
+        if (o.height === compactLinkHeight)
+          engine.current?.apply({
+            upserts: [{ ...o, height: ((o.width - 24) * 9) / 16 + 80 }],
+            deleted: [],
+          });
+        setPlayer({ id: o.id, videoId: id, muted: false });
+      } else openLink(o.url!).catch(error);
+    }
   };
   const activate = (o: CanvasObject) => {
-    if (o.type !== 'image') startEdit(o);
+    if (o.type === 'link') openObject(o);
+    else if (o.type !== 'image') startEdit(o);
+  };
+  const previewRequests = useRef(new Map<string, Engine>());
+  const refreshLink = (o: CanvasObject, e: Engine, autoplay = false) => {
+    if (!window.canvas?.linkPreview || previewRequests.current.get(o.id) === e) return;
+    previewRequests.current.set(o.id, e);
+    e.setLinkLoading(o.id, true);
+    void loadLinkPreview(
+      o,
+      (url) => window.canvas!.linkPreview(url),
+      () => engine.current === e,
+      (meta) => {
+        e.hydrateLink(o.id, { ...meta, url: o.url! });
+        const id = youtubeId(o.url!);
+        if (autoplay && id && meta.assetId && e.objects.has(o.id))
+          setPlayer({ id: o.id, videoId: id, muted: true });
+      },
+    ).finally(() => {
+      e.setLinkLoading(o.id, false);
+      if (previewRequests.current.get(o.id) === e) previewRequests.current.delete(o.id);
+    });
+  };
+  const enrichLink = (o: CanvasObject, e: Engine) => {
+    refreshLink(o, e, true);
   };
   const startCrop = (o: CanvasObject) => {
     if (editingSession.current) finishEdit();
@@ -265,7 +335,13 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     queue.current = new SaveQueue(doc.board.id, doc.revision, onSave, (args) =>
       invoke('patchBoard', { ...args }),
     );
-    const fitted = doc.objects.map((o) => (o.type === 'text' ? fitTextObject(o) : o));
+    const fitted = doc.objects.map((o) =>
+      o.type === 'text'
+        ? fitTextObject(o)
+        : o.type === 'link' && !o.assetId
+          ? normalizeLinkSize(o)
+          : o,
+    );
     const resized = fitted.filter(
       (o, i) => o.width !== doc.objects[i].width || o.height !== doc.objects[i].height,
     );
@@ -293,6 +369,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       selectionView: (bounds, viewport) => {
         selectionView.current = { bounds, viewport };
         positionTools();
+        positionPlayer();
       },
       activate,
       create,
@@ -304,7 +381,13 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       error: onError,
     });
     engine.current = e;
+    const recoverPreviews = () => {
+      for (const o of e.all) if (o.type === 'link' && !o.assetId) refreshLink(o, e);
+    };
+    recoverPreviews();
+    window.addEventListener('online', recoverPreviews);
     return () => {
+      window.removeEventListener('online', recoverPreviews);
       alive.current = false;
       e.destroy();
       engine.current = null;
@@ -421,6 +504,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     });
     e.apply({ upserts: copies, deleted: [] });
     e.setSelection(copies.map((o) => o.id));
+    for (const o of copies) if (o.type === 'link' && !o.assetId) refreshLink(o, e);
   };
   useEffect(() => {
     const typing = () =>
@@ -460,18 +544,21 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       const o: CanvasObject = {
         id: uid(),
         type: url ? 'link' : 'text',
-        x: p.x - 180,
-        y: p.y - 40,
-        width: 360,
-        height: url ? 100 : Math.min(1500, Math.max(80, text.split('\n').length * 30)),
+        x: p.x - (url ? 220 : 180),
+        y: p.y - (url ? compactLinkHeight / 2 : 40),
+        width: url ? 440 : 360,
+        height: url
+          ? compactLinkHeight
+          : Math.min(1500, Math.max(80, text.split('\n').length * 30)),
         z: e.topZ() + 1,
-        text,
+        text: url ? new URL(url).hostname : text,
         color: url ? '#ffffff' : '#29313b',
         fontSize: 22,
         ...(url ? { url } : {}),
       };
       e.apply({ upserts: [fitTextObject(o)], deleted: [] });
       e.setSelection([o.id]);
+      if (url) enrichLink(o, e);
     };
     const copyEvent = (event: ClipboardEvent) => {
       if (typing() || !engine.current?.selected.length) return;
@@ -677,12 +764,31 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           {selected.length === 1 && ['video', 'link'].includes(selected[0].type) && (
             <button
               className="icon-button"
-              aria-label={selected[0].type === 'video' ? 'Play video' : 'Open link'}
+              aria-label={
+                selected[0].type === 'video' || youtubeId(selected[0].url || '')
+                  ? 'Play video'
+                  : 'Open link'
+              }
               onClick={() => openObject(selected[0])}
             >
-              {selected[0].type === 'video' ? <Play size={16} /> : <ExternalLink size={16} />}
+              {selected[0].type === 'video' || youtubeId(selected[0].url || '') ? (
+                <Play size={16} />
+              ) : (
+                <ExternalLink size={16} />
+              )}
             </button>
           )}
+          {selected.length === 1 &&
+            selected[0].type === 'link' &&
+            youtubeId(selected[0].url || '') && (
+              <button
+                className="icon-button"
+                aria-label="Open on YouTube"
+                onClick={() => openLink(selected[0].url!).catch(error)}
+              >
+                <ExternalLink size={16} />
+              </button>
+            )}
           {selected.length > 1 && (
             <button
               className="icon-button"
@@ -871,6 +977,29 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           />
         </Modal>
       )}
+      {player && (
+        <div ref={playerRef} className="board-link-player">
+          <iframe
+            key={`${player.id}-${player.muted}`}
+            title="YouTube video player"
+            src={`https://www.youtube-nocookie.com/embed/${player.videoId}?autoplay=1&playsinline=1&rel=0${player.muted ? '&mute=1&end=8' : ''}`}
+            allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+            referrerPolicy="strict-origin-when-cross-origin"
+            sandbox="allow-scripts allow-same-origin allow-presentation"
+            allowFullScreen
+          />
+          <div className="board-player-controls">
+            {player.muted && (
+              <button onClick={() => setPlayer({ ...player, muted: false })}>
+                Play with sound
+              </button>
+            )}
+            <button aria-label="Close video preview" onClick={() => setPlayer(null)}>
+              ×
+            </button>
+          </div>
+        </div>
+      )}
       {linkPoint && (
         <Modal title="Add a link" onClose={() => setLinkPoint(null)}>
           <form
@@ -885,14 +1014,15 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
                   id: uid(),
                   type: 'link',
                   ...linkPoint,
-                  width: 350,
-                  height: 110,
+                  width: 440,
+                  height: compactLinkHeight,
                   z: engineNow.topZ() + 1,
                   url: url.href,
                   text: url.hostname,
                 };
                 engineNow.apply({ upserts: [o], deleted: [] });
                 engineNow.setSelection([o.id]);
+                enrichLink(o, engineNow);
                 setLinkPoint(null);
               } catch (err) {
                 error(err);

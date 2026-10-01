@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('canvas', {
   importPortable: () => ipcRenderer.invoke('canvas:import-board'),
   exportPortable: (id) => ipcRenderer.invoke('canvas:export-board', id),
   openExternal: (url) => ipcRenderer.invoke('canvas:open-link', url),
+  linkPreview: (url) => ipcRenderer.invoke('canvas:link-preview', url),
   dataDirectory: () => ipcRenderer.invoke('canvas:data-directory'),
   onClose: (callback) => {
     const handler = () => callback();
