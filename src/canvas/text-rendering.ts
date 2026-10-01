@@ -3,10 +3,11 @@ import type { Camera, CanvasObject } from '../model';
 import { textLayout } from './text-layout';
 import { textPlacement } from './text-alignment';
 import { localViewport } from './transform';
+import { frameLabel } from './frame-label';
 
 export function textRegion(o: CanvasObject, c: Camera, width: number, height: number) {
-  if (o.rotation) {
-    const b = localViewport(o, c, width, height, 64);
+  if (o.rotation || o.type === 'frame') {
+    const b = localViewport(o, c, width, height, 64, o.type === 'frame' ? frameLabel(o).top : 0);
     return {
       x: Math.floor(b.left),
       y: Math.floor(b.top),
@@ -34,13 +35,14 @@ export function renderText(
 ) {
   const { appearance: a, metrics } = textLayout(o, text);
   const placement = textPlacement(o, a, metrics.lines.length);
-  const anchor = o.centerX ? o.width / 2 : a.padding;
+  const centered = o.type !== 'frame' && o.centerX;
+  const anchor = centered ? o.width / 2 : a.padding;
   const overhang = a.fontSize * 0.25 + 2;
-  const left = Math.max(region.x, anchor - (o.centerX ? metrics.maxLineWidth / 2 : 0) - overhang);
+  const left = Math.max(region.x, anchor - (centered ? metrics.maxLineWidth / 2 : 0) - overhang);
   const top = Math.max(region.y, placement.top - overhang);
   const right = Math.min(
     region.x + region.width,
-    anchor + metrics.maxLineWidth / (o.centerX ? 2 : 1) + overhang,
+    anchor + metrics.maxLineWidth / (centered ? 2 : 1) + overhang,
   );
   const bottom = Math.min(region.y + region.height, placement.top + placement.height + overhang);
   if (right <= left || bottom <= top) return null;
@@ -52,7 +54,7 @@ export function renderText(
   ctx.translate(-left, -top);
   ctx.font = `400 ${a.fontSize}px ${a.fontFamily}`;
   ctx.fillStyle = a.color;
-  ctx.textAlign = o.centerX ? 'center' : 'left';
+  ctx.textAlign = centered ? 'center' : 'left';
   const font = ctx.measureText('Mg');
   const baseline =
     (a.lineHeight - font.fontBoundingBoxAscent - font.fontBoundingBoxDescent) / 2 +

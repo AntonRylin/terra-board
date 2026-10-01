@@ -41,6 +41,10 @@ interface Entry {
   object: CanvasObject;
 }
 export class SpatialIndex {
+  private getBounds: typeof objectBounds;
+  constructor(getBounds = objectBounds) {
+    this.getBounds = getBounds;
+  }
   private tree = new RBush<Entry>();
   private entries = new Map<string, Entry>();
   reset(objects: CanvasObject[]) {
@@ -51,7 +55,7 @@ export class SpatialIndex {
     this.tree.load(entries);
   }
   private entry(o: CanvasObject): Entry {
-    const b = objectBounds(o);
+    const b = this.getBounds(o);
     return { minX: b.x, minY: b.y, maxX: b.x + b.width, maxY: b.y + b.height, object: o };
   }
   upsert(o: CanvasObject) {

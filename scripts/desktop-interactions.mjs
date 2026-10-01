@@ -507,24 +507,54 @@ try {
   );
   await key('Escape', 'Escape');
   await click(host.x + 1050, host.y + 180);
-  await click(host.x + 430, host.y + 92);
-  await clickSelector('[aria-label="Center horizontally"]');
-  await clickSelector('[aria-label="Center vertically"]');
-  await until(async () => {
-    const f = (await documentState()).objects.find((o) => o.id === 'frame');
-    return f.centerX && f.centerY;
-  }, 'frame centered');
-  await click(host.x + 540, host.y + 185);
+  await click(host.x + 430, host.y + 51);
   await until(
     () => read(`document.querySelector('.text-editor')?.value==='Edited frame'`),
-    'centered frame title is clickable',
+    'one click on the outside frame name opens its editor',
   );
-  await key('Escape', 'Escape');
+  const frameEditor = await rect('.text-editor');
+  assert.ok(frameEditor.y + frameEditor.height < host.y + 70, 'name editor is above frame');
+  assert.ok(Math.abs(frameEditor.x - (host.x + 390)) < 1, 'name starts at frame left edge');
+  assert.equal(
+    await read(`document.querySelector('[aria-label="Center vertically"]').disabled`),
+    true,
+  );
+  await send('Input.insertText', { text: ' renamed' });
+  await key('Enter', 'Enter');
+  await until(
+    async () =>
+      (await documentState()).objects.find((o) => o.id === 'frame').text === 'Edited frame renamed',
+    'frame name saved with Enter',
+  );
+  const frameShot = await send('Page.captureScreenshot', { format: 'png' });
+  const frameBuffer = Buffer.from(frameShot.data, 'base64');
+  writeFileSync(join(root, 'white-frame.png'), frameBuffer);
+  const framePixels = await sharp(frameBuffer)
+    .extract({
+      left: Math.round((host.x + 580) * pixelScale),
+      top: Math.round((host.y + 210) * pixelScale),
+      width: 10,
+      height: 10,
+    })
+    .removeAlpha()
+    .raw()
+    .toBuffer();
+  assert.ok(
+    framePixels.every((value) => value === 255),
+    'frame surface is solid pure white without grid dots',
+  );
   // Keep controls next to a low-on-board selection, including during real drags.
   const textObject = async () => (await documentState()).objects.find((o) => o.id === 'text');
   const originalText = await textObject();
   await click(host.x + originalText.x + 30, host.y + originalText.y + 20);
   const drag = async (from, to, during) => {
+    await send('Input.dispatchMouseEvent', {
+      type: 'mouseMoved',
+      x: from.x,
+      y: from.y,
+      buttons: 0,
+    });
+    await sleep(50);
     await mouse('mousePressed', from.x, from.y);
     for (let i = 1; i <= 12; i++) {
       await mouse(
@@ -537,6 +567,37 @@ try {
     if (during) await during();
     await mouse('mouseReleased', to.x, to.y);
   };
+  // Put an existing object inside the frame, then move the frame with real input.
+  const frameState = async () => (await documentState()).objects;
+  const shapeBefore = (await frameState()).find((o) => o.id === 'shape');
+  await drag(
+    { x: host.x + shapeBefore.x + 40, y: host.y + shapeBefore.y + 40 },
+    { x: host.x + shapeBefore.x + 40, y: host.y + 160 },
+  );
+  await until(
+    async () => (await frameState()).find((o) => o.id === 'shape').y === 120,
+    'shape placed in frame',
+  );
+  await drag({ x: host.x + 660, y: host.y + 295 }, { x: host.x + 740, y: host.y + 315 });
+  await until(async () => {
+    const objects = await frameState();
+    return (
+      objects.find((o) => o.id === 'frame').x === 470 &&
+      objects.find((o) => o.id === 'shape').x === shapeBefore.x + 80 &&
+      objects.find((o) => o.id === 'shape').y === 140
+    );
+  }, 'frame carries contents and saves their positions');
+  await key('z', 'KeyZ', 2);
+  await until(
+    async () => (await frameState()).find((o) => o.id === 'shape').y === 120,
+    'frame and contents undo together',
+  );
+  await key('z', 'KeyZ', 2);
+  await until(
+    async () => (await frameState()).find((o) => o.id === 'shape').y === shapeBefore.y,
+    'restore shape placement',
+  );
+  await click(host.x + originalText.x + 30, host.y + originalText.y + 20);
   const checkToolbar = async (o, camera = { x: 0, y: 0, zoom: 1 }) => {
     await sleep(100);
     const toolbar = await rect('.selection-tools');

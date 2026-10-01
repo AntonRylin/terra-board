@@ -129,7 +129,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         )
       : null;
   const alignmentSelection = (editingObject ? [editingObject] : selected).filter(
-    (o) => o.type !== 'image',
+    (o) => o.type !== 'image' && o.type !== 'frame',
   );
   const editorOrigin =
     editingObject && editingPlacement
@@ -336,7 +336,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   useLayoutEffect(() => {
     const el = editorRef.current;
     if (!editing || !el || !editingAppearance) return;
-    if (editing.centerY && editingPlacement) {
+    if ((editing.centerY || editing.type === 'frame') && editingPlacement) {
       const available =
         (editingObject || editing).height - editingPlacement.top - editingAppearance.padding;
       el.style.height = `${Math.max(1, Math.min(editingPlacement.height, available)) * camera.zoom}px`;
@@ -651,7 +651,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
               finishEdit();
           }}
         >
-          {selected.every((o) => !['image', 'video', 'link'].includes(o.type)) && (
+          {selected.every((o) => !['image', 'video', 'link', 'frame'].includes(o.type)) && (
             <div className="color-options">
               {colors.map((color) => (
                 <button
@@ -746,7 +746,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         <textarea
           ref={editorRef}
           className={'text-editor ' + (editing.type === 'note' ? 'note-editor' : '')}
-          aria-label="Edit canvas text"
+          aria-label={editing.type === 'frame' ? 'Edit frame name' : 'Edit canvas text'}
           maxLength={100000}
           value={draft}
           onChange={(e) => {
@@ -762,7 +762,10 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             if (e.key === 'Escape') {
               e.preventDefault();
               finishEdit(true);
-            } else if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+            } else if (
+              (e.ctrlKey || e.metaKey || (editing.type === 'frame' && !e.shiftKey)) &&
+              e.key === 'Enter'
+            ) {
               e.preventDefault();
               finishEdit();
             }
@@ -774,7 +777,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             top: (editorOrigin?.y ?? editing.y) * camera.zoom + camera.y,
             transform: `rotate(${editing.rotation || 0}deg)`,
             transformOrigin: '0 0',
-            textAlign: editing.centerX ? 'center' : 'left',
+            textAlign: editing.type !== 'frame' && editing.centerX ? 'center' : 'left',
             width: editingAppearance.wrapWidth * camera.zoom,
             fontSize: editingAppearance.fontSize * camera.zoom,
             lineHeight: `${editingAppearance.lineHeight * camera.zoom}px`,

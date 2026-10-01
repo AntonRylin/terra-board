@@ -10,6 +10,7 @@ import { TextureCache } from './textures';
 import { imageTiles } from './image-detail';
 import { resizeHandles, handlePoint, resizeObject, type ResizeHandle } from './resize';
 import { localToWorld, worldToLocal, rotationFromDrag, rotationHandlePoint } from './transform';
+import { hitsFrameLabel, visualBounds } from './frame-label';
 interface Callbacks {
   edit: (e: Edit) => void;
   camera: (c: Camera) => void;
@@ -43,7 +44,7 @@ export class Engine {
   objects = new Map<string, CanvasObject>();
   selection = new Set<string>();
   history = new History();
-  private index = new SpatialIndex();
+  private index = new SpatialIndex(visualBounds);
   private world = new Container();
   private selectionLayer = new Graphics();
   private views = new Map<string, { container: Container; signature: string }>();
@@ -146,6 +147,7 @@ export class Engine {
       .sort((a, b) => b.z - a.z)
       .find((o) => {
         const q = worldToLocal(o, p);
+        if (hitsFrameLabel(o, q)) return true;
         if (q.x < 0 || q.y < 0 || q.x > o.width || q.y > o.height) return false;
         if (
           o.type === 'ellipse' &&
@@ -213,8 +215,8 @@ export class Engine {
           const editOnClick =
             !additive &&
             hit.type !== 'image' &&
-            this.selection.size === 1 &&
-            this.selection.has(hit.id)
+            ((!hit.groupId && hitsFrameLabel(hit, worldToLocal(hit, w))) ||
+              (this.selection.size === 1 && this.selection.has(hit.id)))
               ? hit.id
               : undefined;
           if (additive) {
@@ -230,7 +232,7 @@ export class Engine {
             start: p,
             world: w,
             camera: { ...this.camera },
-            original: this.selected.map((o) => ({ ...o })),
+            original: this.moveObjects(),
           };
         } else if (
           !additive &&
@@ -246,7 +248,7 @@ export class Engine {
             start: p,
             world: w,
             camera: { ...this.camera },
-            original: this.selected.map((o) => ({ ...o })),
+            original: this.moveObjects(),
           };
         } else {
           if (!additive) this.setSelection([]);
@@ -501,6 +503,33 @@ export class Engine {
     this.objects.set(o.id, o);
     this.index.upsert(o);
   }
+  private moveObjects(): CanvasObject[] {
+    // Capture membership before the drag, so crossing other objects cannot
+    // collect them mid-gesture. Geometry also releases items moved out of a frame.
+    const moving = new Map(this.selected.map((o) => [o.id, o]));
+    for (const frame of this.selected.filter((o) => o.type === 'frame')) {
+      for (const o of this.index.search(boundsOf([frame])!)) {
+        if (moving.has(o.id)) continue;
+        const inside = [
+          { x: 0, y: 0 },
+          { x: o.width, y: 0 },
+          { x: o.width, y: o.height },
+          { x: 0, y: o.height },
+        ].every((corner) => {
+          const p = worldToLocal(frame, localToWorld(o, corner));
+          const epsilon = 1e-7;
+          return (
+            p.x >= -epsilon &&
+            p.y >= -epsilon &&
+            p.x <= frame.width + epsilon &&
+            p.y <= frame.height + epsilon
+          );
+        });
+        if (inside) moving.set(o.id, o);
+      }
+    }
+    return [...moving.values()].map((o) => ({ ...o }));
+  }
   apply(edit: Edit, record = true) {
     const inverse: Edit = { upserts: [], deleted: [] };
     for (const o of edit.upserts) {
@@ -688,7 +717,9 @@ export class Engine {
       const hasLabel =
         detail &&
         this.editingId !== o.id &&
-        (o.type === 'image' ? !texture : o.type === 'video' || o.type === 'link' || !!o.text);
+        (o.type === 'image'
+          ? !texture
+          : o.type === 'frame' || o.type === 'video' || o.type === 'link' || !!o.text);
       const resolution = 2 ** Math.ceil(Math.log2(c.zoom * devicePixelRatio));
       const region = textRegion(o, c, w, h);
       const signature = JSON.stringify([
@@ -774,9 +805,7 @@ export class Engine {
     if (o.type === 'ellipse')
       g.ellipse(o.width / 2, o.height / 2, o.width / 2, o.height / 2).fill(color);
     else if (o.type === 'frame')
-      g.roundRect(0, 0, o.width, o.height, 8)
-        .fill({ color, alpha: 0.35 })
-        .stroke({ color: '#c9d0da', width: 1 });
+      g.rect(0, 0, o.width, o.height).fill('#ffffff').stroke({ color: '#dce1e7', width: 1 });
     else if (o.type !== 'text') {
       if (o.type === 'note')
         g.roundRect(2, 3, o.width, o.height, 2).fill({ color: '#657180', alpha: 0.08 });
@@ -793,6 +822,7 @@ export class Engine {
     container.addChild(g);
     if (detail && this.editingId !== o.id) {
       let text = o.text || '';
+      if (o.type === 'frame') text = o.text || 'Untitled frame';
       if (o.type === 'image') text = 'Image';
       if (o.type === 'video') text = o.text || 'Play video';
       if (o.type === 'link') text = o.text || o.url || 'Link';
@@ -835,6 +865,15 @@ export class Engine {
       : null;
     if (toolbarBounds && this.selection.size === 1) {
       const o = this.editingPreview || this.selected[0];
+      if (o.type === 'frame') {
+        const visual = visualBounds(o);
+        toolbarBounds = {
+          x: visual.x * c.zoom + c.x,
+          y: visual.y * c.zoom + c.y,
+          width: visual.width * c.zoom,
+          height: visual.height * c.zoom,
+        };
+      }
       const handle = localToWorld(o, rotationHandlePoint(o, c.zoom));
       const hy = handle.y * c.zoom + c.y;
       const top = Math.min(toolbarBounds.y, hy - 14);

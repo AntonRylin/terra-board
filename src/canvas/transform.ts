@@ -46,11 +46,12 @@ export function localViewport(
   width: number,
   height: number,
   margin: number,
+  minTop = 0,
 ) {
   if (!o.rotation)
     return {
       left: Math.max(0, (-c.x - margin) / c.zoom - o.x),
-      top: Math.max(0, (-c.y - margin) / c.zoom - o.y),
+      top: Math.max(minTop, (-c.y - margin) / c.zoom - o.y),
       right: Math.min(o.width, (width - c.x + margin) / c.zoom - o.x),
       bottom: Math.min(o.height, (height - c.y + margin) / c.zoom - o.y),
     };
@@ -62,7 +63,7 @@ export function localViewport(
   ].map((p) => worldToLocal(o, { x: (p.x - c.x) / c.zoom, y: (p.y - c.y) / c.zoom }));
   return {
     left: Math.max(0, Math.min(...points.map((p) => p.x))),
-    top: Math.max(0, Math.min(...points.map((p) => p.y))),
+    top: Math.max(minTop, Math.min(...points.map((p) => p.y))),
     right: Math.min(o.width, Math.max(...points.map((p) => p.x))),
     bottom: Math.min(o.height, Math.max(...points.map((p) => p.y))),
   };

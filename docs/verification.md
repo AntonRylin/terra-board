@@ -1,5 +1,21 @@
 # Verification — Local Canvas
 
+## 0.1.17 frame contents move together — 2026-10-01
+
+Starting a frame drag captures objects fully contained in its body, using transformed corners for rotated objects and frames. The spatial index limits candidate lookup. Nested frames and their contents come along, and explicitly selected children are deduplicated. Membership follows current geometry, so objects moved out are released and a moving frame does not collect objects along its path. Resizing and rotating only change the frame region. Drag commit, cancellation, undo and redo use the same complete object snapshot.
+
+All 81 Node tests pass. Focused cases cover nested frames, selected children, partial overlaps, objects outside a rotated frame, releasing moved-out objects, cancellation and one-step undo/redo. Production packaging succeeds. The packaged desktop interaction suite passes in `.local-test/desktop-input-moE0iG`: real mouse input places a shape inside a frame, moves the frame and shape together, verifies persisted positions, then undoes the complete movement in one step. Existing editing, resize, rotation, crop and graceful-close checks pass with no renderer exceptions.
+
+## 0.1.16 white frames with outside names — 2026-10-01
+
+Frames now draw a solid #ffffff rectangular surface and place names above their top-left edge. Clicking the outside name activates its inline editor on the first click; dragging still moves the frame. Enter saves the name. Rendering, editor placement and the spatial index include external names, including rotated names and viewports containing only the name; resize handles remain on the frame body. Frame names ignore legacy centering flags and frame surfaces no longer use shape colors.
+
+All 79 Node tests pass, including first-click/drag behavior and outside-name hit queries at four rotations and three zoom levels. Production packaging and the desktop interaction suite pass in `.local-test/desktop-input-30EAza`. Real input verifies an unselected outside name opens on one click, the editor is above and aligned to the left frame edge, and Enter persists the rename. A sampled interior screenshot patch is entirely RGB 255/255/255. `white-frame.png` was visually inspected. Existing editing, resizing, rotation, cropping and native close/save checks pass with no renderer exceptions.
+
+## 0.1.15 floating board header — 2026-10-01
+
+Removed the full-width header background and reserved 54px canvas inset. The board name, save status and options remain floating controls; the surrounding header area passes pointer input through to the full-height canvas. Production packaging passes. A packaged-app check confirmed matching workspace/canvas top bounds at 0, a transparent header background, canvas hit-testing through the empty header area, and working board menu and inline renaming. The screenshot in `.local-test/docking-6pHLnr/floating-header.png` was visually inspected.
+
 ## 0.1.14 softer external window shadow — 2026-10-01
 
 A non-focusable, click-through owned window draws a wider shadow around the native Windows frame. The main window remains opaque and flush to its content edges. The additional shadow uses 13% and 8% opacity layers, reduced by half after visual feedback, and dims when inactive. It follows move/resize and hides on minimize, maximize, snap, fullscreen or hide; it is destroyed with the owner or if its renderer fails.

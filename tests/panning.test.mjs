@@ -6,6 +6,69 @@ import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 import ts from 'typescript';
 const require = createRequire(import.meta.url);
+import { localToWorld } from '../src/canvas/transform.ts';
+
+test('frame drag carries contained objects once, snapshots membership, and supports undo and cancel', () => {
+  const f = fixture();
+  f.engine.camera = { x: 0, y: 0, zoom: 1 };
+  const frame = { id: 'parent', type: 'frame', x: 100, y: 100, width: 400, height: 300, z: -1 };
+  const child = { id: 'child', type: 'note', x: 150, y: 150, width: 60, height: 60, z: 1 };
+  const nested = { ...frame, id: 'nested', x: 300, y: 200, width: 100, height: 100 };
+  const outside = { ...child, id: 'outside', x: 510 };
+  const partial = { ...child, id: 'partial', x: 480 };
+  f.engine.apply({ upserts: [frame, child, nested, outside, partial], deleted: [] });
+  f.engine.setSelection(['parent', 'child']);
+  f.engine.down(f.event(250, 105, 0));
+  f.engine.move(f.event(650, 125, 0));
+  f.engine.up(f.event(650, 125, 0));
+  for (const o of [frame, child, nested]) {
+    assert.equal(f.engine.objects.get(o.id).x, o.x + 400);
+    assert.equal(f.engine.objects.get(o.id).y, o.y + 20);
+  }
+  assert.equal(f.engine.objects.get('outside').x, outside.x);
+  assert.equal(f.engine.objects.get('partial').x, partial.x);
+  f.engine.undo();
+  assert.equal(f.engine.objects.get('child').x, child.x);
+  assert.equal(f.engine.objects.get('parent').x, frame.x);
+  f.engine.redo();
+  assert.equal(f.engine.objects.get('child').x, child.x + 400);
+  f.engine.down(f.event(650, 125, 0));
+  f.engine.move(f.event(700, 175, 0));
+  f.engine.cancel();
+  assert.equal(f.engine.objects.get('child').x, child.x + 400);
+});
+
+test('frame membership follows current placement, including rotated frame geometry', () => {
+  const f = fixture();
+  f.engine.camera = { x: 0, y: 0, zoom: 1 };
+  const frame = {
+    id: 'parent',
+    type: 'frame',
+    x: 100,
+    y: 100,
+    width: 400,
+    height: 200,
+    rotation: 90,
+    z: -1,
+  };
+  const child = { id: 'child', type: 'note', x: 250, y: 150, width: 40, height: 40, z: 1 };
+  const outside = { ...child, id: 'outside', x: 110, y: 110 };
+  f.engine.apply({ upserts: [frame, child, outside], deleted: [] });
+  f.engine.setSelection(['parent']);
+  const start = localToWorld(frame, { x: 100, y: 5 });
+  const drag = () => {
+    f.engine.down(f.event(start.x, start.y, 0));
+    f.engine.move(f.event(start.x + 50, start.y, 0));
+    f.engine.up(f.event(start.x + 50, start.y, 0));
+  };
+  drag();
+  assert.equal(f.engine.objects.get('child').x, 300);
+  assert.equal(f.engine.objects.get('outside').x, 110);
+  f.engine.undo();
+  f.engine.apply({ upserts: [{ ...child, x: 700 }], deleted: [] });
+  drag();
+  assert.equal(f.engine.objects.get('child').x, 700, 'objects moved out are released');
+});
 
 // Exercise the actual Engine event handlers without creating a GPU context.
 function fixture(tool = 'select') {
@@ -31,6 +94,32 @@ function fixture(tool = 'select') {
     if (id === 'pixi.js/unsafe-eval') return {};
     if (id === 'pixi.js') return { Application, Container: Empty, Graphics: Empty };
     if (id === './text-rendering') return {};
+    if (id === './text-layout')
+      return {
+        // Pointer tests use a deterministic font measurement; packaged checks
+        // exercise the real browser's wrapping and rendered label placement.
+        textLayout(o, text = o.text || '') {
+          const fontSize = o.fontSize || 14;
+          return {
+            appearance: { padding: 0, wrapWidth: o.width, lineHeight: fontSize * 1.45 },
+            metrics: {
+              lines: text.split('\n'),
+              maxLineWidth: Math.min(o.width, text.length * fontSize * 0.6),
+            },
+          };
+        },
+      };
+    if (id === './frame-label') {
+      const frameExports = {};
+      vm.runInNewContext(
+        ts.transpileModule(
+          readFileSync(new URL('../src/canvas/frame-label.ts', import.meta.url), 'utf8'),
+          { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } },
+        ).outputText,
+        { exports: frameExports, require: localRequire },
+      );
+      return frameExports;
+    }
     if (id === './textures')
       return {
         TextureCache: class {
@@ -124,6 +213,69 @@ test('double click retargeted to the pointer-capturing surface opens the object 
   assert.deepEqual(f.activations, ['editable-note']);
   f.engine.doubleClick({ ...f.event(80, 100, 0), target: {} });
   assert.equal(f.activations.length, 1, 'double click on an overlay activated the board');
+});
+
+test('one click on an outside frame name edits; dragging the name moves the frame', () => {
+  const f = fixture();
+  f.engine.apply({
+    upserts: [
+      {
+        id: 'frame',
+        type: 'frame',
+        x: 100,
+        y: 100,
+        width: 300,
+        height: 200,
+        text: 'Frame 1',
+        fontSize: 14,
+        z: -1,
+      },
+    ],
+    deleted: [],
+  });
+  const point = f.event(260, 188, 0); // local (20,-21), outside the frame body
+  f.engine.down(point);
+  f.engine.up(point);
+  assert.deepEqual(f.activations, ['frame']);
+  f.activations.length = 0;
+  f.engine.down(point);
+  f.engine.move(f.event(300, 208, 0));
+  f.engine.up(f.event(300, 208, 0));
+  assert.deepEqual(f.activations, []);
+  assert.equal(f.engine.objects.get('frame').x, 120);
+});
+
+test('outside frame names remain indexed and clickable after rotation and zoom', () => {
+  for (const rotation of [0, 90, 180, 270]) {
+    const f = fixture();
+    const frame = {
+      id: 'frame',
+      type: 'frame',
+      x: 100,
+      y: 100,
+      width: 300,
+      height: 200,
+      text: 'Frame 1',
+      fontSize: 14,
+      z: -1,
+      rotation,
+    };
+    f.engine.apply({ upserts: [frame], deleted: [] });
+    const p = localToWorld(frame, { x: 20, y: -21 });
+    assert.ok(
+      f.engine.index.search({ ...p, width: 1, height: 1 }).some((o) => o.id === frame.id),
+      'title-only viewport includes frame',
+    );
+    for (const zoom of [0.5, 1, 8]) {
+      f.engine.setSelection([]);
+      f.engine.camera.zoom = zoom;
+      f.activations.length = 0;
+      const point = f.event(p.x * zoom + 20, p.y * zoom + 30, 0);
+      f.engine.down(point);
+      f.engine.up(point);
+      assert.deepEqual(f.activations, ['frame'], `rotation ${rotation}, zoom ${zoom}`);
+    }
+  }
 });
 
 for (const type of ['text', 'note', 'rect', 'ellipse', 'frame', 'link', 'video'])

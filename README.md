@@ -1,6 +1,6 @@
 # Local Canvas
 
-A Windows-first local whiteboard with a minimal, iOS-inspired board launcher. Version 0.1.14 is a working preview release; the original product roadmap is broader than this implementation.
+A Windows-first local whiteboard with a minimal, iOS-inspired board launcher. Version 0.1.17 is a working preview release; the original product roadmap is broader than this implementation.
 
 ## Run
 
@@ -38,6 +38,8 @@ Use **Center horizontally** and **Center vertically** beside the selection/group
 
 Drag a selection rectangle around multiple objects, then drag any selected object or the gap between them to move the whole selection. Copy, paste, duplicate, Delete and undo act on the complete selection. Shift/Ctrl-click toggles individual objects; Shift-drag adds a rectangle of objects and Ctrl-drag toggles them.
 
+Frames are opaque bright white rectangles with their name above the top-left edge. Click the name once to rename it in place; Enter saves, Escape cancels, and dragging the name moves the frame. Names remain outside when zooming, resizing or rotating. Frame names stay left-aligned, and frames do not use the shape-color or text-centering controls.
+
 Right-click an image and choose **Crop image**. Drag an edge/corner to crop, or drag inside the crop area to reposition it, then click **Apply** (or press Enter). **Cancel** / Escape discards the draft; **Reset** restores the full source. The original file is preserved, crops survive copy/export/reopen, and Ctrl+Z undoes a crop.
 
 ## Saving and recovery
@@ -54,7 +56,7 @@ A daily SQLite metadata snapshot is created on startup under `Library\backups`. 
 - Imported images use thumbnails and previews when distant, then load visible detail tiles from the original at close zoom. Detail tiles are at most 512px, image decoding has four concurrent requests, and the image texture cache stays within 192 MiB. Photos retain their source resolution; zooming cannot invent missing image detail. Originals remain intact in storage and portable exports.
 - Text is redrawn from font outlines at the current zoom and display density, using textures bounded by the viewport. Double-click to type directly at the text's position; click the board or press Ctrl+Enter to save, or Escape to cancel. Shapes retain vector geometry in the GPU renderer.
 - Videos use a generic board card and decode only in the player. Playback depends on Chromium's supported codecs; a generated VP9 WebM clip was tested. Animated images currently display a static preview.
-- Frames are visual regions. Moving a frame does not automatically move everything visually inside it; group items for joint movement. Nested folders, connectors, freehand ink, rich text, PDF export and editable Miro import are not implemented.
+- Dragging a frame carries all objects fully inside its border, including nested frames. Membership follows placement: move an object out to release it. Contents are captured at drag start, and the whole move undoes in one step. Resizing or rotating a frame changes the region without transforming its contents. Nested folders, connectors, freehand ink, rich text, PDF export and editable Miro import are not implemented.
 - The canvas is not yet fully screen-reader navigable. Reduced-motion behavior and keyboard-operable controls are implemented, but a full accessibility audit remains open.
 - The build is unsigned and has no installer or automatic updater. The large-board startup test is not a certification of sustained 60 FPS, 10,000 distinct high-resolution photos, 4K displays, or long editing sessions.
 

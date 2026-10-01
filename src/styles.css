@@ -388,9 +388,14 @@ p {
   align-items: center;
   gap: 11px;
   padding: 0 20px;
-  position: relative;
+  position: absolute;
+  inset: 0 0 auto;
   z-index: 2;
-  background: var(--paper);
+  pointer-events: none;
+}
+.board-header > .board-title,
+.board-header > button {
+  pointer-events: auto;
 }
 .board-glyph {
   display: flex;
@@ -455,7 +460,7 @@ p {
 }
 .whiteboard {
   position: absolute;
-  inset: 54px 0 0;
+  inset: 0;
   overflow: hidden;
 }
 .canvas-surface {

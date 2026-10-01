@@ -17,6 +17,12 @@ const note = {
   z: 1,
   text: 'Two\nlines',
 };
+
+test('frame names sit outside the top-left edge even with legacy centering flags', () => {
+  const frame = { ...note, type: 'frame', centerX: true, centerY: true };
+  const a = { padding: 0, wrapWidth: 240, lineHeight: 20 };
+  assert.deepEqual(textPlacement(frame, a, 2), { left: 0, top: -48, height: 40 });
+});
 test('horizontal and vertical centering are independent and overflow stays top-aligned', () => {
   const a = { padding: 20, wrapWidth: 194, lineHeight: 30 };
   assert.deepEqual(textPlacement(note, a, 2), { left: 20, top: 20, height: 60 });

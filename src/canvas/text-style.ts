@@ -10,7 +10,7 @@ export function textAppearance(o: CanvasObject) {
       o.type === 'text'
         ? fontSize * 0.2
         : o.type === 'frame'
-          ? 14
+          ? 0
           : o.type === 'note'
             ? Math.min(22, o.width / 4, o.height / 4)
             : 22,
