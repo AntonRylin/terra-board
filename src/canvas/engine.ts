@@ -1059,25 +1059,50 @@ export class Engine {
       g.rect(0, 0, o.width, o.height).fill('#ffffff').stroke({ color: '#dce1e7', width: 1 });
     else if (o.type !== 'text') {
       if (o.type === 'note') {
-        // Layered penumbra: paper sits close to the board at the top and lifts
-        // gently at the bottom. No per-note blur filters or offscreen textures.
-        const lift = Math.min(o.width, o.height) * 0.025;
+        // A shallow paper curl changes the silhouette itself, not just the shadow.
+        const curl = Math.min(o.width, o.height) * 0.025;
+        const paper = (x: number, y: number, w: number, h: number) =>
+          g
+            .moveTo(x, y)
+            .lineTo(x + w, y)
+            .quadraticCurveTo(x + w - curl * 0.3, y + h * 0.65, x + w, y + h - curl)
+            .quadraticCurveTo(x + w * 0.52, y + h + curl * 0.6, x, y + h - curl * 0.3)
+            .quadraticCurveTo(x + curl * 0.2, y + h * 0.5, x, y)
+            .closePath();
         for (let layer = 10; layer >= 1; layer--) {
-          const spread = (lift * layer) / 10;
-          g.roundRect(
-            -spread,
-            lift - spread * 0.6,
-            o.width + spread * 2,
-            o.height + spread * 1.6,
-            Math.min(spread + 1, o.width / 4, o.height / 4),
-          ).fill({ color: '#39382f', alpha: 0.009 });
+          const spread = (curl * layer) / 10;
+          paper(-spread, curl - spread * 0.6, o.width + spread * 2, o.height + spread * 1.6).fill({
+            color: '#39382f',
+            alpha: 0.009,
+          });
         }
-        g.rect(0, 0, o.width, o.height).fill(color);
+        paper(0, 0, o.width, o.height).fill(color);
         const edge = Math.min(0.7, o.width / 100, o.height / 100);
-        g.rect(0, 0, o.width, edge).fill({ color: '#ffffff', alpha: 0.55 });
-        g.rect(0, edge, edge, o.height - edge).fill({ color: '#ffffff', alpha: 0.22 });
-        g.rect(o.width - edge, 0, edge, o.height).fill({ color: '#645e39', alpha: 0.08 });
-        g.rect(0, o.height - edge, o.width, edge).fill({ color: '#645e39', alpha: 0.1 });
+        g.moveTo(0, 0).lineTo(o.width, 0).stroke({ color: '#ffffff', alpha: 0.55, width: edge });
+        // The highlighted curled edge follows the paper instead of outlining a box.
+        g.moveTo(o.width, o.height - curl)
+          .quadraticCurveTo(o.width * 0.52, o.height + curl * 0.6, 0, o.height - curl * 0.3)
+          .stroke({ color: '#776d42', alpha: 0.14, width: edge });
+        // Small curved tonal bands suggest the lifted lower-right edge without a dog-ear.
+        for (let band = 5; band >= 1; band--) {
+          const inset = (curl * band) / 5;
+          g.moveTo(o.width * 0.68, o.height - inset * 0.15)
+            .quadraticCurveTo(
+              o.width * 0.86,
+              o.height - inset * 0.1,
+              o.width - edge,
+              o.height - curl - inset,
+            )
+            .lineTo(o.width - edge, o.height - curl)
+            .quadraticCurveTo(
+              o.width * 0.86,
+              o.height - curl * 0.15,
+              o.width * 0.68,
+              o.height - inset * 0.15,
+            )
+            .closePath()
+            .fill({ color: '#ffffff', alpha: 0.025 });
+        }
         // A faint sheen near the attached edge gives the flat fill paper depth.
         for (let band = 0; band < 8; band++) {
           g.rect(
