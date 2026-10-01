@@ -16,10 +16,11 @@ const BoardIconImage = forwardRef<
   {
     value: string;
     color: string;
+    shape: 'rounded' | 'circle';
     onBusy: (busy: boolean) => void;
     initialFile?: File;
   }
->(({ value, color, onBusy, initialFile }, ref) => {
+>(({ value, color, shape, onBusy, initialFile }, ref) => {
   const [image, setImage] = useState<HTMLImageElement | null>(null);
   const [zoom, setZoom] = useState(1);
   const [center, setCenter] = useState({ x: 0.5, y: 0.5 });
@@ -112,7 +113,7 @@ const BoardIconImage = forwardRef<
       {image && crop ? (
         <>
           <div
-            className="board-icon-crop"
+            className={'board-icon-crop shape-' + shape}
             role="group"
             aria-label="Move image to crop"
             tabIndex={0}
@@ -214,7 +215,7 @@ const BoardIconImage = forwardRef<
           <p>Drag to position. Save to use this crop.</p>
         </>
       ) : (
-        <div className={'icon-preview app-icon ' + color}>
+        <div className={'icon-preview app-icon ' + color + ' shape-' + shape}>
           <BoardGlyph name={value} size={30} />
         </div>
       )}

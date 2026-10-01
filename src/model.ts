@@ -37,6 +37,7 @@ export interface Camera {
   zoom: number;
 }
 export interface Board {
+  iconShape?: 'rounded' | 'circle';
   id: string;
   name: string;
   icon: string;

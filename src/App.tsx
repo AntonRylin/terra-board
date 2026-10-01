@@ -56,6 +56,7 @@ export default function App() {
     [name, setName] = useState(''),
     [glyph, setGlyph] = useState('lightbulb'),
     [color, setColor] = useState('blue'),
+    [iconShape, setIconShape] = useState<'rounded' | 'circle'>('rounded'),
     [destination, setDestination] = useState(''),
     [search, setSearch] = useState(''),
     [saveState, setSaveState] = useState<SaveState>('saved'),
@@ -235,6 +236,7 @@ export default function App() {
           action: () => {
             setGlyph(b.icon);
             setColor(b.color);
+            setIconShape(b.iconShape || 'rounded');
             ask({ kind: 'icon', id: b.id });
           },
         },
@@ -339,7 +341,11 @@ export default function App() {
         await invoke('updateFolder', { id: modal.id, patch: { name } });
         await refresh();
       } else if (modal.kind === 'icon')
-        await change(modal.id!, { icon: (await iconImage.current?.save()) || glyph, color });
+        await change(modal.id!, {
+          icon: (await iconImage.current?.save()) || glyph,
+          color,
+          iconShape,
+        });
       else if (modal.kind === 'move') await change(modal.id!, { folderId: destination || null });
       setModal(null);
     } catch (e) {
@@ -380,6 +386,7 @@ export default function App() {
           if (busy) return;
           setGlyph(board.icon);
           setColor(board.color);
+          setIconShape(board.iconShape || 'rounded');
           ask({ kind: 'icon', id: board.id, iconFile: file });
         }}
         onFolderMenu={folderMenu}
@@ -403,7 +410,7 @@ export default function App() {
         <header className="board-header">
           {doc && (
             <>
-              <span className="board-glyph">
+              <span className={'board-glyph shape-' + (doc.board.iconShape || 'rounded')}>
                 <BoardGlyph name={doc.board.icon} size={34} />
               </span>
               <InlineName
@@ -542,9 +549,23 @@ export default function App() {
                       ref={iconImage}
                       value={glyph}
                       color={color}
+                      shape={iconShape}
                       onBusy={setBusy}
                       initialFile={modal.iconFile}
                     />
+                    <div className="icon-shape-picker" role="group" aria-label="Icon shape">
+                      {(['rounded', 'circle'] as const).map((shape) => (
+                        <button
+                          type="button"
+                          key={shape}
+                          aria-pressed={iconShape === shape}
+                          onClick={() => setIconShape(shape)}
+                        >
+                          <span className={'shape-sample shape-' + shape} aria-hidden="true" />
+                          {shape === 'circle' ? 'Circle' : 'Rounded square'}
+                        </button>
+                      ))}
+                    </div>
                     <div className="icon-picker">
                       {iconNames.map((icon) => (
                         <button
@@ -564,7 +585,7 @@ export default function App() {
                       ))}
                     </div>
                     <div className="tone-picker">
-                      {['blue', 'green', 'purple', 'orange', 'rose', 'gray'].map((c) => (
+                      {['blue', 'green', 'purple', 'orange', 'rose', 'gray', 'yellow'].map((c) => (
                         <button
                           type="button"
                           key={c}

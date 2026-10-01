@@ -318,6 +318,12 @@ try {
   await read(
     `(()=>{const e=document.querySelector('[aria-label="Icon zoom"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'2');e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));})()`,
   );
+  await clickSelector('.icon-shape-picker button:last-child');
+  await clickSelector('.tone-picker [aria-label="yellow"]');
+  await until(
+    () => read(`document.querySelector('.board-icon-crop').classList.contains('shape-circle')`),
+    'circle crop mask',
+  );
   const r = await rect('.board-icon-crop');
   const before = await read(`document.querySelector('.board-icon-crop img').style.left`);
   await mouse('mousePressed', r.x + 100, r.y + 100);
@@ -337,6 +343,8 @@ try {
     const d = await documentState();
     return d.board.icon.startsWith('asset-') ? d : null;
   }, 'saved custom icon');
+  assert.equal(saved.board.iconShape, 'circle');
+  assert.equal(saved.board.color, 'yellow');
   assert.equal(saved.objects.length, initial.objects.length, 'drop must not import onto canvas');
   await until(
     () => read(`document.querySelector('.launch-item .board-image-icon')?.naturalWidth > 0`),

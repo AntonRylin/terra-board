@@ -7,7 +7,7 @@ import InlineName from './InlineName';
 import { useLauncherDock, type DockEdge } from './useLauncherDock';
 export function AppIcon({ board }: { board: Board }) {
   return (
-    <span className={'app-icon ' + board.color}>
+    <span className={'app-icon ' + board.color + ' shape-' + (board.iconShape || 'rounded')}>
       <BoardGlyph name={board.icon} />
     </span>
   );

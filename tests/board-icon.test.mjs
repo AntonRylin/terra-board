@@ -24,7 +24,7 @@ test('uploaded board icons survive reopen, duplication and transfer to a fresh l
     });
     const board = source.createBoard({ name: 'Custom icon' });
     const icon = 'asset-' + asset.id;
-    source.updateBoard({ id: board.id, patch: { icon } });
+    source.updateBoard({ id: board.id, patch: { icon, iconShape: 'circle', color: 'yellow' } });
     assert.equal(source.duplicateBoard({ id: board.id }).icon, icon);
     source.close();
     source = new Store(join(root, 'source'));
@@ -32,6 +32,14 @@ test('uploaded board icons survive reopen, duplication and transfer to a fresh l
     const packed = await source.exportBoard({ id: board.id });
     const imported = await target.importBoard({ bytes: packed });
     assert.equal(imported.icon, icon);
+    assert.equal(imported.iconShape, 'circle');
+    assert.equal(imported.color, 'yellow');
+    assert.equal(source.board(board.id).iconShape, 'circle');
+    assert.equal(source.duplicateBoard({ id: board.id }).iconShape, 'circle');
+    assert.throws(
+      () => source.updateBoard({ id: board.id, patch: { iconShape: 'triangle' } }),
+      /shape/i,
+    );
     assert.ok(target.asset({ id: asset.id, variant: 'thumb' }).file);
     assert.throws(
       () => source.updateBoard({ id: board.id, patch: { icon: 'asset-' + '0'.repeat(64) } }),

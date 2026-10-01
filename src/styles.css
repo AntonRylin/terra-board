@@ -1463,3 +1463,71 @@ kbd {
 .board-icon-upload:has(.board-icon-crop) > .button {
   margin-top: 12px;
 }
+
+.app-icon.yellow {
+  background: #f8efd0;
+}
+.app-icon.shape-circle,
+.board-icon-crop.shape-circle,
+.shape-sample.shape-circle {
+  border-radius: 50%;
+}
+.board-glyph.shape-circle .board-image-icon {
+  border-radius: 50%;
+}
+.board-glyph.shape-rounded .board-image-icon {
+  border-radius: 9px;
+}
+.icon-shape-picker {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  margin: 0 0 22px;
+  background: #f3f5f8;
+  border-radius: 14px;
+}
+.icon-shape-picker button {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 10px 5px;
+  border-radius: 10px;
+  color: #667184;
+  font-size: 13px;
+}
+.icon-shape-picker button[aria-pressed='true'] {
+  background: white;
+  color: #27364b;
+  box-shadow: 0 1px 4px #25304014;
+}
+.shape-sample {
+  display: inline-block;
+  width: 19px;
+  height: 19px;
+  border: 1.5px solid currentColor;
+  border-radius: 5px;
+}
+.tone-picker {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+  justify-items: center;
+  padding-top: 18px;
+  border-top: 1px solid #eef0f4;
+}
+.tone-picker button {
+  width: 34px;
+  height: 34px;
+}
+.tone-picker button[aria-pressed='true'] {
+  outline: 2px solid #7e9bbd;
+  outline-offset: 3px;
+}
+.board-icon-upload {
+  background: #f8fafc;
+  border-color: #e4e9f1;
+  margin-bottom: 16px;
+  padding: 18px 12px;
+}

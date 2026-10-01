@@ -167,6 +167,13 @@ class Store {
    CREATE TABLE IF NOT EXISTS assets(id TEXT PRIMARY KEY,name TEXT NOT NULL,mime TEXT NOT NULL,width INTEGER NOT NULL,height INTEGER NOT NULL,bytes INTEGER NOT NULL);
    CREATE TABLE IF NOT EXISTS operations(boardId TEXT NOT NULL REFERENCES boards(id),id TEXT NOT NULL,revision INTEGER NOT NULL,signature TEXT NOT NULL,PRIMARY KEY(boardId,id));
    CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL); PRAGMA user_version=1;`);
+    if (
+      !this.db
+        .prepare('PRAGMA table_info(boards)')
+        .all()
+        .some((column) => column.name === 'iconShape')
+    )
+      this.db.exec("ALTER TABLE boards ADD COLUMN iconShape TEXT NOT NULL DEFAULT 'rounded'");
     const backup = path.join(root, 'backups', new Date().toISOString().slice(0, 10) + '.sqlite');
     if (!fs.existsSync(backup) && this.db.prepare('SELECT count(*) AS n FROM boards').get().n) {
       try {
@@ -280,9 +287,13 @@ class Store {
       b.icon = patch.icon;
     }
     if (patch.color !== undefined) {
-      if (!['blue', 'green', 'purple', 'orange', 'rose', 'gray'].includes(patch.color))
+      if (!['blue', 'green', 'purple', 'orange', 'rose', 'gray', 'yellow'].includes(patch.color))
         throw Error('Invalid color');
       b.color = patch.color;
+    }
+    if (patch.iconShape !== undefined) {
+      if (!['rounded', 'circle'].includes(patch.iconShape)) throw Error('Invalid icon shape');
+      b.iconShape = patch.iconShape;
     }
     if ('folderId' in patch) b.folderId = this.folderId(patch.folderId);
     if ('position' in patch) {
@@ -295,9 +306,19 @@ class Store {
     }
     this.db
       .prepare(
-        'UPDATE boards SET name=?,icon=?,color=?,folderId=?,position=?,trashed=?,updated=? WHERE id=?',
+        'UPDATE boards SET name=?,icon=?,color=?,iconShape=?,folderId=?,position=?,trashed=?,updated=? WHERE id=?',
       )
-      .run(b.name, b.icon, b.color, b.folderId, b.position, +b.trashed, Date.now(), id);
+      .run(
+        b.name,
+        b.icon,
+        b.color,
+        b.iconShape,
+        b.folderId,
+        b.position,
+        +b.trashed,
+        Date.now(),
+        id,
+      );
     return { ...b, camera: undefined };
   }
   restoreBoard({ id }) {
@@ -375,12 +396,12 @@ class Store {
           folderId: original.folderId,
         });
       this.db
-        .prepare('UPDATE boards SET icon=?,color=?,camera=? WHERE id=?')
-        .run(original.icon, original.color, original.camera, copy.id);
+        .prepare('UPDATE boards SET icon=?,color=?,iconShape=?,camera=? WHERE id=?')
+        .run(original.icon, original.color, original.iconShape, original.camera, copy.id);
       this.db
         .prepare('INSERT INTO objects SELECT ?,id,json FROM objects WHERE boardId=?')
         .run(copy.id, id);
-      return { ...copy, icon: original.icon, color: original.color };
+      return { ...copy, icon: original.icon, color: original.color, iconShape: original.iconShape };
     });
   }
   setLastBoard({ id }) {
@@ -527,6 +548,7 @@ class Store {
           name: d.board.name,
           icon: d.board.icon,
           color: d.board.color,
+          iconShape: d.board.iconShape,
           objects: d.objects,
           camera: d.camera,
           assets,
@@ -574,7 +596,7 @@ class Store {
     cameraValue(m.camera);
     if (
       !validIcon(m.icon || 'lightbulb') ||
-      !['blue', 'green', 'purple', 'orange', 'rose', 'gray'].includes(m.color || 'blue')
+      !['blue', 'green', 'purple', 'orange', 'rose', 'gray', 'yellow'].includes(m.color || 'blue')
     )
       throw Error('Invalid board metadata');
     const objects = m.objects.map(objectValue),
@@ -610,7 +632,11 @@ class Store {
       const b = this.createBoard({ name: m.name });
       this.updateBoard({
         id: b.id,
-        patch: { icon: m.icon || 'lightbulb', color: m.color || 'blue' },
+        patch: {
+          icon: m.icon || 'lightbulb',
+          color: m.color || 'blue',
+          iconShape: m.iconShape || 'rounded',
+        },
       });
       this.patchBoardInner(b.id, objects, m.camera);
       return this.board(b.id);
