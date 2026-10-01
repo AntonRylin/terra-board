@@ -9,6 +9,33 @@ import { unzipSync, zipSync, strFromU8, strToU8 } from 'fflate';
 const require = createRequire(import.meta.url);
 const { Store } = require('../electron/store.cjs');
 
+test('color-only and emoji board icons persist, duplicate and transfer', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'canvas-emoji-icons-'));
+  let source = new Store(join(root, 'source'));
+  const target = new Store(join(root, 'target'));
+  try {
+    const board = source.createBoard({ name: 'Emoji' });
+    for (const icon of ['none', 'emoji:🌿', 'emoji:👩🏽‍💻', 'emoji:🇦🇹', 'emoji:1️⃣']) {
+      source.updateBoard({ id: board.id, patch: { icon, color: 'green', iconShape: 'circle' } });
+      source.close();
+      source = new Store(join(root, 'source'));
+      assert.equal(source.board(board.id).icon, icon);
+      assert.equal(source.duplicateBoard({ id: board.id }).icon, icon);
+      const copy = await target.importBoard({ bytes: await source.exportBoard({ id: board.id }) });
+      assert.equal(copy.icon, icon);
+      assert.equal(copy.color, 'green');
+      assert.equal(copy.iconShape, 'circle');
+    }
+    for (const icon of ['emoji:', 'emoji:hello', 'emoji:🌿🌿', 'emoji:\n🌿']) {
+      assert.throws(() => source.updateBoard({ id: board.id, patch: { icon } }), /icon/i);
+    }
+  } finally {
+    source.close();
+    target.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('uploaded board icons survive reopen, duplication and transfer to a fresh library', async () => {
   const root = mkdtempSync(join(tmpdir(), 'canvas-icons-'));
   let source = new Store(join(root, 'source'));

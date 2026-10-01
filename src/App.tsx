@@ -29,6 +29,7 @@ import Launcher, { AppIcon } from './components/Launcher';
 import InlineName, { flushInlineNames } from './components/InlineName';
 import Whiteboard, { type WhiteboardHandle } from './components/Whiteboard';
 import BoardIconImage, { type BoardIconImageHandle } from './components/BoardIconImage';
+import BoardEmojiPicker from './components/BoardEmojiPicker';
 import { BoardGlyph, iconNames } from './components/Icon';
 import { Presence } from './components/Presence';
 import { ContextMenu, Modal, type MenuItem } from './components/Dialogs';
@@ -484,7 +485,13 @@ export default function App() {
           <header className="board-header">
             {doc && (
               <>
-                <span className={'board-glyph shape-' + (doc.board.iconShape || 'rounded')}>
+                <span
+                  className={
+                    'board-glyph shape-' +
+                    (doc.board.iconShape || 'rounded') +
+                    (doc.board.icon === 'none' ? ' app-icon ' + doc.board.color : '')
+                  }
+                >
                   <BoardGlyph name={doc.board.icon} size={34} />
                 </span>
                 <InlineName
@@ -636,6 +643,10 @@ export default function App() {
                         color={color}
                         shape={iconShape}
                         onBusy={setBusy}
+                        onClear={() => {
+                          iconImage.current?.clear();
+                          setGlyph('none');
+                        }}
                         initialFile={modal.iconFile}
                       />
                       <div className="icon-shape-picker" role="group" aria-label="Icon shape">
@@ -662,13 +673,21 @@ export default function App() {
                             disabled={busy}
                             onClick={() => {
                               iconImage.current?.clear();
-                              setGlyph(icon);
+                              setGlyph(glyph === icon ? 'none' : icon);
                             }}
                           >
                             <BoardGlyph name={icon} />
                           </button>
                         ))}
                       </div>
+                      <BoardEmojiPicker
+                        value={glyph}
+                        disabled={busy}
+                        onSelect={(icon) => {
+                          iconImage.current?.clear();
+                          setGlyph(glyph === icon ? 'none' : icon);
+                        }}
+                      />
                       <div className="tone-picker">
                         {['blue', 'green', 'purple', 'orange', 'rose', 'gray', 'yellow'].map(
                           (c) => (

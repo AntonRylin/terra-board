@@ -1384,6 +1384,59 @@ kbd {
 }
 .board-icon-upload .icon-preview {
   margin-bottom: 12px;
+  border: 0;
+  padding: 0;
+}
+.board-icon-upload .icon-preview:disabled {
+  opacity: 1;
+}
+.board-emoji {
+  display: inline-block;
+  font-family: 'Segoe UI Emoji', 'Apple Color Emoji', sans-serif;
+  line-height: 1;
+}
+.emoji-row {
+  margin-top: 12px;
+}
+.emoji-choice {
+  font-family: 'Segoe UI Emoji', 'Apple Color Emoji', sans-serif;
+  font-size: 23px;
+  line-height: 1;
+}
+.emoji-more {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #f8fafc;
+}
+.emoji-more-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  justify-items: center;
+  gap: 4px;
+  max-height: 170px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.emoji-custom {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+.modal .emoji-custom input {
+  margin: 0;
+  min-width: 0;
+  flex: 1;
+}
+.emoji-more p {
+  margin: 8px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.remove-icon-image {
+  margin-top: 10px;
 }
 .board-icon-upload p {
   margin: 8px 0 0;

@@ -8,7 +8,13 @@ const { zipSync, unzipSync, strToU8, strFromU8 } = require('fflate');
 const iconAssetId = (icon) =>
   typeof icon === 'string' && /^asset-[a-f0-9]{64}$/.test(icon) ? icon.slice(6) : null;
 const validIcon = (icon) =>
-  typeof icon === 'string' && (/^[a-z0-9-]{1,40}$/.test(icon) || !!iconAssetId(icon));
+  typeof icon === 'string' &&
+  (/^[a-z0-9-]{1,40}$/.test(icon) ||
+    !!iconAssetId(icon) ||
+    (icon.startsWith('emoji:') &&
+      icon.length <= 85 &&
+      graphemes(icon.slice(6)).length === 1 &&
+      /[\p{Extended_Pictographic}\p{Regional_Indicator}\u20e3]/u.test(icon.slice(6))));
 
 const MAX_PACKAGE = 512 * 1024 * 1024;
 const graphemes = (value) =>

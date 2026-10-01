@@ -113,7 +113,7 @@ function tools(call) {
   );
   add(
     'update_board',
-    'Rename, move, reorder, change icon or move a board to/from Trash. Uploaded icons use asset- followed by the image asset ID.',
+    'Rename, move, reorder, change icon or move a board to/from Trash. Icons: none for color only, emoji: followed by one emoji, or asset- followed by an image asset ID.',
     {
       id,
       patch: z

@@ -101,8 +101,7 @@ const server = createServer();
 await new Promise((r) => server.listen(0, '127.0.0.1', r));
 const port = server.address().port;
 await new Promise((r) => server.close(r));
-const executable =
-  process.env.CANVAS_EXECUTABLE || resolve('release/win-unpacked/Terra Board.exe');
+const executable = process.env.CANVAS_EXECUTABLE || resolve('release/win-unpacked/Terra Board.exe');
 const env = { ...process.env, CANVAS_DATA_DIR: root };
 delete env.ELECTRON_RUN_AS_NODE;
 delete env.CANVAS_DEV_URL;
@@ -215,6 +214,9 @@ const doubleClick = async (x, y) => {
   await sleep(100);
 };
 const clickSelector = async (selector) => {
+  await read(
+    `document.querySelector(${JSON.stringify(selector)})?.scrollIntoView({block:'nearest'})`,
+  );
   await sleep(100);
   const r = await rect(selector);
   assert.ok(r, selector);
@@ -371,6 +373,58 @@ try {
   await clickSelector('.icon-picker [aria-label="rocket"]');
   await clickSelector('.dialog-actions .primary');
   await until(async () => (await documentState()).board.icon === 'rocket', 'restore built-in icon');
+  await openIcon();
+  await clickSelector('.icon-picker [aria-label="rocket"]');
+  assert.equal(
+    await read(`document.querySelector('.icon-preview').children.length`),
+    0,
+    'selected icon toggles off',
+  );
+  await clickSelector('.tone-picker [aria-label="green"]');
+  await clickSelector('.dialog-actions .primary');
+  await until(async () => (await documentState()).board.icon === 'none', 'color-only icon saved');
+  assert.equal((await documentState()).board.color, 'green');
+  assert.equal(
+    await read(`document.querySelector('.board-glyph').children.length`),
+    0,
+    'header has no fallback glyph',
+  );
+  await openIcon();
+  await clickSelector('[aria-label="Use emoji 🌿"]');
+  await clickSelector('.dialog-actions .primary');
+  await until(async () => (await documentState()).board.icon === 'emoji:🌿', 'emoji saved');
+  assert.equal(await read(`document.querySelector('.board-glyph .board-emoji').textContent`), '🌿');
+  await openIcon();
+  await clickSelector('[aria-label="Use emoji 🌿"]');
+  assert.equal(
+    await read(`document.querySelector('.icon-preview').children.length`),
+    0,
+    'emoji toggles off',
+  );
+  await clickSelector('[aria-label="More emojis"]');
+  await clickSelector('[aria-label="Use emoji 🥰"]');
+  await clickSelector('[aria-label="Custom emoji"]');
+  await send('Input.insertText', { text: '👩🏽‍💻' });
+  await clickSelector('.emoji-custom button');
+  assert.equal(
+    await read(`document.querySelector('.icon-preview .board-emoji').textContent`),
+    '👩🏽‍💻',
+  );
+  await clickSelector('[aria-label="More emojis"]');
+  await read(`document.querySelector('.modal').scrollTop=0`);
+  writeFileSync(
+    join(root, 'emoji-picker.png'),
+    Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64'),
+  );
+  await clickSelector('.dialog-actions .primary');
+  await until(async () => (await documentState()).board.icon === 'emoji:👩🏽‍💻', 'custom emoji saved');
+  await openIcon();
+  await clickSelector('[aria-label="Remove selected icon"]');
+  await clickSelector('.dialog-actions .primary');
+  await until(
+    async () => (await documentState()).board.icon === 'none',
+    'preview removes selected emoji',
+  );
   await openIcon();
   await send('Page.enable');
   await send('Page.setInterceptFileChooserDialog', { enabled: true });

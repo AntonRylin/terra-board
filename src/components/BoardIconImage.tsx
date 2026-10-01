@@ -18,9 +18,10 @@ const BoardIconImage = forwardRef<
     color: string;
     shape: 'rounded' | 'circle';
     onBusy: (busy: boolean) => void;
+    onClear: () => void;
     initialFile?: File;
   }
->(({ value, color, shape, onBusy, initialFile }, ref) => {
+>(({ value, color, shape, onBusy, onClear, initialFile }, ref) => {
   const [image, setImage] = useState<HTMLImageElement | null>(null);
   const [zoom, setZoom] = useState(1);
   const [center, setCenter] = useState({ x: 0.5, y: 0.5 });
@@ -215,9 +216,15 @@ const BoardIconImage = forwardRef<
           <p>Drag to position. Save to use this crop.</p>
         </>
       ) : (
-        <div className={'icon-preview app-icon ' + color + ' shape-' + shape}>
+        <button
+          type="button"
+          className={'icon-preview app-icon ' + color + ' shape-' + shape}
+          aria-label={value === 'none' ? 'Color only icon' : 'Remove selected icon'}
+          disabled={loading || value === 'none'}
+          onClick={onClear}
+        >
           <BoardGlyph name={value} size={30} />
-        </div>
+        </button>
       )}
       <button
         type="button"
@@ -232,6 +239,20 @@ const BoardIconImage = forwardRef<
         {loading ? 'Loading image…' : image ? 'Choose another image' : 'Upload image'}
       </button>
       <p>{over ? 'Drop image here' : 'or drag an image here'}</p>
+      {image && (
+        <button
+          type="button"
+          className="button remove-icon-image"
+          disabled={loading}
+          onClick={() => {
+            setImage(null);
+            reset();
+            onClear();
+          }}
+        >
+          Remove image
+        </button>
+      )}
       {error && (
         <p className="icon-upload-error" role="alert">
           {error}
