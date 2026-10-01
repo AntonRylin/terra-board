@@ -8,6 +8,71 @@ import ts from 'typescript';
 const require = createRequire(import.meta.url);
 import { localToWorld } from '../src/canvas/transform.ts';
 
+test('all canvas object types snap during moves, clear guides on release, and undo once', () => {
+  for (const type of [
+    'image',
+    'text',
+    'note',
+    'rect',
+    'ellipse',
+    'frame',
+    'link',
+    'video',
+    'arrow',
+  ]) {
+    const f = fixture();
+    f.engine.camera = { x: 0, y: 0, zoom: 1 };
+    const moving = { id: 'moving', type, x: 20, y: 20, width: 100, height: 80, z: 1 };
+    const target = { ...moving, id: 'target', type: 'rect', x: 300, y: 300 };
+    f.engine.apply({ upserts: [moving, target], deleted: [] });
+    const startY = type === 'frame' ? 23 : 60;
+    f.engine.down(f.event(70, startY, 0));
+    f.engine.move(f.event(248, startY + 278, 0));
+    assert.equal(f.engine.objects.get('moving').x, 200, type);
+    assert.equal(f.engine.objects.get('moving').y, 300, type);
+    assert.ok(f.engine.snapGuides.length > 0, type);
+    f.engine.up(f.event(248, startY + 278, 0));
+    assert.equal(f.engine.snapGuides.length, 0, type);
+    f.engine.undo();
+    assert.equal(f.engine.objects.get('moving').x, 20, type);
+    assert.equal(f.engine.objects.get('moving').y, 20, type);
+  }
+});
+test('snap bypass and cancel restore free motion and clear guides', () => {
+  const f = fixture();
+  f.engine.camera = { x: 0, y: 0, zoom: 1 };
+  const moving = { id: 'moving', type: 'rect', x: 20, y: 20, width: 100, height: 80, z: 1 };
+  f.engine.apply({ upserts: [moving, { ...moving, id: 'target', x: 300, y: 300 }], deleted: [] });
+  f.engine.down(f.event(70, 60, 0));
+  f.engine.move(f.event(248, 338, 0));
+  f.engine.move({ ...f.event(248, 338, 0), altKey: true });
+  assert.equal(f.engine.objects.get('moving').x, 198);
+  assert.equal(f.engine.objects.get('moving').y, 298);
+  assert.equal(f.engine.snapGuides.length, 0);
+  f.engine.move(f.event(248, 338, 0));
+  assert.ok(f.engine.snapGuides.length);
+  f.engine.cancel();
+  assert.equal(f.engine.objects.get('moving').x, 20);
+  assert.equal(f.engine.snapGuides.length, 0);
+});
+test('moving frames snap as a whole and never snap against their carried children', () => {
+  const f = fixture();
+  f.engine.camera = { x: 0, y: 0, zoom: 1 };
+  const frame = { id: 'frame', type: 'frame', x: 20, y: 20, width: 200, height: 160, z: 0 };
+  const child = { id: 'child', type: 'note', x: 22, y: 50, width: 80, height: 60, z: 1 };
+  f.engine.apply({
+    upserts: [frame, child, { ...frame, id: 'target', x: 400, y: 300 }],
+    deleted: [],
+  });
+  f.engine.down(f.event(150, 23, 0));
+  f.engine.move(f.event(153, 23, 0));
+  assert.equal(f.engine.objects.get('frame').x, 23, 'moving child is not a target');
+  f.engine.move(f.event(328, 301, 0));
+  assert.equal(f.engine.objects.get('frame').x, 200);
+  assert.equal(f.engine.objects.get('child').x, 202);
+  assert.equal(f.engine.objects.get('child').y, 330);
+});
+
 test('YouTube play badge activates on one click while dragging still moves its card', () => {
   const f = fixture();
   f.engine.camera = { x: 0, y: 0, zoom: 1 };

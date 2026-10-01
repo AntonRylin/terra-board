@@ -7,6 +7,13 @@ import {
   arrowLabelPoint,
 } from './arrows';
 import { drawArrow } from './arrow-rendering';
+import {
+  snapMove,
+  snapTargets,
+  type SnapTargets,
+  type SnapState,
+  type SnapGuide,
+} from './snapping';
 // Pixi's interpreter adapters keep shader setup compatible with a strict CSP (no eval).
 import 'pixi.js/unsafe-eval';
 import { Application, Container, Graphics, Sprite, Rectangle, Texture } from 'pixi.js';
@@ -26,7 +33,13 @@ import {
   type Corner,
   type ResizeHandle,
 } from './resize';
-import { localToWorld, worldToLocal, rotationFromDrag, rotationHandlePoint } from './transform';
+import {
+  localToWorld,
+  worldToLocal,
+  rotationFromDrag,
+  rotationHandlePoint,
+  objectBounds,
+} from './transform';
 import { hitsFrameLabel, visualBounds, hasExternalLabel, arrowLabelObject } from './frame-label';
 import {
   youtubeId,
@@ -66,6 +79,7 @@ type Gesture = {
   corner?: ResizeHandle;
   editOnClick?: string;
   dragged?: boolean;
+  snap?: { bounds: Bounds; targets: SnapTargets; state: SnapState };
 };
 export class Engine {
   private loadingLinks = new Set<string>();
@@ -110,6 +124,7 @@ export class Engine {
   private index = new SpatialIndex(visualBounds);
   private world = new Container();
   private selectionLayer = new Graphics();
+  private snapGuides: SnapGuide[] = [];
   private views = new Map<string, { container: Container; signature: string }>();
   private textures: TextureCache;
   private observer: ResizeObserver;
@@ -386,6 +401,25 @@ export class Engine {
         }
       }
     }
+    if (this.gesture?.mode === 'move') {
+      const original = this.gesture.original,
+        moving = new Set(original.map((o) => o.id));
+      const c = this.camera,
+        margin = 100 / c.zoom;
+      const nearby = this.index.search({
+        x: -c.x / c.zoom - margin,
+        y: -c.y / c.zoom - margin,
+        width: this.host.clientWidth / c.zoom + margin * 2,
+        height: this.host.clientHeight / c.zoom + margin * 2,
+      });
+      const bounds = boundsOf(original);
+      if (bounds)
+        this.gesture.snap = {
+          bounds,
+          state: {},
+          targets: snapTargets(nearby.filter((o) => !moving.has(o.id)).map(objectBounds)),
+        };
+    }
     this.updateCursor();
     this.host.setPointerCapture(e.pointerId);
   };
@@ -423,8 +457,21 @@ export class Engine {
       this.camera = { ...g.camera, x: g.camera.x + dx, y: g.camera.y + dy };
       this.invalidate();
     } else if (g.mode === 'move') {
-      for (const o of g.original)
-        this.preview({ ...o, x: o.x + dx / this.camera.zoom, y: o.y + dy / this.camera.zoom });
+      let delta = { x: dx / this.camera.zoom, y: dy / this.camera.zoom };
+      if (g.snap) {
+        const result = snapMove(
+          g.snap.bounds,
+          delta,
+          g.snap.targets,
+          this.camera.zoom,
+          g.snap.state,
+          e.altKey || !moved,
+        );
+        delta = result.delta;
+        g.snap.state = result.state;
+        this.snapGuides = result.guides;
+      }
+      for (const o of g.original) this.preview({ ...o, x: o.x + delta.x, y: o.y + delta.y });
       this.invalidate();
     } else if (g.mode === 'rotate') {
       const o = g.original[0];
@@ -468,6 +515,7 @@ export class Engine {
   private up = (e: PointerEvent) => {
     const g = this.gesture;
     if (!g) return;
+    this.snapGuides = [];
     this.gesture = null;
     this.updateCursor();
     if (g.mode === 'drawArrow') {
@@ -508,6 +556,7 @@ export class Engine {
   };
   private cancel = () => {
     const g = this.gesture;
+    this.snapGuides = [];
     this.gesture = null;
     this.updateCursor();
     if (g) {
@@ -1286,6 +1335,23 @@ export class Engine {
   private drawSelection() {
     const g = this.selectionLayer;
     g.clear();
+    // Screen-space dashes keep guides fine and readable at every canvas zoom.
+    for (const guide of this.snapGuides) {
+      const vertical = guide.axis === 'x',
+        c = this.camera;
+      const at = guide.at * c.zoom + (vertical ? c.x : c.y);
+      const from = Math.max(0, guide.from * c.zoom + (vertical ? c.y : c.x) - 12);
+      const to = Math.min(
+        vertical ? this.host.clientHeight : this.host.clientWidth,
+        guide.to * c.zoom + (vertical ? c.y : c.x) + 12,
+      );
+      for (let p = from; p < to; p += 8) {
+        const end = Math.min(p + 4, to);
+        if (vertical) g.moveTo(at, p).lineTo(at, end);
+        else g.moveTo(p, at).lineTo(end, at);
+      }
+    }
+    if (this.snapGuides.length) g.stroke({ color: '#568cff', width: 1, alpha: 0.9 });
     const c = this.camera,
       b = boundsOf(this.editingPreview ? [this.editingPreview] : this.selected);
     let toolbarBounds = b

@@ -747,6 +747,7 @@ export default function App() {
                     ['Group / ungroup', 'Ctrl G / Ctrl Shift G'],
                     ['Search your boards', 'Ctrl K'],
                     ['Pan around', 'Right-drag · Space + drag'],
+                    ['Move without snapping', 'Alt + drag'],
                     ['Zoom toward pointer', 'Mouse wheel'],
                     ['Fit your board', '0'],
                     ['Draw an arrow', 'A + drag'],

@@ -276,3 +276,8 @@ Native backup restoration, automatic asset cleanup, richer content types and fra
 - `npm test`: 123 passing; production build and packaging passed.
 - Focused packaged font-slider check passed in `.local-test/desktop-input-DOFpSI`: actual pointer drag from 18 to 54, saved updates before pointer release, one-step undo/redo, unchanged label text and persisted size after close. No renderer exceptions. The reusable font-slider steps are in `scripts/desktop-interactions.mjs`; the entire broad desktop suite was not rerun for this change.
 - Inspected `arrow-font-slider.png`: rounded text input, size readout and slider; the complete larger label renders without the old fixed-width clipping.
+
+### 2026-10-01: dynamic alignment guides
+- `npm test`: 129 passing; production build and packaging passed. Pure geometry tests cover edge/center alignment, independent axes, zoom-invariant thresholds, release/bypass, empty targets and merged coincident anchors. Engine tests cover all object types, frame contents, undo and guide cleanup.
+- `node scripts/desktop-snapping.mjs` passed in `.local-test/desktop-input-lN8o4F` with no renderer exceptions. Real pointer input aligned images and text, checked guide pixels across the image gap and their disappearance on release, then verified Alt bypass, undo/redo, Escape and saved placement after close.
+- Inspected `image-alignment-during-drag.png` and `text-alignment-during-drag.png`. Early assertions were corrected for screenshot antialiasing and floating-point coordinate tolerance; no production behavior was changed to satisfy those assertion corrections.
