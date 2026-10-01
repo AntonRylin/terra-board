@@ -7,8 +7,10 @@
     <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="22"/></filter>
   </defs>
   <rect x="44" y="44" width="936" height="936" rx="220" fill="url(#bg)"/>
-  <circle cx="512" cy="512" r="262" fill="none" stroke="url(#blue)" stroke-width="60"/>
-  <circle cx="512" cy="512" r="150" fill="#3f6aa8" opacity="0.28" filter="url(#shadow)" transform="translate(0 24)"/>
-  <circle cx="512" cy="512" r="150" fill="url(#white)"/>
-  <circle cx="713" cy="344" r="74" fill="url(#sage)" stroke="#dbe8fa" stroke-width="28"/>
+  <g transform="translate(512 512) scale(1.2) translate(-512 -512)">
+    <circle cx="512" cy="512" r="262" fill="none" stroke="url(#blue)" stroke-width="60"/>
+    <circle cx="512" cy="512" r="150" fill="#3f6aa8" opacity="0.28" filter="url(#shadow)" transform="translate(0 24)"/>
+    <circle cx="512" cy="512" r="150" fill="url(#white)"/>
+    <circle cx="713" cy="344" r="74" fill="url(#sage)" stroke="#dbe8fa" stroke-width="28"/>
+  </g>
 </svg>
