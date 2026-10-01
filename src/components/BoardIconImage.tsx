@@ -19,9 +19,11 @@ const BoardIconImage = forwardRef<
     shape: 'rounded' | 'circle';
     onBusy: (busy: boolean) => void;
     onClear: () => void;
+    boardName: string;
+    showInitial: boolean;
     initialFile?: File;
   }
->(({ value, color, shape, onBusy, onClear, initialFile }, ref) => {
+>(({ value, color, shape, onBusy, onClear, boardName, showInitial, initialFile }, ref) => {
   const [image, setImage] = useState<HTMLImageElement | null>(null);
   const [zoom, setZoom] = useState(1);
   const [center, setCenter] = useState({ x: 0.5, y: 0.5 });
@@ -223,7 +225,7 @@ const BoardIconImage = forwardRef<
           disabled={loading || value === 'none'}
           onClick={onClear}
         >
-          <BoardGlyph name={value} size={30} />
+          <BoardGlyph name={value} size={30} boardName={boardName} showInitial={showInitial} />
         </button>
       )}
       <button

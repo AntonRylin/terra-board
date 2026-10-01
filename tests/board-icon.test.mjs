@@ -9,6 +9,42 @@ import { unzipSync, zipSync, strFromU8, strToU8 } from 'fflate';
 const require = createRequire(import.meta.url);
 const { Store } = require('../electron/store.cjs');
 
+test('initial visibility defaults on and survives edits, duplication, reopen and transfer', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'canvas-initials-'));
+  let source = new Store(join(root, 'source'));
+  const target = new Store(join(root, 'target'));
+  try {
+    const board = source.createBoard({ name: 'alpha' });
+    assert.equal(board.icon, 'none');
+    assert.equal(board.showInitial, true);
+    source.updateBoard({ id: board.id, patch: { showInitial: false, iconShape: 'circle' } });
+    assert.equal(source.library().boards[0].showInitial, false);
+    assert.equal(source.library().boards[0].iconShape, 'circle');
+    assert.equal(source.duplicateBoard({ id: board.id }).showInitial, false);
+    source.close();
+    source = new Store(join(root, 'source'));
+    assert.equal(source.board(board.id).showInitial, false);
+    const imported = await target.importBoard({
+      bytes: await source.exportBoard({ id: board.id }),
+    });
+    assert.equal(imported.showInitial, false);
+    assert.throws(
+      () => source.updateBoard({ id: board.id, patch: { showInitial: 'false' } }),
+      /visibility/,
+    );
+    // Simulate a library created before the setting existed.
+    source.db.exec('ALTER TABLE boards DROP COLUMN showInitial');
+    source.close();
+    source = new Store(join(root, 'source'));
+    assert.equal(source.board(board.id).showInitial, true);
+    assert.equal(source.board(board.id).iconShape, 'circle');
+  } finally {
+    source.close();
+    target.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('color-only and emoji board icons persist, duplicate and transfer', async () => {
   const root = mkdtempSync(join(tmpdir(), 'canvas-emoji-icons-'));
   let source = new Store(join(root, 'source'));

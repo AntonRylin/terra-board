@@ -225,6 +225,13 @@ class Store {
         .some((column) => column.name === 'iconShape')
     )
       this.db.exec("ALTER TABLE boards ADD COLUMN iconShape TEXT NOT NULL DEFAULT 'rounded'");
+    if (
+      !this.db
+        .prepare('PRAGMA table_info(boards)')
+        .all()
+        .some((column) => column.name === 'showInitial')
+    )
+      this.db.exec('ALTER TABLE boards ADD COLUMN showInitial INTEGER NOT NULL DEFAULT 1');
     const backup = path.join(root, 'backups', new Date().toISOString().slice(0, 10) + '.sqlite');
     if (!fs.existsSync(backup) && this.db.prepare('SELECT count(*) AS n FROM boards').get().n) {
       try {
@@ -255,10 +262,10 @@ class Store {
     return {
       boards: this.db
         .prepare(
-          'SELECT id,name,icon,color,folderId,position,trashed,updated FROM boards ORDER BY position',
+          'SELECT id,name,icon,color,iconShape,showInitial,folderId,position,trashed,updated FROM boards ORDER BY position',
         )
         .all()
-        .map((b) => ({ ...b, trashed: !!b.trashed })),
+        .map((b) => ({ ...b, trashed: !!b.trashed, showInitial: !!b.showInitial })),
       folders: this.db.prepare('SELECT * FROM folders ORDER BY position').all(),
       lastBoard:
         this.db.prepare("SELECT value FROM settings WHERE key='lastBoard'").get()?.value || null,
@@ -268,7 +275,7 @@ class Store {
   board(id) {
     const b = this.db.prepare('SELECT * FROM boards WHERE id=?').get(idValue(id));
     if (!b) throw Error('Board not found');
-    return { ...b, trashed: !!b.trashed };
+    return { ...b, trashed: !!b.trashed, showInitial: !!b.showInitial };
   }
   position() {
     return (
@@ -289,7 +296,8 @@ class Store {
     const b = {
       id: randomUUID(),
       name: nameValue(name),
-      icon: 'lightbulb',
+      icon: 'none',
+      showInitial: true,
       color: 'blue',
       folderId: this.folderId(folderId),
       position: this.position(),
@@ -346,6 +354,10 @@ class Store {
       if (!['rounded', 'circle'].includes(patch.iconShape)) throw Error('Invalid icon shape');
       b.iconShape = patch.iconShape;
     }
+    if (patch.showInitial !== undefined) {
+      if (typeof patch.showInitial !== 'boolean') throw Error('Invalid initial visibility');
+      b.showInitial = patch.showInitial;
+    }
     if ('folderId' in patch) b.folderId = this.folderId(patch.folderId);
     if ('position' in patch) {
       if (!number(patch.position)) throw Error('Invalid order');
@@ -357,13 +369,14 @@ class Store {
     }
     this.db
       .prepare(
-        'UPDATE boards SET name=?,icon=?,color=?,iconShape=?,folderId=?,position=?,trashed=?,updated=? WHERE id=?',
+        'UPDATE boards SET name=?,icon=?,color=?,iconShape=?,showInitial=?,folderId=?,position=?,trashed=?,updated=? WHERE id=?',
       )
       .run(
         b.name,
         b.icon,
         b.color,
         b.iconShape,
+        +b.showInitial,
         b.folderId,
         b.position,
         +b.trashed,
@@ -447,12 +460,25 @@ class Store {
           folderId: original.folderId,
         });
       this.db
-        .prepare('UPDATE boards SET icon=?,color=?,iconShape=?,camera=? WHERE id=?')
-        .run(original.icon, original.color, original.iconShape, original.camera, copy.id);
+        .prepare('UPDATE boards SET icon=?,color=?,iconShape=?,showInitial=?,camera=? WHERE id=?')
+        .run(
+          original.icon,
+          original.color,
+          original.iconShape,
+          +original.showInitial,
+          original.camera,
+          copy.id,
+        );
       this.db
         .prepare('INSERT INTO objects SELECT ?,id,json FROM objects WHERE boardId=?')
         .run(copy.id, id);
-      return { ...copy, icon: original.icon, color: original.color, iconShape: original.iconShape };
+      return {
+        ...copy,
+        icon: original.icon,
+        color: original.color,
+        iconShape: original.iconShape,
+        showInitial: original.showInitial,
+      };
     });
   }
   setLastBoard({ id }) {
@@ -600,6 +626,7 @@ class Store {
           icon: d.board.icon,
           color: d.board.color,
           iconShape: d.board.iconShape,
+          showInitial: d.board.showInitial,
           objects: d.objects,
           camera: d.camera,
           assets,
@@ -687,6 +714,7 @@ class Store {
           icon: m.icon || 'lightbulb',
           color: m.color || 'blue',
           iconShape: m.iconShape || 'rounded',
+          showInitial: m.showInitial ?? true,
         },
       });
       this.patchBoardInner(b.id, objects, m.camera);

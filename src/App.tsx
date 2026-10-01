@@ -30,7 +30,8 @@ import InlineName, { flushInlineNames } from './components/InlineName';
 import Whiteboard, { type WhiteboardHandle } from './components/Whiteboard';
 import BoardIconImage, { type BoardIconImageHandle } from './components/BoardIconImage';
 import BoardEmojiPicker from './components/BoardEmojiPicker';
-import { BoardGlyph, iconNames } from './components/Icon';
+import { BoardGlyph } from './components/Icon';
+import BoardSymbolPicker from './components/BoardSymbolPicker';
 import { Presence } from './components/Presence';
 import { ContextMenu, Modal, type MenuItem } from './components/Dialogs';
 import { readDockEdge } from './components/useLauncherDock';
@@ -63,6 +64,7 @@ export default function App() {
     [glyph, setGlyph] = useState('lightbulb'),
     [color, setColor] = useState('blue'),
     [iconShape, setIconShape] = useState<'rounded' | 'circle'>('rounded'),
+    [showInitial, setShowInitial] = useState(true),
     [destination, setDestination] = useState(''),
     [search, setSearch] = useState(''),
     [saveState, setSaveState] = useState<SaveState>('saved'),
@@ -303,6 +305,7 @@ export default function App() {
             setGlyph(b.icon);
             setColor(b.color);
             setIconShape(b.iconShape || 'rounded');
+            setShowInitial(b.showInitial !== false);
             ask({ kind: 'icon', id: b.id });
           },
         },
@@ -414,6 +417,7 @@ export default function App() {
           icon: (await iconImage.current?.save()) || glyph,
           color,
           iconShape,
+          showInitial,
         });
       else if (modal.kind === 'move') await change(modal.id!, { folderId: destination || null });
       setModal(null);
@@ -462,6 +466,7 @@ export default function App() {
             setGlyph(board.icon);
             setColor(board.color);
             setIconShape(board.iconShape || 'rounded');
+            setShowInitial(board.showInitial !== false);
             ask({ kind: 'icon', id: board.id, iconFile: file });
           }}
           onFolderMenu={folderMenu}
@@ -492,7 +497,12 @@ export default function App() {
                     (doc.board.icon === 'none' ? ' app-icon ' + doc.board.color : '')
                   }
                 >
-                  <BoardGlyph name={doc.board.icon} size={34} />
+                  <BoardGlyph
+                    name={doc.board.icon}
+                    size={34}
+                    boardName={doc.board.name}
+                    showInitial={doc.board.showInitial !== false}
+                  />
                 </span>
                 <InlineName
                   key={doc.board.id}
@@ -642,6 +652,8 @@ export default function App() {
                         value={glyph}
                         color={color}
                         shape={iconShape}
+                        boardName={library.boards.find((b) => b.id === modal.id)?.name || ''}
+                        showInitial={showInitial}
                         onBusy={setBusy}
                         onClear={() => {
                           iconImage.current?.clear();
@@ -662,24 +674,14 @@ export default function App() {
                           </button>
                         ))}
                       </div>
-                      <div className="icon-picker">
-                        {iconNames.map((icon) => (
-                          <button
-                            type="button"
-                            className="icon-button"
-                            key={icon}
-                            aria-label={icon}
-                            aria-pressed={glyph === icon}
-                            disabled={busy}
-                            onClick={() => {
-                              iconImage.current?.clear();
-                              setGlyph(glyph === icon ? 'none' : icon);
-                            }}
-                          >
-                            <BoardGlyph name={icon} />
-                          </button>
-                        ))}
-                      </div>
+                      <BoardSymbolPicker
+                        value={glyph}
+                        disabled={busy}
+                        onSelect={(icon) => {
+                          iconImage.current?.clear();
+                          setGlyph(glyph === icon ? 'none' : icon);
+                        }}
+                      />
                       <BoardEmojiPicker
                         value={glyph}
                         disabled={busy}
@@ -703,6 +705,19 @@ export default function App() {
                             </button>
                           ),
                         )}
+                      </div>
+                      <div className="initial-setting">
+                        <span>Show first letter</span>
+                        <button
+                          type="button"
+                          className="mcp-switch"
+                          role="switch"
+                          aria-label="Show first letter"
+                          aria-checked={showInitial}
+                          onClick={() => setShowInitial(!showInitial)}
+                        >
+                          <span />
+                        </button>
                       </div>
                     </>
                   ) : modal.kind === 'move' ? (

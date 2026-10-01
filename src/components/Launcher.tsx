@@ -9,7 +9,11 @@ import { useLauncherReorder } from './useLauncherReorder';
 export function AppIcon({ board }: { board: Board }) {
   return (
     <span className={'app-icon ' + board.color + ' shape-' + (board.iconShape || 'rounded')}>
-      <BoardGlyph name={board.icon} />
+      <BoardGlyph
+        name={board.icon}
+        boardName={board.name}
+        showInitial={board.showInitial !== false}
+      />
     </span>
   );
 }

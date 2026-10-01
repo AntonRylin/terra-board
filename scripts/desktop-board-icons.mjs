@@ -279,6 +279,31 @@ try {
     `window.inputLog=[];document.addEventListener('dblclick',e=>inputLog.push({target:e.target.className||e.target.tagName,trusted:e.isTrusted}),true);`,
   );
   const initial = await documentState();
+  assert.equal(initial.board.showInitial, true);
+  assert.equal(
+    await read(`document.querySelector('.board-glyph .board-initial')?.textContent`),
+    'D',
+    'new boards show uppercase initial',
+  );
+  await clickSelector('.board-title');
+  await key('a', 'KeyA', 2);
+  await send('Input.insertText', { text: 'alpha' });
+  await key('Enter', 'Enter');
+  await until(
+    () => read(`document.querySelector('.board-glyph .board-initial')?.textContent === 'A'`),
+    'renaming updates the initial',
+  );
+  await clickSelector('.board-title');
+  await key('a', 'KeyA', 2);
+  await send('Input.insertText', { text: 'Desktop input verification' });
+  await key('Enter', 'Enter');
+  await until(
+    () =>
+      read(
+        `!!document.querySelector('[aria-label="Open board Desktop input verification"]') && document.querySelector('.board-title')?.getAttribute('aria-busy') === 'false'`,
+      ),
+    'original name saved and panel refreshed',
+  );
   const openIcon = async () => {
     const r = await rect('[aria-label="Open board Desktop input verification"]');
     await click(r.x + r.width / 2, r.y + r.height / 2, 'right');
@@ -370,11 +395,33 @@ try {
   await until(() => read(`!document.querySelector('.modal')`), 'cancel closes dialog');
   assert.equal((await documentState()).board.icon, saved.board.icon, 'cancel preserves icon');
   await openIcon();
-  await clickSelector('.icon-picker [aria-label="rocket"]');
+  assert.equal(
+    await read(`document.querySelector('.symbol-row').children.length`),
+    5,
+    'one icon row including More',
+  );
+  await clickSelector('[aria-label="More icons"]');
+  assert.equal(await read(`document.querySelectorAll('.symbol-gallery button').length > 50`), true);
+  await key('Escape', 'Escape');
+  assert.equal(
+    await read(`!document.querySelector('.symbol-panel') && !!document.querySelector('.modal')`),
+    true,
+  );
+  await clickSelector('[aria-label="More icons"]');
+  writeFileSync(
+    join(root, 'symbol-picker.png'),
+    Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64'),
+  );
+  await clickSelector('.symbol-gallery [aria-label="rocket"]');
   await clickSelector('.dialog-actions .primary');
   await until(async () => (await documentState()).board.icon === 'rocket', 'restore built-in icon');
   await openIcon();
   await clickSelector('.icon-picker [aria-label="rocket"]');
+  assert.equal(
+    await read(`document.querySelector('.icon-preview .board-initial')?.textContent`),
+    'D',
+  );
+  await clickSelector('[aria-label="Show first letter"]');
   assert.equal(
     await read(`document.querySelector('.icon-preview').children.length`),
     0,
@@ -384,12 +431,20 @@ try {
   await clickSelector('.dialog-actions .primary');
   await until(async () => (await documentState()).board.icon === 'none', 'color-only icon saved');
   assert.equal((await documentState()).board.color, 'green');
+  assert.equal((await documentState()).board.showInitial, false);
   assert.equal(
     await read(`document.querySelector('.board-glyph').children.length`),
     0,
     'header has no fallback glyph',
   );
   await openIcon();
+  assert.equal(
+    await read(
+      `document.querySelector('[aria-label="Show first letter"]').getAttribute('aria-checked')`,
+    ),
+    'false',
+    'switch persists after reopening',
+  );
   await clickSelector('[aria-label="Use emoji 🌿"]');
   await clickSelector('.dialog-actions .primary');
   await until(async () => (await documentState()).board.icon === 'emoji:🌿', 'emoji saved');

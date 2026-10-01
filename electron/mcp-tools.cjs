@@ -122,6 +122,7 @@ function tools(call) {
           icon: z.string().optional(),
           color: z.enum(['blue', 'green', 'purple', 'orange', 'rose', 'gray', 'yellow']).optional(),
           iconShape: z.enum(['circle', 'rounded']).optional(),
+          showInitial: z.boolean().optional(),
           folderId: id.nullable().optional(),
           position: number.optional(),
           trashed: z.boolean().optional(),
