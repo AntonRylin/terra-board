@@ -5,7 +5,12 @@ import fs from 'node:fs';
 const require = createRequire(import.meta.url);
 export default defineConfig({
   base: './',
-  server: { host: '127.0.0.1', port: 5173, strictPort: true },
+  server: {
+    host: '127.0.0.1',
+    port: 5173,
+    strictPort: true,
+    watch: { ignored: ['**/.local-test/**', '**/Library/**', '**/release/**'] },
+  },
   plugins: [
     {
       name: 'local-development-library',
@@ -36,7 +41,7 @@ export default defineConfig({
             const url = new URL(req.url || '/', 'http://127.0.0.1:5173');
             if (url.pathname.startsWith('/asset/')) {
               const [, , id, variant] = url.pathname.split('/');
-              const a = store.asset({ id, variant });
+              const a = await store.readAsset({ id, variant });
               res.setHeader('Content-Type', a.contentType);
               fs.createReadStream(a.file).pipe(res);
               return;

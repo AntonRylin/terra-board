@@ -270,6 +270,26 @@ p {
 .board-title:hover {
   color: var(--accent);
 }
+.inline-name {
+  display: inline-block;
+  min-width: 1ch;
+  cursor: text;
+  outline: none;
+}
+.inline-name[contenteditable='plaintext-only'] {
+  user-select: text;
+  text-overflow: clip;
+  white-space: pre;
+  box-shadow: inset 0 -1px #77a7e2;
+}
+.inline-name[aria-invalid='true'] {
+  box-shadow: inset 0 -1px #b94e45;
+}
+.folder-board-open,
+.search-result-open {
+  background: transparent;
+  padding: 0;
+}
 .board-options {
   margin-left: auto;
 }
@@ -630,7 +650,7 @@ p {
   max-height: 400px;
   overflow: auto;
 }
-.search-results > button {
+.search-results > .search-result {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -640,7 +660,7 @@ p {
   text-align: left;
   border-radius: 9px;
 }
-.search-results > button:hover {
+.search-results > .search-result:hover {
   background: var(--panel);
 }
 .search-results .app-icon {
@@ -771,9 +791,8 @@ kbd {
 }
 .selection-tools {
   position: absolute;
-  top: 12px;
-  left: 50%;
-  transform: translateX(-50%);
+  z-index: 12;
+  visibility: hidden;
   display: flex;
   align-items: center;
   gap: 3px;
@@ -795,18 +814,22 @@ kbd {
   border-radius: 50%;
   border: 1px solid #dce1e8;
 }
-.text-editor {
+.text-editor,
+.text-editor:focus-visible {
   position: absolute;
-  border: 1px solid #4486d9;
-  border-radius: 2px;
+  border: 0;
+  border-radius: 0;
+  outline: none;
+  box-shadow: none;
+  padding: 0;
+  margin: 0;
+  background: transparent;
   resize: none;
-  line-height: 1.45;
-  overflow: auto;
+  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
   z-index: 8;
-  font-family: 'Segoe UI', sans-serif;
-}
-.note-editor {
-  font-family: 'Segoe Print', 'Segoe UI', sans-serif;
+  cursor: text;
 }
 .video-player {
   display: block;
@@ -814,6 +837,113 @@ kbd {
   max-height: 70vh;
   background: #121820;
   border-radius: 8px;
+}
+.crop-overlay {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  z-index: 30;
+  outline: none;
+  touch-action: none;
+}
+.crop-window {
+  position: absolute;
+  border: 1.5px solid #ffffff;
+  outline: 1px solid rgba(32, 48, 72, 0.65);
+  box-shadow: 0 0 0 100vmax rgba(21, 30, 43, 0.42);
+  cursor: move;
+}
+.crop-grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(
+      to right,
+      transparent 33.15%,
+      #ffffff66 33.15%,
+      #ffffff66 33.45%,
+      transparent 33.45%,
+      transparent 66.5%,
+      #ffffff66 66.5%,
+      #ffffff66 66.8%,
+      transparent 66.8%
+    ),
+    linear-gradient(
+      to bottom,
+      transparent 33.15%,
+      #ffffff66 33.15%,
+      #ffffff66 33.45%,
+      transparent 33.45%,
+      transparent 66.5%,
+      #ffffff66 66.5%,
+      #ffffff66 66.8%,
+      transparent 66.8%
+    );
+}
+.crop-handle {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  transform: translate(-50%, -50%);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.crop-handle::after {
+  content: '';
+  display: block;
+  margin: 5px;
+  width: 10px;
+  height: 10px;
+  background: white;
+  border: 1px solid #526173;
+  border-radius: 2px;
+}
+.crop-nw,
+.crop-se {
+  cursor: nwse-resize;
+}
+.crop-ne,
+.crop-sw {
+  cursor: nesw-resize;
+}
+.crop-n,
+.crop-s {
+  cursor: ns-resize;
+}
+.crop-e,
+.crop-w {
+  cursor: ew-resize;
+}
+.crop-toolbar {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  transform: translateX(-50%);
+  border: 1px solid #e4e9ef;
+  border-radius: 13px;
+  background: #ffffff;
+  box-shadow: 0 8px 28px #1c2c4426;
+  white-space: nowrap;
+}
+.crop-toolbar .button {
+  padding: 8px 10px;
+}
+.crop-hint {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #273342e6;
+  color: white;
+  font-size: 12px;
+  padding: 7px 12px;
+  border-radius: 8px;
+  pointer-events: none;
 }
 @keyframes spin {
   to {
@@ -863,9 +993,6 @@ kbd {
   }
   .canvas-zoom {
     bottom: 100px;
-  }
-  .selection-tools {
-    top: 6px;
   }
   .color-options {
     gap: 3px;
@@ -929,7 +1056,7 @@ kbd {
 .launch-item:active .app-icon {
   transform: scale(0.91);
 }
-.folder-board:active {
+.folder-board-open:active {
   transform: scale(0.95);
 }
 .color-options button:hover {

@@ -1,5 +1,11 @@
 export type ObjectType =
   'text' | 'note' | 'rect' | 'ellipse' | 'frame' | 'image' | 'video' | 'link';
+export interface ImageCrop {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
 export interface CanvasObject {
   id: string;
   type: ObjectType;
@@ -11,8 +17,11 @@ export interface CanvasObject {
   text?: string;
   color?: string;
   fontSize?: number;
+  centerX?: boolean;
+  centerY?: boolean;
   groupId?: string;
   assetId?: string;
+  crop?: ImageCrop;
   url?: string;
 }
 export interface Camera {

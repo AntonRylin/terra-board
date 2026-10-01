@@ -24,6 +24,7 @@ import type { Board, Document, Folder, Library } from './model';
 import { desktop, exportPortable, importPortable, invoke } from './bridge';
 import type { SaveState } from './canvas/save-queue';
 import Launcher, { AppIcon } from './components/Launcher';
+import InlineName, { flushInlineNames } from './components/InlineName';
 import Whiteboard, { type WhiteboardHandle } from './components/Whiteboard';
 import { BoardGlyph, iconNames } from './components/Icon';
 import { Presence } from './components/Presence';
@@ -58,6 +59,11 @@ export default function App() {
     [notice, setNotice] = useState(''),
     [busy, setBusy] = useState(false),
     [loading, setLoading] = useState(true);
+  const [renameRequest, setRenameRequest] = useState<{
+    kind: 'board' | 'folder';
+    id: string;
+    token: number;
+  } | null>(null);
   const whiteboard = useRef<WhiteboardHandle>(null),
     request = useRef(0),
     noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -84,6 +90,7 @@ export default function App() {
   const openBoard = async (id: string) => {
     const n = ++request.current;
     try {
+      await flushInlineNames();
       await whiteboard.current?.flush();
       if (n !== request.current) return;
       const d = await invoke<Document>('loadBoard', { id });
@@ -121,6 +128,7 @@ export default function App() {
   useEffect(() => {
     const cleanup = window.canvas?.onClose(async () => {
       try {
+        await flushInlineNames();
         await whiteboard.current?.flush();
         window.canvas!.closeReady();
       } catch (e) {
@@ -148,6 +156,21 @@ export default function App() {
     await invoke('updateBoard', { id, patch });
     const l = await refresh();
     setDoc((d) => (d?.board.id === id ? { ...d, board: l.boards.find((b) => b.id === id)! } : d));
+  };
+  const renameFolder = async (id: string, name: string) => {
+    await invoke('updateFolder', { id, patch: { name } });
+    await refresh();
+  };
+  const beginRename = (kind: 'board' | 'folder', id: string) => {
+    setMenu(null);
+    if (kind === 'folder') {
+      setOpened(id);
+      setRenameRequest({ kind, id, token: performance.now() });
+    } else
+      run(async () => {
+        if (doc?.board.id !== id) await openBoard(id);
+        setRenameRequest({ kind, id, token: performance.now() });
+      });
   };
   const exportBoard = (id: string) =>
     run(async () => {
@@ -199,7 +222,7 @@ export default function App() {
         {
           label: 'Rename',
           icon: <Pencil />,
-          action: () => ask({ kind: 'rename-board', id: b.id }, b.name),
+          action: () => beginRename('board', b.id),
         },
         {
           label: 'Change icon',
@@ -233,7 +256,7 @@ export default function App() {
         {
           label: 'Rename folder',
           icon: <Pencil />,
-          action: () => ask({ kind: 'rename-folder', id: f.id }, f.name),
+          action: () => beginRename('folder', f.id),
         },
         {
           label: 'New board',
@@ -346,6 +369,9 @@ export default function App() {
         onOptions={libraryMenu}
         onBoardMenu={boardMenu}
         onFolderMenu={folderMenu}
+        onRenameBoard={(id, name) => change(id, { name })}
+        onRenameFolder={renameFolder}
+        renameFolderRequest={renameRequest?.kind === 'folder' ? renameRequest : null}
         onMove={(id, folderId, position) =>
           run(async () => {
             await change(id, { folderId, ...(position === undefined ? {} : { position }) });
@@ -366,13 +392,18 @@ export default function App() {
               <span className="board-glyph">
                 <BoardGlyph name={doc.board.icon} size={17} />
               </span>
-              <button
+              <InlineName
+                key={doc.board.id}
                 className="board-title"
-                title="Rename board"
-                onClick={() => ask({ kind: 'rename-board', id: doc.board.id }, doc.board.name)}
-              >
-                {doc.board.name}
-              </button>
+                label="Board name"
+                value={doc.board.name}
+                editRequest={
+                  renameRequest?.kind === 'board' && renameRequest.id === doc.board.id
+                    ? renameRequest.token
+                    : 0
+                }
+                onCommit={(name) => change(doc.board.id, { name })}
+              />
               <button
                 className={'save-indicator ' + saveState}
                 title={
@@ -577,21 +608,37 @@ export default function App() {
                       (b) => !b.trashed && b.name.toLowerCase().includes(search.toLowerCase()),
                     )
                     .map((b) => (
-                      <button
+                      <div
                         key={b.id}
+                        className="search-result"
+                        data-item={b.id}
                         onClick={() => {
                           setModal(null);
                           openBoard(b.id);
                         }}
                       >
-                        <AppIcon board={b} />
+                        <button className="search-result-open" aria-label={'Open board ' + b.name}>
+                          <AppIcon board={b} />
+                        </button>
                         <span>
-                          {b.name}
+                          <InlineName
+                            value={b.name}
+                            label={'Board name in search: ' + b.name}
+                            onCommit={(name) => change(b.id, { name })}
+                          />
                           <small>
-                            {library.folders.find((f) => f.id === b.folderId)?.name || 'Icon strip'}
+                            {b.folderId && library.folders.find((f) => f.id === b.folderId) ? (
+                              <InlineName
+                                value={library.folders.find((f) => f.id === b.folderId)!.name}
+                                label="Folder name in search"
+                                onCommit={(name) => renameFolder(b.folderId!, name)}
+                              />
+                            ) : (
+                              'Icon strip'
+                            )}
                           </small>
                         </span>
-                      </button>
+                      </div>
                     ))}
                 </div>
               </>
@@ -601,9 +648,13 @@ export default function App() {
                   library.boards
                     .filter((b) => b.trashed)
                     .map((b) => (
-                      <div key={b.id}>
+                      <div key={b.id} data-item={b.id}>
                         <AppIcon board={b} />
-                        <span>{b.name}</span>
+                        <InlineName
+                          value={b.name}
+                          label={'Board name in Trash: ' + b.name}
+                          onCommit={(name) => change(b.id, { name })}
+                        />
                         <button
                           className="button"
                           onClick={() =>

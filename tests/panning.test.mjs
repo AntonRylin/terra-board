@@ -11,7 +11,8 @@ const require = createRequire(import.meta.url);
 function fixture(tool = 'select') {
   const canvas = { setAttribute() {} },
     menus = [],
-    saves = [];
+    saves = [],
+    activations = [];
   class Application {
     canvas = canvas;
     stage = { addChild() {} };
@@ -29,6 +30,7 @@ function fixture(tool = 'select') {
   const localRequire = (id) => {
     if (id === 'pixi.js/unsafe-eval') return {};
     if (id === 'pixi.js') return { Application, Container: Empty, Graphics: Empty };
+    if (id === './text-rendering') return {};
     if (id === './textures')
       return {
         TextureCache: class {
@@ -76,7 +78,9 @@ function fixture(tool = 'select') {
       edit() {},
       camera: (c) => saves.push({ ...c }),
       selection() {},
-      activate() {},
+      activate(o) {
+        activations.push(o.id);
+      },
       create() {
         throw Error('Panning must not create an object');
       },
@@ -96,8 +100,74 @@ function fixture(tool = 'select') {
     pointerId: 1,
     preventDefault() {},
   });
-  return { engine, host, menus, saves, event };
+  return { engine, host, menus, saves, event, activations };
 }
+
+test('double click retargeted to the pointer-capturing surface opens the object editor', () => {
+  const f = fixture();
+  f.engine.apply({
+    upserts: [
+      {
+        id: 'editable-note',
+        type: 'note',
+        x: 10,
+        y: 10,
+        width: 200,
+        height: 100,
+        z: 1,
+        text: 'Edit me',
+      },
+    ],
+    deleted: [],
+  });
+  f.engine.doubleClick({ ...f.event(80, 100, 0), target: f.host });
+  assert.deepEqual(f.activations, ['editable-note']);
+  f.engine.doubleClick({ ...f.event(80, 100, 0), target: {} });
+  assert.equal(f.activations.length, 1, 'double click on an overlay activated the board');
+});
+
+for (const type of ['text', 'note', 'rect', 'ellipse', 'frame', 'link', 'video'])
+  test(`a second separate click on selected ${type} edits, but first click only selects`, () => {
+    const f = fixture();
+    f.engine.apply({
+      upserts: [{ id: 'text', type, x: 20, y: 20, width: 160, height: 50, text: 'Text', z: 1 }],
+      deleted: [],
+    });
+    const click = () => {
+      f.engine.down(f.event(120, 100, 0));
+      f.engine.up(f.event(120, 100, 0));
+    };
+    click();
+    assert.deepEqual(f.activations, []);
+    assert.deepEqual([...f.engine.selection], ['text']);
+    click();
+    assert.deepEqual(f.activations, ['text']);
+  });
+
+test('selected text drag, returning drag, modifiers and multi-selection do not start editing', () => {
+  for (const type of ['text', 'note', 'rect', 'ellipse', 'frame', 'link', 'video'])
+    for (const mode of ['drag', 'return', 'shift', 'ctrl', 'multi']) {
+      const f = fixture();
+      f.engine.apply({
+        upserts: [
+          { id: 'text', type, x: 20, y: 20, width: 160, height: 50, text: 'Text', z: 1 },
+          { id: 'other', type: 'text', x: 250, y: 20, width: 160, height: 50, text: 'Other', z: 2 },
+        ],
+        deleted: [],
+      });
+      f.engine.setSelection(mode === 'multi' ? ['text', 'other'] : ['text']);
+      const down = {
+        ...f.event(120, 100, 0),
+        shiftKey: mode === 'shift',
+        ctrlKey: mode === 'ctrl',
+      };
+      f.engine.down(down);
+      if (mode === 'drag' || mode === 'return') f.engine.move(f.event(150, 120, 0));
+      if (mode === 'return') f.engine.move(down);
+      f.engine.up(mode === 'drag' ? f.event(150, 120, 0) : down);
+      assert.deepEqual(f.activations, [], mode);
+    }
+});
 
 test('right-drag pans by screen pixels, saves camera and suppresses the release menu', () => {
   const f = fixture('note');
@@ -232,3 +302,138 @@ test('wheel over an editor or other overlay leaves the camera and scrolling alon
   assert.deepEqual({ ...f.engine.camera }, { x: 20, y: 30, zoom: 2 });
   assert.equal(f.saves.length, 0);
 });
+
+function selectionFixture() {
+  const f = fixture();
+  f.engine.camera = { x: 0, y: 0, zoom: 1 };
+  f.engine.apply({
+    upserts: [
+      { id: 'a', type: 'note', x: 10, y: 10, width: 60, height: 60, z: 1 },
+      { id: 'b', type: 'note', x: 150, y: 10, width: 60, height: 60, z: 2 },
+      { id: 'c', type: 'note', x: 300, y: 10, width: 60, height: 60, z: 3 },
+    ],
+    deleted: [],
+  });
+  return f;
+}
+test('marquee selection moves together from its empty interior and stays selected', () => {
+  const f = selectionFixture();
+  f.engine.down(f.event(0, 0, 0));
+  f.engine.move(f.event(230, 90, 0));
+  f.engine.up(f.event(230, 90, 0));
+  assert.deepEqual([...f.engine.selection].sort(), ['a', 'b']);
+  f.engine.down(f.event(100, 40, 0));
+  f.engine.move(f.event(140, 70, 0));
+  f.engine.up(f.event(140, 70, 0));
+  assert.deepEqual([...f.engine.selection].sort(), ['a', 'b']);
+  assert.equal(f.engine.objects.get('a').x, 50);
+  assert.equal(f.engine.objects.get('b').x, 190);
+  assert.equal(f.engine.objects.get('a').y, 40);
+  assert.equal(f.engine.objects.get('c').x, 300);
+  f.engine.undo();
+  assert.equal(f.engine.objects.get('a').x, 10);
+  assert.equal(f.engine.objects.get('b').x, 150);
+});
+test('Shift, Ctrl and Meta click add and remove objects without collapsing the selection', () => {
+  for (const modifier of ['shiftKey', 'ctrlKey', 'metaKey']) {
+    const f = selectionFixture();
+    f.engine.setSelection(['a']);
+    const click = (x) => {
+      const e = { ...f.event(x, 30, 0), [modifier]: true };
+      f.engine.down(e);
+      f.engine.up(e);
+    };
+    click(170);
+    assert.deepEqual([...f.engine.selection].sort(), ['a', 'b']);
+    click(30);
+    assert.deepEqual([...f.engine.selection], ['b']);
+    click(320);
+    assert.deepEqual([...f.engine.selection].sort(), ['b', 'c']);
+  }
+});
+test('modifier marquee adds or toggles objects while retaining items outside its rectangle', () => {
+  for (const modifier of ['shiftKey', 'ctrlKey']) {
+    const f = selectionFixture();
+    f.engine.setSelection(['a', 'c']);
+    const event = (x, y) => ({ ...f.event(x, y, 0), [modifier]: true });
+    f.engine.down(event(0, 0));
+    f.engine.move(event(230, 90));
+    f.engine.up(event(230, 90));
+    assert.deepEqual(
+      [...f.engine.selection].sort(),
+      modifier === 'ctrlKey' ? ['b', 'c'] : ['a', 'b', 'c'],
+    );
+  }
+});
+test('selected content drags, duplicates and deletes as one complete selection', () => {
+  const f = selectionFixture();
+  f.engine.setSelection(['a', 'b']);
+  f.engine.down(f.event(30, 30, 0));
+  f.engine.move(f.event(50, 50, 0));
+  f.engine.up(f.event(50, 50, 0));
+  assert.deepEqual([...f.engine.selection].sort(), ['a', 'b']);
+  f.engine.duplicate();
+  assert.equal(f.engine.selected.length, 2);
+  const copies = f.engine.selected.map((o) => o.id);
+  assert.ok(copies.every((id) => !['a', 'b', 'c'].includes(id)));
+  f.engine.deleteSelected();
+  assert.equal(f.engine.objects.size, 3);
+  assert.ok(copies.every((id) => !f.engine.objects.has(id)));
+});
+
+for (const corner of ['nw', 'ne', 'sw', 'se']) {
+  test(`zoomed-out ${corner} handle wins over nearby corners`, () => {
+    const f = fixture();
+    f.engine.camera = { x: 0, y: 0, zoom: 0.25 };
+    f.engine.apply({
+      upserts: [{ id: 'tiny', type: 'rect', x: 100, y: 100, width: 20, height: 20, z: 1 }],
+      deleted: [],
+    });
+    f.engine.setSelection(['tiny']);
+    const x = corner.includes('w') ? 25 : 30,
+      y = corner.includes('n') ? 25 : 30;
+    f.engine.down(f.event(x, y, 0));
+    assert.equal(f.engine.gesture.corner, corner);
+  });
+  test(`text ${corner} resize scales its font, anchors the opposite corner, and undoes in one step`, () => {
+    const f = fixture();
+    const o = {
+      id: 'text',
+      type: 'text',
+      x: 100,
+      y: 100,
+      width: 300,
+      height: 60,
+      fontSize: 24,
+      z: 1,
+      text: 'Scale me',
+    };
+    f.engine.apply({ upserts: [o], deleted: [] });
+    f.engine.setSelection([o.id]);
+    const west = corner.includes('w'),
+      north = corner.includes('n');
+    const x = (o.x + (west ? 0 : o.width)) * 2 + 20;
+    const y = (o.y + (north ? 0 : o.height)) * 2 + 30;
+    const target = f.event(x + (west ? -300 : 300), y + (north ? -60 : 60), 0);
+    f.engine.down(f.event(x, y, 0));
+    f.engine.move(target);
+    const resized = f.engine.objects.get(o.id);
+    assert.equal(resized.width, 450);
+    assert.equal(resized.height, 90);
+    assert.equal(resized.fontSize, 36);
+    assert.equal(resized.x, west ? -50 : 100);
+    assert.equal(resized.y, north ? 70 : 100);
+    f.engine.up(target);
+    assert.deepEqual([...f.engine.selection], [o.id]);
+    f.engine.undo();
+    assert.equal(f.engine.objects.get(o.id).fontSize, 24);
+    assert.equal(f.engine.objects.get(o.id).x, 100);
+    f.engine.redo();
+    assert.equal(f.engine.objects.get(o.id).fontSize, 36);
+    f.engine.down(target);
+    f.engine.move(f.event(target.clientX + 60, target.clientY + 60, 0));
+    f.engine.cancel();
+    assert.equal(f.engine.objects.get(o.id).width, 450);
+    assert.equal(f.engine.objects.get(o.id).fontSize, 36);
+  });
+}

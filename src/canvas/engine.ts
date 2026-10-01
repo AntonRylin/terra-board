@@ -1,16 +1,19 @@
 // Pixi's interpreter adapters keep shader setup compatible with a strict CSP (no eval).
 import 'pixi.js/unsafe-eval';
-import { Application, Container, Graphics, Text, Sprite, Rectangle } from 'pixi.js';
-import type { CanvasObject, Camera, Edit, Tool } from '../model';
+import { Application, Container, Graphics, Sprite, Rectangle, Texture } from 'pixi.js';
+import type { CanvasObject, Camera, Edit, Tool, ImageCrop } from '../model';
 import { uid } from '../model';
 import { SpatialIndex, screenToWorld, zoomAt, boundsOf, type Point, type Bounds } from './geometry';
 import { History } from './history';
-import { previewText } from './content';
+import { renderText, textRegion } from './text-rendering';
 import { TextureCache } from './textures';
+import { imageTiles } from './image-detail';
+import { corners, resizeObject, type Corner } from './resize';
 interface Callbacks {
   edit: (e: Edit) => void;
   camera: (c: Camera) => void;
   selection: (items: CanvasObject[]) => void;
+  selectionView?: (bounds: Bounds | null, viewport: { width: number; height: number }) => void;
   activate: (o: CanvasObject) => void;
   create: (tool: Tool, p: Point) => void;
   context: (p: Point) => void;
@@ -26,6 +29,10 @@ type Gesture = {
   box?: Bounds;
   changed?: boolean;
   secondary?: boolean;
+  toggle?: boolean;
+  corner?: Corner;
+  editOnClick?: string;
+  dragged?: boolean;
 };
 export class Engine {
   app = new Application();
@@ -49,6 +56,9 @@ export class Engine {
   private secondaryContextHandled = false;
   private initialized: Promise<void>;
   private groupMembers = new Map<string, Set<string>>();
+  private editingId: string | null = null;
+  private editingPreview: CanvasObject | null = null;
+  private cropPreview: CanvasObject | null = null;
   constructor(
     private host: HTMLDivElement,
     objects: CanvasObject[],
@@ -65,7 +75,7 @@ export class Engine {
         resizeTo: host,
         backgroundAlpha: 0,
         antialias: true,
-        resolution: Math.min(devicePixelRatio, 2),
+        resolution: devicePixelRatio,
         autoDensity: true,
         autoStart: false,
         preference: 'webgl',
@@ -138,7 +148,17 @@ export class Engine {
           p.x < o.x + 10 ||
           p.x > o.x + o.width - 10 ||
           p.y < o.y + 32 ||
-          p.y > o.y + o.height - 10,
+          p.y > o.y + o.height - 10 ||
+          this.views
+            .get(o.id)
+            ?.container.children.some(
+              (label) =>
+                label.label === 'board-text' &&
+                p.x >= o.x + label.x &&
+                p.x <= o.x + label.x + label.width &&
+                p.y >= o.y + label.y &&
+                p.y <= o.y + label.y + label.height,
+            ),
       );
   }
   private down = (e: PointerEvent) => {
@@ -162,15 +182,13 @@ export class Engine {
       this.callbacks.create(this.tool, w);
       return;
     } else {
-      const bounds = boundsOf(this.selected);
-      const resize =
-        bounds &&
-        this.selection.size === 1 &&
-        Math.abs(p.x - (bounds.x + bounds.width) * this.camera.zoom - this.camera.x) < 10 &&
-        Math.abs(p.y - (bounds.y + bounds.height) * this.camera.zoom - this.camera.y) < 10;
+      const bounds = boundsOf(this.selected),
+        additive = e.shiftKey || e.ctrlKey || e.metaKey;
+      const resize = !e.ctrlKey && !e.metaKey && this.resizeCorner(p);
       if (resize)
         this.gesture = {
           mode: 'resize',
+          corner: resize,
           start: p,
           world: w,
           camera: { ...this.camera },
@@ -180,11 +198,37 @@ export class Engine {
         const hit = this.hit(w);
         if (hit) {
           const ids = this.members(hit);
-          if (e.shiftKey) {
+          const editOnClick =
+            !additive &&
+            hit.type !== 'image' &&
+            this.selection.size === 1 &&
+            this.selection.has(hit.id)
+              ? hit.id
+              : undefined;
+          if (additive) {
             const next = new Set(this.selection);
-            for (const id of ids) next.has(id) ? next.delete(id) : next.add(id);
+            const remove = ids.every((id) => next.has(id));
+            for (const id of ids) remove ? next.delete(id) : next.add(id);
             this.setSelection([...next]);
+            if (remove) return;
           } else if (!this.selection.has(hit.id)) this.setSelection(ids);
+          this.gesture = {
+            mode: 'move',
+            editOnClick,
+            start: p,
+            world: w,
+            camera: { ...this.camera },
+            original: this.selected.map((o) => ({ ...o })),
+          };
+        } else if (
+          !additive &&
+          this.selection.size > 1 &&
+          bounds &&
+          w.x >= bounds.x &&
+          w.x <= bounds.x + bounds.width &&
+          w.y >= bounds.y &&
+          w.y <= bounds.y + bounds.height
+        ) {
           this.gesture = {
             mode: 'move',
             start: p,
@@ -193,26 +237,34 @@ export class Engine {
             original: this.selected.map((o) => ({ ...o })),
           };
         } else {
-          if (!e.shiftKey) this.setSelection([]);
+          if (!additive) this.setSelection([]);
           this.gesture = {
             mode: 'box',
             start: p,
             world: w,
             camera: { ...this.camera },
             original: this.selected,
+            toggle: e.ctrlKey || e.metaKey,
           };
         }
       }
     }
+    this.updateCursor();
     this.host.setPointerCapture(e.pointerId);
   };
   private move = (e: PointerEvent) => {
     const g = this.gesture;
-    if (!g) return;
+    if (!g) {
+      this.updateCursor(
+        e.target === this.app.canvas ? this.resizeCorner(this.point(e)) : undefined,
+      );
+      return;
+    }
     const p = this.point(e),
       dx = p.x - g.start.x,
       dy = p.y - g.start.y;
     const moved = Math.abs(dx) + Math.abs(dy) > 2;
+    g.dragged ||= moved;
     g.changed = g.secondary ? g.changed || moved : moved;
     if (g.mode === 'pan') {
       if (g.secondary && !g.changed) return;
@@ -224,10 +276,7 @@ export class Engine {
       this.invalidate();
     } else if (g.mode === 'resize') {
       const o = g.original[0];
-      let width = Math.max(20, o.width + dx / this.camera.zoom),
-        height = Math.max(20, o.height + dy / this.camera.zoom);
-      if (['image', 'video'].includes(o.type) && !e.shiftKey) height = (width * o.height) / o.width;
-      this.preview({ ...o, width, height });
+      this.preview(resizeObject(o, g.corner!, dx / g.camera.zoom, dy / g.camera.zoom, e.shiftKey));
       this.invalidate();
     } else {
       const w = this.screenPoint(p);
@@ -248,10 +297,10 @@ export class Engine {
     if (g.secondary && !g.changed) this.openContext(e);
     else if (g.mode === 'pan') this.callbacks.camera({ ...this.camera });
     else if (g.mode === 'box' && g.box) {
-      this.setSelection([
-        ...g.original.map((o) => o.id),
-        ...this.index.search(g.box).flatMap((o) => this.members(o)),
-      ]);
+      const next = new Set(g.original.map((o) => o.id));
+      const hits = new Set(this.index.search(g.box).flatMap((o) => this.members(o)));
+      for (const id of hits) g.toggle && next.has(id) ? next.delete(id) : next.add(id);
+      this.setSelection([...next]);
     } else if (g.changed && (g.mode === 'move' || g.mode === 'resize')) {
       const after = g.original.map((o) => this.objects.get(o.id)!);
       this.history.push({ upserts: after, deleted: [] }, { upserts: g.original, deleted: [] });
@@ -259,6 +308,10 @@ export class Engine {
       this.callbacks.selection(this.selected);
     } else if (g.mode === 'move' || g.mode === 'resize') {
       for (const o of g.original) this.preview(o);
+      if (g.editOnClick && !g.dragged) {
+        const object = this.objects.get(g.editOnClick);
+        if (object) this.callbacks.activate(object);
+      }
     }
     this.invalidate();
   };
@@ -289,8 +342,8 @@ export class Engine {
   };
   private keyDown = (e: KeyboardEvent) => {
     if (
-      (e.target as HTMLElement)?.closest(
-        'input,textarea,select,[contenteditable=true],[role=dialog]',
+      (e.target as HTMLElement)?.closest?.(
+        'input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role=dialog]',
       )
     )
       return;
@@ -307,7 +360,10 @@ export class Engine {
     }
   };
   private doubleClick = (e: MouseEvent) => {
-    if (e.target !== this.app.canvas) return;
+    if (this.editingId) return;
+    // Pointer capture on the surface retargets Chromium's subsequent click /
+    // dblclick to that surface, even when both presses began on the canvas.
+    if (e.target !== this.app.canvas && e.target !== this.host) return;
     const o = this.hit(this.screenPoint(this.point(e)));
     if (o) this.callbacks.activate(o);
     else this.callbacks.create('text', this.screenPoint(this.point(e)));
@@ -330,15 +386,71 @@ export class Engine {
     this.tool = tool;
     this.updateCursor();
   }
-  private updateCursor() {
+  setEditing(id: string | null) {
+    this.editingId = id;
+    if (!id) this.editingPreview = null;
+    this.invalidate();
+  }
+  setEditingPreview(object: CanvasObject | null) {
+    this.editingPreview = object;
+    this.invalidate();
+  }
+  setCropPreview(image: CanvasObject | null) {
+    this.cropPreview = image;
+    this.setEditing(image?.id || null);
+    if (image) {
+      const w = this.host.clientWidth,
+        h = this.host.clientHeight,
+        c = this.camera;
+      if (
+        image.x * c.zoom + c.x < 60 ||
+        image.y * c.zoom + c.y < 60 ||
+        (image.x + image.width) * c.zoom + c.x > w - 60 ||
+        (image.y + image.height) * c.zoom + c.y > h - 100
+      ) {
+        const zoom = Math.max(
+          0.01,
+          Math.min(c.zoom, (w - 120) / image.width, (h - 160) / image.height),
+        );
+        this.camera = {
+          zoom,
+          x: w / 2 - (image.x + image.width / 2) * zoom,
+          y: (h - 40) / 2 - (image.y + image.height / 2) * zoom,
+        };
+        this.callbacks.camera({ ...this.camera });
+      }
+    }
+  }
+  private resizeCorner(p: Point): Corner | undefined {
+    if (this.selection.size !== 1 || this.editingId || this.cropPreview) return;
+    const o = this.selected[0],
+      c = this.camera;
+    let nearest: Corner | undefined,
+      distance = Infinity;
+    for (const corner of corners) {
+      const dx = Math.abs(p.x - (o.x + (corner.includes('e') ? o.width : 0)) * c.zoom - c.x);
+      const dy = Math.abs(p.y - (o.y + (corner.includes('s') ? o.height : 0)) * c.zoom - c.y);
+      if (dx < 10 && dy < 10 && dx * dx + dy * dy < distance) {
+        nearest = corner;
+        distance = dx * dx + dy * dy;
+      }
+    }
+    return nearest;
+  }
+  private updateCursor(hoverCorner?: Corner) {
+    const corner = this.gesture?.mode === 'resize' ? this.gesture.corner : hoverCorner;
     this.host.style.cursor =
       this.gesture?.mode === 'pan'
         ? 'grabbing'
         : this.space || this.tool === 'hand'
           ? 'grab'
-          : this.tool === 'select'
-            ? 'default'
-            : 'crosshair';
+          : corner && this.tool === 'select'
+            ? corner === 'nw' || corner === 'se'
+              ? 'nwse-resize'
+              : 'nesw-resize'
+            : this.tool === 'select'
+              ? 'default'
+              : 'crosshair';
   }
   private preview(o: CanvasObject) {
     this.objects.set(o.id, o);
@@ -453,6 +565,8 @@ export class Engine {
       w = this.host.clientWidth,
       h = this.host.clientHeight;
     if (!w || !h) return;
+    if (this.app.renderer.resolution !== devicePixelRatio)
+      this.app.renderer.resolution = devicePixelRatio;
     if (
       this.app.renderer.width / this.app.renderer.resolution !== w ||
       this.app.renderer.height / this.app.renderer.resolution !== h
@@ -468,6 +582,15 @@ export class Engine {
         height: (h + 100) / c.zoom,
       })
       .sort((a, b) => a.z - b.z);
+    if (this.editingPreview) {
+      const index = visible.findIndex((o) => o.id === this.editingPreview!.id);
+      if (index !== -1) visible[index] = this.editingPreview;
+    }
+    if (this.cropPreview) {
+      const index = visible.findIndex((o) => o.id === this.cropPreview!.id);
+      if (index !== -1) visible.splice(index, 1);
+      visible.push(this.cropPreview);
+    }
     const visibleIds = new Set(visible.map((o) => o.id));
     for (const [id, v] of this.views)
       if (!visibleIds.has(id)) {
@@ -478,35 +601,68 @@ export class Engine {
     const wanted = new Set<string>();
     let bytes = 0;
     const variants = new Map<string, string>();
-    for (const o of visible) {
+    const tiles = new Map<string, ReturnType<typeof imageTiles>>();
+    for (const o of [...visible].reverse()) {
       if (o.type !== 'image' || !o.assetId) continue;
-      let size = Math.max(o.width, o.height) * c.zoom > 350 ? 1600 : 256;
-      let cost = size * size * Math.min(o.width / o.height, o.height / o.width) * 4;
+      const fullWidth = o.width / (o.crop?.width || 1),
+        fullHeight = o.height / (o.crop?.height || 1);
+      let size = Math.max(fullWidth, fullHeight) * c.zoom * devicePixelRatio > 256 ? 1600 : 256;
+      let cost = size * size * Math.min(fullWidth / fullHeight, fullHeight / fullWidth) * 4;
       if (bytes + cost > 100 * 1024 * 1024) {
         size = 256;
         cost = 256 * 256 * 4;
       }
       if (bytes + cost > 128 * 1024 * 1024) continue;
-      bytes += cost;
       const key = o.assetId + '/' + (size === 256 ? 'thumb' : 'preview');
+      if (!wanted.has(key)) bytes += cost;
       wanted.add(key);
       variants.set(o.id, key);
+    }
+    // Reserve base images for the whole viewport before spending on close-up
+    // detail. Give foreground tiles priority; details cannot starve base images.
+    for (const o of [...visible].reverse()) {
+      if (!variants.has(o.id)) continue;
+      const detailTiles = imageTiles(o, c, w, h, devicePixelRatio).filter((tile) => {
+        if (wanted.has(tile.key)) return true;
+        if (bytes + 512 * 512 * 4 > 128 * 1024 * 1024) return false;
+        bytes += 512 * 512 * 4;
+        wanted.add(tile.key);
+        return true;
+      });
+      tiles.set(o.id, detailTiles);
     }
     this.textures.begin(wanted);
     visible.forEach((o, i) => {
       const key = variants.get(o.id),
         texture = key ? this.textures.get(key) : null;
+      const detailTiles = (tiles.get(o.id) || []).map((tile) => ({
+        ...tile,
+        texture: this.textures.get(tile.key),
+      }));
       const detail = c.zoom > 0.16;
+      const hasLabel =
+        detail &&
+        this.editingId !== o.id &&
+        (o.type === 'image' ? !texture : o.type === 'video' || o.type === 'link' || !!o.text);
+      const resolution = 2 ** Math.ceil(Math.log2(c.zoom * devicePixelRatio));
+      const region = textRegion(o, c, w, h);
       const signature = JSON.stringify([
         o.width,
         o.height,
         o.text,
         o.color,
         o.fontSize,
+        o.centerX,
+        o.centerY,
         o.type,
+        o.crop,
         key,
         !!texture,
         detail,
+        hasLabel ? resolution : 0,
+        hasLabel ? region : null,
+        this.editingId === o.id,
+        detailTiles.map((tile) => [tile.key, !!tile.texture]),
       ]);
       let view = this.views.get(o.id);
       if (!view || view.signature !== signature) {
@@ -514,7 +670,24 @@ export class Engine {
           this.world.removeChild(view.container);
           view.container.destroy({ children: true });
         }
-        const container = this.makeView(o, texture, detail);
+        const container = this.makeView(o, texture, detail, resolution, region);
+        const loadedTiles = detailTiles.filter((tile) => tile.texture);
+        if (texture && loadedTiles.length) {
+          // Cut detailed regions out of the preview so transparent pixels are
+          // composited once, including while only some detail tiles are loaded.
+          const mask = new Graphics().rect(0, 0, o.width, o.height).fill('#ffffff');
+          for (const tile of loadedTiles) mask.rect(tile.x, tile.y, tile.width, tile.height).cut();
+          container.children[0].mask = mask;
+          container.addChild(mask);
+        }
+        for (const tile of detailTiles)
+          if (tile.texture) {
+            const sprite = this.imageSprite(tile.texture, tile.frame);
+            sprite.position.set(tile.x, tile.y);
+            sprite.width = tile.width;
+            sprite.height = tile.height;
+            container.addChild(sprite);
+          }
         view = { container, signature };
         this.views.set(o.id, view);
         this.world.addChild(container);
@@ -532,13 +705,19 @@ export class Engine {
       this.callbacks.ready();
     }
   }
-  private makeView(o: CanvasObject, texture: any, detail: boolean) {
+  private makeView(
+    o: CanvasObject,
+    texture: any,
+    detail: boolean,
+    resolution: number,
+    region: ReturnType<typeof textRegion>,
+  ) {
     const container = new Container(),
       g = new Graphics(),
       color = o.color || '#e8edf5';
     container.eventMode = 'none';
     if (o.type === 'image' && texture) {
-      const sprite = new Sprite(texture);
+      const sprite = this.imageSprite(texture, o.crop);
       sprite.width = o.width;
       sprite.height = o.height;
       container.addChild(sprite);
@@ -564,53 +743,67 @@ export class Engine {
         g.roundRect(0, 0, o.width, o.height, 7).stroke({ color: '#dce2eb', width: 1 });
     }
     container.addChild(g);
-    if (detail) {
+    if (detail && this.editingId !== o.id) {
       let text = o.text || '';
       if (o.type === 'image') text = 'Image';
-      if (o.type === 'video') text = '▶  Play video';
+      if (o.type === 'video') text = o.text || 'Play video';
       if (o.type === 'link') text = o.text || o.url || 'Link';
       if (text) {
-        const pad = o.type === 'text' ? 0 : o.type === 'frame' ? 14 : 22;
-        const fontSize = o.fontSize || (o.type === 'note' ? 21 : o.type === 'frame' ? 14 : 18);
-        text = previewText(text, o.width - pad * 2, o.height - pad * 2, fontSize);
-        const label = new Text({
-          text,
-          style: {
-            fontFamily:
-              o.type === 'note' ? 'Segoe Print, Segoe UI, sans-serif' : 'Segoe UI, sans-serif',
-            fontSize: o.fontSize || (o.type === 'note' ? 21 : o.type === 'frame' ? 14 : 18),
-            fill: o.type === 'text' ? o.color || '#29313b' : '#434e5d',
-            wordWrap: true,
-            wordWrapWidth: Math.max(1, Math.min(2048, o.width - pad * 2)),
-            breakWords: true,
-            lineHeight: (o.fontSize || 21) * 1.45,
-            fontWeight: '400',
-          },
-        });
-        label.resolution = 1;
-        label.position.set(pad, pad);
-        const mask = new Graphics().rect(0, 0, o.width, o.height).fill('#ffffff');
-        container.addChild(label, mask);
-        label.mask = mask;
+        const label = renderText(o, text, resolution, region);
+        if (label) container.addChild(label);
       }
     }
     return container;
+  }
+  private imageSprite(source: Texture, crop?: ImageCrop) {
+    if (!crop || (crop.x === 0 && crop.y === 0 && crop.width === 1 && crop.height === 1))
+      return new Sprite(source);
+    const texture = new Texture({
+      source: source.source,
+      frame: new Rectangle(
+        source.frame.x + crop.x * source.frame.width,
+        source.frame.y + crop.y * source.frame.height,
+        crop.width * source.frame.width,
+        crop.height * source.frame.height,
+      ),
+    });
+    const sprite = new Sprite(texture);
+    // This is just a view into a shared cached texture; keep its source alive.
+    sprite.once('destroyed', () => texture.destroy(false));
+    return sprite;
   }
   private drawSelection() {
     const g = this.selectionLayer;
     g.clear();
     const c = this.camera,
-      b = boundsOf(this.selected);
-    if (b) {
+      b = boundsOf(this.editingPreview ? [this.editingPreview] : this.selected);
+    this.callbacks.selectionView?.(
+      b
+        ? {
+            x: b.x * c.zoom + c.x,
+            y: b.y * c.zoom + c.y,
+            width: b.width * c.zoom,
+            height: b.height * c.zoom,
+          }
+        : null,
+      { width: this.host.clientWidth, height: this.host.clientHeight },
+    );
+    if (b && !this.cropPreview) {
       const x = b.x * c.zoom + c.x,
         y = b.y * c.zoom + c.y,
         w = b.width * c.zoom,
         h = b.height * c.zoom;
       g.rect(x - 2, y - 2, w + 4, h + 4).stroke({ color: '#4486d9', width: 1.5 });
       if (this.selection.size === 1)
-        g.rect(x + w - 4, y + h - 4, 8, 8)
-          .fill('#ffffff')
-          .stroke({ color: '#4486d9', width: 1.5 });
+        for (const corner of corners)
+          g.rect(
+            x + (corner.includes('e') ? w : 0) - 4,
+            y + (corner.includes('s') ? h : 0) - 4,
+            8,
+            8,
+          )
+            .fill('#ffffff')
+            .stroke({ color: '#4486d9', width: 1.5 });
     }
     if (this.gesture?.box) {
       const b = this.gesture.box;

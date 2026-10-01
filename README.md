@@ -1,6 +1,6 @@
 # Local Canvas
 
-A Windows-first local whiteboard with a minimal, iOS-inspired board launcher. Version 0.1.3 is a working preview release; the original product roadmap is broader than this implementation.
+A Windows-first local whiteboard with a minimal, iOS-inspired board launcher. Version 0.1.11 is a working preview release; the original product roadmap is broader than this implementation.
 
 ## Run
 
@@ -19,9 +19,21 @@ The application stores boards, original media, settings, browser caches, logs an
 
 ## Useful controls
 
-Hold the **right mouse button and drag** to move around the board. A plain right-click opens the canvas menu. Use **V** to select, **H** or hold **Space** to pan, **T** for text, **N** for a note, **R** for a shape, **F** for a frame, **L** for a link, and **0** to fit the board. Use the **mouse wheel** to zoom in and out toward the cursor, **Ctrl+K** to search, **Ctrl+Z / Ctrl+Shift+Z** for undo/redo, and **Ctrl+Enter** to finish editing. Double-click text to edit it. Drag the bottom-right selection handle to resize; images keep their proportions unless Shift is held.
+Hold the **right mouse button and drag** to move around the board. A plain right-click opens the canvas menu. Use **V** to select, **H** or hold **Space** to pan, **T** for text, **N** for a note, **R** for a shape, **F** for a frame, **L** for a link, and **0** to fit the board. Use the **mouse wheel** to zoom in and out toward the cursor, **Ctrl+K** to search, **Ctrl+Z / Ctrl+Shift+Z** for undo/redo, and **Ctrl+Enter** to finish editing. Double-click text to edit it. Drag any of the four selection corners to resize. Plain text scales its font and box together, keeping the opposite corner fixed; images keep their proportions unless Shift is held. Selection actions stay beside the selected object or group and follow movement, pan and zoom.
 
 Right-click board and folder icons for their actions. The three-dot menus expose board operations, canvas export, Trash, and the keyboard reference.
+
+Double-click a board name, folder name, or canvas title to rename it directly where it appears. Enter saves a name, Escape cancels; canvas text uses Ctrl+Enter to save. Link and video titles also edit in place; use the selection toolbar to open a link or play a video. Notes keep their dimensions and automatically shrink long text to fit, expanding the text back toward its chosen size as content is removed.
+
+The selection outline, corner handles and nearby actions remain visible during text editing. Plain-text boxes fit their content with a small margin and resize as you type; Enter adds a new line. Existing plain-text boxes are fitted when the board opens. Clicking away from empty or whitespace-only plain text removes it; Ctrl+Z restores deleted content. Empty notes, frames and shapes remain on the board.
+
+Click a text-bearing object once to select it; click it again to edit, with no double-click timing required. This includes plain text, notes, shapes, frames, link titles and video titles. The cursor starts at the end, with no text selected, and the selection toolbar has no pencil button. Dragging still moves objects, corner dragging resizes them, and modifier clicks or clicks within a multi-selection keep their selection behavior. Board and folder name editors also place the cursor at the end.
+
+Use **Center horizontally** and **Center vertically** beside the selection/group actions to toggle text alignment independently. Each button highlights when enabled; toggle it off to return to left or top alignment. They work while editing or across selected text-bearing objects, and alignment survives copying, exporting and reopening. Image-only selections disable both buttons.
+
+Drag a selection rectangle around multiple objects, then drag any selected object or the gap between them to move the whole selection. Copy, paste, duplicate, Delete and undo act on the complete selection. Shift/Ctrl-click toggles individual objects; Shift-drag adds a rectangle of objects and Ctrl-drag toggles them.
+
+Right-click an image and choose **Crop image**. Drag an edge/corner to crop, or drag inside the crop area to reposition it, then click **Apply** (or press Enter). **Cancel** / Escape discards the draft; **Reset** restores the full source. The original file is preserved, crops survive copy/export/reopen, and Ctrl+Z undoes a crop.
 
 ## Saving and recovery
 
@@ -34,7 +46,8 @@ A daily SQLite metadata snapshot is created on startup under `Library\backups`. 
 ## Current boundaries
 
 - Individual media files: 256 MiB. Portable exports: up to 512 MiB of originals, with a 544 MiB archive/import envelope. Imports validate file structure, asset hashes and object data.
-- Imported images display 256px thumbnails or previews up to 1600px. Originals remain intact in storage and portable exports. Full-resolution tiled zoom for enormous images is still on the roadmap.
+- Imported images use thumbnails and previews when distant, then load visible detail tiles from the original at close zoom. Detail tiles are at most 512px, image decoding has four concurrent requests, and the image texture cache stays within 192 MiB. Photos retain their source resolution; zooming cannot invent missing image detail. Originals remain intact in storage and portable exports.
+- Text is redrawn from font outlines at the current zoom and display density, using textures bounded by the viewport. Double-click to type directly at the text's position; click the board or press Ctrl+Enter to save, or Escape to cancel. Shapes retain vector geometry in the GPU renderer.
 - Videos use a generic board card and decode only in the player. Playback depends on Chromium's supported codecs; a generated VP9 WebM clip was tested. Animated images currently display a static preview.
 - Frames are visual regions. Moving a frame does not automatically move everything visually inside it; group items for joint movement. Nested folders, connectors, freehand ink, rich text, PDF export and editable Miro import are not implemented.
 - The canvas is not yet fully screen-reader navigable. Reduced-motion behavior and keyboard-operable controls are implemented, but a full accessibility audit remains open.

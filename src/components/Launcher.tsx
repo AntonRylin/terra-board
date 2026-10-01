@@ -3,6 +3,7 @@ import { Search, Plus, MoreHorizontal, X, Folder as FolderIcon } from 'lucide-re
 import type { Board, Folder, Library } from '../model';
 import { Presence } from './Presence';
 import { BoardGlyph } from './Icon';
+import InlineName from './InlineName';
 export function AppIcon({ board }: { board: Board }) {
   return (
     <span className={'app-icon ' + board.color}>
@@ -24,6 +25,9 @@ interface Props {
   onMove: (id: string, folderId: string | null, position?: number) => void;
   onReorderFolder: (id: string, position: number) => void;
   onNewBoard: (folderId: string) => void;
+  onRenameBoard: (id: string, name: string) => Promise<void>;
+  onRenameFolder: (id: string, name: string) => Promise<void>;
+  renameFolderRequest: { id: string; token: number } | null;
 }
 export default function Launcher(p: Props) {
   const rail = useRef<HTMLElement>(null),
@@ -201,7 +205,17 @@ export default function Launcher(p: Props) {
             aria-label={folder.name + ' folder'}
           >
             <header>
-              <h2>{folder.name}</h2>
+              <h2>
+                <InlineName
+                  key={folder.id}
+                  value={folder.name}
+                  label="Folder name"
+                  editRequest={
+                    p.renameFolderRequest?.id === folder.id ? p.renameFolderRequest.token : 0
+                  }
+                  onCommit={(name) => p.onRenameFolder(folder.id, name)}
+                />
+              </h2>
               <button
                 className="icon-button"
                 aria-label="Folder options"
@@ -229,22 +243,30 @@ export default function Launcher(p: Props) {
                 .filter((b) => b.folderId === folder.id)
                 .sort((a, b) => a.position - b.position)
                 .map((b) => (
-                  <button
+                  <div
                     key={b.id}
                     className="folder-board"
                     title={b.name}
-                    aria-label={'Open board ' + b.name}
                     draggable
                     onDragStart={(e) => drag(e, b.id)}
-                    onClick={() => p.onOpen(b.id)}
                     onContextMenu={(e) => {
                       e.preventDefault();
                       p.onBoardMenu(b, e.clientX, e.clientY);
                     }}
                   >
-                    <AppIcon board={b} />
-                    <span>{b.name}</span>
-                  </button>
+                    <button
+                      className="folder-board-open"
+                      aria-label={'Open board ' + b.name}
+                      onClick={() => p.onOpen(b.id)}
+                    >
+                      <AppIcon board={b} />
+                    </button>
+                    <InlineName
+                      value={b.name}
+                      label={'Board name in folder: ' + b.name}
+                      onCommit={(name) => p.onRenameBoard(b.id, name)}
+                    />
+                  </div>
                 ))}
             </div>
             {!boards.some((b) => b.folderId === folder.id) && (

@@ -36,6 +36,9 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
       (o.groupId && !/^[\w-]{1,100}$/.test(o.groupId))
     )
       throw Error('Invalid identifier');
+    for (const key of ['centerX', 'centerY'])
+      if (o[key] !== undefined && typeof o[key] !== 'boolean')
+        throw Error('Invalid clipboard alignment');
     if (o.color !== undefined && !/^#[a-f0-9]{6}$/i.test(o.color))
       throw Error('Invalid clipboard color');
     if (
@@ -47,6 +50,23 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
       throw Error('Invalid clipboard text');
     if (['image', 'video'].includes(o.type) && !/^[a-f0-9]{64}$/.test(o.assetId))
       throw Error('Invalid media identifier');
+    if (o.crop !== undefined) {
+      const c = o.crop;
+      if (
+        o.type !== 'image' ||
+        !c ||
+        !['x', 'y', 'width', 'height'].every(
+          (k) => typeof c[k] === 'number' && Number.isFinite(c[k]),
+        ) ||
+        c.x < 0 ||
+        c.y < 0 ||
+        c.width < 1e-6 ||
+        c.height < 1e-6 ||
+        c.x + c.width > 1 + 1e-9 ||
+        c.y + c.height > 1 + 1e-9
+      )
+        throw Error('Invalid image crop');
+    }
     if (o.type === 'link') {
       let u;
       try {
@@ -68,8 +88,13 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
       ...(o.text === undefined ? {} : { text: o.text }),
       ...(o.color === undefined ? {} : { color: o.color }),
       ...(o.fontSize === undefined ? {} : { fontSize: o.fontSize }),
+      ...(o.centerX === undefined ? {} : { centerX: o.centerX }),
+      ...(o.centerY === undefined ? {} : { centerY: o.centerY }),
       ...(o.groupId ? { groupId: o.groupId } : {}),
       ...(o.assetId ? { assetId: o.assetId } : {}),
+      ...(o.crop
+        ? { crop: { x: o.crop.x, y: o.crop.y, width: o.crop.width, height: o.crop.height } }
+        : {}),
       ...(o.url ? { url: o.url } : {}),
     };
   });

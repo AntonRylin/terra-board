@@ -1,4 +1,12 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import {
+  forwardRef,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from 'react';
 import {
   MousePointer2,
   Hand,
@@ -19,17 +27,26 @@ import {
   Ungroup,
   MoreHorizontal,
   Download,
-  Pencil,
   Play,
   ExternalLink,
+  Crop,
+  AlignHorizontalJustifyCenter,
+  AlignVerticalJustifyCenter,
 } from 'lucide-react';
-import type { Asset, CanvasObject, Document, Edit, Tool } from '../model';
+import type { Asset, CanvasObject, Document, Edit, Tool, ImageCrop as CropBounds } from '../model';
 import { uid } from '../model';
 import { clipboardObjects, pastedUrl } from '../canvas/content';
 import { Engine } from '../canvas/engine';
+import { textAppearance } from '../canvas/text-style';
+import { textLayout, fitTextObject } from '../canvas/text-layout';
+import { textPlacement } from '../canvas/text-alignment';
 import { SaveQueue, type SaveState } from '../canvas/save-queue';
 import { importFiles, pickMedia, openLink, mediaUrl, download, invoke } from '../bridge';
 import { ContextMenu, Modal, type MenuItem } from './Dialogs';
+import ImageCrop from './ImageCrop';
+import { cropImage, uncroppedImage, fullCrop } from '../canvas/crop';
+import { selectionToolsPosition } from '../canvas/selection-tools';
+import type { Bounds } from '../canvas/geometry';
 export interface WhiteboardHandle {
   flush: () => Promise<void>;
   importMedia: () => void;
@@ -59,8 +76,26 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     queue = useRef<SaveQueue | null>(null),
     alive = useRef(true),
     editorRef = useRef<HTMLTextAreaElement>(null),
+    editingSession = useRef<{ object: CanvasObject; draft: string } | null>(null),
     copy = useRef<CanvasObject[]>([]),
     imports = useRef(new Set<Promise<void>>());
+  const cropSession = useRef<{ object: CanvasObject; crop: CropBounds } | null>(null);
+  const toolsRef = useRef<HTMLDivElement>(null);
+  const toolsSize = useRef({ width: 0, height: 0 });
+  const selectionView = useRef<{
+    bounds: Bounds | null;
+    viewport: { width: number; height: number };
+  } | null>(null);
+  const positionTools = () => {
+    const el = toolsRef.current,
+      view = selectionView.current;
+    if (!el || !view?.bounds) return;
+    const { left, top } = selectionToolsPosition(view.bounds, view.viewport, toolsSize.current);
+    el.style.left = `${left}px`;
+    el.style.top = `${top}px`;
+    el.style.visibility = 'visible';
+  };
+  const [cropping, setCropping] = useState<{ object: CanvasObject; crop: CropBounds } | null>(null);
   const [ready, setReady] = useState(false),
     [tool, setTool] = useState<Tool>('select'),
     [selected, setSelected] = useState<CanvasObject[]>([]),
@@ -73,19 +108,88 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     [menu, setMenu] = useState<{ x: number; y: number } | null>(null),
     [busy, setBusy] = useState(0),
     [count, setCount] = useState(doc.objects.length);
+  const editingObject = useMemo(
+    () => (editing ? fitTextObject(editing, draft) : null),
+    [editing, draft],
+  );
+  const editingLayout = useMemo(
+    () => (editingObject ? textLayout(editingObject, draft) : null),
+    [editingObject, draft],
+  );
+  const editingAppearance = editingLayout?.appearance;
+  const editingPlacement =
+    editingObject && editingLayout
+      ? textPlacement(
+          editingObject,
+          editingLayout.appearance,
+          editingLayout.metrics.lines.length,
+          editingLayout.editorContentHeight,
+        )
+      : null;
+  const alignmentSelection = (editingObject ? [editingObject] : selected).filter(
+    (o) => o.type !== 'image',
+  );
+  const toggleAlignment = (axis: 'centerX' | 'centerY') => {
+    const session = editingSession.current;
+    if (session) {
+      session.object = { ...session.object, [axis]: !session.object[axis] };
+      setEditing(session.object);
+      editorRef.current?.focus();
+    } else {
+      const objects = engine.current?.selected.filter((o) => o.type !== 'image') || [];
+      if (!objects.length) return;
+      const enabled = !objects.every((o) => o[axis]);
+      engine.current?.apply({
+        upserts: objects.map((o) => ({ ...o, [axis]: enabled })),
+        deleted: [],
+      });
+    }
+  };
   const error = (e: unknown) => onError(e instanceof Error ? e.message : String(e));
   const selectTool = (value: Tool) => {
     setTool(value);
     engine.current?.setTool(value);
   };
   const startEdit = (o: CanvasObject) => {
+    if (editingSession.current?.object.id === o.id) {
+      editorRef.current?.focus();
+      return;
+    }
+    if (editingSession.current) finishEdit();
+    engine.current?.setSelection([o.id]);
+    editingSession.current = { object: { ...o }, draft: o.text || '' };
+    engine.current?.setEditing(o.id);
     setEditing({ ...o });
     setDraft(o.text || '');
   };
-  const activate = (o: CanvasObject) => {
+  const openObject = (o: CanvasObject) => {
     if (o.type === 'video') setVideo(o);
     else if (o.type === 'link') openLink(o.url!).catch(error);
-    else if (['text', 'note', 'frame'].includes(o.type)) startEdit(o);
+  };
+  const activate = (o: CanvasObject) => {
+    if (o.type !== 'image') startEdit(o);
+  };
+  const startCrop = (o: CanvasObject) => {
+    if (editingSession.current) finishEdit();
+    const session = { object: { ...o }, crop: { ...(o.crop || fullCrop) } };
+    cropSession.current = session;
+    setCropping(session);
+    setMenu(null);
+    engine.current?.setSelection([o.id]);
+    engine.current?.setCropPreview(uncroppedImage(o));
+  };
+  const finishCrop = (cancel = false) => {
+    const session = cropSession.current;
+    if (!session) return;
+    cropSession.current = null;
+    setCropping(null);
+    engine.current?.setCropPreview(null);
+    if (!cancel) {
+      const next = cropImage(session.object, session.crop);
+      if (JSON.stringify(next) !== JSON.stringify(session.object))
+        engine.current?.apply({ upserts: [next], deleted: [] });
+    }
+    host.current?.focus();
   };
   const create = (t: Tool, p: { x: number; y: number }) => {
     const e = engine.current;
@@ -115,25 +219,52 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     if (['text', 'note', 'frame'].includes(type)) startEdit(o);
   };
   const finishEdit = (cancel = false) => {
-    if (!editing) return;
+    const session = editingSession.current;
+    if (!session) return;
+    editingSession.current = null;
+    const editing = session.object,
+      draft = session.draft;
+    engine.current?.setEditing(null);
     if (!cancel && engine.current) {
-      const height =
-        editing.type === 'frame'
-          ? editing.height
-          : Math.max(
-              editing.type === 'text' ? 40 : 120,
-              (editorRef.current?.scrollHeight || editing.height * camera.zoom) / camera.zoom + 8,
-            );
-      engine.current.apply({ upserts: [{ ...editing, text: draft, height }], deleted: [] });
+      if (editing.type === 'text') {
+        if (!draft.trim()) engine.current.apply({ upserts: [], deleted: [editing.id] });
+        else {
+          const next = fitTextObject(editing, draft);
+          if (JSON.stringify(next) !== JSON.stringify(engine.current.objects.get(editing.id)))
+            engine.current.apply({ upserts: [next], deleted: [] });
+        }
+      } else {
+        const { padding, lineHeight } = textAppearance(editing);
+        const height =
+          editing.type === 'frame' || editing.type === 'note'
+            ? editing.height
+            : Math.max(
+                editing.height,
+                (editorRef.current?.scrollHeight || lineHeight * engine.current.camera.zoom) /
+                  engine.current.camera.zoom +
+                  padding * 2,
+              );
+        const next = { ...editing, text: draft, height };
+        if (JSON.stringify(next) !== JSON.stringify(engine.current.objects.get(editing.id)))
+          engine.current.apply({ upserts: [next], deleted: [] });
+      }
     }
+    if (cancel && editing.type === 'text' && !engine.current?.objects.get(editing.id)?.text?.trim())
+      engine.current?.apply({ upserts: [], deleted: [editing.id] });
     setEditing(null);
+    host.current?.focus();
   };
   useEffect(() => {
     alive.current = true;
     queue.current = new SaveQueue(doc.board.id, doc.revision, onSave, (args) =>
       invoke('patchBoard', { ...args }),
     );
-    const e = new Engine(host.current!, doc.objects, doc.camera, {
+    const fitted = doc.objects.map((o) => (o.type === 'text' ? fitTextObject(o) : o));
+    const resized = fitted.filter(
+      (o, i) => o.width !== doc.objects[i].width || o.height !== doc.objects[i].height,
+    );
+    if (resized.length) queue.current.enqueue({ upserts: resized, deleted: [] });
+    const e = new Engine(host.current!, fitted, doc.camera, {
       edit: (edit) => {
         queue.current!.enqueue(edit);
         setCount(e.objects.size);
@@ -143,6 +274,10 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         queue.current!.enqueue({ upserts: [], deleted: [] }, c);
       },
       selection: setSelected,
+      selectionView: (bounds, viewport) => {
+        selectionView.current = { bounds, viewport };
+        positionTools();
+      },
       activate,
       create,
       context: (p) => setMenu(p),
@@ -160,12 +295,42 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       queue.current?.flush().catch(error);
     };
   }, []);
+  useLayoutEffect(() => {
+    engine.current?.setEditingPreview(editingObject);
+  }, [editingObject]);
+  useLayoutEffect(() => {
+    const el = toolsRef.current;
+    if (!el) return;
+    const measure = () => {
+      toolsSize.current = { width: el.offsetWidth, height: el.offsetHeight };
+      positionTools();
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [selected, editing, cropping]);
   useEffect(() => {
     if (editing) {
-      editorRef.current?.focus();
-      editorRef.current?.select();
+      const editor = editorRef.current;
+      editor?.focus();
+      editor?.setSelectionRange(editor.value.length, editor.value.length);
     }
   }, [editing?.id]);
+  useLayoutEffect(() => {
+    const el = editorRef.current;
+    if (!editing || !el || !editingAppearance) return;
+    if (editing.centerY && editingPlacement) {
+      el.style.height = `${Math.max(1, editingPlacement.height) * camera.zoom}px`;
+      return;
+    }
+    if (editing.type === 'note' || editing.type === 'text') {
+      el.style.height = `${Math.max(1, (editingObject || editing).height - editingAppearance.padding * 2) * camera.zoom}px`;
+      return;
+    }
+    el.style.height = '0px';
+    el.style.height = `${Math.max(editingAppearance.lineHeight * camera.zoom, el.scrollHeight)}px`;
+  }, [editing, editingObject, editingAppearance, draft, camera.zoom]);
   async function addAssets(assets: Asset[], point?: { x: number; y: number }) {
     const e = engine.current;
     if (!e || !alive.current) return;
@@ -213,6 +378,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   useImperativeHandle(ref, () => ({
     flush: async () => {
       if (editing) finishEdit();
+      if (cropSession.current) finishCrop();
       await Promise.all([...imports.current]);
       await queue.current?.flush();
     },
@@ -240,8 +406,9 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   };
   useEffect(() => {
     const typing = () =>
+      !!editingSession.current ||
       !!(document.activeElement as HTMLElement)?.closest(
-        'input,textarea,select,[contenteditable=true],[role=dialog]',
+        'input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role=dialog]',
       );
     const paste = async (event: ClipboardEvent) => {
       if (typing()) return;
@@ -285,7 +452,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         fontSize: 22,
         ...(url ? { url } : {}),
       };
-      e.apply({ upserts: [o], deleted: [] });
+      e.apply({ upserts: [fitTextObject(o)], deleted: [] });
       e.setSelection([o.id]);
     };
     const copyEvent = (event: ClipboardEvent) => {
@@ -300,6 +467,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       );
     };
     const key = (event: KeyboardEvent) => {
+      if (editingSession.current) return;
       if (typing()) return;
       const e = engine.current;
       if (!e) return;
@@ -372,6 +540,9 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     }
   }
   const contextItems: (MenuItem | null)[] = [
+    ...(selected.length === 1 && selected[0].type === 'image'
+      ? [{ label: 'Crop image', icon: <Crop />, action: () => startCrop(selected[0]) }, null]
+      : []),
     {
       label: 'Undo',
       icon: <Undo2 />,
@@ -414,6 +585,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     <div className="whiteboard">
       <div
         ref={host}
+        tabIndex={0}
+        aria-label="Whiteboard"
         className={'canvas-surface tool-' + tool}
         onDragOver={(e) => {
           if (e.dataTransfer.types.includes('Files')) e.preventDefault();
@@ -436,8 +609,30 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           Importing media…
         </div>
       )}
-      {selected.length > 0 && !editing && (
-        <div className="selection-tools" aria-label="Selection actions">
+      {selected.length > 0 && !cropping && (
+        <div
+          ref={toolsRef}
+          className="selection-tools"
+          aria-label="Selection actions"
+          onPointerDown={(event) => {
+            if (editingSession.current) event.preventDefault();
+          }}
+          onKeyDown={(event) => {
+            if (!editingSession.current) return;
+            event.stopPropagation();
+            if (event.key === 'Escape') {
+              event.preventDefault();
+              finishEdit(true);
+            }
+          }}
+          onBlur={(event) => {
+            if (
+              !event.currentTarget.contains(event.relatedTarget) &&
+              event.relatedTarget !== editorRef.current
+            )
+              finishEdit();
+          }}
+        >
           {selected.every((o) => !['image', 'video', 'link'].includes(o.type)) && (
             <div className="color-options">
               {colors.map((color) => (
@@ -445,31 +640,27 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
                   key={color}
                   style={{ background: color }}
                   aria-label={'Set color ' + color}
-                  onClick={() =>
-                    engine.current?.apply({
-                      upserts: engine.current.selected.map((o) => ({ ...o, color })),
-                      deleted: [],
-                    })
-                  }
+                  onClick={() => {
+                    const session = editingSession.current;
+                    if (session) {
+                      session.object = { ...session.object, color };
+                      setEditing(session.object);
+                      editorRef.current?.focus();
+                    } else
+                      engine.current?.apply({
+                        upserts: engine.current.selected.map((o) => ({ ...o, color })),
+                        deleted: [],
+                      });
+                  }}
                 />
               ))}
             </div>
-          )}
-          {selected.length === 1 && ['text', 'note', 'frame'].includes(selected[0].type) && (
-            <button
-              className="icon-button"
-              title="Edit text"
-              aria-label="Edit text"
-              onClick={() => startEdit(selected[0])}
-            >
-              <Pencil size={16} />
-            </button>
           )}
           {selected.length === 1 && ['video', 'link'].includes(selected[0].type) && (
             <button
               className="icon-button"
               aria-label={selected[0].type === 'video' ? 'Play video' : 'Open link'}
-              onClick={() => activate(selected[0])}
+              onClick={() => openObject(selected[0])}
             >
               {selected[0].type === 'video' ? <Play size={16} /> : <ExternalLink size={16} />}
             </button>
@@ -489,44 +680,105 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           )}
           <button
             className="icon-button"
+            aria-label="Center horizontally"
+            title="Center horizontally"
+            aria-pressed={
+              alignmentSelection.length > 0 && alignmentSelection.every((o) => o.centerX)
+            }
+            disabled={!alignmentSelection.length}
+            onClick={() => toggleAlignment('centerX')}
+          >
+            <AlignHorizontalJustifyCenter size={17} />
+          </button>
+          <button
+            className="icon-button"
+            aria-label="Center vertically"
+            title="Center vertically"
+            aria-pressed={
+              alignmentSelection.length > 0 && alignmentSelection.every((o) => o.centerY)
+            }
+            disabled={!alignmentSelection.length}
+            onClick={() => toggleAlignment('centerY')}
+          >
+            <AlignVerticalJustifyCenter size={17} />
+          </button>
+          <button
+            className="icon-button"
             aria-label="Duplicate selection"
-            onClick={() => engine.current?.duplicate()}
+            onClick={() => {
+              finishEdit();
+              engine.current?.duplicate();
+            }}
           >
             <Copy size={16} />
           </button>
           <button
             className="icon-button"
             aria-label="Delete selection"
-            onClick={() => engine.current?.deleteSelected()}
+            onClick={() => {
+              finishEdit();
+              engine.current?.deleteSelected();
+            }}
           >
             <Trash2 size={16} />
           </button>
         </div>
       )}
-      {editing && (
+      {editing && editingAppearance && (
         <textarea
           ref={editorRef}
           className={'text-editor ' + (editing.type === 'note' ? 'note-editor' : '')}
           aria-label="Edit canvas text"
           maxLength={100000}
           value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={() => finishEdit()}
+          onChange={(e) => {
+            if (editingSession.current) editingSession.current.draft = e.target.value;
+            setDraft(e.target.value);
+          }}
+          onBlur={(event) => {
+            if (!toolsRef.current?.contains(event.relatedTarget)) finishEdit();
+          }}
           onKeyDown={(e) => {
             e.stopPropagation();
-            if (e.key === 'Escape') finishEdit(true);
-            else if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') finishEdit();
+            if (e.nativeEvent.isComposing) return;
+            if (e.key === 'Escape') {
+              e.preventDefault();
+              finishEdit(true);
+            } else if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+              e.preventDefault();
+              finishEdit();
+            }
           }}
           style={{
-            left: editing.x * camera.zoom + camera.x,
-            top: editing.y * camera.zoom + camera.y,
-            width: editing.width * camera.zoom,
-            height: editing.height * camera.zoom,
-            fontSize: (editing.fontSize || 21) * camera.zoom,
-            padding: (editing.type === 'text' ? 0 : 22) * camera.zoom,
-            background: editing.type === 'note' ? editing.color : '#ffffff',
-            color: editing.type === 'text' ? editing.color : '#434e5d',
+            whiteSpace: editing.type === 'text' ? 'pre' : 'pre-wrap',
+            overflowWrap: editing.type === 'text' ? 'normal' : 'break-word',
+            left:
+              (editing.x + (editingPlacement?.left ?? editingAppearance.padding)) * camera.zoom +
+              camera.x,
+            top:
+              (editing.y + (editingPlacement?.top ?? editingAppearance.padding)) * camera.zoom +
+              camera.y,
+            textAlign: editing.centerX ? 'center' : 'left',
+            width: editingAppearance.wrapWidth * camera.zoom,
+            fontSize: editingAppearance.fontSize * camera.zoom,
+            lineHeight: `${editingAppearance.lineHeight * camera.zoom}px`,
+            fontFamily: editingAppearance.fontFamily,
+            color: editingAppearance.color,
           }}
+        />
+      )}
+      {cropping && (
+        <ImageCrop
+          image={uncroppedImage(cropping.object)}
+          camera={camera}
+          value={cropping.crop}
+          onChange={(crop) => {
+            const next = { object: cropping.object, crop };
+            cropSession.current = next;
+            setCropping(next);
+          }}
+          onApply={() => finishCrop()}
+          onCancel={() => finishCrop(true)}
         />
       )}
       <div className="canvas-toolbar" aria-label="Canvas tools">

@@ -22,11 +22,25 @@ const allowed = new Set([
   'importBoard',
 ]);
 let chain = Promise.resolve();
+const assetJobs = new Set();
 parentPort.on('message', (message) => {
+  // Image decoding must never hold up saved edits, switching boards or closing.
+  // The renderer admits only four concurrent image requests. Store metadata is
+  // read synchronously before sharp yields; generated tiles do not mutate SQLite.
+  if (message.command === 'asset') {
+    const job = store
+      .readAsset(message.args)
+      .then((result) => parentPort.postMessage({ id: message.id, result }))
+      .catch((e) => parentPort.postMessage({ id: message.id, error: e.message }))
+      .finally(() => assetJobs.delete(job));
+    assetJobs.add(job);
+    return;
+  }
   chain = chain.then(async () => {
     try {
       let result;
       if (message.command === 'close') {
+        await Promise.all(assetJobs);
         store.close();
         result = true;
       } else if (message.command === 'importFile') {

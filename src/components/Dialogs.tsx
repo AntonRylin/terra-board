@@ -24,13 +24,18 @@ export function Modal({
     )?.focus();
     const key = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        // The first Escape cancels a name draft; another closes the dialog.
+        if ((e.target as HTMLElement).closest('.inline-name[contenteditable="plaintext-only"]'))
+          return;
         e.preventDefault();
         e.stopPropagation();
         close.current();
       }
       if (e.key === 'Tab' && el) {
         const items = [
-          ...el.querySelectorAll<HTMLElement>('button,input,textarea,select,a[href]'),
+          ...el.querySelectorAll<HTMLElement>(
+            'button,input,textarea,select,a[href],[tabindex="0"]',
+          ),
         ].filter((x) => !x.hasAttribute('disabled'));
         if (!items.length) return;
         const first = items[0],

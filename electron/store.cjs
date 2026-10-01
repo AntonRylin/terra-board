@@ -63,8 +63,29 @@ function objectValue(o) {
     if (!number(o.fontSize, 8, 300)) throw Error('Invalid font size');
     result.fontSize = o.fontSize;
   }
+  for (const key of ['centerX', 'centerY']) {
+    if (o[key] !== undefined) {
+      if (typeof o[key] !== 'boolean') throw Error('Invalid text alignment');
+      result[key] = o[key];
+    }
+  }
   if (o.groupId) result.groupId = idValue(o.groupId);
   if (o.assetId) result.assetId = idValue(o.assetId);
+  if (o.crop !== undefined) {
+    const c = o.crop;
+    if (
+      o.type !== 'image' ||
+      !c ||
+      !number(c.x, 0, 1) ||
+      !number(c.y, 0, 1) ||
+      !number(c.width, 1e-6, 1) ||
+      !number(c.height, 1e-6, 1) ||
+      c.x + c.width > 1 + 1e-9 ||
+      c.y + c.height > 1 + 1e-9
+    )
+      throw Error('Invalid image crop');
+    result.crop = { x: c.x, y: c.y, width: c.width, height: c.height };
+  }
   if (o.type === 'image' || o.type === 'video') {
     if (!o.assetId) throw Error('Missing asset');
   }
@@ -416,6 +437,34 @@ class Store {
       file: path.join(this.root, 'assets', id + '.' + suffix),
       contentType: suffix === 'original' ? a.mime : 'image/webp',
     };
+  }
+  async readAsset({ id, variant = 'preview' }) {
+    if (!variant.startsWith('tile-')) return this.asset({ id, variant });
+    const match = /^tile-(\d+)-(\d+)-(\d+)-(\d+)$/.exec(variant);
+    if (!match) throw Error('Invalid image tile');
+    const [cols, rows, x, y] = match.slice(1).map(Number);
+    const validGrid = (n) => n >= 1 && n <= 256 && (n & (n - 1)) === 0;
+    if (!validGrid(cols) || !validGrid(rows) || x >= cols || y >= rows)
+      throw Error('Invalid image tile');
+    const original = this.asset({ id, variant: 'original' });
+    if (!original.mime.startsWith('image/')) throw Error('Invalid image tile');
+    const file = path.join(this.root, 'assets', `${id}.${variant}`);
+    if (!fs.existsSync(file)) {
+      // Crop the original before resizing. Decode is off the renderer thread,
+      // requests are concurrency-limited, and each GPU tile is at most 512px.
+      const left = Math.min(original.width - 1, Math.floor((x * original.width) / cols));
+      const top = Math.min(original.height - 1, Math.floor((y * original.height) / rows));
+      const right = Math.max(left + 1, Math.floor(((x + 1) * original.width) / cols));
+      const bottom = Math.max(top + 1, Math.floor(((y + 1) * original.height) / rows));
+      const bytes = await sharp(original.file, { limitInputPixels: 100000000, animated: false })
+        .rotate()
+        .extract({ left, top, width: right - left, height: bottom - top })
+        .resize({ width: 512, height: 512, fit: 'inside', withoutEnlargement: true })
+        .png()
+        .toBuffer();
+      durableWrite(file, bytes);
+    }
+    return { ...original, file, contentType: 'image/png' };
   }
   async exportBoard({ id }) {
     const d = this.loadBoard({ id }),
