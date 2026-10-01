@@ -736,3 +736,80 @@ test('wheel bursts accumulate without overshoot and clamp at zoom limits', () =>
   for (let i = 0; i < 60; i++) f.tick();
   assert.equal(f.engine.camera.zoom, 0.025);
 });
+
+for (const corner of ['nw', 'ne', 'sw', 'se'])
+  test(`multi-selection ${corner} scales proportionally with one undo and cancellation`, () => {
+    const f = fixture();
+    f.engine.camera = { x: 0, y: 0, zoom: 1 };
+    const items = [
+      {
+        id: 'a',
+        type: 'text',
+        x: 100,
+        y: 100,
+        width: 100,
+        height: 50,
+        fontSize: 20,
+        text: 'Scale',
+        z: 1,
+      },
+      {
+        id: 'b',
+        type: 'note',
+        x: 300,
+        y: 200,
+        width: 100,
+        height: 100,
+        fontSize: 21,
+        text: 'Together',
+        z: 2,
+      },
+    ];
+    f.engine.apply({ upserts: items, deleted: [] });
+    f.engine.setSelection(['a', 'b']);
+    const west = corner.includes('w'),
+      north = corner.includes('n');
+    const x = west ? 100 : 400,
+      y = north ? 100 : 300;
+    const dx = west ? -150 : 150,
+      dy = north ? -100 : 100;
+    f.engine.down(f.event(x, y, 0));
+    f.engine.move(f.event(x + dx, y + dy, 0));
+    f.engine.up(f.event(x + dx, y + dy, 0));
+    const anchor = { x: west ? 400 : 100, y: north ? 300 : 100 };
+    for (const o of items) {
+      const n = f.engine.objects.get(o.id);
+      assert.equal(n.width, o.width * 1.5);
+      assert.equal(n.height, o.height * 1.5);
+      assert.equal(n.fontSize, o.fontSize * 1.5);
+      assert.equal(n.x, anchor.x + (o.x - anchor.x) * 1.5);
+      assert.equal(n.y, anchor.y + (o.y - anchor.y) * 1.5);
+    }
+    f.engine.undo();
+    for (const o of items) assert.deepEqual({ ...f.engine.objects.get(o.id) }, o);
+    f.engine.down(f.event(x, y, 0));
+    f.engine.move(f.event(x + dx, y + dy, 0));
+    f.engine.cancel();
+    for (const o of items) assert.deepEqual({ ...f.engine.objects.get(o.id) }, o);
+  });
+
+test('multi-selection scaling includes frame contents exactly once', () => {
+  const f = fixture();
+  f.engine.camera = { x: 0, y: 0, zoom: 1 };
+  const items = [
+    { id: 'frame', type: 'frame', x: 100, y: 100, width: 300, height: 300, fontSize: 14, z: 0 },
+    { id: 'inside', type: 'note', x: 150, y: 150, width: 100, height: 100, fontSize: 21, z: 1 },
+    { id: 'outside', type: 'rect', x: 500, y: 100, width: 100, height: 100, z: 2 },
+  ];
+  f.engine.apply({ upserts: items, deleted: [] });
+  f.engine.setSelection(['frame', 'outside']);
+  f.engine.down(f.event(600, 400, 0));
+  f.engine.move(f.event(850, 550, 0));
+  f.engine.up(f.event(850, 550, 0));
+  const child = f.engine.objects.get('inside');
+  assert.equal(child.width, 150);
+  assert.equal(child.x, 175);
+  assert.equal(child.fontSize, 31.5);
+  f.engine.undo();
+  for (const o of items) assert.deepEqual({ ...f.engine.objects.get(o.id) }, o);
+});

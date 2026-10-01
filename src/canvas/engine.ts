@@ -8,7 +8,15 @@ import { History } from './history';
 import { renderText, renderLinkCaption, textRegion } from './text-rendering';
 import { TextureCache } from './textures';
 import { imageTiles } from './image-detail';
-import { resizeHandles, handlePoint, resizeObject, type ResizeHandle } from './resize';
+import {
+  corners,
+  resizeSelection,
+  resizeHandles,
+  handlePoint,
+  resizeObject,
+  type Corner,
+  type ResizeHandle,
+} from './resize';
 import { localToWorld, worldToLocal, rotationFromDrag, rotationHandlePoint } from './transform';
 import { hitsFrameLabel, visualBounds, hasExternalLabel } from './frame-label';
 import {
@@ -38,6 +46,7 @@ type Gesture = {
   original: CanvasObject[];
   world: Point;
   box?: Bounds;
+  scaleBounds?: Bounds;
   changed?: boolean;
   secondary?: boolean;
   toggle?: boolean;
@@ -249,7 +258,9 @@ export class Engine {
           start: p,
           world: w,
           camera: { ...this.camera },
-          original: this.selected.map((o) => ({ ...o })),
+          original:
+            this.selection.size > 1 ? this.moveObjects() : this.selected.map((o) => ({ ...o })),
+          scaleBounds: this.selection.size > 1 ? bounds || undefined : undefined,
         };
       else {
         const hit = this.hit(w);
@@ -341,8 +352,25 @@ export class Engine {
       });
       this.invalidate();
     } else if (g.mode === 'resize') {
-      const o = g.original[0];
-      this.preview(resizeObject(o, g.corner!, dx / g.camera.zoom, dy / g.camera.zoom, e.shiftKey));
+      if (g.scaleBounds) {
+        for (const o of resizeSelection(
+          g.original,
+          g.scaleBounds,
+          g.corner as Corner,
+          dx / g.camera.zoom,
+          dy / g.camera.zoom,
+        ))
+          this.preview(o);
+      } else
+        this.preview(
+          resizeObject(
+            g.original[0],
+            g.corner!,
+            dx / g.camera.zoom,
+            dy / g.camera.zoom,
+            e.shiftKey,
+          ),
+        );
       this.invalidate();
     } else {
       const w = this.screenPoint(p);
@@ -522,7 +550,15 @@ export class Engine {
     }
   }
   private resizeCorner(p: Point): ResizeHandle | 'rotate' | undefined {
-    if (this.selection.size !== 1 || this.editingId || this.cropPreview) return;
+    if (!this.selection.size || this.editingId || this.cropPreview) return;
+    if (this.selection.size > 1) {
+      const b = boundsOf(this.selected)!;
+      return corners.find((corner) => {
+        const x = (b.x + (corner.includes('e') ? b.width : 0)) * this.camera.zoom + this.camera.x;
+        const y = (b.y + (corner.includes('s') ? b.height : 0)) * this.camera.zoom + this.camera.y;
+        return Math.abs(p.x - x) < 10 && Math.abs(p.y - y) < 10;
+      });
+    }
     const o = this.selected[0],
       c = this.camera;
     let nearest: ResizeHandle | 'rotate' | undefined,
@@ -551,7 +587,7 @@ export class Engine {
           : hoverCorner;
     const selectedId = this.selection.values().next().value;
     const angle =
-      (selectedId ? this.objects.get(selectedId)?.rotation || 0 : 0) +
+      (this.selection.size === 1 && selectedId ? this.objects.get(selectedId)?.rotation || 0 : 0) +
       (corner === 'n' || corner === 's'
         ? 90
         : corner === 'e' || corner === 'w'
@@ -1105,9 +1141,16 @@ export class Engine {
         y = b.y * c.zoom + c.y,
         w = b.width * c.zoom,
         h = b.height * c.zoom;
-      if (this.selection.size !== 1)
-        g.rect(x - 2, y - 2, w + 4, h + 4).stroke({ color: '#4486d9', width: 1.5 });
-      else {
+      if (this.selection.size !== 1) {
+        g.rect(x, y, w, h).stroke({ color: '#4486d9', width: 1.5 });
+        for (const corner of corners) {
+          const hx = x + (corner.includes('e') ? w : 0),
+            hy = y + (corner.includes('s') ? h : 0);
+          g.rect(hx - 4, hy - 4, 8, 8)
+            .fill('#ffffff')
+            .stroke({ color: '#4486d9', width: 1.5 });
+        }
+      } else {
         const o = this.editingPreview || this.selected[0];
         const screen = (p: Point) => {
           const q = localToWorld(o, p);

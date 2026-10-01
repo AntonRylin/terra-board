@@ -1,3 +1,4 @@
+import type { Bounds } from './geometry';
 import type { CanvasObject } from '../model';
 import { rotatePoint } from './transform.ts';
 
@@ -64,4 +65,45 @@ export function resizeObject(
     fontSize,
     ...(edge && o.type === 'text' ? { textBox: true } : {}),
   };
+}
+
+// One common factor preserves the layout, including rotated objects and frame contents.
+export function resizeSelection(
+  objects: CanvasObject[],
+  bounds: Bounds,
+  corner: Corner,
+  dx: number,
+  dy: number,
+) {
+  const west = corner.includes('w'),
+    north = corner.includes('n');
+  const anchor = {
+    x: bounds.x + (west ? bounds.width : 0),
+    y: bounds.y + (north ? bounds.height : 0),
+  };
+  const requested =
+    1 +
+    ((west ? -dx : dx) * bounds.width + (north ? -dy : dy) * bounds.height) /
+      Math.max(1, bounds.width ** 2 + bounds.height ** 2);
+  const font = (o: CanvasObject) =>
+    ['text', 'note', 'rect', 'ellipse', 'frame'].includes(o.type)
+      ? o.fontSize || (o.type === 'note' ? 21 : o.type === 'frame' ? 14 : 18)
+      : undefined;
+  let minimum = 0,
+    maximum = Infinity;
+  for (const o of objects) {
+    const size = font(o);
+    minimum = Math.max(minimum, 1 / o.width, 1 / o.height, size ? 8 / size : 0);
+    maximum = Math.min(maximum, 1e6 / o.width, 1e6 / o.height, size ? 300 / size : Infinity);
+  }
+  const scale = Math.max(minimum, Math.min(maximum, requested));
+  return objects.map((o) => ({
+    ...o,
+    x: anchor.x + (o.x - anchor.x) * scale,
+    y: anchor.y + (o.y - anchor.y) * scale,
+    width: o.width * scale,
+    height: o.height * scale,
+    ...(font(o) ? { fontSize: Math.max(8, Math.min(300, font(o)! * scale)) } : {}),
+    ...(o.linkPreviewHeight ? { linkPreviewHeight: o.linkPreviewHeight * scale } : {}),
+  }));
 }

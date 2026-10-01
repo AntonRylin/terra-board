@@ -515,10 +515,7 @@ try {
   const frameEditor = await rect('.text-editor');
   assert.ok(frameEditor.y + frameEditor.height < host.y + 70, 'name editor is above frame');
   assert.ok(Math.abs(frameEditor.x - (host.x + 390)) < 1, 'name starts at frame left edge');
-  assert.equal(
-    await read(`!document.querySelector('[aria-label="Center vertically"]')`),
-    true,
-  );
+  assert.equal(await read(`!document.querySelector('[aria-label="Center vertically"]')`), true);
   await send('Input.insertText', { text: ' renamed' });
   await key('Enter', 'Enter');
   await until(
@@ -597,6 +594,42 @@ try {
     async () => (await frameState()).find((o) => o.id === 'shape').y === shapeBefore.y,
     'restore shape placement',
   );
+  await click(host.x + 1000, host.y + 650);
+  await key('a', 'KeyA', 2);
+  {
+    const beforeScale = await frameState();
+    const left = Math.min(...beforeScale.map((o) => o.x)),
+      top = Math.min(...beforeScale.map((o) => o.y));
+    const right = Math.max(...beforeScale.map((o) => o.x + o.width)),
+      bottom = Math.max(...beforeScale.map((o) => o.y + o.height));
+    const selectionShot = await send('Page.captureScreenshot', { format: 'png' });
+    writeFileSync(
+      join(root, 'selection-scale-handles.png'),
+      Buffer.from(selectionShot.data, 'base64'),
+    );
+    await drag(
+      { x: host.x + left, y: host.y + top },
+      { x: host.x + left + (right - left) * 0.1, y: host.y + top + (bottom - top) * 0.1 },
+    );
+    await until(async () => {
+      const after = await frameState();
+      return beforeScale.every((o) => {
+        const n = after.find((item) => item.id === o.id);
+        return (
+          Math.abs(n.width / o.width - 0.9) < 0.005 && Math.abs(n.height / o.height - 0.9) < 0.005
+        );
+      });
+    }, 'whole selection scales proportionally');
+    await key('z', 'KeyZ', 2);
+    await until(async () => {
+      const after = await frameState();
+      return beforeScale.every((o) => {
+        const n = after.find((item) => item.id === o.id);
+        return n.x === o.x && n.y === o.y && n.width === o.width && n.height === o.height;
+      });
+    }, 'whole selection restored with one undo');
+  }
+  await key('Escape', 'Escape');
   await click(host.x + originalText.x + 30, host.y + originalText.y + 20);
   const checkToolbar = async (o, camera = { x: 0, y: 0, zoom: 1 }) => {
     await sleep(100);

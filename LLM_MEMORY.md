@@ -163,3 +163,6 @@ Before committing: inspect the full diff, run appropriate verification and `git 
 
 
 Packaging fallback observed 2026-10-01: Electron Builder hit HTTP 504 while retrieving Electron even though `node_modules/electron/dist` already existed. After the failed process exited, `npm run build` followed by `npx electron-builder --win dir --config.electronDist=node_modules/electron/dist` successfully used the installed Electron distribution. Verify the installed Electron version matches the package version first; this avoids an unnecessary download, not compilation or packaged testing.
+
+## Multi-object proportional scaling
+Multiple selections show four fixed-screen-size corner handles. Drag any corner to scale all selected objects about the opposite corner, including positions and text sizes. One common scale respects every object's size/font limits. `resizeSelection` in `src/canvas/resize.ts` owns this calculation. The engine snapshots contained objects of selected frames as well, deduplicates them, and saves one undo transaction. Single-frame resizing retains its original region-only behavior. Regression tests cover all corners, cancellation, undo and frame contents; the packaged interaction suite checks a real whole-selection drag and writes `selection-scale-handles.png`.
