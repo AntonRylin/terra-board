@@ -135,6 +135,47 @@ test('horizontal and vertical arrows can shrink with a multi-selection', () => {
 });
 
 import { drawArrow } from '../src/canvas/arrow-rendering.ts';
+test('thick shafts stop inside filled arrowheads instead of protruding through their tips', () => {
+  for (const kind of ['arrow', 'triangle', 'diamond', 'circle']) {
+    for (const dash of ['solid', 'dashed', 'dotted']) {
+      const o = arrowFromPoints({ id: 'a', type: 'arrow', z: 1 }, [
+        { x: 0, y: 0 },
+        { x: 400, y: 0 },
+      ]);
+      o.arrow = { ...o.arrow, start: kind, end: kind, thickness: 40, dash };
+      const shaft = [];
+      let inShaft = true;
+      const graphics = {
+        moveTo(x, y) {
+          if (inShaft) shaft.push({ x, y });
+          return this;
+        },
+        lineTo(x, y) {
+          if (inShaft) shaft.push({ x, y });
+          return this;
+        },
+        stroke() {
+          inShaft = false;
+          return this;
+        },
+        poly() {
+          return this;
+        },
+        circle() {
+          return this;
+        },
+        fill() {
+          return this;
+        },
+      };
+      drawArrow(graphics, o);
+      assert.ok(shaft.length > 0);
+      assert.ok(Math.min(...shaft.map((p) => p.x)) > 20, `${kind}/${dash}: start cap protrudes`);
+      assert.ok(Math.max(...shaft.map((p) => p.x)) < 380, `${kind}/${dash}: end cap protrudes`);
+    }
+  }
+});
+
 test('vertical elbow arrows begin at the actual endpoint even with zero-length elbows', () => {
   const o = arrowFromPoints({ id: 'a', type: 'arrow', z: 1 }, [
     { x: 100, y: 300 },
@@ -158,4 +199,34 @@ test('vertical elbow arrows begin at the actual endpoint even with zero-length e
   drawArrow(graphics, o);
   assert.deepEqual(calls[0], ['move', 0, 200]);
   assert.deepEqual(calls.at(-1), ['line', 0, 0]);
+});
+
+test('short thick arrows retain both markers without a reversed shaft', () => {
+  const o = arrowFromPoints({ id: 'a', type: 'arrow', z: 1 }, [
+    { x: 0, y: 0 },
+    { x: 1, y: 0 },
+  ]);
+  o.arrow = { ...o.arrow, start: 'triangle', end: 'triangle', thickness: 40 };
+  let markers = 0;
+  const graphics = {
+    moveTo() {
+      assert.fail('short arrow should not draw a shaft');
+    },
+    lineTo() {
+      assert.fail('short arrow should not draw a shaft');
+    },
+    stroke() {
+      return this;
+    },
+    poly(points) {
+      assert.ok(points.every(Number.isFinite));
+      markers++;
+      return this;
+    },
+    fill() {
+      return this;
+    },
+  };
+  drawArrow(graphics, o);
+  assert.equal(markers, 2);
 });

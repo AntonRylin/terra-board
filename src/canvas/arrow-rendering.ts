@@ -4,19 +4,52 @@ import { arrowPath, arrowStyle } from './arrows.ts';
 import type { Point } from './geometry';
 
 export function drawArrow(g: Graphics, o: CanvasObject) {
-  const points = arrowPath(o),
+  const path = arrowPath(o),
     style = arrowStyle(o),
     color = o.color || '#333333',
     width = style.thickness;
   // Keep dash geometry bounded even for exceptionally long board connectors.
-  const total = points
+  const total = path
     .slice(1)
-    .reduce((sum, p, i) => sum + Math.hypot(p.x - points[i].x, p.y - points[i].y), 0);
+    .reduce((sum, p, i) => sum + Math.hypot(p.x - path[i].x, p.y - path[i].y), 0);
+  const size = Math.max(10, width * 4);
+  const inset = (kind: ArrowHead) =>
+    kind === 'none'
+      ? 0
+      : kind === 'open'
+        ? width / 2
+        : kind === 'circle'
+          ? size * 0.48
+          : kind === 'diamond'
+            ? size
+            : size * 0.6;
+  // Stop the rounded shaft inside the marker. Drawing it to the pointed tip
+  // makes its round cap poke through, especially on thick arrows.
+  const start = inset(style.start),
+    end = total - inset(style.end),
+    points: Point[] = [];
+  let distance = 0;
+  for (let i = 1; i < path.length && end > start; i++) {
+    const a = path[i - 1],
+      b = path[i],
+      length = Math.hypot(b.x - a.x, b.y - a.y);
+    const from = Math.max(start, distance),
+      to = Math.min(end, distance + length);
+    if (length > 0 && to > from) {
+      const at = (d: number) => ({
+        x: a.x + ((b.x - a.x) * (d - distance)) / length,
+        y: a.y + ((b.y - a.y) * (d - distance)) / length,
+      });
+      if (!points.length) points.push(at(from));
+      points.push(at(to));
+    }
+    distance += length;
+  }
   const unit = Math.max(width, total / 6000);
   const on = style.dash === 'dotted' ? unit * 0.1 : unit * 4,
     off = unit * 2.5;
   let phase = 0;
-  if (style.dash === 'solid') g.moveTo(points[0].x, points[0].y);
+  if (style.dash === 'solid' && points.length) g.moveTo(points[0].x, points[0].y);
   for (let i = 1; i < points.length; i++) {
     const a = points[i - 1],
       b = points[i],
@@ -49,8 +82,7 @@ export function drawArrow(g: Graphics, o: CanvasObject) {
     const length = Math.hypot(p.x - from.x, p.y - from.y) || 1,
       ux = (p.x - from.x) / length,
       uy = (p.y - from.y) / length;
-    const size = Math.max(10, width * 4),
-      half = size * 0.48;
+    const half = size * 0.48;
     const a = { x: p.x - ux * size - uy * half, y: p.y - uy * size + ux * half },
       b = { x: p.x - ux * size + uy * half, y: p.y - uy * size - ux * half };
     if (kind === 'circle') {
@@ -72,16 +104,16 @@ export function drawArrow(g: Graphics, o: CanvasObject) {
           : [p.x, p.y, a.x, a.y, b.x, b.y];
     g.poly(poly).fill(color);
   }
-  const first = points[0],
-    last = points.at(-1)!;
+  const first = path[0],
+    last = path.at(-1)!;
   head(
     first,
-    points.find((p) => Math.hypot(p.x - first.x, p.y - first.y) > 0.01) || last,
+    path.find((p) => Math.hypot(p.x - first.x, p.y - first.y) > 0.01) || last,
     style.start,
   );
   head(
     last,
-    [...points].reverse().find((p) => Math.hypot(p.x - last.x, p.y - last.y) > 0.01) || first,
+    [...path].reverse().find((p) => Math.hypot(p.x - last.x, p.y - last.y) > 0.01) || first,
     style.end,
   );
 }

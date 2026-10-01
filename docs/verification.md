@@ -265,3 +265,9 @@ Native backup restoration, automatic asset cleanup, richer content types and fra
 - `npm test`: 121 passing; `npm run build`: passing. The new steep-end curve regression failed before the geometry fix and passes afterward; it also checks bounded geometry and insertion dots on the actual curve.
 - Packaged `node scripts/desktop-interactions.mjs` passed in `.local-test/desktop-input-YUaCkO` with no renderer exceptions. It clicks every path/stroke preview, drags the thickness slider, verifies single-step undo/redo, selects graphical endpoint markers, edits labels and bends, and checks persisted state after closing.
 - Inspected `arrow-style-previews.png` and `arrow-head-previews.png` from that run. The settings expose the slider and all six path/stroke choices without nested dropdowns.
+
+### 2026-10-01: clean arrow tips and new application icon
+- `npm test`: 123 passing; production build and local-Electron packaging passed. Added a regression that failed on the old shaft for filled arrowheads at thickness 40 with solid/dashed/dotted strokes, plus a short-arrow check.
+- Focused packaged pointer check passed in `.local-test/desktop-input-v47g8H`, creating a diagonal arrow with triangle markers at both ends and thickness 40. Inspected `thick-arrow-tips.png`: clean tips with no rounded shaft protrusion; no renderer exceptions.
+- The broad desktop suite did not complete on this run: one attempt timed out at `Input.dispatchMouseEvent` during earlier text editing; its retry stalled before reaching arrows. This is not counted as a passing full interaction suite.
+- All three latest icon assets in packaged `app.asar` matched source bytes. Extracted the executable's Windows icon to `.local-test/packaged-app-icon-latest.png` and visually verified the latest pale-blue orbit artwork. Fixture generation no longer replaces application icons.

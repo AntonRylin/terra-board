@@ -1,7 +1,5 @@
 import sharp from 'sharp';
-import {mkdirSync,writeFileSync} from 'node:fs';
-mkdirSync('.local-test',{recursive:true});mkdirSync('assets',{recursive:true});
+import {mkdirSync} from 'node:fs';
+mkdirSync('.local-test',{recursive:true});
 const image=Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="960" height="640"><rect width="960" height="640" fill="#dce7ed"/><circle cx="600" cy="255" r="175" fill="#a8bcb0"/><rect x="135" y="190" width="310" height="340" rx="24" fill="#f4ece0"/><path d="M120 570L820 490" stroke="#6f8c83" stroke-width="12"/><text x="155" y="275" font-family="sans-serif" font-size="40" fill="#3c4e50">Local media</text><text x="155" y="325" font-family="sans-serif" font-size="22" fill="#74877f">Original + previews</text></svg>');
 await sharp(image).png().toFile('.local-test/reference.png');
-const icon=Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><defs><linearGradient id="g" x2=".8" y2="1"><stop stop-color="#e6f0ff"/><stop offset="1" stop-color="#c0d6f3"/></linearGradient></defs><rect x="8" y="8" width="240" height="240" rx="59" fill="url(#g)"/><rect x="47" y="49" width="106" height="134" rx="19" fill="#80a8d8"/><rect x="100" y="76" width="109" height="134" rx="19" fill="#fff"/><rect x="120" y="101" width="54" height="7" rx="3.5" fill="#81a0c3"/><rect x="120" y="120" width="68" height="7" rx="3.5" fill="#c2d4e9"/><circle cx="177" cy="175" r="13" fill="#a7bda9"/></svg>');
-writeFileSync('assets/icon.svg',icon);const png=await sharp(icon).png().toBuffer();writeFileSync('assets/icon.png',png);const header=Buffer.alloc(22);header.writeUInt16LE(1,2);header.writeUInt16LE(1,4);header.writeUInt16LE(1,10);header.writeUInt16LE(32,12);header.writeUInt32LE(png.length,14);header.writeUInt32LE(22,18);writeFileSync('assets/icon.ico',Buffer.concat([header,png]));
