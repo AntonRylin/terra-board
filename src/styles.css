@@ -186,7 +186,8 @@ p {
   transform: translateY(-1px);
 }
 .launch-item.opened .app-icon,
-.launch-item.drop-target .app-icon {
+.launch-item.drop-target .app-icon,
+.folder-board.drop-target .app-icon {
   outline: 1px solid #76a0d4;
   outline-offset: 4px;
 }

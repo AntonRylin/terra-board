@@ -24,6 +24,7 @@ interface Props {
   onSearch: () => void;
   onOptions: (x: number, y: number) => void;
   onBoardMenu: (b: Board, x: number, y: number) => void;
+  onIconDrop: (b: Board, file: File) => void;
   onFolderMenu: (f: Folder, x: number, y: number) => void;
   onMove: (id: string, folderId: string | null, position?: number) => void;
   onReorderFolder: (id: string, position: number) => void;
@@ -102,6 +103,22 @@ export default function Launcher(p: Props) {
     e.dataTransfer.setData('application/x-local-canvas', JSON.stringify({ id, kind }));
     e.dataTransfer.effectAllowed = 'move';
   };
+  const dropIcon = (e: React.DragEvent, board: Board) => {
+    const file = e.dataTransfer.files[0];
+    if (!file) return false;
+    e.preventDefault();
+    e.stopPropagation();
+    e.currentTarget.classList.remove('drop-target');
+    p.onIconDrop(board, file);
+    return true;
+  };
+  const iconDragOver = (e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes('Files')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'copy';
+    e.currentTarget.classList.add('drop-target');
+  };
   const drop = (
     e: React.DragEvent,
     fid: string | null,
@@ -179,11 +196,13 @@ export default function Launcher(p: Props) {
                 onDragOver={(e) => {
                   e.preventDefault();
                   e.currentTarget.classList.add('drop-target');
+                  if (!isFolder) iconDragOver(e);
                 }}
                 onDragLeave={(e) => e.currentTarget.classList.remove('drop-target')}
-                onDrop={(e) =>
-                  drop(e, isFolder ? item.id : null, { kind, position: item.position })
-                }
+                onDrop={(e) => {
+                  if (!isFolder && dropIcon(e, b)) return;
+                  drop(e, isFolder ? item.id : null, { kind, position: item.position });
+                }}
                 onClick={() =>
                   isFolder ? p.onFolder(p.opened === item.id ? null : item.id) : p.onOpen(item.id)
                 }
@@ -307,6 +326,11 @@ export default function Launcher(p: Props) {
                     title={b.name}
                     draggable
                     onDragStart={(e) => drag(e, b.id)}
+                    onDragOver={iconDragOver}
+                    onDragLeave={(e) => e.currentTarget.classList.remove('drop-target')}
+                    onDrop={(e) => {
+                      dropIcon(e, b);
+                    }}
                     onContextMenu={(e) => {
                       e.preventDefault();
                       p.onBoardMenu(b, e.clientX, e.clientY);

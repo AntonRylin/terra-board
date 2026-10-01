@@ -44,6 +44,7 @@ type ModalState = {
     | 'help';
   id?: string;
   folderId?: string | null;
+  iconFile?: File;
 };
 export default function App() {
   const [dockEdge, setDockEdge] = useState(readDockEdge);
@@ -375,6 +376,12 @@ export default function App() {
         }}
         onOptions={libraryMenu}
         onBoardMenu={boardMenu}
+        onIconDrop={(board, file) => {
+          if (busy) return;
+          setGlyph(board.icon);
+          setColor(board.color);
+          ask({ kind: 'icon', id: board.id, iconFile: file });
+        }}
         onFolderMenu={folderMenu}
         onRenameBoard={(id, name) => change(id, { name })}
         onRenameFolder={renameFolder}
@@ -530,7 +537,13 @@ export default function App() {
               >
                 {modal.kind === 'icon' ? (
                   <>
-                    <BoardIconImage ref={iconImage} value={glyph} color={color} onBusy={setBusy} />
+                    <BoardIconImage
+                      ref={iconImage}
+                      value={glyph}
+                      color={color}
+                      onBusy={setBusy}
+                      initialFile={modal.iconFile}
+                    />
                     <div className="icon-picker">
                       {iconNames.map((icon) => (
                         <button

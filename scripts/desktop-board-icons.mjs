@@ -32,6 +32,8 @@ const asset = await store.importAsset({
     .toBuffer(),
 });
 const board = store.createBoard({ name: 'Desktop input verification' });
+const folder = store.createFolder({ name: 'Icon folder' });
+const folderBoard = store.createBoard({ name: 'Folder icon target', folderId: folder.id });
 store.patchBoard({
   id: board.id,
   revision: 0,
@@ -287,9 +289,27 @@ try {
     read(
       `(async()=>{const response=await fetch('canvas-media://asset/${asset.id}/original');const blob=await response.blob();const data=new DataTransfer();data.items.add(new File([blob],'quadrants.png',{type:'image/png'}));document.querySelector('.board-icon-upload').dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:data}));})()`,
     );
-  await openIcon();
-  await drop();
-  await until(() => read(`!!document.querySelector('.board-icon-crop')`), 'crop after drop');
+  const nativeDrop = async (selector) => {
+    const target = await rect(selector);
+    const data = {
+      items: [],
+      files: [join(root, 'assets', asset.id + '.original')],
+      dragOperationsMask: 1,
+    };
+    for (const type of ['dragEnter', 'dragOver', 'drop'])
+      await send('Input.dispatchDragEvent', {
+        type,
+        x: target.x + target.width / 2,
+        y: target.y + target.height / 2,
+        data,
+      });
+  };
+  await nativeDrop('[aria-label="Open board Desktop input verification"]');
+  await until(
+    () => read(`!!document.querySelector('.board-icon-crop')`),
+    'crop after sidebar file drop',
+    4000,
+  );
   assert.equal(
     (await documentState()).board.icon,
     initial.board.icon,
@@ -357,6 +377,27 @@ try {
   await until(
     async () => (await documentState()).board.icon.startsWith('asset-'),
     'upload saves image',
+  );
+  await until(() => read(`!document.querySelector('.modal')`), 'upload dialog closes');
+  const mainIcon = (await documentState()).board.icon;
+  await clickSelector('[aria-label="Open folder Icon folder"]');
+  await nativeDrop('[aria-label="Open board Folder icon target"]');
+  await until(
+    () => read(`!!document.querySelector('.board-icon-crop')`),
+    'crop after folder board drop',
+  );
+  await clickSelector('.dialog-actions .primary');
+  await until(
+    async () =>
+      (
+        await read(`window.canvas.invoke('loadBoard',{id:${JSON.stringify(folderBoard.id)}})`)
+      ).board.icon.startsWith('asset-'),
+    'folder board icon saved',
+  );
+  assert.equal(
+    (await documentState()).board.icon,
+    mainIcon,
+    'dropping on another board preserves active board',
   );
   assert.deepEqual(errors, []);
   console.log(

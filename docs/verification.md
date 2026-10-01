@@ -1,5 +1,11 @@
 # Verification — Local Canvas
 
+## File drops onto launcher board icons — 2026-10-01
+
+The original icon upload implementation handled drops only inside the icon dialog. The user's screenshot showed a drop onto the sidebar board button, whose existing handler only parsed internal board-move data and silently ignored files. Board buttons in both the launcher and folder sheet now distinguish file drops from internal moves, highlight copy targets and open the destination board's crop dialog with the dropped file.
+
+Before the fix, `Input.dispatchDragEvent` with a real local file path reproduced the missing crop dialog. After packaging the fix, `scripts/desktop-board-icons.mjs` passed for sidebar and folder-board file drops, correct destination, crop/save/cancel, upload chooser and portable transfer in `.local-test/desktop-input-CsXgWs`. The docking suite passed in `.local-test/docking-76h1Ui`, including native board-to-folder dragging. All 106 Node tests passed. The native-file CDP path improves on the earlier injected drop confined to the dialog; it does not claim manual Explorer interaction.
+
 ## Uploaded board icons and manual cropping — 2026-10-01
 
 The board icon dialog accepts file selection and drag/drop. A bounded square crop supports pointer dragging, keyboard positioning, zoom and reset; saving writes a 512px PNG into local asset storage. Cancel leaves board metadata unchanged. Board icon strings may reference a validated image asset; portable exports include that asset even when no canvas object references it. Existing glyphs remain supported.
