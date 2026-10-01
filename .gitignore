@@ -1,0 +1,16 @@
+node_modules/
+dist/
+release/
+.local-test/
+.superpowers/
+*.log
+.env
+.env.*
+!.env.example
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.canvas
+*.pem
+*.key
+*.p12

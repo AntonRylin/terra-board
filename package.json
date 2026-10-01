@@ -1,0 +1,59 @@
+{
+  "name": "local-canvas",
+  "productName": "Local Canvas",
+  "version": "0.1.1",
+  "description": "A private, local visual workspace",
+  "author": "Local Canvas",
+  "license": "UNLICENSED",
+  "type": "module",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "preview": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit && vite build",
+    "start": "electron .",
+    "test": "node --test tests/*.test.mjs",
+    "package": "npm run build && electron-builder --win dir",
+    "test:desktop": "node scripts/desktop-check.mjs"
+  },
+  "dependencies": {
+    "fflate": "^0.8.2",
+    "lucide-react": "^0.468.0",
+    "pixi.js": "8.21.0",
+    "rbush": "^4.0.1",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "sharp": "0.35.5"
+  },
+  "devDependencies": {
+    "@types/rbush": "^4.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "electron": "44.5.1",
+    "electron-builder": "^26.0.12",
+    "prettier": "^3.9.9",
+    "typescript": "^5.9.3",
+    "vite": "8.3.1"
+  },
+  "build": {
+    "appId": "local.canvas.desktop",
+    "productName": "Local Canvas",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "electron/**",
+      "assets/**",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/sharp/**",
+      "node_modules/@img/**"
+    ],
+    "win": {
+      "target": "dir",
+      "icon": "assets/icon.ico"
+    }
+  }
+}

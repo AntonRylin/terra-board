@@ -1,0 +1,380 @@
+const { app, BrowserWindow, ipcMain, protocol, net, dialog, shell, Menu } = require('electron');
+const { Worker } = require('node:worker_threads');
+const path = require('node:path');
+const fs = require('node:fs');
+const { pathToFileURL } = require('node:url');
+const { Readable } = require('node:stream');
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'canvas-app', privileges: { standard: true, secure: true, supportFetchAPI: true } },
+  {
+    scheme: 'canvas-media',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      stream: true,
+      corsEnabled: true,
+    },
+  },
+]);
+const smoke = process.argv.includes('--smoke-test');
+const launchStarted = performance.now();
+const root =
+  process.env.CANVAS_DATA_DIR ||
+  path.join(process.env.LOCALAPPDATA || app.getPath('userData'), 'LocalCanvas', 'Library');
+app.setPath('userData', path.join(root, 'settings'));
+let win,
+  worker,
+  closed = false,
+  quitting = false,
+  counter = 0,
+  workerFailed = false;
+let readyResolve;
+const rendererReady = new Promise((resolve) => (readyResolve = resolve));
+const pending = new Map();
+function startWorker() {
+  workerFailed = false;
+  worker = new Worker(path.join(__dirname, 'worker.cjs'), { workerData: { root } });
+  const instance = worker;
+  worker.on('message', (m) => {
+    const p = pending.get(m.id);
+    if (!p) return;
+    pending.delete(m.id);
+    m.error ? p.reject(Error(m.error)) : p.resolve(m.result);
+  });
+  const fail = (e) => {
+    if (worker !== instance) return;
+    workerFailed = true;
+    for (const p of pending.values()) p.reject(e);
+    pending.clear();
+  };
+  worker.on('error', fail);
+  worker.on('exit', (code) => {
+    if (!quitting) fail(Error('Local storage stopped unexpectedly. Retry saving to restart it.'));
+  });
+}
+function call(command, args = {}) {
+  if (workerFailed && !quitting) startWorker();
+  return new Promise((resolve, reject) => {
+    const id = ++counter;
+    pending.set(id, { resolve, reject });
+    worker.postMessage({ id, command, args });
+  });
+}
+const commands = new Set([
+  'library',
+  'createBoard',
+  'createFolder',
+  'updateBoard',
+  'updateFolder',
+  'removeFolder',
+  'restoreBoard',
+  'duplicateBoard',
+  'loadBoard',
+  'patchBoard',
+  'setLastBoard',
+  'importAsset',
+]);
+const dev = process.env.CANVAS_DEV_URL;
+function trusted(event) {
+  const url = event.senderFrame?.url;
+  if (
+    event.sender !== win?.webContents ||
+    !(url?.startsWith('canvas-app://app/') || (dev && url?.startsWith(dev + '/')))
+  )
+    throw Error('Untrusted sender');
+}
+async function seed() {
+  const l = await call('library');
+  if (l.boards.length) return;
+  const f = await call('createFolder', { name: 'Projects' });
+  await call('createBoard', { name: 'References', folderId: f.id });
+  const b = await call('createBoard', { name: 'Ideas' });
+  await call('patchBoard', {
+    id: b.id,
+    revision: 0,
+    upserts: [
+      {
+        id: 'welcome-title',
+        type: 'text',
+        x: 80,
+        y: 65,
+        width: 650,
+        height: 70,
+        z: 1,
+        text: 'The next good idea.',
+        fontSize: 36,
+        color: '#242b35',
+      },
+      {
+        id: 'welcome-subtitle',
+        type: 'text',
+        x: 82,
+        y: 136,
+        width: 500,
+        height: 40,
+        z: 2,
+        text: 'A space for everything you want to keep.',
+        fontSize: 17,
+        color: '#78818e',
+      },
+      {
+        id: 'welcome-note',
+        type: 'note',
+        x: 82,
+        y: 220,
+        width: 255,
+        height: 230,
+        z: 3,
+        text: 'Keep it simple.\n\nPaste an image.\nDrop a reference.\nMake room for ideas.',
+        color: '#f8efd4',
+        fontSize: 21,
+      },
+      {
+        id: 'welcome-frame',
+        type: 'frame',
+        x: 390,
+        y: 220,
+        width: 430,
+        height: 280,
+        z: 0,
+        text: 'Your first collection',
+        color: '#edf1f6',
+      },
+      {
+        id: 'welcome-help',
+        type: 'text',
+        x: 424,
+        y: 290,
+        width: 350,
+        height: 135,
+        z: 4,
+        text: 'Ctrl + V to paste\nSpace + drag to explore\nScroll to move · Ctrl + scroll to zoom',
+        fontSize: 18,
+        color: '#78818e',
+      },
+    ],
+    deleted: [],
+    camera: { x: 0, y: 0, zoom: 1 },
+  });
+  await call('setLastBoard', { id: b.id });
+}
+app
+  .whenReady()
+  .then(async () => {
+    if (!app.requestSingleInstanceLock() && !smoke) {
+      app.quit();
+      return;
+    }
+    startWorker();
+    protocol.handle('canvas-app', (request) => {
+      const url = new URL(request.url);
+      let relative = decodeURIComponent(url.pathname).replace(/^\/+/, '') || 'index.html';
+      const base = path.join(__dirname, '../dist'),
+        file = path.resolve(base, relative);
+      if (url.host !== 'app' || !(file === base || file.startsWith(base + path.sep)))
+        return new Response('Not found', { status: 404 });
+      try {
+        const mime =
+          {
+            '.html': 'text/html',
+            '.js': 'text/javascript',
+            '.css': 'text/css',
+            '.json': 'application/json',
+            '.svg': 'image/svg+xml',
+          }[path.extname(file)] || 'application/octet-stream';
+        return new Response(fs.readFileSync(file), { headers: { 'Content-Type': mime } });
+      } catch {
+        return new Response('Not found', { status: 404 });
+      }
+    });
+    protocol.handle('canvas-media', async (request) => {
+      try {
+        const u = new URL(request.url),
+          [, id, variant] = u.pathname.split('/');
+        if (u.hostname !== 'asset') throw Error('Invalid media');
+        const a = await call('asset', { id, variant: variant || 'preview' }),
+          size = fs.statSync(a.file).size;
+        let start = 0,
+          end = size - 1,
+          status = 200;
+        const headers = {
+          'Content-Type': a.contentType,
+          'Accept-Ranges': 'bytes',
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'public, max-age=31536000, immutable',
+        };
+        const range = request.headers.get('range');
+        if (range) {
+          const match = /^bytes=(\d+)-(\d*)$/.exec(range);
+          if (!match) return new Response(null, { status: 416 });
+          start = Number(match[1]);
+          end = match[2] ? Math.min(Number(match[2]), end) : end;
+          if (start > end || start >= size)
+            return new Response(null, {
+              status: 416,
+              headers: { 'Content-Range': `bytes */${size}` },
+            });
+          status = 206;
+          headers['Content-Range'] = `bytes ${start}-${end}/${size}`;
+        }
+        headers['Content-Length'] = String(end - start + 1);
+        return new Response(Readable.toWeb(fs.createReadStream(a.file, { start, end })), {
+          status,
+          headers,
+        });
+      } catch {
+        return new Response('Media not found', { status: 404 });
+      }
+    });
+    win = new BrowserWindow({
+      width: 1380,
+      height: 900,
+      minWidth: 760,
+      minHeight: 560,
+      show: false,
+      title: 'Local Canvas',
+      icon: path.join(__dirname, '../assets/icon.png'),
+      backgroundColor: '#fbfcfd',
+      autoHideMenuBar: true,
+      webPreferences: {
+        preload: path.join(__dirname, 'preload.cjs'),
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+      },
+    });
+    Menu.setApplicationMenu(null);
+    win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    win.webContents.on('will-navigate', (e) => e.preventDefault());
+    win.webContents.session.setPermissionRequestHandler((_wc, _p, cb) => cb(false));
+    win.webContents.session.webRequest.onBeforeRequest((details, cb) => {
+      const allowed =
+        ['canvas-app:', 'canvas-media:', 'data:', 'blob:', 'devtools:'].some((s) =>
+          details.url.startsWith(s),
+        ) ||
+        (dev &&
+          (details.url.startsWith(dev + '/') || details.url.startsWith('ws://127.0.0.1:5173/')));
+      cb({ cancel: !allowed });
+    });
+    ipcMain.handle('canvas:invoke', (e, command, args) => {
+      trusted(e);
+      if (!commands.has(command)) throw Error('Unknown command');
+      return call(command, args);
+    });
+    ipcMain.handle('canvas:pick-media', async (e) => {
+      trusted(e);
+      const r = await dialog.showOpenDialog(win, {
+        properties: ['openFile', 'multiSelections'],
+        filters: [
+          {
+            name: 'Images and videos',
+            extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'avif', 'tiff', 'mp4', 'webm'],
+          },
+        ],
+      });
+      if (r.canceled) return [];
+      const result = [];
+      for (const file of r.filePaths) result.push(await call('importFile', { file }));
+      return result;
+    });
+    ipcMain.handle('canvas:import-board', async (e) => {
+      trusted(e);
+      const r = await dialog.showOpenDialog(win, {
+        properties: ['openFile'],
+        filters: [{ name: 'Local Canvas board', extensions: ['canvas'] }],
+      });
+      return r.canceled ? null : call('importFile', { file: r.filePaths[0] });
+    });
+    ipcMain.handle('canvas:export-board', async (e, id) => {
+      trusted(e);
+      const r = await dialog.showSaveDialog(win, {
+        defaultPath: 'Board.canvas',
+        filters: [{ name: 'Editable board with all media', extensions: ['canvas'] }],
+      });
+      return r.canceled ? false : call('exportFile', { id, file: r.filePath });
+    });
+    ipcMain.handle('canvas:open-link', (e, url) => {
+      trusted(e);
+      const u = new URL(url);
+      if (!['https:', 'http:'].includes(u.protocol)) throw Error('Only web links can be opened');
+      return shell.openExternal(u.href);
+    });
+    ipcMain.handle('canvas:data-directory', (e) => {
+      trusted(e);
+      return root;
+    });
+    ipcMain.on('canvas:renderer-ready', (e) => {
+      trusted(e);
+      readyResolve();
+    });
+    ipcMain.on('canvas:close-ready', (e) => {
+      trusted(e);
+      closed = true;
+      win.close();
+    });
+    win.on('close', (event) => {
+      if (!closed && !smoke) {
+        event.preventDefault();
+        win.webContents.send('canvas:close-request');
+      }
+    });
+    app.on('second-instance', () => {
+      if (win.isMinimized()) win.restore();
+      win.show();
+      win.focus();
+    });
+    await seed();
+    if (dev) await win.loadURL(dev);
+    else await win.loadURL('canvas-app://app/index.html');
+    if (smoke) {
+      await Promise.race([
+        rendererReady,
+        new Promise((_, reject) =>
+          setTimeout(() => reject(Error('Renderer did not become ready')), 12000),
+        ),
+      ]);
+      const { DatabaseSync } = require('node:sqlite');
+      const db = new DatabaseSync(':memory:');
+      console.log(
+        'DESKTOP_SMOKE',
+        JSON.stringify({
+          library: (await call('library')).boards.length,
+          sqlite: db.prepare('select sqlite_version() as v').get().v,
+          node: process.versions.node,
+          electron: process.versions.electron,
+          firstCanvasMs: Math.round(performance.now() - launchStarted),
+        }),
+      );
+      db.close();
+      setTimeout(() => {
+        closed = true;
+        app.quit();
+      }, 1800);
+    } else win.show();
+  })
+  .catch((e) => {
+    console.error(e);
+    if (!smoke) dialog.showErrorBox('Local Canvas could not open', e.message);
+    app.exit(1);
+  });
+app.on('window-all-closed', () => app.quit());
+app.on('before-quit', (event) => {
+  if (!worker || quitting) return;
+  if (win && !win.isDestroyed() && !closed && !smoke) {
+    event.preventDefault();
+    win.close();
+    return;
+  }
+  event.preventDefault();
+  quitting = true;
+  if (workerFailed) {
+    worker.terminate();
+    app.quit();
+    return;
+  }
+  call('close').finally(() => {
+    worker.terminate();
+    app.quit();
+  });
+});

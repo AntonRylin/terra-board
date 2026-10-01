@@ -1,0 +1,143 @@
+import { useEffect, useLayoutEffect, useRef } from 'react';
+import type { ReactNode } from 'react';
+import { X } from 'lucide-react';
+export function Modal({
+  title,
+  onClose,
+  children,
+  wide = false,
+}: {
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+  wide?: boolean;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const close = useRef(onClose);
+  close.current = onClose;
+  useEffect(() => {
+    const before = document.activeElement as HTMLElement;
+    const el = ref.current;
+    (
+      el?.querySelector<HTMLElement>('input,textarea,select') ||
+      el?.querySelector<HTMLElement>('button')
+    )?.focus();
+    const key = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        close.current();
+      }
+      if (e.key === 'Tab' && el) {
+        const items = [
+          ...el.querySelectorAll<HTMLElement>('button,input,textarea,select,a[href]'),
+        ].filter((x) => !x.hasAttribute('disabled'));
+        if (!items.length) return;
+        const first = items[0],
+          last = items.at(-1);
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last?.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+    document.addEventListener('keydown', key, true);
+    return () => {
+      document.removeEventListener('keydown', key, true);
+      before?.focus();
+    };
+  }, []);
+  return (
+    <div
+      className="modal-backdrop"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        ref={ref}
+        className={'modal ' + (wide ? 'wide' : '')}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+      >
+        <header>
+          <h2>{title}</h2>
+          <button className="icon-button" aria-label="Close dialog" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </header>
+        {children}
+      </div>
+    </div>
+  );
+}
+export interface MenuItem {
+  label: string;
+  action: () => void;
+  icon?: ReactNode;
+  danger?: boolean;
+  disabled?: boolean;
+}
+export function ContextMenu({
+  x,
+  y,
+  items,
+  onClose,
+}: {
+  x: number;
+  y: number;
+  items: (MenuItem | null)[];
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current!;
+    el.style.left = Math.max(8, Math.min(x, innerWidth - el.offsetWidth - 12)) + 'px';
+    el.style.top = Math.max(8, Math.min(y, innerHeight - el.offsetHeight - 12)) + 'px';
+    el.querySelector('button')?.focus();
+  }, [x, y]);
+  useEffect(() => {
+    const down = (e: PointerEvent) => {
+      if (!ref.current?.contains(e.target as Node)) onClose();
+    };
+    const key = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+        e.stopPropagation();
+      }
+    };
+    window.addEventListener('pointerdown', down);
+    window.addEventListener('keydown', key);
+    return () => {
+      window.removeEventListener('pointerdown', down);
+      window.removeEventListener('keydown', key);
+    };
+  }, [onClose]);
+  return (
+    <div ref={ref} className="context-menu" role="menu" style={{ left: x, top: y }}>
+      {items.map((item, i) =>
+        item ? (
+          <button
+            key={i}
+            role="menuitem"
+            disabled={item.disabled}
+            className={item.danger ? 'danger' : ''}
+            onClick={() => {
+              onClose();
+              item.action();
+            }}
+          >
+            {item.icon}
+            <span>{item.label}</span>
+          </button>
+        ) : (
+          <hr key={i} />
+        ),
+      )}
+    </div>
+  );
+}

@@ -1,0 +1,12 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Local Canvas media fixture</title>
+<body><h1>Local video test fixture</h1><button id="generate">Generate two-second WebM</button><p id="status">Ready</p><canvas id="scene" width="640" height="360"></canvas>
+<script type="module">
+const canvas=document.querySelector('canvas'),ctx=canvas.getContext('2d'),button=document.querySelector('button'),status=document.querySelector('#status');
+button.onclick=()=>{
+  button.disabled=true;const stream=canvas.captureStream(24),chunks=[],recorder=new MediaRecorder(stream,{mimeType:'video/webm;codecs=vp9'}),start=performance.now();
+  recorder.ondataavailable=e=>chunks.push(e.data);
+  recorder.onstop=()=>{stream.getTracks().forEach(t=>t.stop());const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(chunks,{type:'video/webm'}));a.download='Local Canvas test clip.webm';a.click();status.textContent='Video generated';button.disabled=false;};
+  recorder.start();status.textContent='Recording locally';
+  function frame(){const t=(performance.now()-start)/1000;ctx.fillStyle='#e4eee8';ctx.fillRect(0,0,640,360);ctx.fillStyle='#718d80';ctx.beginPath();ctx.arc(160+t*140,180,65,0,Math.PI*2);ctx.fill();ctx.fillStyle='#29313b';ctx.font='24px Segoe UI';ctx.fillText('Local video • '+t.toFixed(1)+'s',24,38);if(t<2)requestAnimationFrame(frame);else recorder.stop();}frame();
+};
+</script></body></html>

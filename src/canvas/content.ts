@@ -1,0 +1,94 @@
+import type { CanvasObject } from '../model';
+export function pastedUrl(text: string): string | null {
+  const value = text.trim();
+  if (value.length > 8192 || !/^https?:\/\/\S+$/i.test(value)) return null;
+  try {
+    const url = new URL(value);
+    return url.href.length <= 8192 ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+export function clipboardObjects(input: unknown): CanvasObject[] {
+  if (!Array.isArray(input) || input.length > 10000)
+    throw Error('Unsupported clipboard content; copy up to 10,000 objects at once');
+  return input.map((o: any) => {
+    if (
+      !o ||
+      typeof o !== 'object' ||
+      !['text', 'note', 'rect', 'ellipse', 'frame', 'image', 'video', 'link'].includes(o.type)
+    )
+      throw Error('Invalid clipboard object');
+    if (
+      !['x', 'y', 'width', 'height', 'z'].every(
+        (k) => typeof o[k] === 'number' && Number.isFinite(o[k]) && Math.abs(o[k]) < 1e9,
+      ) ||
+      o.width < 1 ||
+      o.height < 1 ||
+      o.width > 1e6 ||
+      o.height > 1e6 ||
+      Math.abs(o.z) > 1e7
+    )
+      throw Error('Invalid clipboard geometry');
+    if (
+      typeof o.id !== 'string' ||
+      !/^[\w-]{1,100}$/.test(o.id) ||
+      (o.groupId && !/^[\w-]{1,100}$/.test(o.groupId))
+    )
+      throw Error('Invalid identifier');
+    if (o.color !== undefined && !/^#[a-f0-9]{6}$/i.test(o.color))
+      throw Error('Invalid clipboard color');
+    if (
+      o.fontSize !== undefined &&
+      !(Number.isFinite(o.fontSize) && o.fontSize >= 8 && o.fontSize <= 300)
+    )
+      throw Error('Invalid font size');
+    if (o.text !== undefined && (typeof o.text !== 'string' || o.text.length > 100000))
+      throw Error('Invalid clipboard text');
+    if (['image', 'video'].includes(o.type) && !/^[a-f0-9]{64}$/.test(o.assetId))
+      throw Error('Invalid media identifier');
+    if (o.type === 'link') {
+      let u;
+      try {
+        u = new URL(o.url);
+      } catch {
+        throw Error('Invalid link');
+      }
+      if (!['http:', 'https:'].includes(u.protocol) || o.url.length > 8192)
+        throw Error('Invalid link');
+    }
+    return {
+      id: o.id,
+      type: o.type,
+      x: o.x,
+      y: o.y,
+      width: o.width,
+      height: o.height,
+      z: o.z,
+      ...(o.text === undefined ? {} : { text: o.text }),
+      ...(o.color === undefined ? {} : { color: o.color }),
+      ...(o.fontSize === undefined ? {} : { fontSize: o.fontSize }),
+      ...(o.groupId ? { groupId: o.groupId } : {}),
+      ...(o.assetId ? { assetId: o.assetId } : {}),
+      ...(o.url ? { url: o.url } : {}),
+    };
+  });
+}
+export function previewText(text: string, width: number, height: number, font: number): string {
+  const cols = Math.max(1, Math.floor(Math.min(width, 2048) / (font * 1.1))),
+    lines = Math.max(1, Math.min(64, Math.floor(Math.min(height, 2048) / (font * 1.45))));
+  let remaining = lines;
+  const result: string[] = [];
+  for (const line of text.split('\n')) {
+    if (remaining <= 0) break;
+    const capacity = remaining * cols;
+    if (line.length > capacity) {
+      result.push(line.slice(0, Math.max(1, capacity - 1)) + '…');
+      remaining = 0;
+      break;
+    }
+    result.push(line);
+    remaining -= Math.max(1, Math.ceil(line.length / cols));
+  }
+  return result.join('\n');
+}
