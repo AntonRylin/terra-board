@@ -1,4 +1,4 @@
-import McpSettings from './components/McpSettings';
+import SettingsPage from './components/SettingsPage';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Settings,
@@ -435,420 +435,435 @@ export default function App() {
     settings: 'Settings',
   };
   return (
-    <div className="app-shell" data-dock={dockEdge}>
-      <Launcher
-        dockEdge={dockEdge}
-        onDock={setDockEdge}
-        library={library}
-        active={doc?.board.id || null}
-        opened={opened}
-        onOpen={openBoard}
-        onFolder={setOpened}
-        onCreate={newMenu}
-        onSearch={() => {
-          setSearch('');
-          ask({ kind: 'search' });
-        }}
-        onOptions={libraryMenu}
-        onBoardMenu={boardMenu}
-        onIconDrop={(board, file) => {
-          if (busy) return;
-          setGlyph(board.icon);
-          setColor(board.color);
-          setIconShape(board.iconShape || 'rounded');
-          ask({ kind: 'icon', id: board.id, iconFile: file });
-        }}
-        onFolderMenu={folderMenu}
-        onRenameBoard={(id, name) => change(id, { name })}
-        onRenameFolder={renameFolder}
-        renameFolderRequest={renameRequest?.kind === 'folder' ? renameRequest : null}
-        onMove={(id, folderId, position) =>
-          run(async () => {
-            await change(id, { folderId, ...(position === undefined ? {} : { position }) });
-          })
-        }
-        onReorderFolder={(id, position) =>
-          run(async () => {
-            await invoke('updateFolder', { id, patch: { position } });
-            await refresh();
-          })
-        }
-        onNewBoard={(folderId) => ask({ kind: 'new-board', folderId }, 'Untitled')}
-      />
-      <main className="workspace">
-        <header className="board-header">
-          {doc && (
-            <>
-              <span className={'board-glyph shape-' + (doc.board.iconShape || 'rounded')}>
-                <BoardGlyph name={doc.board.icon} size={34} />
-              </span>
-              <InlineName
-                key={doc.board.id}
-                className="board-title"
-                singleClick
-                label="Board name"
-                value={doc.board.name}
-                editRequest={
-                  renameRequest?.kind === 'board' && renameRequest.id === doc.board.id
-                    ? renameRequest.token
-                    : 0
-                }
-                onCommit={(name) => change(doc.board.id, { name })}
-              />
-              <button
-                className={'save-indicator ' + saveState}
-                title={
-                  saveState === 'saved'
-                    ? 'All changes saved on this computer'
-                    : saveState === 'error'
-                      ? 'Save failed. Click to retry.'
-                      : 'Saving changes…'
-                }
-                aria-label={
-                  saveState === 'error'
-                    ? 'Retry saving'
-                    : saveState === 'saved'
-                      ? 'Saved locally'
-                      : 'Saving changes'
-                }
-                onClick={() =>
-                  run(async () => {
-                    await whiteboard.current?.flush();
-                    if (saveState === 'error') setError('');
-                  })
-                }
-              >
-                {saveState === 'saved' ? (
-                  <Check size={14} />
-                ) : saveState === 'error' ? (
-                  <AlertCircle size={15} />
-                ) : (
-                  <LoaderCircle size={14} />
-                )}
-              </button>
-              <button
-                className="icon-button board-options"
-                aria-label="Board options"
-                onClick={(e) => {
-                  const r = e.currentTarget.getBoundingClientRect();
-                  boardMenu(doc.board, r.right, r.bottom + 5);
-                }}
-              >
-                <MoreHorizontal size={20} />
-              </button>
-            </>
-          )}
-        </header>
-        {doc ? (
-          <Whiteboard
-            key={doc.board.id}
-            ref={whiteboard}
-            document={doc}
-            onError={report}
-            onSave={(state, message) => {
-              setSaveState(state);
-              if (message) report(message);
-            }}
-          />
-        ) : (
-          <div className="welcome-empty">
-            <span className="welcome-symbol">
-              <FolderIcon size={30} strokeWidth={1.3} />
-            </span>
-            <h1>{loading ? 'Opening your workspace…' : 'A place for your ideas.'}</h1>
-            {!loading && (
+    <>
+      <div
+        className="app-shell"
+        data-dock={dockEdge}
+        inert={modal?.kind === 'settings' ? true : undefined}
+      >
+        <Launcher
+          dockEdge={dockEdge}
+          onDock={setDockEdge}
+          library={library}
+          active={doc?.board.id || null}
+          opened={opened}
+          onOpen={openBoard}
+          onFolder={setOpened}
+          onCreate={newMenu}
+          onSearch={() => {
+            setSearch('');
+            ask({ kind: 'search' });
+          }}
+          onOptions={libraryMenu}
+          onBoardMenu={boardMenu}
+          onIconDrop={(board, file) => {
+            if (busy) return;
+            setGlyph(board.icon);
+            setColor(board.color);
+            setIconShape(board.iconShape || 'rounded');
+            ask({ kind: 'icon', id: board.id, iconFile: file });
+          }}
+          onFolderMenu={folderMenu}
+          onRenameBoard={(id, name) => change(id, { name })}
+          onRenameFolder={renameFolder}
+          renameFolderRequest={renameRequest?.kind === 'folder' ? renameRequest : null}
+          onMove={(id, folderId, position) =>
+            run(async () => {
+              await change(id, { folderId, ...(position === undefined ? {} : { position }) });
+            })
+          }
+          onReorderFolder={(id, position) =>
+            run(async () => {
+              await invoke('updateFolder', { id, patch: { position } });
+              await refresh();
+            })
+          }
+          onNewBoard={(folderId) => ask({ kind: 'new-board', folderId }, 'Untitled')}
+        />
+        <main className="workspace">
+          <header className="board-header">
+            {doc && (
               <>
-                <p>Your boards and media stay on this computer.</p>
+                <span className={'board-glyph shape-' + (doc.board.iconShape || 'rounded')}>
+                  <BoardGlyph name={doc.board.icon} size={34} />
+                </span>
+                <InlineName
+                  key={doc.board.id}
+                  className="board-title"
+                  singleClick
+                  label="Board name"
+                  value={doc.board.name}
+                  editRequest={
+                    renameRequest?.kind === 'board' && renameRequest.id === doc.board.id
+                      ? renameRequest.token
+                      : 0
+                  }
+                  onCommit={(name) => change(doc.board.id, { name })}
+                />
                 <button
-                  className="button primary"
-                  onClick={() => ask({ kind: 'new-board' }, 'Ideas')}
+                  className={'save-indicator ' + saveState}
+                  title={
+                    saveState === 'saved'
+                      ? 'All changes saved on this computer'
+                      : saveState === 'error'
+                        ? 'Save failed. Click to retry.'
+                        : 'Saving changes…'
+                  }
+                  aria-label={
+                    saveState === 'error'
+                      ? 'Retry saving'
+                      : saveState === 'saved'
+                        ? 'Saved locally'
+                        : 'Saving changes'
+                  }
+                  onClick={() =>
+                    run(async () => {
+                      await whiteboard.current?.flush();
+                      if (saveState === 'error') setError('');
+                    })
+                  }
                 >
-                  <Plus size={17} />
-                  Create a board
+                  {saveState === 'saved' ? (
+                    <Check size={14} />
+                  ) : saveState === 'error' ? (
+                    <AlertCircle size={15} />
+                  ) : (
+                    <LoaderCircle size={14} />
+                  )}
+                </button>
+                <button
+                  className="icon-button board-options"
+                  aria-label="Board options"
+                  onClick={(e) => {
+                    const r = e.currentTarget.getBoundingClientRect();
+                    boardMenu(doc.board, r.right, r.bottom + 5);
+                  }}
+                >
+                  <MoreHorizontal size={20} />
                 </button>
               </>
             )}
+          </header>
+          {doc ? (
+            <Whiteboard
+              key={doc.board.id}
+              ref={whiteboard}
+              document={doc}
+              onError={report}
+              onSave={(state, message) => {
+                setSaveState(state);
+                if (message) report(message);
+              }}
+            />
+          ) : (
+            <div className="welcome-empty">
+              <span className="welcome-symbol">
+                <FolderIcon size={30} strokeWidth={1.3} />
+              </span>
+              <h1>{loading ? 'Opening your workspace…' : 'A place for your ideas.'}</h1>
+              {!loading && (
+                <>
+                  <p>Your boards and media stay on this computer.</p>
+                  <button
+                    className="button primary"
+                    onClick={() => ask({ kind: 'new-board' }, 'Ideas')}
+                  >
+                    <Plus size={17} />
+                    Create a board
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        </main>
+        {aiBusy && (
+          <div className="toast" role="status">
+            <LoaderCircle size={15} />
+            Syncing AI changes…
           </div>
         )}
-      </main>
-      {aiBusy && (
-        <div className="toast" role="status">
-          <LoaderCircle size={15} />
-          Syncing AI changes…
-        </div>
-      )}
-      {notice && (
-        <div className="toast" role="status">
-          <Check size={15} />
-          {notice}
-        </div>
-      )}
-      {error && (
-        <div className="error-banner" role="alert">
-          <AlertCircle size={17} />
-          <span>{error}</span>
-          <button onClick={() => setError('')}>Dismiss</button>
-        </div>
-      )}
-      {menu && <ContextMenu {...menu} onClose={() => setMenu(null)} />}
-      <Presence show={!!modal}>
-        {modal && (
-          <Modal
-            title={modalTitle[modal.kind]}
-            onClose={() => {
-              if (!busy) setModal(null);
-            }}
-          >
-            {['new-board', 'new-folder', 'rename-board', 'rename-folder', 'icon', 'move'].includes(
-              modal.kind,
-            ) ? (
-              <form
-                onSubmit={submit}
-                onDragOver={(e) => {
-                  if (modal.kind === 'icon') {
-                    e.preventDefault();
-                    e.dataTransfer.dropEffect = 'copy';
-                  }
-                }}
-                onDrop={(e) => {
-                  if (modal.kind === 'icon') {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    void iconImage.current?.importFile(e.dataTransfer.files[0]);
-                  }
-                }}
-              >
-                {modal.kind === 'icon' ? (
-                  <>
-                    <BoardIconImage
-                      ref={iconImage}
-                      value={glyph}
-                      color={color}
-                      shape={iconShape}
-                      onBusy={setBusy}
-                      initialFile={modal.iconFile}
+        {notice && (
+          <div className="toast" role="status">
+            <Check size={15} />
+            {notice}
+          </div>
+        )}
+        {error && (
+          <div className="error-banner" role="alert">
+            <AlertCircle size={17} />
+            <span>{error}</span>
+            <button onClick={() => setError('')}>Dismiss</button>
+          </div>
+        )}
+        {menu && <ContextMenu {...menu} onClose={() => setMenu(null)} />}
+        <Presence show={!!modal && modal.kind !== 'settings'}>
+          {modal && modal.kind !== 'settings' && (
+            <Modal
+              title={modalTitle[modal.kind]}
+              onClose={() => {
+                if (!busy) setModal(null);
+              }}
+            >
+              {[
+                'new-board',
+                'new-folder',
+                'rename-board',
+                'rename-folder',
+                'icon',
+                'move',
+              ].includes(modal.kind) ? (
+                <form
+                  onSubmit={submit}
+                  onDragOver={(e) => {
+                    if (modal.kind === 'icon') {
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = 'copy';
+                    }
+                  }}
+                  onDrop={(e) => {
+                    if (modal.kind === 'icon') {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      void iconImage.current?.importFile(e.dataTransfer.files[0]);
+                    }
+                  }}
+                >
+                  {modal.kind === 'icon' ? (
+                    <>
+                      <BoardIconImage
+                        ref={iconImage}
+                        value={glyph}
+                        color={color}
+                        shape={iconShape}
+                        onBusy={setBusy}
+                        initialFile={modal.iconFile}
+                      />
+                      <div className="icon-shape-picker" role="group" aria-label="Icon shape">
+                        {(['rounded', 'circle'] as const).map((shape) => (
+                          <button
+                            type="button"
+                            key={shape}
+                            aria-pressed={iconShape === shape}
+                            onClick={() => setIconShape(shape)}
+                          >
+                            <span className={'shape-sample shape-' + shape} aria-hidden="true" />
+                            {shape === 'circle' ? 'Circle' : 'Rounded square'}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="icon-picker">
+                        {iconNames.map((icon) => (
+                          <button
+                            type="button"
+                            className="icon-button"
+                            key={icon}
+                            aria-label={icon}
+                            aria-pressed={glyph === icon}
+                            disabled={busy}
+                            onClick={() => {
+                              iconImage.current?.clear();
+                              setGlyph(icon);
+                            }}
+                          >
+                            <BoardGlyph name={icon} />
+                          </button>
+                        ))}
+                      </div>
+                      <div className="tone-picker">
+                        {['blue', 'green', 'purple', 'orange', 'rose', 'gray', 'yellow'].map(
+                          (c) => (
+                            <button
+                              type="button"
+                              key={c}
+                              className={'app-icon ' + c}
+                              aria-label={c}
+                              aria-pressed={color === c}
+                              onClick={() => setColor(c)}
+                            >
+                              {c === color && <Check size={16} />}
+                            </button>
+                          ),
+                        )}
+                      </div>
+                    </>
+                  ) : modal.kind === 'move' ? (
+                    <label>
+                      Destination
+                      <select
+                        aria-label="Destination"
+                        value={destination}
+                        onChange={(e) => setDestination(e.target.value)}
+                      >
+                        <option value="">Icon strip</option>
+                        {library.folders.map((f) => (
+                          <option key={f.id} value={f.id}>
+                            {f.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : (
+                    <label>
+                      Name
+                      <input
+                        aria-label="Name"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        maxLength={10000}
+                        required
+                        autoFocus
+                        onFocus={(e) => e.target.select()}
+                      />
+                    </label>
+                  )}
+                  <div className="dialog-actions">
+                    <button
+                      type="button"
+                      className="button"
+                      disabled={busy}
+                      onClick={() => setModal(null)}
+                    >
+                      Cancel
+                    </button>
+                    <button className="button primary" disabled={busy}>
+                      {busy
+                        ? 'Saving…'
+                        : modal.kind.startsWith('new')
+                          ? 'Create'
+                          : modal.kind === 'move'
+                            ? 'Move'
+                            : 'Save'}
+                    </button>
+                  </div>
+                </form>
+              ) : modal.kind === 'search' ? (
+                <>
+                  <div className="search-input">
+                    <Search size={18} />
+                    <input
+                      aria-label="Search boards"
+                      placeholder="Find a board…"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      autoFocus
                     />
-                    <div className="icon-shape-picker" role="group" aria-label="Icon shape">
-                      {(['rounded', 'circle'] as const).map((shape) => (
-                        <button
-                          type="button"
-                          key={shape}
-                          aria-pressed={iconShape === shape}
-                          onClick={() => setIconShape(shape)}
-                        >
-                          <span className={'shape-sample shape-' + shape} aria-hidden="true" />
-                          {shape === 'circle' ? 'Circle' : 'Rounded square'}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="icon-picker">
-                      {iconNames.map((icon) => (
-                        <button
-                          type="button"
-                          className="icon-button"
-                          key={icon}
-                          aria-label={icon}
-                          aria-pressed={glyph === icon}
-                          disabled={busy}
+                  </div>
+                  <div className="search-results">
+                    {library.boards
+                      .filter(
+                        (b) => !b.trashed && b.name.toLowerCase().includes(search.toLowerCase()),
+                      )
+                      .map((b) => (
+                        <div
+                          key={b.id}
+                          className="search-result"
+                          data-item={b.id}
                           onClick={() => {
-                            iconImage.current?.clear();
-                            setGlyph(icon);
+                            setModal(null);
+                            openBoard(b.id);
                           }}
                         >
-                          <BoardGlyph name={icon} />
-                        </button>
+                          <button
+                            className="search-result-open"
+                            aria-label={'Open board ' + b.name}
+                          >
+                            <AppIcon board={b} />
+                          </button>
+                          <span>
+                            <InlineName
+                              value={b.name}
+                              label={'Board name in search: ' + b.name}
+                              onCommit={(name) => change(b.id, { name })}
+                            />
+                            <small>
+                              {b.folderId && library.folders.find((f) => f.id === b.folderId) ? (
+                                <InlineName
+                                  value={library.folders.find((f) => f.id === b.folderId)!.name}
+                                  label="Folder name in search"
+                                  onCommit={(name) => renameFolder(b.folderId!, name)}
+                                />
+                              ) : (
+                                'Icon strip'
+                              )}
+                            </small>
+                          </span>
+                        </div>
                       ))}
-                    </div>
-                    <div className="tone-picker">
-                      {['blue', 'green', 'purple', 'orange', 'rose', 'gray', 'yellow'].map((c) => (
-                        <button
-                          type="button"
-                          key={c}
-                          className={'app-icon ' + c}
-                          aria-label={c}
-                          aria-pressed={color === c}
-                          onClick={() => setColor(c)}
-                        >
-                          {c === color && <Check size={16} />}
-                        </button>
-                      ))}
-                    </div>
-                  </>
-                ) : modal.kind === 'move' ? (
-                  <label>
-                    Destination
-                    <select
-                      aria-label="Destination"
-                      value={destination}
-                      onChange={(e) => setDestination(e.target.value)}
-                    >
-                      <option value="">Icon strip</option>
-                      {library.folders.map((f) => (
-                        <option key={f.id} value={f.id}>
-                          {f.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                ) : (
-                  <label>
-                    Name
-                    <input
-                      aria-label="Name"
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      maxLength={10000}
-                      required
-                      autoFocus
-                      onFocus={(e) => e.target.select()}
-                    />
-                  </label>
-                )}
-                <div className="dialog-actions">
-                  <button
-                    type="button"
-                    className="button"
-                    disabled={busy}
-                    onClick={() => setModal(null)}
-                  >
-                    Cancel
-                  </button>
-                  <button className="button primary" disabled={busy}>
-                    {busy
-                      ? 'Saving…'
-                      : modal.kind.startsWith('new')
-                        ? 'Create'
-                        : modal.kind === 'move'
-                          ? 'Move'
-                          : 'Save'}
-                  </button>
-                </div>
-              </form>
-            ) : modal.kind === 'search' ? (
-              <>
-                <div className="search-input">
-                  <Search size={18} />
-                  <input
-                    aria-label="Search boards"
-                    placeholder="Find a board…"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    autoFocus
-                  />
-                </div>
-                <div className="search-results">
-                  {library.boards
-                    .filter(
-                      (b) => !b.trashed && b.name.toLowerCase().includes(search.toLowerCase()),
-                    )
-                    .map((b) => (
-                      <div
-                        key={b.id}
-                        className="search-result"
-                        data-item={b.id}
-                        onClick={() => {
-                          setModal(null);
-                          openBoard(b.id);
-                        }}
-                      >
-                        <button className="search-result-open" aria-label={'Open board ' + b.name}>
+                  </div>
+                </>
+              ) : modal.kind === 'trash' ? (
+                <div className="trash-list">
+                  {library.boards.filter((b) => b.trashed).length ? (
+                    library.boards
+                      .filter((b) => b.trashed)
+                      .map((b) => (
+                        <div key={b.id} data-item={b.id}>
                           <AppIcon board={b} />
-                        </button>
-                        <span>
                           <InlineName
                             value={b.name}
-                            label={'Board name in search: ' + b.name}
+                            label={'Board name in Trash: ' + b.name}
                             onCommit={(name) => change(b.id, { name })}
                           />
-                          <small>
-                            {b.folderId && library.folders.find((f) => f.id === b.folderId) ? (
-                              <InlineName
-                                value={library.folders.find((f) => f.id === b.folderId)!.name}
-                                label="Folder name in search"
-                                onCommit={(name) => renameFolder(b.folderId!, name)}
-                              />
-                            ) : (
-                              'Icon strip'
-                            )}
-                          </small>
-                        </span>
+                          <button
+                            className="button"
+                            onClick={() =>
+                              run(async () => {
+                                await invoke('restoreBoard', { id: b.id });
+                                await refresh();
+                                notify('Board restored');
+                              })
+                            }
+                          >
+                            <Undo2 size={15} />
+                            Restore
+                          </button>
+                        </div>
+                      ))
+                  ) : (
+                    <p className="quiet">
+                      Nothing in Trash. Deleted boards stay here until you restore them.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <>
+                  <p className="quiet">A private space, saved automatically on this computer.</p>
+                  <dl className="shortcuts">
+                    {[
+                      ['Paste images, text or links', 'Ctrl V'],
+                      ['Select everything', 'Ctrl A'],
+                      ['Duplicate selection', 'Ctrl D'],
+                      ['Undo / redo', 'Ctrl Z / Ctrl Shift Z'],
+                      ['Group / ungroup', 'Ctrl G / Ctrl Shift G'],
+                      ['Search your boards', 'Ctrl K'],
+                      ['Pan around', 'Right-drag · Space + drag'],
+                      ['Move without snapping', 'Alt + drag'],
+                      ['Zoom toward pointer', 'Mouse wheel'],
+                      ['Fit your board', '0'],
+                      ['Draw an arrow', 'A + drag'],
+                      ['Edit text', 'Double-click'],
+                      ['Finish text editing', 'Ctrl Enter'],
+                    ].map(([a, b]) => (
+                      <div key={a}>
+                        <dt>{a}</dt>
+                        <dd>
+                          <kbd>{b}</kbd>
+                        </dd>
                       </div>
                     ))}
-                </div>
-              </>
-            ) : modal.kind === 'settings' ? (
-              <McpSettings />
-            ) : modal.kind === 'trash' ? (
-              <div className="trash-list">
-                {library.boards.filter((b) => b.trashed).length ? (
-                  library.boards
-                    .filter((b) => b.trashed)
-                    .map((b) => (
-                      <div key={b.id} data-item={b.id}>
-                        <AppIcon board={b} />
-                        <InlineName
-                          value={b.name}
-                          label={'Board name in Trash: ' + b.name}
-                          onCommit={(name) => change(b.id, { name })}
-                        />
-                        <button
-                          className="button"
-                          onClick={() =>
-                            run(async () => {
-                              await invoke('restoreBoard', { id: b.id });
-                              await refresh();
-                              notify('Board restored');
-                            })
-                          }
-                        >
-                          <Undo2 size={15} />
-                          Restore
-                        </button>
-                      </div>
-                    ))
-                ) : (
-                  <p className="quiet">
-                    Nothing in Trash. Deleted boards stay here until you restore them.
+                  </dl>
+                  <p className="quiet small">
+                    {desktop
+                      ? 'Terra Board 0.1 · No account or connection needed.'
+                      : 'Development preview · Uses a separate test library.'}
                   </p>
-                )}
-              </div>
-            ) : (
-              <>
-                <p className="quiet">A private space, saved automatically on this computer.</p>
-                <dl className="shortcuts">
-                  {[
-                    ['Paste images, text or links', 'Ctrl V'],
-                    ['Select everything', 'Ctrl A'],
-                    ['Duplicate selection', 'Ctrl D'],
-                    ['Undo / redo', 'Ctrl Z / Ctrl Shift Z'],
-                    ['Group / ungroup', 'Ctrl G / Ctrl Shift G'],
-                    ['Search your boards', 'Ctrl K'],
-                    ['Pan around', 'Right-drag · Space + drag'],
-                    ['Move without snapping', 'Alt + drag'],
-                    ['Zoom toward pointer', 'Mouse wheel'],
-                    ['Fit your board', '0'],
-                    ['Draw an arrow', 'A + drag'],
-                    ['Edit text', 'Double-click'],
-                    ['Finish text editing', 'Ctrl Enter'],
-                  ].map(([a, b]) => (
-                    <div key={a}>
-                      <dt>{a}</dt>
-                      <dd>
-                        <kbd>{b}</kbd>
-                      </dd>
-                    </div>
-                  ))}
-                </dl>
-                <p className="quiet small">
-                  {desktop
-                    ? 'Terra Board 0.1 · No account or connection needed.'
-                    : 'Development preview · Uses a separate test library.'}
-                </p>
-              </>
-            )}
-          </Modal>
-        )}
-      </Presence>
-    </div>
+                </>
+              )}
+            </Modal>
+          )}
+        </Presence>
+      </div>
+      {modal?.kind === 'settings' && <SettingsPage onClose={() => setModal(null)} />}
+    </>
   );
 }

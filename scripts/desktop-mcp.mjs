@@ -261,6 +261,16 @@ try {
   const mcpPort = tcp.address().port;
   await new Promise((r) => tcp.close(r));
   assert.equal(await read('window.canvas.mcpStatus().then(s=>s.enabled)'), false);
+  await until(
+    async () =>
+      (await documentState()).objects
+        .filter((o) => o.type === 'text')
+        .every((o) => o.height !== 40),
+    'initial text layout saved',
+  );
+  const beforeSettings = await documentState();
+  await read('window.settingsCanvas = document.querySelector("canvas")');
+  await key('a', 'KeyA', 2);
   await clickSelector('[aria-label="Library options"]');
   const settings = await read(
     `(()=>{const e=[...document.querySelectorAll('[role="menuitem"]')].find(e=>e.textContent.includes('Settings'));const r=e?.getBoundingClientRect();return r?{x:r.x+r.width/2,y:r.y+r.height/2}:null;})()`,
@@ -268,6 +278,29 @@ try {
   assert.ok(settings);
   await click(settings.x, settings.y);
   await until(() => rect('[aria-label="Enable MCP server"]'), 'MCP settings');
+  assert.equal(
+    await read(`(() => {
+    const r = document.querySelector('.settings-page').getBoundingClientRect();
+    return r.x === 0 && r.y === 0 && Math.abs(r.width - innerWidth) < 1 && Math.abs(r.height - innerHeight) < 1
+      && !document.querySelector('.modal-backdrop') && document.querySelector('.app-shell').inert;
+  })()`),
+    true,
+    'Settings fills the window without a modal',
+  );
+  await key('Delete', 'Delete');
+  await clickSelector('.settings-page h1');
+  await key('Delete', 'Delete');
+  await key('k', 'KeyK', 2);
+  assert.equal(
+    await read('!!document.querySelector(".search-input")'),
+    false,
+    'Board search is blocked',
+  );
+  assert.deepEqual(
+    (await documentState()).objects,
+    beforeSettings.objects,
+    'Settings blocks board deletion',
+  );
   // Use an isolated free port, then exercise the real enable switch.
   await read(`window.canvas.mcpUpdate({enabled:false,port:${mcpPort}})`);
   await clickSelector('[aria-label="MCP port"]');
@@ -287,7 +320,14 @@ try {
     join(root, 'mcp-settings.png'),
     Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64'),
   );
-  await clickSelector('[aria-label="Close dialog"]');
+  await clickSelector('[aria-label="Back to board"]');
+  assert.equal(
+    await read(
+      'window.settingsCanvas === document.querySelector("canvas") && !document.querySelector(".app-shell").inert',
+    ),
+    true,
+    'Board stays mounted and becomes interactive',
+  );
   const config = JSON.parse(readFileSync(join(root, 'settings', 'mcp.json'), 'utf8'));
   const client = new Client({ name: 'codex-desktop-test', version: '1' });
   await client.connect(
@@ -389,6 +429,12 @@ try {
   await assert.rejects(client.callTool({ name: 'list_boards', arguments: {} }));
   await claude.close();
   await client.close();
+  await key('Escape', 'Escape');
+  assert.equal(
+    await read('!document.querySelector(".settings-page")'),
+    true,
+    'Escape returns to board',
+  );
   assert.deepEqual(errors, []);
   console.log(
     JSON.stringify({
