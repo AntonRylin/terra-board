@@ -1103,10 +1103,7 @@ export class Engine {
         if (label) {
           label.x += p.x - labelObject.width / 2;
           label.y += p.y - labelObject.height / 2;
-          const backdrop = new Graphics()
-            .roundRect(label.x - 5, label.y - 2, label.width + 10, label.height + 4, 4)
-            .fill('#fbfcfd');
-          container.addChild(backdrop, label);
+          container.addChild(label);
         }
       }
       return container;
