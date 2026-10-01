@@ -279,13 +279,11 @@ export class Engine {
   private wheel = (e: WheelEvent) => {
     if (e.target !== this.app.canvas) return;
     e.preventDefault();
-    if (e.ctrlKey || e.metaKey)
-      this.camera = zoomAt(
-        this.camera,
-        this.point(e),
-        this.camera.zoom * Math.exp(-e.deltaY * 0.004),
-      );
-    else this.camera = { ...this.camera, x: this.camera.x - e.deltaX, y: this.camera.y - e.deltaY };
+    this.camera = zoomAt(
+      this.camera,
+      this.point(e),
+      this.camera.zoom * Math.exp(-e.deltaY * 0.004),
+    );
     this.callbacks.camera({ ...this.camera });
     this.invalidate();
   };

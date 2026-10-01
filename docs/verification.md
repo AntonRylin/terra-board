@@ -1,4 +1,14 @@
-# Verification — Local Canvas 0.1.0
+# Verification — Local Canvas
+
+## 0.1.2 wheel zoom update — 2026-10-01
+
+The mouse wheel now zooms in and out around the cursor without requiring Ctrl. Right-drag panning remains available. The keyboard reference and README describe the updated controls.
+
+All 32 Node tests pass, including event-handler checks for wheel direction, cursor anchoring with an offset canvas, camera saving, Ctrl/Meta compatibility, overlay scrolling and existing panning. The unmodified wheel handler failed the new default-wheel zoom test. These tests exercise the actual Engine handlers with GPU dependencies stubbed; they are not a physical-mouse test.
+
+TypeScript checking, the production build and formatting checks pass. The packaged 0.1.2 executable passes the desktop smoke test using a disposable library (first canvas: 1,549 ms). Its version metadata reports 0.1.2, and the packaged HTML, CSS and JavaScript match the verified build. Existing SQLite experimental and Vite bundle-size advisories remain.
+
+The executable is at `%LOCALAPPDATA%\LocalCanvas\Build-0.1.2\win-unpacked\Local Canvas.exe`. Keep its support files alongside it. Application data remains in the separate production library.
 
 ## 0.1.1 panning update — 2026-10-01
 

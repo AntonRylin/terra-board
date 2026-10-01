@@ -1,10 +1,10 @@
 # Local Canvas
 
-A Windows-first local whiteboard with a minimal, iOS-inspired board launcher. Version 0.1.1 is a working preview release; the original product roadmap is broader than this implementation.
+A Windows-first local whiteboard with a minimal, iOS-inspired board launcher. Version 0.1.2 is a working preview release; the original product roadmap is broader than this implementation.
 
 ## Run
 
-Open `Local Canvas.exe` inside the packaged `win-unpacked` directory. Keep that directory's support files alongside the executable. The current tested build is at `%LOCALAPPDATA%\LocalCanvas\Build-0.1.1\win-unpacked\Local Canvas.exe`.
+Open `Local Canvas.exe` inside the packaged `win-unpacked` directory. Keep that directory's support files alongside the executable. The current tested build is at `%LOCALAPPDATA%\LocalCanvas\Build-0.1.2\win-unpacked\Local Canvas.exe`.
 
 The application stores boards and original media in `%LOCALAPPDATA%\LocalCanvas\Library`, independently of the source checkout. No account, server, telemetry, external fonts, or network connection is needed. A link opens your default browser only when you activate it.
 
@@ -19,7 +19,7 @@ The application stores boards and original media in `%LOCALAPPDATA%\LocalCanvas\
 
 ## Useful controls
 
-Hold the **right mouse button and drag** to move around the board. A plain right-click opens the canvas menu. Use **V** to select, **H** or hold **Space** to pan, **T** for text, **N** for a note, **R** for a shape, **F** for a frame, **L** for a link, and **0** to fit the board. Use **Ctrl+wheel** to zoom, **Ctrl+K** to search, **Ctrl+Z / Ctrl+Shift+Z** for undo/redo, and **Ctrl+Enter** to finish editing. Double-click text to edit it. Drag the bottom-right selection handle to resize; images keep their proportions unless Shift is held.
+Hold the **right mouse button and drag** to move around the board. A plain right-click opens the canvas menu. Use **V** to select, **H** or hold **Space** to pan, **T** for text, **N** for a note, **R** for a shape, **F** for a frame, **L** for a link, and **0** to fit the board. Use the **mouse wheel** to zoom in and out toward the cursor, **Ctrl+K** to search, **Ctrl+Z / Ctrl+Shift+Z** for undo/redo, and **Ctrl+Enter** to finish editing. Double-click text to edit it. Drag the bottom-right selection handle to resize; images keep their proportions unless Shift is held.
 
 Right-click board and folder icons for their actions. The three-dot menus expose board operations, canvas export, Trash, and the keyboard reference.
 
@@ -55,7 +55,7 @@ npm run package
 The packaging command normally writes to `release/win-unpacked`. If OneDrive locks the staging directory, build outside the sync root:
 
 ```
-npx electron-builder --win dir --config.directories.output=C:/Users/anton/AppData/Local/LocalCanvas/Build-0.1.1
+npx electron-builder --win dir --config.directories.output=C:/Users/anton/AppData/Local/LocalCanvas/Build-0.1.2
 ```
 
 In PowerShell, `$env:CANVAS_SCALE='1'; npm run test:desktop` generates a disposable 10,000-object / 1,000-image workload and measures first-canvas startup. `CANVAS_EXECUTABLE` can point to the packaged executable to verify that artifact. Remove those environment variables afterward in an interactive shell.

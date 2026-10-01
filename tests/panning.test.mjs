@@ -187,3 +187,48 @@ test('middle-button and hand-tool panning continue to work', () => {
     assert.equal(f.menus.length, 0);
   }
 });
+
+test('wheel zooms in and out around the cursor without requiring a modifier', () => {
+  for (const modifiers of [{}, { ctrlKey: true }, { metaKey: true }]) {
+    const f = fixture();
+    f.host.getBoundingClientRect = () => ({ left: 80, top: 50 });
+    let prevented = 0;
+    const wheel = (deltaY) => ({
+      ...f.event(380, 250),
+      deltaX: 0,
+      deltaY,
+      ...modifiers,
+      preventDefault() {
+        prevented++;
+      },
+    });
+    // Local cursor (300, 200) is over world point (140, 85) at the initial camera.
+    f.engine.wheel(wheel(-100));
+    const zoomedIn = { ...f.engine.camera };
+    assert.ok(zoomedIn.zoom > 2, 'wheel up must zoom in');
+    f.engine.wheel(wheel(100));
+    assert.ok(f.engine.camera.zoom < zoomedIn.zoom, 'wheel down must zoom out');
+    for (const camera of [zoomedIn, f.engine.camera]) {
+      assert.ok(Math.abs(140 * camera.zoom + camera.x - 300) < 1e-9);
+      assert.ok(Math.abs(85 * camera.zoom + camera.y - 200) < 1e-9);
+    }
+    assert.equal(prevented, 2);
+    assert.equal(f.saves.length, 2);
+    assert.deepEqual(f.saves[1], { ...f.engine.camera });
+  }
+});
+
+test('wheel over an editor or other overlay leaves the camera and scrolling alone', () => {
+  const f = fixture();
+  f.engine.wheel({
+    ...f.event(300, 200),
+    target: {},
+    deltaX: 0,
+    deltaY: -100,
+    preventDefault() {
+      assert.fail('Overlay scrolling must remain available');
+    },
+  });
+  assert.deepEqual({ ...f.engine.camera }, { x: 20, y: 30, zoom: 2 });
+  assert.equal(f.saves.length, 0);
+});
