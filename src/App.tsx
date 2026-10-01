@@ -29,6 +29,7 @@ import Whiteboard, { type WhiteboardHandle } from './components/Whiteboard';
 import { BoardGlyph, iconNames } from './components/Icon';
 import { Presence } from './components/Presence';
 import { ContextMenu, Modal, type MenuItem } from './components/Dialogs';
+import { readDockEdge } from './components/useLauncherDock';
 type ModalState = {
   kind:
     | 'new-board'
@@ -44,6 +45,7 @@ type ModalState = {
   folderId?: string | null;
 };
 export default function App() {
+  const [dockEdge, setDockEdge] = useState(readDockEdge);
   const [library, setLibrary] = useState<Library>({ boards: [], folders: [], lastBoard: null }),
     [doc, setDoc] = useState<Document | null>(null),
     [opened, setOpened] = useState<string | null>(null),
@@ -354,8 +356,10 @@ export default function App() {
     help: 'Make yourself at home',
   };
   return (
-    <div className="app-shell">
+    <div className="app-shell" data-dock={dockEdge}>
       <Launcher
+        dockEdge={dockEdge}
+        onDock={setDockEdge}
         library={library}
         active={doc?.board.id || null}
         opened={opened}

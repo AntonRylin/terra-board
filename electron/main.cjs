@@ -1,4 +1,5 @@
 const { app, BrowserWindow, ipcMain, protocol, net, dialog, shell, Menu } = require('electron');
+const { attachWindowShadow } = require('./window-shadow.cjs');
 const { Worker } = require('node:worker_threads');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -371,7 +372,10 @@ app
         closed = true;
         app.quit();
       }, 1800);
-    } else win.show();
+    } else {
+      attachWindowShadow(win, { BrowserWindow });
+      win.show();
+    }
   })
   .catch((e) => {
     console.error(e);

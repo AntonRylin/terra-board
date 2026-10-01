@@ -70,10 +70,7 @@ p {
 }
 .app-shell {
   position: relative;
-  margin: 12px;
-  height: calc(100dvh - 24px);
-  border: 1px solid var(--line);
-  border-radius: 18px;
+  height: 100dvh;
   overflow: hidden;
   background: var(--paper);
 }
@@ -106,6 +103,10 @@ p {
   background: var(--panel);
   border-right: 1px solid var(--line);
   z-index: 5;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  overflow: hidden;
 }
 .launcher-top {
   height: 62px;
@@ -242,6 +243,144 @@ p {
   position: absolute;
   inset: 0 0 0 72px;
   min-width: 0;
+}
+.app-shell[data-dock='right'] .launcher {
+  inset: 0 0 0 auto;
+  border-right: 0;
+  border-left: 1px solid var(--line);
+}
+.app-shell[data-dock='right'] .workspace {
+  inset: 0 72px 0 0;
+}
+.app-shell[data-dock='right'] .launch-item::before {
+  left: auto;
+  right: 0;
+  border-radius: 3px 0 0 3px;
+}
+.app-shell[data-dock='top'] .launcher,
+.app-shell[data-dock='bottom'] .launcher {
+  width: auto;
+  height: 72px;
+  flex-direction: row;
+  border-right: 0;
+}
+.app-shell[data-dock='top'] .launcher {
+  inset: 0 0 auto;
+  border-bottom: 1px solid var(--line);
+}
+.app-shell[data-dock='bottom'] .launcher {
+  inset: auto 0 0;
+  border-top: 1px solid var(--line);
+}
+.app-shell[data-dock='top'] .workspace {
+  inset: 72px 0 0;
+}
+.app-shell[data-dock='bottom'] .workspace {
+  inset: 0 0 72px;
+}
+.app-shell:is([data-dock='top'], [data-dock='bottom']) .launcher-top {
+  width: 62px;
+  height: 100%;
+}
+.app-shell:is([data-dock='top'], [data-dock='bottom']) .launcher-scroll {
+  display: flex;
+  width: auto;
+  height: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0 14px 0 5px;
+}
+.app-shell:is([data-dock='top'], [data-dock='bottom']) .launch-item {
+  width: 66px;
+  height: 100%;
+  flex-shrink: 0;
+}
+.app-shell:is([data-dock='top'], [data-dock='bottom']) .launcher-footer {
+  display: flex;
+  width: auto;
+  height: 100%;
+  align-items: center;
+  padding: 0 14px 0 13px;
+  border-top: 0;
+  border-left: 1px solid var(--line);
+}
+.app-shell:is([data-dock='top'], [data-dock='bottom']) .launch-item::before {
+  width: 14px;
+  height: 3px;
+  left: 26px;
+  top: 0;
+  border-radius: 0 0 3px 3px;
+}
+.app-shell[data-dock='bottom'] .launch-item::before {
+  top: auto;
+  bottom: 0;
+  border-radius: 3px 3px 0 0;
+}
+.launcher.is-dragging {
+  z-index: 30;
+  border: 1px solid #ccd8e8;
+  border-radius: 14px;
+  box-shadow: 0 18px 48px #273c5a30;
+  overflow: hidden;
+  cursor: grabbing;
+}
+.launcher.is-dragging * {
+  cursor: grabbing;
+}
+.dock-preview {
+  position: absolute;
+  z-index: 20;
+  pointer-events: none;
+  border: 2px solid #619ee899;
+  border-radius: 12px;
+  background: #619ee825;
+  box-shadow: inset 0 0 24px #619ee819;
+  animation: dock-preview-in 140ms ease-out;
+}
+.dock-preview[data-edge='left'] {
+  inset: 5px auto 5px 5px;
+  width: 66px;
+}
+.dock-preview[data-edge='right'] {
+  inset: 5px 5px 5px auto;
+  width: 66px;
+}
+.dock-preview[data-edge='top'] {
+  inset: 5px 5px auto;
+  height: 66px;
+}
+.dock-preview[data-edge='bottom'] {
+  inset: auto 5px 5px;
+  height: 66px;
+}
+.dock-hint {
+  position: absolute;
+  z-index: 35;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  padding: 12px 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fffffff2;
+  box-shadow: 0 8px 28px #273c5a14;
+  text-align: center;
+}
+.dock-hint span {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: 4px;
+}
+@keyframes dock-preview-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 .board-header {
   height: 54px;
@@ -433,6 +572,8 @@ p {
   padding: 16px 12px 14px;
   z-index: 15;
   animation: folder-in 160ms ease-out;
+  max-height: calc(100dvh - 110px);
+  overflow-y: auto;
 }
 .folder-sheet header {
   display: flex;
@@ -984,11 +1125,6 @@ kbd {
   }
 }
 @media (max-width: 650px) {
-  .app-shell {
-    margin: 6px;
-    height: calc(100dvh - 12px);
-    border-radius: 13px;
-  }
   .folder-sheet {
     left: 88px;
     max-width: calc(100vw - 98px);

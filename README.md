@@ -1,6 +1,6 @@
 # Local Canvas
 
-A Windows-first local whiteboard with a minimal, iOS-inspired board launcher. Version 0.1.12 is a working preview release; the original product roadmap is broader than this implementation.
+A Windows-first local whiteboard with a minimal, iOS-inspired board launcher. Version 0.1.14 is a working preview release; the original product roadmap is broader than this implementation.
 
 ## Run
 
@@ -16,12 +16,15 @@ The application stores boards, original media, settings, browser caches, logs an
 - Paste or drop images; import local images and MP4/WebM videos. Videos play on demand in a local player.
 - Portable editable `.canvas` files containing original media; PNG export of the visible canvas. Sharing means giving someone the exported file, with no online service.
 - Frosted floating controls, animated folders/dialogs, keyboard focus handling and reduced-motion support.
+- A soft, wider Windows window shadow, with native title bar and resizing. The extra shadow hides when maximized, snapped or fullscreen.
 
 ## Useful controls
 
 Hold the **right mouse button and drag** to move around the board. A plain right-click opens the canvas menu. Use **V** to select, **H** or hold **Space** to pan, **T** for text, **N** for a note, **R** for a shape, **F** for a frame, **L** for a link, and **0** to fit the board. Use the **mouse wheel** to zoom in and out toward the cursor, **Ctrl+K** to search, **Ctrl+Z / Ctrl+Shift+Z** for undo/redo, and **Ctrl+Enter** to finish editing. Double-click text to edit it. Drag any of the four selection corners to resize. Plain text scales its font and box together, keeping the opposite corner fixed; images keep their proportions unless Shift is held. Selection actions stay beside the selected object or group and follow movement, pan and zoom.
 
 Right-click board and folder icons for their actions. The three-dot menus expose board operations, canvas export, Trash, and the keyboard reference.
+
+Drag any empty space in the board panel toward the left, right, top or bottom window edge. A translucent preview marks the destination; release to glide into place. Top and bottom placements use a horizontal strip. Escape or releasing away from an edge returns the panel to its original position. Placement is remembered on this computer. Board icons still drag into folders or into a new order; the mouse wheel scrolls a horizontal strip.
 
 Double-click a board name, folder name, or canvas title to rename it directly where it appears. Enter saves a name, Escape cancels; canvas text uses Ctrl+Enter to save. Link and video titles also edit in place; use the selection toolbar to open a link or play a video. Notes keep their dimensions and automatically shrink long text to fit, expanding the text back toward its chosen size as content is removed.
 

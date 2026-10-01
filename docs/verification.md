@@ -1,5 +1,21 @@
 # Verification — Local Canvas
 
+## 0.1.14 softer external window shadow — 2026-10-01
+
+A non-focusable, click-through owned window draws a wider shadow around the native Windows frame. The main window remains opaque and flush to its content edges. The additional shadow uses 13% and 8% opacity layers, reduced by half after visual feedback, and dims when inactive. It follows move/resize and hides on minimize, maximize, snap, fullscreen or hide; it is destroyed with the owner or if its renderer fails.
+
+All 76 Node tests pass. The native Electron fixture in `.local-test/window-shadow-2m6Om5` verifies transparent center pixels, outward shadow falloff, alignment with DWM visible-frame bounds at 150% display scaling, native click-through/no-activate flags, focus retention, moving/resizing, maximize/restore, minimize/restore, hide/show and close. The desktop crop was visually checked. Snap and renderer-failure lifecycle behavior are also covered by the focused unit tests.
+
+Production packaging passes and the packaged shadow module matches source byte for byte. Packaged interaction checks pass in `.local-test/desktop-input-T6CKtF`, including native close/save persistence and existing editing, resizing, rotation and cropping, with no renderer exceptions.
+
+## 0.1.13 draggable board panel — 2026-10-01
+
+Follow-up: removed the app shell's 12px outer margin, inner rounded border and narrow-window inset so the workspace fills the native window's content area. Production packaging and the docking suite pass again in `.local-test/docking-laQPjE`; the right-docked screenshot confirms the panel meets the content edges. Native Windows title bar and window controls are retained.
+
+Empty-space pointer drags lift the launcher into a floating panel. Edge previews show left/right/top/bottom destinations; release animates the panel into its dock, with horizontal icons at the top and bottom. The workspace reserves the dock's space, folders anchor inward, and the selected edge persists in local settings. Escape, pointer cancellation, focus loss and resizing cancel a gesture. Reduced-motion users skip the settling animation.
+
+All 74 Node tests and production packaging pass. `scripts/desktop-docking.mjs` first failed on the missing right-edge preview before implementation. Its packaged run in `.local-test/docking-bVCkCF` passes all four placements, previews, active settling animation, workspace clearance, folder/menu visibility, Escape, invalid drop, persisted placement after reload, reduced motion, real native board-to-folder dragging, pointer cancellation, and folder containment in a 600×420 viewport. Top-dock and drag-preview screenshots were visually inspected. The existing packaged interaction suite also passes in `.local-test/desktop-input-BCC4Il`, covering editing, alignment, resizing, rotation, cropping and close/save persistence with no renderer exceptions.
+
 ## 0.1.12 edge resizing and rotation — 2026-10-01
 
 Single objects now have four corner handles, four middle-edge handles, and a curved-arrow rotation handle outside the lower-left corner with a live angle badge, matching the user's Miro reference. Edges change the box dimensions without changing the base font size; plain text switches to a persistent wrapping box. Corners keep proportional plain-text font scaling. Rotation supports Shift snapping in 15-degree steps, Escape cancellation, undo, clipboard, portable export and reopen. Rendering, culling, hit testing, inline editing and image cropping use the same center-based rotation geometry.

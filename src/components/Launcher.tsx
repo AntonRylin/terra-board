@@ -1,9 +1,10 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import { Search, Plus, MoreHorizontal, X, Folder as FolderIcon } from 'lucide-react';
 import type { Board, Folder, Library } from '../model';
 import { Presence } from './Presence';
 import { BoardGlyph } from './Icon';
 import InlineName from './InlineName';
+import { useLauncherDock, type DockEdge } from './useLauncherDock';
 export function AppIcon({ board }: { board: Board }) {
   return (
     <span className={'app-icon ' + board.color}>
@@ -12,6 +13,8 @@ export function AppIcon({ board }: { board: Board }) {
   );
 }
 interface Props {
+  dockEdge: DockEdge;
+  onDock: (edge: DockEdge) => void;
   library: Library;
   active: string | null;
   opened: string | null;
@@ -32,6 +35,8 @@ interface Props {
 export default function Launcher(p: Props) {
   const rail = useRef<HTMLElement>(null),
     sheet = useRef<HTMLDivElement>(null);
+  const dock = useLauncherDock(rail, p.dockEdge, p.onDock, () => p.onFolder(null));
+  const horizontal = p.dockEdge === 'top' || p.dockEdge === 'bottom';
   const boards = p.library.boards.filter((b) => !b.trashed);
   const items = [
     ...boards.filter((b) => !b.folderId).map((b) => ({ kind: 'board', item: b })),
@@ -59,12 +64,40 @@ export default function Launcher(p: Props) {
       window.removeEventListener('keydown', key);
     };
   }, [folder?.id]);
-  let y = 128;
-  if (folder) {
-    const anchor = rail.current?.querySelector(`[data-item="${folder.id}"]`);
-    if (anchor)
-      y = Math.min(Math.max(70, anchor.getBoundingClientRect().top - 5), innerHeight - 360);
-  }
+  useLayoutEffect(() => {
+    if (!folder || !sheet.current || !rail.current) return;
+    const panel = sheet.current,
+      strip = rail.current;
+    const place = () => {
+      const anchor = strip.querySelector(`[data-item="${folder.id}"]`)?.getBoundingClientRect();
+      if (!anchor) return;
+      const r = strip.getBoundingClientRect();
+      const width = panel.offsetWidth,
+        height = panel.offsetHeight;
+      let x = horizontal
+        ? anchor.left - 12
+        : p.dockEdge === 'right'
+          ? r.left - width - 12
+          : r.right + 12;
+      let y = horizontal
+        ? p.dockEdge === 'top'
+          ? r.bottom + 12
+          : r.top - height - 12
+        : anchor.top - 5;
+      panel.style.left = `${Math.max(8, Math.min(x, innerWidth - width - 8))}px`;
+      panel.style.top = `${Math.max(8, Math.min(y, innerHeight - height - 8))}px`;
+    };
+    place();
+    const observer = new ResizeObserver(place);
+    observer.observe(panel);
+    window.addEventListener('resize', place);
+    strip.addEventListener('scroll', place, true);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', place);
+      strip.removeEventListener('scroll', place, true);
+    };
+  }, [folder?.id, p.dockEdge, horizontal]);
   const drag = (e: React.DragEvent, id: string, kind = 'board') => {
     e.dataTransfer.setData('application/x-local-canvas', JSON.stringify({ id, kind }));
     e.dataTransfer.effectAllowed = 'move';
@@ -85,7 +118,21 @@ export default function Launcher(p: Props) {
   };
   return (
     <>
-      <aside ref={rail} className="launcher" aria-label="Boards and folders">
+      {dock.target && <div className="dock-preview" data-edge={dock.target} aria-hidden="true" />}
+      {dock.floating && (
+        <div className="dock-hint" role="status">
+          {dock.target ? `Release to dock ${dock.target}` : 'Drag to an edge to dock'}
+          <span>Esc to cancel</span>
+        </div>
+      )}
+      <aside
+        ref={rail}
+        className={'launcher' + (dock.floating ? ' is-dragging' : '')}
+        style={dock.floating || undefined}
+        aria-label="Boards and folders"
+        title="Drag empty space to move this panel"
+        {...dock.handlers}
+      >
         <div className="launcher-top">
           <button
             className="icon-button"
@@ -98,6 +145,10 @@ export default function Launcher(p: Props) {
         </div>
         <div
           className="launcher-scroll"
+          onWheel={(e) => {
+            if (horizontal && Math.abs(e.deltaY) > Math.abs(e.deltaX))
+              e.currentTarget.scrollLeft += e.deltaY;
+          }}
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => {
             if (e.target === e.currentTarget) drop(e, null);
@@ -143,13 +194,15 @@ export default function Launcher(p: Props) {
                     : p.onBoardMenu(b, e.clientX, e.clientY);
                 }}
                 onKeyDown={(e) => {
-                  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                  const next = horizontal ? 'ArrowRight' : 'ArrowDown';
+                  const previous = horizontal ? 'ArrowLeft' : 'ArrowUp';
+                  if (e.key === next || e.key === previous) {
                     e.preventDefault();
                     const buttons = [
                         ...rail.current!.querySelectorAll<HTMLButtonElement>('[data-item]'),
                       ],
                       i = buttons.indexOf(e.currentTarget);
-                    buttons[i + (e.key === 'ArrowDown' ? 1 : -1)]?.focus();
+                    buttons[i + (e.key === next ? 1 : -1)]?.focus();
                   }
                 }}
               >
@@ -177,7 +230,10 @@ export default function Launcher(p: Props) {
             title="Create board or folder"
             onClick={(e) => {
               const r = e.currentTarget.getBoundingClientRect();
-              p.onCreate(r.right + 12, r.top);
+              p.onCreate(
+                p.dockEdge === 'right' ? r.left - 232 : r.right + 12,
+                p.dockEdge === 'top' ? r.bottom + 12 : r.top,
+              );
             }}
           >
             <Plus size={20} />
@@ -188,7 +244,10 @@ export default function Launcher(p: Props) {
             title="Library options"
             onClick={(e) => {
               const r = e.currentTarget.getBoundingClientRect();
-              p.onOptions(r.right + 12, r.top);
+              p.onOptions(
+                p.dockEdge === 'right' ? r.left - 232 : r.right + 12,
+                p.dockEdge === 'top' ? r.bottom + 12 : r.top,
+              );
             }}
           >
             <MoreHorizontal size={20} />
@@ -200,7 +259,6 @@ export default function Launcher(p: Props) {
           <div
             ref={sheet}
             className="folder-sheet"
-            style={{ top: y }}
             role="dialog"
             aria-label={folder.name + ' folder'}
           >
