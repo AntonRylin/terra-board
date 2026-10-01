@@ -568,7 +568,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         await performImport(() => importFiles(files));
         return;
       }
-      const json = data.getData('application/x-local-canvas-objects');
+      const json = data.getData('application/x-terra-board-objects');
       if (json) {
         try {
           pasteObjects(clipboardObjects(JSON.parse(json)));
@@ -609,7 +609,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       event.preventDefault();
       const objects = engine.current.selected;
       copy.current = objects;
-      event.clipboardData?.setData('application/x-local-canvas-objects', JSON.stringify(objects));
+      event.clipboardData?.setData('application/x-terra-board-objects', JSON.stringify(objects));
       event.clipboardData?.setData(
         'text/plain',
         objects.map((o) => o.text || o.url || o.type).join('\n'),

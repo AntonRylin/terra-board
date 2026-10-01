@@ -763,7 +763,7 @@ export default function App() {
                 </dl>
                 <p className="quiet small">
                   {desktop
-                    ? 'Local Canvas 0.1 · No account or connection needed.'
+                    ? 'Terra Board 0.1 · No account or connection needed.'
                     : 'Development preview · Uses a separate test library.'}
                 </p>
               </>

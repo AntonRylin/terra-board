@@ -54,7 +54,7 @@ async function readPublic(
         signal,
         agent: false,
         headers: {
-          'User-Agent': 'LocalCanvas/0.1 link-preview',
+          'User-Agent': 'TerraBoard/0.1 link-preview',
           Accept: 'text/html,application/json,image/*',
           'Accept-Encoding': 'identity',
         },

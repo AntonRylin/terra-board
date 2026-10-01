@@ -201,7 +201,7 @@ class Store {
     if (this.db.prepare('PRAGMA user_version').get().user_version > 1) {
       this.db.close();
       throw Error(
-        'This library was created by a newer version of Local Canvas. Update the app to open it.',
+        'This library was created by a newer version of Terra Board. Update the app to open it.',
       );
     }
     this.db
@@ -588,7 +588,7 @@ class Store {
     const files = {
       'manifest.json': strToU8(
         JSON.stringify({
-          format: 'local-canvas',
+          format: 'terra-board',
           version: 1,
           name: d.board.name,
           icon: d.board.icon,
@@ -630,7 +630,7 @@ class Store {
       throw Error('Invalid board manifest');
     const m = JSON.parse(strFromU8(entries['manifest.json']));
     if (
-      m.format !== 'local-canvas' ||
+      (m.format !== 'terra-board' && m.format !== 'local-canvas') ||
       m.version !== 1 ||
       !Array.isArray(m.objects) ||
       m.objects.length > 100000 ||

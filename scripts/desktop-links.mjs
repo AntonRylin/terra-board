@@ -53,7 +53,7 @@ const env = { ...process.env, CANVAS_DATA_DIR: root };
 delete env.ELECTRON_RUN_AS_NODE;
 delete env.CANVAS_DEV_URL;
 const child = spawn(
-  resolve('release/win-unpacked/Local Canvas.exe'),
+  resolve('release/win-unpacked/Terra Board.exe'),
   [`--remote-debugging-port=${port}`],
   { env, windowsHide: true, stdio: 'ignore' },
 );

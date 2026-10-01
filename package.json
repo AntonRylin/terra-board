@@ -1,9 +1,9 @@
 {
-  "name": "local-canvas",
-  "productName": "Local Canvas",
+  "name": "terra-board",
+  "productName": "Terra Board",
   "version": "0.1.24",
   "description": "A private, local visual workspace",
-  "author": "Local Canvas",
+  "author": "Terra Board",
   "license": "UNLICENSED",
   "type": "module",
   "main": "electron/main.cjs",
@@ -37,8 +37,8 @@
     "vite": "8.3.1"
   },
   "build": {
-    "appId": "local.canvas.desktop",
-    "productName": "Local Canvas",
+    "appId": "terra.board.desktop",
+    "productName": "Terra Board",
     "directories": {
       "output": "release"
     },

@@ -1,4 +1,4 @@
-# Verification — Local Canvas
+# Verification — Terra Board
 
 ## Smooth, gentler mouse-wheel zoom — 2026-10-01
 
@@ -150,7 +150,7 @@ Verification: 57 Node tests pass, TypeScript/production packaging pass, and pack
 
 The user's packaged-app report exposed a gap in the earlier browser tests: those activated editors through callbacks instead of exercising a complete mouse sequence. Chromium retargets the double-click event to the board's pointer-capturing host, while the engine accepted only the canvas element. The handler now accepts both and still rejects overlays. The new regression fails against the former handler and passes with the fix.
 
-`node scripts/desktop-interactions.mjs` runs the actual `release/win-unpacked/Local Canvas.exe` against a disposable repository-local library. Chromium input produces trusted mouse double-clicks (confirmed on the capturing host), edits text, notes, frame titles, shapes and the board name, and verifies their saved values through the real desktop bridge. The same test right-clicks an image, chooses Crop, performs a real pointer drag, applies it, verifies persistence and undo/redo, and sends native WM_CLOSE to the test process's window. Reopening confirms the crop and active board-name draft survived. No renderer exceptions occurred. The previous executable reproduced the actual double-click failure. A screenshot of the crop controls was visually checked. Direct DevTools Page.close/window.close bypassed the desktop close guard and were replaced in the test by native WM_CLOSE.
+`node scripts/desktop-interactions.mjs` runs the actual `release/win-unpacked/Terra Board.exe` against a disposable repository-local library. Chromium input produces trusted mouse double-clicks (confirmed on the capturing host), edits text, notes, frame titles, shapes and the board name, and verifies their saved values through the real desktop bridge. The same test right-clicks an image, chooses Crop, performs a real pointer drag, applies it, verifies persistence and undo/redo, and sends native WM_CLOSE to the test process's window. Reopening confirms the crop and active board-name draft survived. No renderer exceptions occurred. The previous executable reproduced the actual double-click failure. A screenshot of the crop controls was visually checked. Direct DevTools Page.close/window.close bypassed the desktop close guard and were replaced in the test by native WM_CLOSE.
 
 Cropping stores normalized original-source bounds. GPU texture views reuse existing image sources; cropped detail requests retain the existing visible-tile/decoder/cache limits. The original bytes remain intact. Four new crop tests cover source geometry/reset, viewport tile clipping, clipboard/export/reopen/original preservation and undersized crops re-edited at smaller zoom. Browser pixel checks returned the expected `[42,176,106,255]` source color at both 100% and 800%; Apply, Cancel, Reset and undo/redo passed. Native input additionally verified the mouse-drag path. The crop handles, grid, Reset/Cancel/Apply toolbar and short hint appear directly over the image.
 
@@ -184,7 +184,7 @@ Photos retain their finite original resolution. Derivative tiles persist in the 
 
 ## 0.1.3 repository-local application and data — 2026-10-01
 
-The active repository is `D:\Projects\terra`. Launch with `Open Local Canvas.cmd` at its root or `release\win-unpacked\Local Canvas.exe`. The default library is now the repository's `Library` directory in both development and packaged builds. Settings, browser caches, logs, crash dumps and temporary runtime files also resolve beneath that directory. Compiled builds and user data are Git-ignored.
+The active repository is `D:\Projects\terra`. Launch with `Open Terra Board.cmd` at its root or `release\win-unpacked\Terra Board.exe`. The default library is now the repository's `Library` directory in both development and packaged builds. Settings, browser caches, logs, crash dumps and temporary runtime files also resolve beneath that directory. Compiled builds and user data are Git-ignored.
 
 All 34 tests pass, including development/packaged storage-path parity and isolated test overrides. The production package builds on D:. A packaged smoke run from a different working directory, without a data-directory override, loads the existing library and reports every runtime path under `D:\Projects\terra\Library`. First canvas: 1,570 ms. Packaged source and renderer assets match the verified build. The copied library passes SQLite integrity checking; all 437 files from the former AppData location were verified against their D: copies with SHA-256.
 

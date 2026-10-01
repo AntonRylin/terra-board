@@ -3,7 +3,7 @@
 const padding = 56;
 const html = `<!doctype html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
-<title>Local Canvas shadow</title><style>
+<title>Terra Board shadow</title><style>
 html,body { margin:0; width:100%; height:100%; overflow:hidden; background:transparent; }
 div { position:absolute; inset:${padding}px; border-radius:8px;
   box-shadow:0 12px 36px rgba(15,23,35,.13),0 3px 10px rgba(15,23,35,.08); }
@@ -27,7 +27,7 @@ function attachWindowShadow(owner, { BrowserWindow }, platform = process.platfor
     minimizable: false,
     maximizable: false,
     fullscreenable: false,
-    title: 'Local Canvas shadow',
+    title: 'Terra Board shadow',
     webPreferences: {
       sandbox: true,
       contextIsolation: true,

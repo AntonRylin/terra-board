@@ -1,4 +1,4 @@
-# Local Canvas
+# Terra Board
 
 A Windows-first local whiteboard with a minimal, iOS-inspired board launcher. Version 0.1.24 is a working preview release; the original product roadmap is broader than this implementation.
 
@@ -6,7 +6,7 @@ A Windows-first local whiteboard with a minimal, iOS-inspired board launcher. Ve
 
 ## Run
 
-The project lives at `D:\Projects\terra`. Double-click `Open Local Canvas.cmd` in that folder, or open `D:\Projects\terra\release\win-unpacked\Local Canvas.exe`. Keep the executable's support files alongside it.
+The project lives at `D:\Projects\terra`. Double-click `Open Terra Board.cmd` in that folder, or open `D:\Projects\terra\release\win-unpacked\Terra Board.exe`. Keep the executable's support files alongside it.
 
 The application stores boards, original media, settings, browser caches, logs and temporary runtime files in `D:\Projects\terra\Library`. Development and packaged builds share this repository-local library, outside the replaceable `release` directory. `Library` and compiled builds are ignored by Git. Core board editing works offline without an account, server or telemetry. Pasting a web link now fetches its public preview metadata and image; cached previews remain local. YouTube playback requires a connection and contacts YouTube. Ordinary links open the default browser when activated.
 

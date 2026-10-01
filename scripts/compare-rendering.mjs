@@ -59,7 +59,7 @@ if (!store.library().boards.length) {
   store.setLastBoard({ id: board.id });
 }
 store.close();
-const baseline = process.argv[2] || resolve('release/win-unpacked/Local Canvas.exe');
+const baseline = process.argv[2] || resolve('release/win-unpacked/Terra Board.exe');
 if (!existsSync(baseline)) throw Error('Provide the existing baseline executable');
 const env = { ...process.env, CANVAS_DATA_DIR: root };
 delete env.ELECTRON_RUN_AS_NODE;

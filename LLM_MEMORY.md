@@ -1,15 +1,15 @@
-# Local Canvas: session memory and working guide
+# Terra Board: session memory and working guide
 
 Last verified: 2026-10-01. This is the project handoff from the session that implemented docking, window polish, frames, rich links, compact cards, and palette improvements. Read this before working on the app. Treat source code and fresh verification as authoritative when this file gets older.
 
 ## Start here
 
 - **Actual repository: `D:\Projects\terra`.** The chat may start in an empty OneDrive `New project` directory. Set the working directory explicitly; do not create a second project there.
-- Current branch at handoff: **`codex/local-canvas`**. Remote: `https://github.com/AntonRylin/local-canvas.git`. Check `git status`, branch, log and diff before editing. Other sessions have worked in this same checkout; do not reset, overwrite or attribute their work to yourself.
+- Current branch at handoff: **`codex/local-canvas`**. Remote: `https://github.com/AntonRylin/terra-board.git`. Check `git status`, branch, log and diff before editing. Other sessions have worked in this same checkout; do not reset, overwrite or attribute their work to yourself.
 - This implementation is **Electron + React + TypeScript + PixiJS**, with a SQLite storage worker. Earlier Qt/native architecture discussions are not the implementation to build.
 - Source version at handoff is **0.1.24**. Verify `package.json`; do not assume every small edit increments it.
 - The user's real data lives in **`D:\Projects\terra\Library`**. It is outside the replaceable build directory and ignored by Git. Never use it for automated test fixtures or delete it to fix a build.
-- The deliverable is **`release\win-unpacked\Local Canvas.exe`**, launched through **`Open Local Canvas.cmd`**. A successful web build does not update the packaged executable.
+- The deliverable is **`release\win-unpacked\Terra Board.exe`**, launched through **`Open Terra Board.cmd`**. A successful web build does not update the packaged executable.
 - Read `README.md` for current features and `docs/verification.md` for dated evidence and limitations. Local test output paths in these documents are evidence on this computer, not files included in Git.
 
 ## User's delivery preference from this session
@@ -33,9 +33,9 @@ npm run build
 Before packaging, close the user's packaged app **gracefully** so it saves and releases executable files:
 
 ```powershell
-Get-Process 'Local Canvas' -ErrorAction SilentlyContinue |
+Get-Process 'Terra Board' -ErrorAction SilentlyContinue |
   Where-Object {
-    $_.Path -eq 'D:\Projects\terra\release\win-unpacked\Local Canvas.exe' -and
+    $_.Path -eq 'D:\Projects\terra\release\win-unpacked\Terra Board.exe' -and
     $_.MainWindowHandle -ne 0
   } |
   ForEach-Object { $_.CloseMainWindow() }
@@ -50,7 +50,7 @@ npm run package
 Wait for a successful exit, then reopen the actual deliverable for the user:
 
 ```powershell
-Start-Process -FilePath 'D:\Projects\terra\Open Local Canvas.cmd' `
+Start-Process -FilePath 'D:\Projects\terra\Open Terra Board.cmd' `
   -WorkingDirectory 'D:\Projects\terra' -WindowStyle Hidden
 ```
 

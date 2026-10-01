@@ -269,7 +269,7 @@ createRoot(document.getElementById('root')!).render(
   window.dispatchEvent(
     new ClipboardEvent('copy', { clipboardData: data, bubbles: true, cancelable: true }),
   );
-  const copied = JSON.parse(data.getData('application/x-local-canvas-objects'));
+  const copied = JSON.parse(data.getData('application/x-terra-board-objects'));
   check(
     copied.length === 2 &&
       copied.some((o: any) => o.id === 'text') &&

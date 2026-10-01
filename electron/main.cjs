@@ -249,7 +249,7 @@ app
       minWidth: 760,
       minHeight: 560,
       show: false,
-      title: 'Local Canvas',
+      title: 'Terra Board',
       icon: path.join(__dirname, '../assets/icon.png'),
       backgroundColor: '#fbfcfd',
       autoHideMenuBar: true,
@@ -288,7 +288,7 @@ app
       { urls: ['https://www.youtube-nocookie.com/embed/*'] },
       (details, cb) => {
         cb({
-          requestHeaders: { ...details.requestHeaders, Referer: 'https://local.canvas.desktop/' },
+          requestHeaders: { ...details.requestHeaders, Referer: 'https://terra.board.desktop/' },
         });
       },
     );
@@ -362,7 +362,7 @@ app
       trusted(e);
       const r = await dialog.showOpenDialog(win, {
         properties: ['openFile'],
-        filters: [{ name: 'Local Canvas board', extensions: ['canvas'] }],
+        filters: [{ name: 'Terra Board board', extensions: ['canvas'] }],
       });
       return r.canceled ? null : call('importFile', { file: r.filePaths[0] });
     });
@@ -444,7 +444,7 @@ app
   })
   .catch((e) => {
     console.error(e);
-    if (!smoke) dialog.showErrorBox('Local Canvas could not open', e.message);
+    if (!smoke) dialog.showErrorBox('Terra Board could not open', e.message);
     app.exit(1);
   });
 app.on('window-all-closed', () => app.quit());

@@ -39,14 +39,14 @@ app
       width: 900,
       height: 620,
       show: false,
-      title: 'Local Canvas · Shadow verification',
+      title: 'Terra Board · Shadow verification',
       backgroundColor: '#fbfcfd',
     });
     owner.setMenu(null);
     await owner.loadURL(
       'data:text/html;charset=utf-8,' +
         encodeURIComponent(
-          '<body style="margin:0;background:#fbfcfd;font:16px Segoe UI;color:#6d7785"><p style="margin:30px">Local Canvas — window shadow</p></body>',
+          '<body style="margin:0;background:#fbfcfd;font:16px Segoe UI;color:#6d7785"><p style="margin:30px">Terra Board — window shadow</p></body>',
         ),
     );
     const shadow = attachWindowShadow(owner, { BrowserWindow });

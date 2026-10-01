@@ -18,7 +18,7 @@ const note = (text = 'hello') => ({
   z: 0,
 });
 async function withStore(fn) {
-  const root = mkdtempSync(join(tmpdir(), 'local-canvas-test-'));
+  const root = mkdtempSync(join(tmpdir(), 'terra-board-test-'));
   let s = new Store(root);
   try {
     await fn(s, root);

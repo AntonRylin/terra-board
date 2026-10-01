@@ -2,10 +2,11 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent, RefObject } from 'react';
 
 export type DockEdge = 'left' | 'right' | 'top' | 'bottom';
-const storageKey = 'local-canvas.launcher-edge';
+const storageKey = 'terra-board.launcher-edge',
+  legacyStorageKey = 'local-canvas.launcher-edge';
 export function readDockEdge(): DockEdge {
   try {
-    const value = localStorage.getItem(storageKey);
+    const value = localStorage.getItem(storageKey) ?? localStorage.getItem(legacyStorageKey);
     if (value === 'right' || value === 'top' || value === 'bottom') return value;
   } catch {}
   return 'left';

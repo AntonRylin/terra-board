@@ -1,4 +1,4 @@
-# Local Canvas documents
+# Terra Board documents
 
 The approved launcher design is implemented in the Windows app: one vertical icon strip with floating folders and a centered Create button. The source lives in src/ and electron/.
 

@@ -100,7 +100,7 @@ await new Promise((r) => server.listen(0, '127.0.0.1', r));
 const port = server.address().port;
 await new Promise((r) => server.close(r));
 const executable =
-  process.env.CANVAS_EXECUTABLE || resolve('release/win-unpacked/Local Canvas.exe');
+  process.env.CANVAS_EXECUTABLE || resolve('release/win-unpacked/Terra Board.exe');
 const env = { ...process.env, CANVAS_DATA_DIR: root };
 delete env.ELECTRON_RUN_AS_NODE;
 delete env.CANVAS_DEV_URL;

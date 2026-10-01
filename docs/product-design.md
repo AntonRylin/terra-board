@@ -1,6 +1,6 @@
-# Local Canvas: product design and roadmap
+# Terra Board: product design and roadmap
 
-Date: 2026-09-30. Status: exploratory draft; UI brainstorming is in progress. Local Canvas is a working name.
+Date: 2026-09-30. Status: exploratory draft; UI brainstorming is in progress.
 
 Latest direction: a left-side iOS-style app launcher. Use one narrow, vertically scrollable column of small icons. Names are hidden by default and revealed on hover/focus; some boards are inside iOS-style folders that open on click. The user explicitly rejected the conventional navigation list and entries such as All boards, Recent, Favorites, Personal, and Work. Board management still includes create, rename, duplicate, move, edit icon, export/share a copy, and delete. Continue visual brainstorming before writing application code. Portable file export remains the proposal for local-only sharing.
 

@@ -100,7 +100,7 @@ export default function Launcher(p: Props) {
     };
   }, [folder?.id, p.dockEdge, horizontal]);
   const drag = (e: React.DragEvent, id: string, kind = 'board') => {
-    e.dataTransfer.setData('application/x-local-canvas', JSON.stringify({ id, kind }));
+    e.dataTransfer.setData('application/x-terra-board', JSON.stringify({ id, kind }));
     e.dataTransfer.effectAllowed = 'move';
   };
   const dropIcon = (e: React.DragEvent, board: Board) => {
@@ -127,7 +127,7 @@ export default function Launcher(p: Props) {
     e.preventDefault();
     e.currentTarget.classList.remove('drop-target');
     try {
-      const data = JSON.parse(e.dataTransfer.getData('application/x-local-canvas'));
+      const data = JSON.parse(e.dataTransfer.getData('application/x-terra-board'));
       if (data.kind === 'board')
         p.onMove(data.id, fid, target?.kind === 'board' ? target.position - 0.5 : undefined);
       else if (data.kind === 'folder' && target) p.onReorderFolder(data.id, target.position - 0.5);

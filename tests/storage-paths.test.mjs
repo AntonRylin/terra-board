@@ -12,7 +12,7 @@ test('development and packaged apps use the same repository library from any wor
     libraryRoot({
       isPackaged: true,
       appPath: path.join(repo, 'release', 'win-unpacked', 'resources', 'app.asar'),
-      exePath: path.join(repo, 'release', 'win-unpacked', 'Local Canvas.exe'),
+      exePath: path.join(repo, 'release', 'win-unpacked', 'Terra Board.exe'),
     }),
     path.join(repo, 'Library'),
   );
