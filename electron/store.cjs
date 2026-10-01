@@ -13,7 +13,17 @@ const validIcon = (icon) =>
 const MAX_PACKAGE = 512 * 1024 * 1024;
 const graphemes = (value) =>
   [...new Intl.Segmenter('und', { granularity: 'grapheme' }).segment(value)].map((s) => s.segment);
-const types = new Set(['text', 'note', 'rect', 'ellipse', 'frame', 'image', 'video', 'link']);
+const types = new Set([
+  'text',
+  'note',
+  'rect',
+  'ellipse',
+  'frame',
+  'image',
+  'video',
+  'link',
+  'arrow',
+]);
 const idValue = (value) => {
   if (typeof value !== 'string' || !value || value.length > 100 || !/^[\w-]+$/.test(value))
     throw Error('Invalid identifier');
@@ -56,6 +66,41 @@ function objectValue(o) {
     height: o.height,
     z: o.z,
   };
+  if (o.type === 'arrow') {
+    const a = o.arrow;
+    if (
+      !a ||
+      !Array.isArray(a.points) ||
+      a.points.length < 2 ||
+      a.points.length > 32 ||
+      !a.points.every(
+        (p) =>
+          p &&
+          Number.isFinite(p.x) &&
+          Number.isFinite(p.y) &&
+          p.x >= 0 &&
+          p.x <= 1 &&
+          p.y >= 0 &&
+          p.y <= 1,
+      ) ||
+      !['straight', 'curve', 'elbow'].includes(a.line) ||
+      !['none', 'arrow', 'triangle', 'open', 'diamond', 'circle'].includes(a.start) ||
+      !['none', 'arrow', 'triangle', 'open', 'diamond', 'circle'].includes(a.end) ||
+      !['solid', 'dashed', 'dotted'].includes(a.dash) ||
+      !Number.isFinite(a.thickness) ||
+      a.thickness < 0.5 ||
+      a.thickness > 40
+    )
+      throw Error('Invalid arrow');
+    result.arrow = {
+      points: a.points.map((p) => ({ x: p.x, y: p.y })),
+      line: a.line,
+      start: a.start,
+      end: a.end,
+      dash: a.dash,
+      thickness: a.thickness,
+    };
+  }
   if (o.text !== undefined) {
     if (typeof o.text !== 'string' || o.text.length > 100000) throw Error('Invalid text');
     result.text = o.text;

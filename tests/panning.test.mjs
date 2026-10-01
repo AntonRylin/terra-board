@@ -813,3 +813,41 @@ test('multi-selection scaling includes frame contents exactly once', () => {
   f.engine.undo();
   for (const o of items) assert.deepEqual({ ...f.engine.objects.get(o.id) }, o);
 });
+
+test('arrow draw, midpoint insertion, endpoint drag, undo and Escape work in screen coordinates', () => {
+  const f = fixture('arrow');
+  f.engine.camera = { x: 20, y: 30, zoom: 2 };
+  f.engine.down(f.event(220, 230, 0));
+  f.engine.move(f.event(620, 230, 0));
+  f.engine.up(f.event(620, 230, 0));
+  const o = f.engine.selected[0];
+  assert.equal(o.type, 'arrow');
+  assert.equal(o.x, 100);
+  assert.equal(o.width, 200);
+  assert.equal(o.height, 1);
+  assert.equal(f.engine.tool, 'select');
+  assert.equal(f.edits.at(-1).upserts[0].id, o.id);
+  // Drag the midpoint down to create a bend, without changing the ends.
+  f.engine.down(f.event(420, 230, 0));
+  f.engine.move(f.event(420, 430, 0));
+  f.engine.up(f.event(420, 430, 0));
+  const bent = f.engine.objects.get(o.id);
+  assert.equal(bent.arrow.points.length, 3);
+  assert.equal(bent.height, 100);
+  f.engine.undo();
+  assert.equal(f.engine.objects.get(o.id).arrow.points.length, 2);
+  f.engine.redo();
+  assert.equal(f.engine.objects.get(o.id).arrow.points.length, 3);
+  f.engine.down(f.event(620, 230, 0));
+  f.engine.move(f.event(700, 250, 0));
+  f.engine.cancel();
+  assert.deepEqual({ ...f.engine.objects.get(o.id) }, { ...bent });
+  f.engine.undo();
+  f.engine.undo();
+  assert.equal(f.engine.objects.has(o.id), false);
+  f.engine.setTool('arrow');
+  f.engine.down(f.event(100, 100, 0));
+  f.engine.move(f.event(200, 200, 0));
+  f.engine.cancel();
+  assert.equal(f.engine.objects.size, 0);
+});

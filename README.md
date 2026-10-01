@@ -24,7 +24,7 @@ Pasted web links start as compact title/website cards with an open-link button. 
 
 ## Useful controls
 
-Hold the **right mouse button and drag** to move around the board. A plain right-click opens the canvas menu. Use **V** to select, **H** or hold **Space** to pan, **T** for text, **N** for a note, **R** for a shape, **F** for a frame, **L** for a link, and **0** to fit the board. Use the **mouse wheel** to zoom in and out toward the cursor, **Ctrl+K** to search, **Ctrl+Z / Ctrl+Shift+Z** for undo/redo, and **Ctrl+Enter** to finish editing. Double-click text to edit it. Drag any of the four selection corners to resize. Plain text scales its font and box together, keeping the opposite corner fixed; images keep their proportions unless Shift is held. Selection actions stay beside the selected object or group and follow movement, pan and zoom.
+Hold the **right mouse button and drag** to move around the board. A plain right-click opens the canvas menu. Use **V** to select, **H** or hold **Space** to pan, **T** for text, **N** for a note, **R** for a shape, **A** for an arrow, **F** for a frame, **L** for a link, and **0** to fit the board. Use the **mouse wheel** to zoom in and out toward the cursor, **Ctrl+K** to search, **Ctrl+Z / Ctrl+Shift+Z** for undo/redo, and **Ctrl+Enter** to finish editing. Double-click text to edit it. Drag any of the four selection corners to resize. Plain text scales its font and box together, keeping the opposite corner fixed; images keep their proportions unless Shift is held. Selection actions stay beside the selected object or group and follow movement, pan and zoom.
 
 Right-click board and folder icons for their actions. The three-dot menus expose board operations, canvas export, Trash, and the keyboard reference.
 
@@ -87,3 +87,6 @@ The packaging command writes to `release/win-unpacked` inside the repository. Ke
 In PowerShell, `$env:CANVAS_SCALE='1'; npm run test:desktop` generates a disposable 10,000-object / 1,000-image workload and measures first-canvas startup. `CANVAS_EXECUTABLE` can point to the packaged executable to verify that artifact. Remove those environment variables afterward in an interactive shell.
 
 See [verification notes](docs/verification.md) for evidence and open release gates, and [architecture/design](docs/product-design.md) for the longer-term product direction.
+
+
+Arrows: choose **Arrow (A)** and drag between two points. Drag an endpoint to reposition it; drag a small dot along the path to insert a bend. Double-click an interior bend to remove it. The selection toolbar provides straight, curved and elbow paths, solid/dashed/dotted strokes, thickness, color, independent start/end markers, a swap action and a text label. Labels save on Enter, blur or app close; Escape cancels the label draft. Arrows move and scale with selections and frames, and retain their shape through undo, clipboard, reopening and board export/import. Endpoints are freely positioned; they do not automatically attach to other objects.

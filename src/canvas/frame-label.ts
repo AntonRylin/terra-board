@@ -21,6 +21,11 @@ export function hasExternalLabel(o: CanvasObject) {
 // Include the external name in culling and pointer queries, but keep resize
 // handles on the frame body. Rotated labels use the same local coordinates.
 export function visualBounds(o: CanvasObject, editingTitle = false) {
+  if (o.type === 'arrow') {
+    const b = objectBounds(o),
+      pad = Math.max(24, (o.arrow?.thickness || 3) * 5, o.text ? 140 : 0);
+    return { x: b.x - pad, y: b.y - pad, width: b.width + pad * 2, height: b.height + pad * 2 };
+  }
   if (!hasExternalLabel(o) && !(editingTitle && o.type === 'image')) return objectBounds(o);
   const top = frameLabel(o).top;
   const points = [

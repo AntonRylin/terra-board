@@ -1063,6 +1063,74 @@ try {
   assert.equal((await object('text')).width, transformText.width, 'editing reset manual width');
   const transformShot = await send('Page.captureScreenshot', { format: 'png' });
   writeFileSync(join(root, 'transform-controls.png'), Buffer.from(transformShot.data, 'base64'));
+  // Draw and reshape an arrow using actual pointer input.
+  await clickSelector('[aria-label="Arrow"]');
+  await drag({ x: host.x + 80, y: host.y + 540 }, { x: host.x + 620, y: host.y + 540 });
+  const arrow = await until(
+    async () => (await documentState()).objects.find((o) => o.type === 'arrow'),
+    'arrow saved',
+  );
+  await drag({ x: host.x + 350, y: host.y + 540 }, { x: host.x + 350, y: host.y + 640 });
+  await until(
+    async () => (await object(arrow.id)).arrow.points.length === 3,
+    'bend inserted by dragging midpoint',
+  );
+  await key('z', 'KeyZ', 2);
+  await until(async () => (await object(arrow.id)).arrow.points.length === 2, 'bend undo');
+  await key('z', 'KeyZ', 10);
+  await until(async () => (await object(arrow.id)).arrow.points.length === 3, 'bend redo');
+  await clickSelector('[aria-label="Line style"]');
+  const chooseArrow = async (label, value) => {
+    await read(
+      `(()=>{const e=document.querySelector('[aria-label="${label}"]');e.value=${JSON.stringify(value)};e.dispatchEvent(new Event('change',{bubbles:true}));})()`,
+    );
+    await sleep(100);
+  };
+  for (const line of ['straight', 'elbow', 'curve']) {
+    await chooseArrow('Arrow path', line);
+    await until(async () => (await object(arrow.id)).arrow.line === line, 'arrow path ' + line);
+  }
+  await chooseArrow('Arrow stroke', 'dashed');
+  await chooseArrow('Arrow thickness', '4');
+  await clickSelector('[aria-label="Line style"]');
+  await chooseArrow('Start arrowhead', 'diamond');
+  await chooseArrow('End arrowhead', 'triangle');
+  await clickSelector('[aria-label="Swap arrowheads"]');
+  await until(async () => (await object(arrow.id)).arrow.start === 'triangle', 'swapped markers');
+  await clickSelector('[aria-label="Arrow label"]');
+  await send('Input.insertText', { text: 'Editable connection' });
+  await key('Enter', 'Enter');
+  await until(
+    async () => (await object(arrow.id)).text === 'Editable connection',
+    'arrow label saved',
+  );
+  await clickSelector('[aria-label="Arrow label"]');
+  await send('Input.insertText', { text: 'discard this' });
+  await key('Escape', 'Escape');
+  assert.equal(
+    (await object(arrow.id)).text,
+    'Editable connection',
+    'Escape cancelled label draft',
+  );
+  await doubleClick(host.x + 350, host.y + 640);
+  await until(
+    async () => (await object(arrow.id)).arrow.points.length === 2,
+    'double click removes bend',
+  );
+  await key('z', 'KeyZ', 2);
+  await until(async () => (await object(arrow.id)).arrow.points.length === 3, 'remove bend undo');
+  await drag({ x: host.x + 620, y: host.y + 540 }, { x: host.x + 660, y: host.y + 500 });
+  await until(
+    async () => Math.abs((await object(arrow.id)).width - 580) < 0.001,
+    'endpoint repositioned',
+  );
+  await key('z', 'KeyZ', 2);
+  await until(async () => Math.abs((await object(arrow.id)).width - 540) < 0.001, 'endpoint undo');
+  writeFileSync(
+    join(root, 'arrow-controls.png'),
+    Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64'),
+  );
+  await click(host.x + 1100, host.y + 650);
   const title = await rect('.board-title');
   await click(title.x + title.width / 2, title.y + title.height / 2);
   await sleep(100);
@@ -1186,6 +1254,8 @@ try {
   reopened.close();
   assert.equal(result.board.name, 'Active title saved on close');
   assert.ok(result.objects.find((o) => o.id === 'image').crop);
+  assert.equal(result.objects.find((o) => o.id === arrow.id).text, 'Editable connection');
+  assert.equal(result.objects.find((o) => o.id === arrow.id).arrow.points.length, 3);
   assert.ok(Math.abs(result.objects.find((o) => o.id === 'image').rotation - 90) < 0.1);
   assert.ok(result.objects.find((o) => o.id === 'text').textBox);
   assert.ok(Math.abs(result.objects.find((o) => o.id === 'text').rotation - 180) < 0.1);

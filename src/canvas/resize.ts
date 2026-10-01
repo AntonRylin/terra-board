@@ -86,14 +86,19 @@ export function resizeSelection(
     ((west ? -dx : dx) * bounds.width + (north ? -dy : dy) * bounds.height) /
       Math.max(1, bounds.width ** 2 + bounds.height ** 2);
   const font = (o: CanvasObject) =>
-    ['text', 'note', 'rect', 'ellipse', 'frame'].includes(o.type)
+    ['text', 'note', 'rect', 'ellipse', 'frame', 'arrow'].includes(o.type)
       ? o.fontSize || (o.type === 'note' ? 21 : o.type === 'frame' ? 14 : 18)
       : undefined;
   let minimum = 0,
     maximum = Infinity;
   for (const o of objects) {
     const size = font(o);
-    minimum = Math.max(minimum, 1 / o.width, 1 / o.height, size ? 8 / size : 0);
+    minimum = Math.max(
+      minimum,
+      o.type === 'arrow' ? 0 : 1 / o.width,
+      o.type === 'arrow' ? 0 : 1 / o.height,
+      size ? 8 / size : 0,
+    );
     maximum = Math.min(maximum, 1e6 / o.width, 1e6 / o.height, size ? 300 / size : Infinity);
   }
   const scale = Math.max(minimum, Math.min(maximum, requested));
@@ -101,9 +106,21 @@ export function resizeSelection(
     ...o,
     x: anchor.x + (o.x - anchor.x) * scale,
     y: anchor.y + (o.y - anchor.y) * scale,
-    width: o.width * scale,
-    height: o.height * scale,
+    width: Math.max(1, o.width * scale),
+    height: Math.max(1, o.height * scale),
     ...(font(o) ? { fontSize: Math.max(8, Math.min(300, font(o)! * scale)) } : {}),
+    ...(o.arrow
+      ? {
+          arrow: {
+            ...o.arrow,
+            points: o.arrow.points.map((p) => ({
+              x: (p.x * o.width * scale) / Math.max(1, o.width * scale),
+              y: (p.y * o.height * scale) / Math.max(1, o.height * scale),
+            })),
+            thickness: Math.max(0.5, Math.min(40, o.arrow.thickness * scale)),
+          },
+        }
+      : {}),
     ...(o.linkPreviewHeight ? { linkPreviewHeight: o.linkPreviewHeight * scale } : {}),
   }));
 }

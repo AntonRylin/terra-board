@@ -749,6 +749,7 @@ export default function App() {
                     ['Pan around', 'Right-drag · Space + drag'],
                     ['Zoom toward pointer', 'Mouse wheel'],
                     ['Fit your board', '0'],
+                    ['Draw an arrow', 'A + drag'],
                     ['Edit text', 'Double-click'],
                     ['Finish text editing', 'Ctrl Enter'],
                   ].map(([a, b]) => (

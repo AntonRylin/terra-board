@@ -1,3 +1,12 @@
+import {
+  arrowFromPoints,
+  arrowPoints,
+  arrowPath,
+  arrowHandles,
+  hitsArrow,
+  arrowLabelPoint,
+} from './arrows';
+import { drawArrow } from './arrow-rendering';
 // Pixi's interpreter adapters keep shader setup compatible with a strict CSP (no eval).
 import 'pixi.js/unsafe-eval';
 import { Application, Container, Graphics, Sprite, Rectangle, Texture } from 'pixi.js';
@@ -28,6 +37,7 @@ import {
   hasLinkImage,
 } from './link-preview';
 interface Callbacks {
+  tool?: (tool: Tool) => void;
   edit: (e: Edit) => void;
   camera: (c: Camera) => void;
   selection: (items: CanvasObject[]) => void;
@@ -40,7 +50,10 @@ interface Callbacks {
   error: (message: string) => void;
 }
 type Gesture = {
-  mode: 'pan' | 'move' | 'resize' | 'rotate' | 'box';
+  mode: 'pan' | 'move' | 'resize' | 'rotate' | 'box' | 'drawArrow' | 'arrowPoint';
+  arrowDraft?: CanvasObject;
+  arrowIndex?: number;
+  arrowPoints?: Point[];
   start: Point;
   camera: Camera;
   original: CanvasObject[];
@@ -194,10 +207,22 @@ export class Engine {
   }
   private hit(p: Point) {
     return this.index
-      .search({ x: p.x, y: p.y, width: 0, height: 0 })
+      .search({
+        x: p.x - 8 / this.camera.zoom,
+        y: p.y - 8 / this.camera.zoom,
+        width: 16 / this.camera.zoom,
+        height: 16 / this.camera.zoom,
+      })
       .sort((a, b) => b.z - a.z)
       .find((o) => {
         const q = worldToLocal(o, p);
+        if (o.type === 'arrow') {
+          const label = arrowLabelPoint(o);
+          return (
+            hitsArrow(o, q, 8 / this.camera.zoom) ||
+            (!!o.text && Math.abs(q.x - label.x) < 120 && Math.abs(q.y - label.y) < 24)
+          );
+        }
         if (hitsFrameLabel(o, q)) return true;
         if (q.x < 0 || q.y < 0 || q.x > o.width || q.y > o.height) return false;
         if (
@@ -244,6 +269,31 @@ export class Engine {
         secondary: e.button === 2,
       };
       this.updateCursor();
+    } else if (this.tool === 'arrow') {
+      const draft = arrowFromPoints(
+        {
+          id: uid(),
+          type: 'arrow',
+          x: w.x,
+          y: w.y,
+          width: 1,
+          height: 1,
+          z: this.topZ() + 1,
+          color: '#333333',
+          fontSize: 18,
+        },
+        [w, { x: w.x + 160 / this.camera.zoom, y: w.y }],
+      );
+      this.preview(draft);
+      this.setSelection([draft.id]);
+      this.gesture = {
+        mode: 'drawArrow',
+        start: p,
+        world: w,
+        camera: { ...this.camera },
+        original: [],
+        arrowDraft: draft,
+      };
     } else if (this.tool !== 'select') {
       this.callbacks.create(this.tool, w);
       return;
@@ -251,7 +301,21 @@ export class Engine {
       const bounds = boundsOf(this.selected),
         additive = e.shiftKey || e.ctrlKey || e.metaKey;
       const resize = !e.ctrlKey && !e.metaKey && this.resizeCorner(p);
-      if (resize)
+      const arrowHandle = !additive && this.arrowHandle(p);
+      if (arrowHandle) {
+        const o = this.selected[0],
+          points = arrowPoints(o).map((q) => localToWorld(o, q));
+        if (arrowHandle.insert) points.splice(arrowHandle.index, 0, localToWorld(o, arrowHandle));
+        this.gesture = {
+          mode: 'arrowPoint',
+          start: p,
+          world: w,
+          camera: { ...this.camera },
+          original: [{ ...o }],
+          arrowIndex: arrowHandle.index,
+          arrowPoints: points,
+        };
+      } else if (resize)
         this.gesture = {
           mode: resize === 'rotate' ? 'rotate' : 'resize',
           corner: resize === 'rotate' ? undefined : resize,
@@ -328,6 +392,13 @@ export class Engine {
       this.updateCursor(
         e.target === this.app.canvas ? this.resizeCorner(this.point(e)) : undefined,
       );
+      if (
+        !this.space &&
+        this.tool === 'select' &&
+        e.target === this.app.canvas &&
+        this.arrowHandle(this.point(e))
+      )
+        this.host.style.cursor = 'move';
       return;
     }
     const p = this.point(e),
@@ -336,7 +407,15 @@ export class Engine {
     const moved = Math.abs(dx) + Math.abs(dy) > 2;
     g.dragged ||= moved;
     g.changed = g.secondary ? g.changed || moved : moved;
-    if (g.mode === 'pan') {
+    if (g.mode === 'drawArrow') {
+      this.preview(arrowFromPoints(g.arrowDraft!, [g.world, this.screenPoint(p)]));
+      this.invalidate();
+    } else if (g.mode === 'arrowPoint') {
+      const points = g.arrowPoints!.map((q) => ({ ...q }));
+      points[g.arrowIndex!] = this.screenPoint(p);
+      this.preview(arrowFromPoints(g.original[0], points));
+      this.invalidate();
+    } else if (g.mode === 'pan') {
       if (g.secondary && !g.changed) return;
       this.camera = { ...g.camera, x: g.camera.x + dx, y: g.camera.y + dy };
       this.invalidate();
@@ -388,19 +467,34 @@ export class Engine {
     if (!g) return;
     this.gesture = null;
     this.updateCursor();
-    if (g.secondary && !g.changed) this.openContext(e);
+    if (g.mode === 'drawArrow') {
+      const o = this.objects.get(g.arrowDraft!.id)!;
+      this.history.push({ upserts: [o], deleted: [] }, { upserts: [], deleted: [o.id] });
+      this.callbacks.edit({ upserts: [o], deleted: [] });
+      this.setSelection([o.id]);
+      this.setTool('select');
+      this.callbacks.tool?.('select');
+    } else if (g.secondary && !g.changed) this.openContext(e);
     else if (g.mode === 'pan') this.callbacks.camera({ ...this.camera });
     else if (g.mode === 'box' && g.box) {
       const next = new Set(g.original.map((o) => o.id));
       const hits = new Set(this.index.search(g.box).flatMap((o) => this.members(o)));
       for (const id of hits) g.toggle && next.has(id) ? next.delete(id) : next.add(id);
       this.setSelection([...next]);
-    } else if (g.changed && (g.mode === 'move' || g.mode === 'resize' || g.mode === 'rotate')) {
+    } else if (
+      g.changed &&
+      (g.mode === 'move' || g.mode === 'resize' || g.mode === 'rotate' || g.mode === 'arrowPoint')
+    ) {
       const after = g.original.map((o) => this.objects.get(o.id)!);
       this.history.push({ upserts: after, deleted: [] }, { upserts: g.original, deleted: [] });
       this.callbacks.edit({ upserts: after, deleted: [] });
       this.callbacks.selection(this.selected);
-    } else if (g.mode === 'move' || g.mode === 'resize' || g.mode === 'rotate') {
+    } else if (
+      g.mode === 'move' ||
+      g.mode === 'resize' ||
+      g.mode === 'rotate' ||
+      g.mode === 'arrowPoint'
+    ) {
       for (const o of g.original) this.preview(o);
       if (g.editOnClick && !g.dragged) {
         const object = this.objects.get(g.editOnClick);
@@ -414,6 +508,11 @@ export class Engine {
     this.gesture = null;
     this.updateCursor();
     if (g) {
+      if (g.mode === 'drawArrow') {
+        this.objects.delete(g.arrowDraft!.id);
+        this.index.remove(g.arrowDraft!.id);
+        this.setSelection([]);
+      }
       for (const o of g.original) this.preview(o);
       if (g.mode === 'pan') this.camera = g.camera;
       this.invalidate();
@@ -493,6 +592,19 @@ export class Engine {
     // Pointer capture on the surface retargets Chromium's subsequent click /
     // dblclick to that surface, even when both presses began on the canvas.
     if (e.target !== this.app.canvas && e.target !== this.host) return;
+    const handle = this.arrowHandle(this.point(e));
+    if (
+      handle &&
+      !handle.insert &&
+      handle.index > 0 &&
+      handle.index < arrowPoints(this.selected[0]).length - 1
+    ) {
+      const o = this.selected[0],
+        points = arrowPoints(o).map((p) => localToWorld(o, p));
+      points.splice(handle.index, 1);
+      this.apply({ upserts: [arrowFromPoints(o, points)], deleted: [] });
+      return;
+    }
     const o = this.hit(this.screenPoint(this.point(e)));
     if (o) this.callbacks.activate(o);
     else this.callbacks.create('text', this.screenPoint(this.point(e)));
@@ -549,6 +661,21 @@ export class Engine {
       }
     }
   }
+  private arrowHandle(p: Point) {
+    if (this.selection.size !== 1 || this.selected[0].type !== 'arrow') return;
+    const o = this.selected[0];
+    return arrowHandles(o)
+      .sort((a, b) => Number(a.insert) - Number(b.insert))
+      .find((h) => {
+        const q = localToWorld(o, h);
+        return (
+          Math.hypot(
+            p.x - q.x * this.camera.zoom - this.camera.x,
+            p.y - q.y * this.camera.zoom - this.camera.y,
+          ) < 10
+        );
+      });
+  }
   private resizeCorner(p: Point): ResizeHandle | 'rotate' | undefined {
     if (!this.selection.size || this.editingId || this.cropPreview) return;
     if (this.selection.size > 1) {
@@ -561,6 +688,7 @@ export class Engine {
     }
     const o = this.selected[0],
       c = this.camera;
+    if (o.type === 'arrow') return;
     let nearest: ResizeHandle | 'rotate' | undefined,
       distance = Infinity;
     for (const corner of [...resizeHandles, 'rotate'] as const) {
@@ -876,6 +1004,7 @@ export class Engine {
         o.centerY,
         o.type,
         o.crop,
+        o.arrow,
         key,
         !!texture,
         iconKey,
@@ -956,6 +1085,37 @@ export class Engine {
       g = new Graphics(),
       color = o.color || '#e8edf5';
     container.eventMode = 'none';
+    if (o.type === 'arrow') {
+      drawArrow(g, o);
+      container.addChild(g);
+      if (o.text && detail) {
+        const p = arrowLabelPoint(o),
+          font = o.fontSize || 18;
+        const labelObject = {
+          ...o,
+          type: 'text' as const,
+          width: 240,
+          height: font * 3,
+          centerX: true,
+          centerY: true,
+        };
+        const label = renderText(labelObject, o.text, resolution, {
+          x: 0,
+          y: 0,
+          width: 240,
+          height: font * 3,
+        });
+        if (label) {
+          label.x += p.x - 120;
+          label.y += p.y - font * 1.5;
+          const backdrop = new Graphics()
+            .roundRect(label.x - 5, label.y - 2, label.width + 10, label.height + 4, 4)
+            .fill('#fbfcfd');
+          container.addChild(backdrop, label);
+        }
+      }
+      return container;
+    }
     if (o.type === 'link') {
       const compact = !hasLinkImage(o);
       const iconY = compact && o.linkDescription ? 36 : o.height / 2;
@@ -1144,7 +1304,7 @@ export class Engine {
           height: b.height * c.zoom,
         }
       : null;
-    if (toolbarBounds && this.selection.size === 1) {
+    if (toolbarBounds && this.selection.size === 1 && this.selected[0].type !== 'arrow') {
       const o = this.editingPreview || this.selected[0];
       if (hasExternalLabel(o) || (o.type === 'image' && this.editingId === o.id)) {
         const visual = visualBounds(o, this.editingId === o.id);
@@ -1173,7 +1333,22 @@ export class Engine {
         y = b.y * c.zoom + c.y,
         w = b.width * c.zoom,
         h = b.height * c.zoom;
-      if (this.selection.size !== 1) {
+      if (this.selection.size === 1 && this.selected[0].type === 'arrow') {
+        const o = this.selected[0];
+        const path = arrowPath(o).map((p) => localToWorld(o, p));
+        for (let i = 0; i < path.length; i++) {
+          const p = path[i];
+          if (i) g.lineTo(p.x * c.zoom + c.x, p.y * c.zoom + c.y);
+          else g.moveTo(p.x * c.zoom + c.x, p.y * c.zoom + c.y);
+        }
+        g.stroke({ color: '#4486d9', width: 1 });
+        for (const h of arrowHandles(o)) {
+          const p = localToWorld(o, h);
+          g.circle(p.x * c.zoom + c.x, p.y * c.zoom + c.y, h.insert ? 4 : 5)
+            .fill(h.insert ? '#4486d9' : '#ffffff')
+            .stroke({ color: h.insert ? '#ffffff' : '#4486d9', width: 1.5 });
+        }
+      } else if (this.selection.size !== 1) {
         g.rect(x, y, w, h).stroke({ color: '#4486d9', width: 1.5 });
         for (const corner of corners) {
           const hx = x + (corner.includes('e') ? w : 0),

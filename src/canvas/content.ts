@@ -16,7 +16,9 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
     if (
       !o ||
       typeof o !== 'object' ||
-      !['text', 'note', 'rect', 'ellipse', 'frame', 'image', 'video', 'link'].includes(o.type)
+      !['text', 'note', 'rect', 'ellipse', 'frame', 'image', 'video', 'link', 'arrow'].includes(
+        o.type,
+      )
     )
       throw Error('Invalid clipboard object');
     if (
@@ -106,7 +108,37 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
       if (!['http:', 'https:'].includes(u.protocol) || o.url.length > 8192)
         throw Error('Invalid link');
     }
+    if (o.type === 'arrow') {
+      const a = o.arrow;
+      if (
+        !a ||
+        !Array.isArray(a.points) ||
+        a.points.length < 2 ||
+        a.points.length > 32 ||
+        !a.points.every(
+          (p: any) =>
+            p &&
+            Number.isFinite(p.x) &&
+            Number.isFinite(p.y) &&
+            p.x >= 0 &&
+            p.x <= 1 &&
+            p.y >= 0 &&
+            p.y <= 1,
+        ) ||
+        !['straight', 'curve', 'elbow'].includes(a.line) ||
+        !['none', 'arrow', 'triangle', 'open', 'diamond', 'circle'].includes(a.start) ||
+        !['none', 'arrow', 'triangle', 'open', 'diamond', 'circle'].includes(a.end) ||
+        !['solid', 'dashed', 'dotted'].includes(a.dash) ||
+        !Number.isFinite(a.thickness) ||
+        a.thickness < 0.5 ||
+        a.thickness > 40
+      )
+        throw Error('Invalid arrow');
+    }
     return {
+      ...(o.type === 'arrow'
+        ? { arrow: { ...o.arrow, points: o.arrow.points.map((p: any) => ({ x: p.x, y: p.y })) } }
+        : {}),
       id: o.id,
       type: o.type,
       x: o.x,

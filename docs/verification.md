@@ -255,3 +255,8 @@ The browser download-event observer timed out, but the files were actually writt
 Representative photographs/videos at scale; sustained pan/zoom frame-time and memory measurements; 4K and mixed-DPI displays; long-session leak checks; full native dialog and clipboard automation; drag/drop/reorder edge cases; disk-full and power-interruption fault injection; negative renderer-origin IPC tests; keyboard/screen-reader audit; signed installer and upgrade/migration testing. The preview is not a substitute for passing these gates.
 
 Native backup restoration, automatic asset cleanup, richer content types and frame ownership remain product work. See the README for limits. No network sharing or cloud synchronization was added.
+
+### 2026-10-01: editable arrows
+- `npm test`: 120 passing; `npm run build`: passing.
+- Packaged desktop interactions passed with `.local-test/desktop-input-mBn06o`: mouse-drawn arrow, midpoint insertion, undo/redo, all path types, dashed stroke, thickness, marker swap, saved/cancelled label, bend deletion, endpoint movement, and persisted arrow after closing/reopening. Screenshot: `arrow-controls.png`.
+- Added a focused renderer regression for vertical elbows with a zero-length first segment; rebuilt the final executable after this correction.

@@ -1,3 +1,4 @@
+import ArrowControls from './ArrowControls';
 import {
   forwardRef,
   useEffect,
@@ -9,6 +10,7 @@ import {
 } from 'react';
 import {
   MousePointer2,
+  MoveUpRight,
   Hand,
   Type,
   StickyNote,
@@ -72,6 +74,7 @@ const tools: { id: Tool; label: string; icon: typeof Type; key: string }[] = [
   { id: 'text', label: 'Text', icon: Type, key: 'T' },
   { id: 'note', label: 'Note', icon: StickyNote, key: 'N' },
   { id: 'rect', label: 'Shape', icon: Square, key: 'R' },
+  { id: 'arrow', label: 'Arrow', icon: MoveUpRight, key: 'A' },
   { id: 'frame', label: 'Frame', icon: Frame, key: 'F' },
   { id: 'link', label: 'Link', icon: Link2, key: 'L' },
 ];
@@ -80,6 +83,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   { document: doc, onSave, onError },
   ref,
 ) {
+  const arrowDraft = useRef<{ flush: () => void }>(null);
   const host = useRef<HTMLDivElement>(null),
     engine = useRef<Engine | null>(null),
     queue = useRef<SaveQueue | null>(null),
@@ -166,7 +170,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         )
       : null;
   const alignmentSelection = (editingObject ? [editingObject] : selected).filter(
-    (o) => !['image', 'frame', 'link'].includes(o.type),
+    (o) => !['image', 'frame', 'link', 'arrow'].includes(o.type),
   );
   const editorOrigin =
     editingObject && editingPlacement
@@ -206,6 +210,10 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     engine.current?.setTool(value);
   };
   const startEdit = (o: CanvasObject) => {
+    if (o.type === 'arrow') {
+      (window.document.querySelector('[aria-label="Arrow label"]') as HTMLButtonElement)?.click();
+      return;
+    }
     if (editingSession.current?.object.id === o.id) {
       editorRef.current?.focus();
       return;
@@ -386,6 +394,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         queue.current!.enqueue({ upserts: [], deleted: [] }, c);
       },
       selection: setSelected,
+      tool: setTool,
       rotation: (value) => {
         const el = angleRef.current;
         if (!el) return;
@@ -511,6 +520,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   }
   useImperativeHandle(ref, () => ({
     flush: async () => {
+      arrowDraft.current?.flush();
       engine.current?.stopCameraAnimation();
       if (editing) finishEdit();
       if (cropSession.current) finishCrop();
@@ -797,7 +807,21 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
               finishEdit();
           }}
         >
-          {selected.every((o) => !['image', 'video', 'link', 'frame'].includes(o.type)) && (
+          {selected.length === 1 && selected[0].type === 'arrow' && (
+            <ArrowControls
+              key={selected[0].id}
+              draftRef={arrowDraft}
+              object={selected[0]}
+              onChange={(patch) => {
+                const e = engine.current,
+                  o = e?.objects.get(selected[0].id);
+                if (o) e?.apply({ upserts: [{ ...o, ...patch }], deleted: [] });
+              }}
+            />
+          )}
+          {selected.every(
+            (o) => !['image', 'video', 'link', 'frame', 'arrow'].includes(o.type),
+          ) && (
             <div className="color-options">
               {colors.map((color) => (
                 <button

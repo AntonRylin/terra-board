@@ -1,12 +1,22 @@
 export type ObjectType =
-  'text' | 'note' | 'rect' | 'ellipse' | 'frame' | 'image' | 'video' | 'link';
+  'text' | 'note' | 'rect' | 'ellipse' | 'frame' | 'image' | 'video' | 'link' | 'arrow';
 export interface ImageCrop {
   x: number;
   y: number;
   width: number;
   height: number;
 }
+export type ArrowHead = 'none' | 'arrow' | 'triangle' | 'open' | 'diamond' | 'circle';
+export interface ArrowStyle {
+  points: { x: number; y: number }[];
+  line: 'straight' | 'curve' | 'elbow';
+  start: ArrowHead;
+  end: ArrowHead;
+  dash: 'solid' | 'dashed' | 'dotted';
+  thickness: number;
+}
 export interface CanvasObject {
+  arrow?: ArrowStyle;
   id: string;
   type: ObjectType;
   x: number;
@@ -76,5 +86,6 @@ export interface Edit {
   upserts: CanvasObject[];
   deleted: string[];
 }
-export type Tool = 'select' | 'hand' | 'text' | 'note' | 'rect' | 'ellipse' | 'frame' | 'link';
+export type Tool =
+  'select' | 'hand' | 'text' | 'note' | 'rect' | 'ellipse' | 'frame' | 'link' | 'arrow';
 export const uid = () => crypto.randomUUID();
