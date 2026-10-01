@@ -1059,50 +1059,29 @@ export class Engine {
       g.rect(0, 0, o.width, o.height).fill('#ffffff').stroke({ color: '#dce1e7', width: 1 });
     else if (o.type !== 'text') {
       if (o.type === 'note') {
-        // A shallow paper curl changes the silhouette itself, not just the shadow.
-        const curl = Math.min(o.width, o.height) * 0.025;
-        const paper = (x: number, y: number, w: number, h: number) =>
-          g
-            .moveTo(x, y)
-            .lineTo(x + w, y)
-            .quadraticCurveTo(x + w - curl * 0.3, y + h * 0.65, x + w, y + h - curl)
-            .quadraticCurveTo(x + w * 0.52, y + h + curl * 0.6, x, y + h - curl * 0.3)
-            .quadraticCurveTo(x + curl * 0.2, y + h * 0.5, x, y)
-            .closePath();
-        for (let layer = 10; layer >= 1; layer--) {
-          const spread = (curl * layer) / 10;
-          paper(-spread, curl - spread * 0.6, o.width + spread * 2, o.height + spread * 1.6).fill({
-            color: '#39382f',
-            alpha: 0.009,
-          });
+        // Paper stays almost flat. Most of the depth comes from a diffuse
+        // shadow below it, rather than a bowed silhouette or pointed corners.
+        const size = Math.min(o.width, o.height);
+        const curl = size * 0.002;
+        for (let layer = 24; layer >= 1; layer--) {
+          const t = layer / 24;
+          const spread = size * 0.055 * t;
+          g.roundRect(
+            -spread,
+            size * 0.022 - spread * 0.7,
+            o.width + spread * 2,
+            o.height + spread * 1.4,
+            Math.min(spread + size * 0.006, o.width / 4, o.height / 4),
+          ).fill({ color: '#454332', alpha: 0.01 * (1 - t) ** 1.3 });
         }
-        paper(0, 0, o.width, o.height).fill(color);
-        const edge = Math.min(0.7, o.width / 100, o.height / 100);
-        g.moveTo(0, 0).lineTo(o.width, 0).stroke({ color: '#ffffff', alpha: 0.55, width: edge });
-        // The highlighted curled edge follows the paper instead of outlining a box.
-        g.moveTo(o.width, o.height - curl)
-          .quadraticCurveTo(o.width * 0.52, o.height + curl * 0.6, 0, o.height - curl * 0.3)
-          .stroke({ color: '#776d42', alpha: 0.14, width: edge });
-        // Small curved tonal bands suggest the lifted lower-right edge without a dog-ear.
-        for (let band = 5; band >= 1; band--) {
-          const inset = (curl * band) / 5;
-          g.moveTo(o.width * 0.68, o.height - inset * 0.15)
-            .quadraticCurveTo(
-              o.width * 0.86,
-              o.height - inset * 0.1,
-              o.width - edge,
-              o.height - curl - inset,
-            )
-            .lineTo(o.width - edge, o.height - curl)
-            .quadraticCurveTo(
-              o.width * 0.86,
-              o.height - curl * 0.15,
-              o.width * 0.68,
-              o.height - inset * 0.15,
-            )
-            .closePath()
-            .fill({ color: '#ffffff', alpha: 0.025 });
-        }
+        g.moveTo(0, 0)
+          .lineTo(o.width, 0)
+          .lineTo(o.width, o.height - curl * 0.4)
+          .quadraticCurveTo(o.width * 0.5, o.height + curl * 0.2, 0, o.height - curl * 0.4)
+          .closePath()
+          .fill(color);
+        const edge = Math.min(0.5, o.width / 100, o.height / 100);
+        g.moveTo(0, 0).lineTo(o.width, 0).stroke({ color: '#ffffff', alpha: 0.4, width: edge });
         // A faint sheen near the attached edge gives the flat fill paper depth.
         for (let band = 0; band < 8; band++) {
           g.rect(
