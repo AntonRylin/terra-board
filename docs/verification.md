@@ -1,5 +1,13 @@
 # Verification — Local Canvas
 
+## 0.1.3 repository-local application and data — 2026-10-01
+
+The active repository is `D:\Projects\terra`. Launch with `Open Local Canvas.cmd` at its root or `release\win-unpacked\Local Canvas.exe`. The default library is now the repository's `Library` directory in both development and packaged builds. Settings, browser caches, logs, crash dumps and temporary runtime files also resolve beneath that directory. Compiled builds and user data are Git-ignored.
+
+All 34 tests pass, including development/packaged storage-path parity and isolated test overrides. The production package builds on D:. A packaged smoke run from a different working directory, without a data-directory override, loads the existing library and reports every runtime path under `D:\Projects\terra\Library`. First canvas: 1,570 ms. Packaged source and renderer assets match the verified build. The copied library passes SQLite integrity checking; all 437 files from the former AppData location were verified against their D: copies with SHA-256.
+
+Previous binaries are preserved under `release\previous-builds`. The historical AppData/OneDrive destinations below are superseded by this repository-local layout.
+
 ## 0.1.2 wheel zoom update — 2026-10-01
 
 The mouse wheel now zooms in and out around the cursor without requiring Ctrl. Right-drag panning remains available. The keyboard reference and README describe the updated controls.
@@ -8,7 +16,7 @@ All 32 Node tests pass, including event-handler checks for wheel direction, curs
 
 TypeScript checking, the production build and formatting checks pass. The packaged 0.1.2 executable passes the desktop smoke test using a disposable library (first canvas: 1,549 ms). Its version metadata reports 0.1.2, and the packaged HTML, CSS and JavaScript match the verified build. Existing SQLite experimental and Vite bundle-size advisories remain.
 
-The executable is at `%LOCALAPPDATA%\LocalCanvas\Build-0.1.2\win-unpacked\Local Canvas.exe`. Keep its support files alongside it. Application data remains in the separate production library.
+This prior executable is archived at `release\previous-builds\Build-0.1.2\win-unpacked\Local Canvas.exe`. Use the current launcher at the repository root.
 
 ## 0.1.1 panning update — 2026-10-01
 
@@ -16,7 +24,7 @@ Right mouse dragging now pans in every canvas tool. A plain right-click opens th
 
 Six tests execute the actual Engine pointer handlers with the GPU dependencies stubbed: right-drag, right-click jitter/menu timing, dragging back to the origin, cancellation, content/selection preservation and existing middle-button/hand panning. The first four reproduced failures in the previous handler; all six pass with the fix. The complete suite has 30 passing tests. This is event-handler coverage, not a physical-mouse test of the packaged window.
 
-The updated executable is in `%LOCALAPPDATA%\LocalCanvas\Build-0.1.1\win-unpacked`. Close the older running version before opening it; both versions use the same production library.
+This prior executable is archived at `release\previous-builds\Build-0.1.1\win-unpacked`. Use the current launcher at the repository root.
 
 Validated on this Windows machine on 2026-09-30 / 2026-10-01. This is a working preview, not a completed production certification of the entire product roadmap.
 

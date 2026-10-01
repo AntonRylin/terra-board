@@ -112,7 +112,7 @@ The native first-increment build specification and implementation plan will be w
 
 An active library consists of SQLite metadata, immutable original assets, derived caches, and temporary import staging. Names and organizational paths are metadata; moving a board does not move image files.
 
-Implemented default data destination: `%LOCALAPPDATA%\LocalCanvas\Library`. The source checkout currently lives under OneDrive; runtime data is outside that sync root. `CANVAS_DATA_DIR` is an advanced environment override; a library location picker is not yet implemented.
+Implemented default data destination: `D:\Projects\terra\Library`, inside the repository and outside the replaceable build directory. The project, builds and runtime data live on D: rather than AppData or OneDrive. `CANVAS_DATA_DIR` is an advanced environment override used by isolated tests; a library location picker is not yet implemented.
 
 No account, network service, telemetry, online activation, CDN resources, or automatic remote previews. All runtime dependencies, UI assets, and initial icons ship locally. Clicking an external link later opens the default browser only on an explicit user action. A pasted URL alone is never permission to download its target.
 

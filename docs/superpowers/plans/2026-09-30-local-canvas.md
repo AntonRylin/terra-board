@@ -16,7 +16,7 @@
 
 - Windows first; single scrollable icon column, floating folders, centered Create button.
 - Keep current documentation and uncommitted work. No commit, push, or installation into system directories.
-- Store production library beneath LOCALAPPDATA, outside this OneDrive checkout.
+- Store the production library in `D:\Projects\terra\Library`, inside the repository. This location supersedes the original AppData decision as of 2026-10-01; builds and runtime data must also stay out of OneDrive.
 - Save transactions before acknowledging success. Surface failures instead of claiming saved.
 - This release is a functional first increment. Do not claim 10,000-image performance without a representative benchmark.
 - Use shipped icons and fonts. External links open only after explicit activation.

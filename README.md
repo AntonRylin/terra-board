@@ -1,12 +1,12 @@
 # Local Canvas
 
-A Windows-first local whiteboard with a minimal, iOS-inspired board launcher. Version 0.1.2 is a working preview release; the original product roadmap is broader than this implementation.
+A Windows-first local whiteboard with a minimal, iOS-inspired board launcher. Version 0.1.3 is a working preview release; the original product roadmap is broader than this implementation.
 
 ## Run
 
-Open `Local Canvas.exe` inside the packaged `win-unpacked` directory. Keep that directory's support files alongside the executable. The current tested build is at `%LOCALAPPDATA%\LocalCanvas\Build-0.1.2\win-unpacked\Local Canvas.exe`.
+The project lives at `D:\Projects\terra`. Double-click `Open Local Canvas.cmd` in that folder, or open `D:\Projects\terra\release\win-unpacked\Local Canvas.exe`. Keep the executable's support files alongside it.
 
-The application stores boards and original media in `%LOCALAPPDATA%\LocalCanvas\Library`, independently of the source checkout. No account, server, telemetry, external fonts, or network connection is needed. A link opens your default browser only when you activate it.
+The application stores boards, original media, settings, browser caches, logs and temporary runtime files in `D:\Projects\terra\Library`. Development and packaged builds share this repository-local library, outside the replaceable `release` directory. `Library` and compiled builds are ignored by Git. No account, server, telemetry, external fonts, or network connection is needed. A link opens your default browser only when you activate it.
 
 ## Working features
 
@@ -52,11 +52,7 @@ npm audit --omit=dev --audit-level=high
 npm run package
 ```
 
-The packaging command normally writes to `release/win-unpacked`. If OneDrive locks the staging directory, build outside the sync root:
-
-```
-npx electron-builder --win dir --config.directories.output=C:/Users/anton/AppData/Local/LocalCanvas/Build-0.1.2
-```
+The packaging command writes to `release/win-unpacked` inside the repository. Keep this layout so direct executable launches find the repository's `Library` folder. Build and run from `D:\Projects\terra`; do not use AppData or OneDrive as project, build or library destinations.
 
 In PowerShell, `$env:CANVAS_SCALE='1'; npm run test:desktop` generates a disposable 10,000-object / 1,000-image workload and measures first-canvas startup. `CANVAS_EXECUTABLE` can point to the packaged executable to verify that artifact. Remove those environment variables afterward in an interactive shell.
 

@@ -4,6 +4,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
 const { Readable } = require('node:stream');
+const { libraryRoot } = require('./storage-paths.cjs');
 protocol.registerSchemesAsPrivileged([
   { scheme: 'canvas-app', privileges: { standard: true, secure: true, supportFetchAPI: true } },
   {
@@ -19,10 +20,23 @@ protocol.registerSchemesAsPrivileged([
 ]);
 const smoke = process.argv.includes('--smoke-test');
 const launchStarted = performance.now();
-const root =
-  process.env.CANVAS_DATA_DIR ||
-  path.join(process.env.LOCALAPPDATA || app.getPath('userData'), 'LocalCanvas', 'Library');
-app.setPath('userData', path.join(root, 'settings'));
+const root = libraryRoot({
+  isPackaged: app.isPackaged,
+  appPath: app.getAppPath(),
+  exePath: app.getPath('exe'),
+  dataDir: process.env.CANVAS_DATA_DIR,
+});
+for (const [name, directory] of Object.entries({
+  userData: 'settings',
+  sessionData: 'settings',
+  crashDumps: 'crashes',
+  temp: 'temp',
+})) {
+  const location = path.join(root, directory);
+  fs.mkdirSync(location, { recursive: true });
+  app.setPath(name, location);
+}
+app.setAppLogsPath(path.join(root, 'logs'));
 let win,
   worker,
   closed = false,
@@ -149,7 +163,7 @@ async function seed() {
         width: 350,
         height: 135,
         z: 4,
-        text: 'Ctrl + V to paste\nSpace + drag to explore\nScroll to move · Ctrl + scroll to zoom',
+        text: 'Ctrl + V to paste\nRight-drag to explore\nScroll to zoom toward the cursor',
         fontSize: 18,
         color: '#78818e',
       },
@@ -344,6 +358,12 @@ app
           node: process.versions.node,
           electron: process.versions.electron,
           firstCanvasMs: Math.round(performance.now() - launchStarted),
+          dataDirectory: root,
+          userData: app.getPath('userData'),
+          sessionData: app.getPath('sessionData'),
+          logs: app.getPath('logs'),
+          crashDumps: app.getPath('crashDumps'),
+          temp: app.getPath('temp'),
         }),
       );
       db.close();

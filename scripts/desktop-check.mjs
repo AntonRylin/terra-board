@@ -1,10 +1,12 @@
 import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
-const require = createRequire(import.meta.url),
-  root = mkdtempSync(join(tmpdir(), 'canvas-desktop-'));
+const require = createRequire(import.meta.url);
+const testDirectory = fileURLToPath(new URL('../.local-test/', import.meta.url));
+mkdirSync(testDirectory, { recursive: true });
+const root = mkdtempSync(join(testDirectory, 'canvas-desktop-'));
 if (process.env.CANVAS_SCALE === '1') {
   const { Store } = require('../electron/store.cjs'),
     sharp = require('sharp');
