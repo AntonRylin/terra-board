@@ -1058,11 +1058,39 @@ export class Engine {
     else if (o.type === 'frame')
       g.rect(0, 0, o.width, o.height).fill('#ffffff').stroke({ color: '#dce1e7', width: 1 });
     else if (o.type !== 'text') {
-      if (o.type === 'note')
-        g.roundRect(2, 3, o.width, o.height, 2).fill({ color: '#657180', alpha: 0.08 });
-      g.roundRect(0, 0, o.width, o.height, o.type === 'note' ? 2 : 7).fill(
-        o.type === 'image' || o.type === 'video' ? '#e8ecf2' : color,
-      );
+      if (o.type === 'note') {
+        // Layered penumbra: paper sits close to the board at the top and lifts
+        // gently at the bottom. No per-note blur filters or offscreen textures.
+        const lift = Math.min(o.width, o.height) * 0.025;
+        for (let layer = 10; layer >= 1; layer--) {
+          const spread = (lift * layer) / 10;
+          g.roundRect(
+            -spread,
+            lift - spread * 0.6,
+            o.width + spread * 2,
+            o.height + spread * 1.6,
+            Math.min(spread + 1, o.width / 4, o.height / 4),
+          ).fill({ color: '#39382f', alpha: 0.009 });
+        }
+        g.rect(0, 0, o.width, o.height).fill(color);
+        const edge = Math.min(0.7, o.width / 100, o.height / 100);
+        g.rect(0, 0, o.width, edge).fill({ color: '#ffffff', alpha: 0.55 });
+        g.rect(0, edge, edge, o.height - edge).fill({ color: '#ffffff', alpha: 0.22 });
+        g.rect(o.width - edge, 0, edge, o.height).fill({ color: '#645e39', alpha: 0.08 });
+        g.rect(0, o.height - edge, o.width, edge).fill({ color: '#645e39', alpha: 0.1 });
+        // A faint sheen near the attached edge gives the flat fill paper depth.
+        for (let band = 0; band < 8; band++) {
+          g.rect(
+            edge,
+            edge + band * o.height * 0.01,
+            Math.max(0, o.width - edge * 2),
+            o.height * 0.01,
+          ).fill({ color: '#ffffff', alpha: 0.035 * (1 - band / 8) });
+        }
+      } else
+        g.roundRect(0, 0, o.width, o.height, 7).fill(
+          o.type === 'image' || o.type === 'video' ? '#e8ecf2' : color,
+        );
     }
     container.addChild(g);
     if (detail && this.editingId !== o.id) {
