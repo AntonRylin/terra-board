@@ -982,11 +982,36 @@ kbd {
   gap: 5px;
   padding: 0 7px;
 }
-.color-options button {
+.color-options button,
+.color-options .custom-color {
   width: 18px;
   height: 18px;
   border-radius: 50%;
   border: 1px solid #dce1e8;
+}
+.custom-color {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  color: #fff;
+  background: conic-gradient(#ef6476, #eab94e, #54be8e, #548de5, #ac76df, #ef6476);
+  cursor: pointer;
+}
+.custom-color svg {
+  filter: drop-shadow(0 1px 1px #0006);
+}
+.custom-color input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+.custom-color:focus-within {
+  outline: 2px solid #4a8ff0;
+  outline-offset: 3px;
 }
 .text-editor,
 .text-editor:focus-visible {
@@ -1179,7 +1204,8 @@ kbd {
     gap: 3px;
     padding: 0 2px;
   }
-  .color-options button {
+  .color-options button,
+  .color-options .custom-color {
     width: 15px;
     height: 15px;
   }
@@ -1223,7 +1249,8 @@ kbd {
 .button,
 .folder-board,
 .context-menu button,
-.color-options button {
+.color-options button,
+.color-options .custom-color {
   transition:
     background 150ms,
     color 150ms,
@@ -1240,7 +1267,8 @@ kbd {
 .folder-board-open:active {
   transform: scale(0.95);
 }
-.color-options button:hover {
+.color-options button:hover,
+.color-options .custom-color:hover {
   transform: scale(1.16);
 }
 .context-menu {

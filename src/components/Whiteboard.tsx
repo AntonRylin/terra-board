@@ -75,7 +75,7 @@ const tools: { id: Tool; label: string; icon: typeof Type; key: string }[] = [
   { id: 'frame', label: 'Frame', icon: Frame, key: 'F' },
   { id: 'link', label: 'Link', icon: Link2, key: 'L' },
 ];
-const colors = ['#f8efd4', '#e4eee8', '#e4ecfa', '#efe5f1', '#f4e4e5', '#ffffff'];
+const colors = ['#f8efd4', '#e4eee8', '#e4ecfa', '#efe5f1', '#f4e4e5', '#ffffff', '#000000'];
 const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   { document: doc, onSave, onError },
   ref,
@@ -172,6 +172,18 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     editingObject && editingPlacement
       ? localToWorld(editingObject, { x: editingPlacement.left, y: editingPlacement.top })
       : null;
+  const setSelectionColor = (color: string, restoreFocus = true) => {
+    const session = editingSession.current;
+    if (session) {
+      session.object = { ...session.object, color };
+      setEditing(session.object);
+      if (restoreFocus) editorRef.current?.focus();
+    } else
+      engine.current?.apply({
+        upserts: engine.current.selected.map((o) => ({ ...o, color })),
+        deleted: [],
+      });
+  };
   const toggleAlignment = (axis: 'centerX' | 'centerY') => {
     const session = editingSession.current;
     if (session) {
@@ -765,7 +777,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           className="selection-tools"
           aria-label="Selection actions"
           onPointerDown={(event) => {
-            if (editingSession.current) event.preventDefault();
+            if (editingSession.current && !(event.target instanceof HTMLInputElement))
+              event.preventDefault();
           }}
           onKeyDown={(event) => {
             if (!editingSession.current) return;
@@ -790,20 +803,19 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
                   key={color}
                   style={{ background: color }}
                   aria-label={'Set color ' + color}
-                  onClick={() => {
-                    const session = editingSession.current;
-                    if (session) {
-                      session.object = { ...session.object, color };
-                      setEditing(session.object);
-                      editorRef.current?.focus();
-                    } else
-                      engine.current?.apply({
-                        upserts: engine.current.selected.map((o) => ({ ...o, color })),
-                        deleted: [],
-                      });
-                  }}
+                  title={color === '#000000' ? 'Black' : color}
+                  onClick={() => setSelectionColor(color)}
                 />
               ))}
+              <label className="custom-color" title="Custom color">
+                <Plus size={12} aria-hidden="true" />
+                <input
+                  type="color"
+                  aria-label="Custom color"
+                  value={editingObject?.color || selected[0]?.color || '#29313b'}
+                  onChange={(event) => setSelectionColor(event.target.value, false)}
+                />
+              </label>
             </div>
           )}
           {selected.length === 1 && ['video', 'link'].includes(selected[0].type) && (
@@ -847,30 +859,34 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
               {selected.some((o) => o.groupId) ? <Ungroup size={17} /> : <Group size={17} />}
             </button>
           )}
-          <button
-            className="icon-button"
-            aria-label="Center horizontally"
-            title="Center horizontally"
-            aria-pressed={
-              alignmentSelection.length > 0 && alignmentSelection.every((o) => o.centerX)
-            }
-            disabled={!alignmentSelection.length}
-            onClick={() => toggleAlignment('centerX')}
-          >
-            <AlignHorizontalJustifyCenter size={17} />
-          </button>
-          <button
-            className="icon-button"
-            aria-label="Center vertically"
-            title="Center vertically"
-            aria-pressed={
-              alignmentSelection.length > 0 && alignmentSelection.every((o) => o.centerY)
-            }
-            disabled={!alignmentSelection.length}
-            onClick={() => toggleAlignment('centerY')}
-          >
-            <AlignVerticalJustifyCenter size={17} />
-          </button>
+          {alignmentSelection.length > 0 && (
+            <>
+              <button
+                className="icon-button"
+                aria-label="Center horizontally"
+                title="Center horizontally"
+                aria-pressed={
+                  alignmentSelection.length > 0 && alignmentSelection.every((o) => o.centerX)
+                }
+                disabled={!alignmentSelection.length}
+                onClick={() => toggleAlignment('centerX')}
+              >
+                <AlignHorizontalJustifyCenter size={17} />
+              </button>
+              <button
+                className="icon-button"
+                aria-label="Center vertically"
+                title="Center vertically"
+                aria-pressed={
+                  alignmentSelection.length > 0 && alignmentSelection.every((o) => o.centerY)
+                }
+                disabled={!alignmentSelection.length}
+                onClick={() => toggleAlignment('centerY')}
+              >
+                <AlignVerticalJustifyCenter size={17} />
+              </button>
+            </>
+          )}
           {selected.length === 1 && selected[0].type === 'image' && (
             <button
               className="icon-button"
