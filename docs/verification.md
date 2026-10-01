@@ -1,5 +1,11 @@
 # Verification — Local Canvas
 
+## Uploaded board icons and manual cropping — 2026-10-01
+
+The board icon dialog accepts file selection and drag/drop. A bounded square crop supports pointer dragging, keyboard positioning, zoom and reset; saving writes a 512px PNG into local asset storage. Cancel leaves board metadata unchanged. Board icon strings may reference a validated image asset; portable exports include that asset even when no canvas object references it. Existing glyphs remain supported.
+
+All 106 Node tests and Windows packaging pass. `node scripts/desktop-board-icons.mjs` passed in `.local-test/desktop-input-OE2WAL`, including an intercepted upload file chooser, injected file drop, real crop pointer input, zoom, save, cancellation, switching back to a built-in glyph, launcher image loading and portable transfer to a fresh library. The saved PNG dimensions are checked and `icon-crop.png` was visually inspected; no renderer exceptions occurred. An initial assertion read the crop position before React rendered; it now waits for the actual changed position. Storage tests additionally cover close/reopen, duplication, invalid/missing icon assets and incomplete portable manifests.
+
 ## 0.1.24 switch between compact and image link cards — 2026-10-01
 
 Right-click a single link with a cached preview to choose “Show compact card” or “Show image preview”. Compact mode retains the image asset while showing the logo, title, website and description. Switching back restores the previous preview height. The preference and height survive clipboard, duplication, save and portable export/import. Metadata arriving later cannot force a compact card open; switching closes any active player. Compact card external-link buttons open the website, while the explicit YouTube play action expands the card for playback.

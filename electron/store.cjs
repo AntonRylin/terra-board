@@ -5,6 +5,11 @@ const { randomUUID, createHash } = require('node:crypto');
 const sharp = require('sharp');
 const { zipSync, unzipSync, strToU8, strFromU8 } = require('fflate');
 
+const iconAssetId = (icon) =>
+  typeof icon === 'string' && /^asset-[a-f0-9]{64}$/.test(icon) ? icon.slice(6) : null;
+const validIcon = (icon) =>
+  typeof icon === 'string' && (/^[a-z0-9-]{1,40}$/.test(icon) || !!iconAssetId(icon));
+
 const MAX_PACKAGE = 512 * 1024 * 1024;
 const graphemes = (value) =>
   [...new Intl.Segmenter('und', { granularity: 'grapheme' }).segment(value)].map((s) => s.segment);
@@ -265,7 +270,13 @@ class Store {
     if (!patch || typeof patch !== 'object') throw Error('Invalid board update');
     if (patch.name !== undefined) b.name = nameValue(patch.name);
     if (patch.icon !== undefined) {
-      if (!/^[a-z0-9-]{1,40}$/.test(patch.icon)) throw Error('Invalid icon');
+      if (!validIcon(patch.icon)) throw Error('Invalid icon');
+      const assetId = iconAssetId(patch.icon);
+      if (
+        assetId &&
+        !this.db.prepare("SELECT id FROM assets WHERE id=? AND mime LIKE 'image/%'").get(assetId)
+      )
+        throw Error('Missing image for board icon');
       b.icon = patch.icon;
     }
     if (patch.color !== undefined) {
@@ -497,7 +508,14 @@ class Store {
   }
   async exportBoard({ id }) {
     const d = this.loadBoard({ id }),
-      ids = [...new Set(d.objects.flatMap((o) => [o.assetId, o.linkIconId]).filter(Boolean))],
+      ids = [
+        ...new Set(
+          [
+            iconAssetId(d.board.icon),
+            ...d.objects.flatMap((o) => [o.assetId, o.linkIconId]),
+          ].filter(Boolean),
+        ),
+      ],
       assets = ids.map((id) => this.db.prepare('SELECT * FROM assets WHERE id=?').get(id));
     if (assets.reduce((n, a) => n + a.bytes, 0) > MAX_PACKAGE)
       throw Error('Portable exports are limited to 512 MB in this version');
@@ -555,7 +573,7 @@ class Store {
     nameValue(m.name);
     cameraValue(m.camera);
     if (
-      !/^[a-z0-9-]{1,40}$/.test(m.icon || 'lightbulb') ||
+      !validIcon(m.icon || 'lightbulb') ||
       !['blue', 'green', 'purple', 'orange', 'rose', 'gray'].includes(m.color || 'blue')
     )
       throw Error('Invalid board metadata');
@@ -573,6 +591,7 @@ class Store {
       assetIds.add(a.id);
     }
     if (
+      (iconAssetId(m.icon) && !assetIds.has(iconAssetId(m.icon))) ||
       objects.some(
         (o) =>
           (o.assetId && !assetIds.has(o.assetId)) || (o.linkIconId && !assetIds.has(o.linkIconId)),

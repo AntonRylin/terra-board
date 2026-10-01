@@ -1346,3 +1346,109 @@ kbd {
     background: #fff;
   }
 }
+
+/* Custom board icons share the same rounded masks as built-in launcher icons. */
+.board-image-icon {
+  object-fit: cover;
+  border-radius: 4px;
+}
+.app-icon > .board-image-icon {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+}
+.board-icon-upload {
+  margin-bottom: 12px;
+  padding: 12px;
+  text-align: center;
+  border: 1px dashed transparent;
+  border-radius: 18px;
+  transition:
+    background 150ms,
+    border-color 150ms;
+}
+.board-icon-upload.drag-over {
+  background: #eaf2ff;
+  border-color: #6598e8;
+}
+.board-icon-upload .icon-preview {
+  margin-bottom: 12px;
+}
+.board-icon-upload p {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.board-icon-upload .icon-upload-error {
+  color: #b53838;
+}
+.board-icon-crop {
+  position: relative;
+  width: 200px;
+  height: 200px;
+  margin: 0 auto;
+  border-radius: 22px;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+  background: repeating-conic-gradient(#eef0f4 0% 25%, #fff 0% 50%) 0 / 16px 16px;
+  box-shadow: 0 0 0 1px #dce3ed;
+}
+.board-icon-crop:active {
+  cursor: grabbing;
+}
+.board-icon-crop img {
+  position: absolute;
+  max-width: none;
+  pointer-events: none;
+  user-select: none;
+}
+.icon-crop-grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(
+      to right,
+      transparent 33%,
+      #ffffff70 33%,
+      #ffffff70 33.5%,
+      transparent 33.5%,
+      transparent 66.5%,
+      #ffffff70 66.5%,
+      #ffffff70 67%,
+      transparent 67%
+    ),
+    linear-gradient(
+      to bottom,
+      transparent 33%,
+      #ffffff70 33%,
+      #ffffff70 33.5%,
+      transparent 33.5%,
+      transparent 66.5%,
+      #ffffff70 66.5%,
+      #ffffff70 67%,
+      transparent 67%
+    );
+}
+.icon-crop-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+.icon-crop-controls label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+}
+.icon-crop-controls input {
+  width: 150px;
+  accent-color: #3d80d8;
+  padding: 0;
+}
+.board-icon-upload:has(.board-icon-crop) > .button {
+  margin-top: 12px;
+}

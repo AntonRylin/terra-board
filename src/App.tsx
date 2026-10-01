@@ -26,6 +26,7 @@ import type { SaveState } from './canvas/save-queue';
 import Launcher, { AppIcon } from './components/Launcher';
 import InlineName, { flushInlineNames } from './components/InlineName';
 import Whiteboard, { type WhiteboardHandle } from './components/Whiteboard';
+import BoardIconImage, { type BoardIconImageHandle } from './components/BoardIconImage';
 import { BoardGlyph, iconNames } from './components/Icon';
 import { Presence } from './components/Presence';
 import { ContextMenu, Modal, type MenuItem } from './components/Dialogs';
@@ -66,6 +67,7 @@ export default function App() {
     id: string;
     token: number;
   } | null>(null);
+  const iconImage = useRef<BoardIconImageHandle>(null);
   const whiteboard = useRef<WhiteboardHandle>(null),
     request = useRef(0),
     noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -335,7 +337,8 @@ export default function App() {
       else if (modal.kind === 'rename-folder') {
         await invoke('updateFolder', { id: modal.id, patch: { name } });
         await refresh();
-      } else if (modal.kind === 'icon') await change(modal.id!, { icon: glyph, color });
+      } else if (modal.kind === 'icon')
+        await change(modal.id!, { icon: (await iconImage.current?.save()) || glyph, color });
       else if (modal.kind === 'move') await change(modal.id!, { folderId: destination || null });
       setModal(null);
     } catch (e) {
@@ -509,12 +512,25 @@ export default function App() {
             {['new-board', 'new-folder', 'rename-board', 'rename-folder', 'icon', 'move'].includes(
               modal.kind,
             ) ? (
-              <form onSubmit={submit}>
+              <form
+                onSubmit={submit}
+                onDragOver={(e) => {
+                  if (modal.kind === 'icon') {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'copy';
+                  }
+                }}
+                onDrop={(e) => {
+                  if (modal.kind === 'icon') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    void iconImage.current?.importFile(e.dataTransfer.files[0]);
+                  }
+                }}
+              >
                 {modal.kind === 'icon' ? (
                   <>
-                    <div className={'icon-preview app-icon ' + color}>
-                      <BoardGlyph name={glyph} size={30} />
-                    </div>
+                    <BoardIconImage ref={iconImage} value={glyph} color={color} onBusy={setBusy} />
                     <div className="icon-picker">
                       {iconNames.map((icon) => (
                         <button
@@ -523,7 +539,11 @@ export default function App() {
                           key={icon}
                           aria-label={icon}
                           aria-pressed={glyph === icon}
-                          onClick={() => setGlyph(icon)}
+                          disabled={busy}
+                          onClick={() => {
+                            iconImage.current?.clear();
+                            setGlyph(icon);
+                          }}
                         >
                           <BoardGlyph name={icon} />
                         </button>

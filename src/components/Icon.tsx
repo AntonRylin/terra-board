@@ -1,3 +1,4 @@
+import { mediaUrl } from '../bridge';
 import {
   House,
   Lightbulb,
@@ -34,6 +35,17 @@ const icons: Record<string, typeof House> = {
 };
 export const iconNames = Object.keys(icons);
 export function BoardGlyph({ name, size = 20 }: { name: string; size?: number }) {
+  if (/^asset-[a-f0-9]{64}$/.test(name))
+    return (
+      <img
+        className="board-image-icon"
+        src={mediaUrl(name.slice(6), 'thumb')}
+        width={size}
+        height={size}
+        alt=""
+        draggable={false}
+      />
+    );
   const Icon = icons[name] || Lightbulb;
   return <Icon size={size} strokeWidth={1.65} aria-hidden />;
 }

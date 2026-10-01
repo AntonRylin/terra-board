@@ -28,6 +28,8 @@ Hold the **right mouse button and drag** to move around the board. A plain right
 
 Right-click board and folder icons for their actions. The three-dot menus expose board operations, canvas export, Trash, and the keyboard reference.
 
+In **Change icon**, choose **Upload image** or drop an image into the dialog. Drag the crop preview to position the image and use **Zoom** to crop closer; arrow keys also reposition it. **Save** applies the square crop, while **Cancel** keeps the previous icon. PNG, JPEG, WebP, GIF, AVIF, TIFF and ICO use the local image pipeline (animated files use a static image). Uploaded icons are included when duplicating or exporting boards. Select a built-in symbol to switch back.
+
 Drag any empty space in the board panel toward the left, right, top or bottom window edge. A translucent preview marks the destination; release to glide into place. Top and bottom placements use a horizontal strip. Escape or releasing away from an edge returns the panel to its original position. Placement is remembered on this computer. Board icons still drag into folders or into a new order; the mouse wheel scrolls a horizontal strip.
 
 Double-click a board name, folder name, or canvas title to rename it directly where it appears. Enter saves a name, Escape cancels; canvas text uses Ctrl+Enter to save. Local video titles also edit in place; use the selection toolbar to play a video. Notes keep their dimensions and automatically shrink long text to fit, expanding the text back toward its chosen size as content is removed.

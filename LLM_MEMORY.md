@@ -141,6 +141,14 @@ Async preview hydration must preserve later movement and undo/redo, reject stale
 
 ## Recent evidence and Git handoff
 
+### Follow-up: uploaded board icons
+
+`src/components/BoardIconImage.tsx` handles file selection/drop and the crop draft in the board icon dialog. `src/canvas/icon-crop.ts` clamps square crops for landscape/portrait images. The normalized imported preview provides orientation-correct pixels; Save produces a 512px PNG through a CORS-enabled local media image and canvas. The draft is not applied until Save, and choosing a built-in glyph clears it. Supported inputs follow the existing local image pipeline (PNG/JPEG/WebP/GIF/AVIF/TIFF/ICO), with static output for animation. No remote upload service is involved.
+
+Custom icons use `asset-<64-character SHA256>` in the existing board `icon` field; no schema migration. `BoardGlyph` renders the local thumbnail wherever board icons appear. `updateBoard` validates the reference is an image; export must include the icon asset independently of canvas object assets, and import must require it in the manifest. Duplication already copies the icon string. Do not shorten validation to the old 40-character glyph regex and accidentally reject uploaded icons.
+
+Run `node scripts/desktop-board-icons.mjs` for upload chooser interception, drop handling, real crop dragging, saving/cancelling, built-in restoration and portable transfer. Passing fixture: `.local-test/desktop-input-OE2WAL`; crop screenshot inspected. Tests now total 106. Wait for React to render drag changes before asserting geometry; the first immediate DOM read raced rendering. This test uses its own disposable library and never changes the user's icon.
+
 - `b438b54`: docking/window shadow; `b98610e`: white frames and contained movement; `c04819b`: rich links and rounded compact cards; `7e90fc6`: ICO/site-image recovery; `a3c15c8`: compact/image mode toggle. Those commits were pushed to `codex/local-canvas` during this chat.
 - At handoff inspection, **`616b4c1` Add editable image titles to canvas menus** had arrived from another session. It adds image-title behavior/tests. Preserve it; do not claim it was implemented by this session or revert it while editing the shared toolbar.
 - Compact-switch packaged suite passed in `.local-test/desktop-links-4XEUv8`; screenshot inspected in `.local-test/desktop-links-CKfXBW`. ICO/image discovery passed in `.local-test/desktop-links-UdElzA`. These were earlier runs, not automatic proof every future change passes.
