@@ -1546,20 +1546,26 @@ kbd {
   font-size: 12px;
   color: #354052;
 }
-.arrow-style-menu {
+.arrow-style-menu,
+.arrow-head-menu {
   position: relative;
 }
-.arrow-style-menu summary {
-  list-style: none;
-  cursor: pointer;
-  padding: 9px;
-  border-radius: 9px;
+.arrow-head-trigger {
   display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  border: 0;
+  border-radius: 9px;
+  color: #354052;
+  background: transparent;
 }
-.arrow-style-menu summary:hover {
+.arrow-head-trigger:hover,
+.arrow-head-trigger[aria-expanded='true'] {
   background: #eef3fa;
 }
 .arrow-style-popover,
+.arrow-head-popover,
 .arrow-label-popover {
   position: absolute;
   top: calc(100% + 12px);
@@ -1571,12 +1577,70 @@ kbd {
   background: white;
   box-shadow: 0 10px 35px #2530401a;
 }
-.arrow-style-popover label {
+.arrow-style-popover {
+  width: 250px;
+  padding: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+.arrow-thickness-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
   font-size: 12px;
-  margin: 3px 0;
+}
+.arrow-thickness-heading output {
+  color: #68778c;
+  font-variant-numeric: tabular-nums;
+}
+.arrow-controls .arrow-thickness {
+  width: 100%;
+  margin: 14px 0 18px;
+  padding: 0;
+  accent-color: #397bd7;
+  cursor: ew-resize;
+}
+.arrow-style-popover fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0 0 14px;
+}
+.arrow-style-popover legend {
+  font-size: 12px;
+  margin-bottom: 7px;
+  padding: 0;
+}
+.arrow-options,
+.arrow-head-popover {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+}
+.arrow-head-popover {
+  width: 200px;
+  padding: 9px;
+}
+.arrow-options button,
+.arrow-head-popover button {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 40px;
+  padding: 5px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: #f6f8fb;
+  color: #485466;
+}
+.arrow-options button:hover,
+.arrow-head-popover button:hover {
+  background: #ecf1f8;
+}
+.arrow-options button[aria-pressed='true'],
+.arrow-head-popover button[aria-pressed='true'] {
+  color: #3179d6;
+  background: #e9f1ff;
+  border-color: #b9d2f8;
 }
 .arrow-style-popover small {
   display: block;

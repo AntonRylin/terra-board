@@ -1,5 +1,5 @@
-import { useEffect, useState, useImperativeHandle, type Ref } from 'react';
-import { ArrowLeftRight, Type, Spline } from 'lucide-react';
+import { useEffect, useState, useRef, useImperativeHandle, type Ref } from 'react';
+import { ArrowLeftRight, ChevronDown, Type, Spline } from 'lucide-react';
 import type { CanvasObject, ArrowHead, ArrowStyle } from '../model';
 import { arrowStyle } from '../canvas/arrows';
 
@@ -11,38 +11,143 @@ const heads: [ArrowHead, string][] = [
   ['diamond', 'Diamond'],
   ['circle', 'Circle'],
 ];
+function HeadPreview({ kind, start = false }: { kind: ArrowHead; start?: boolean }) {
+  return (
+    <svg width="46" height="24" viewBox="0 0 46 24" aria-hidden="true">
+      <g transform={start ? 'translate(46 0) scale(-1 1)' : undefined}>
+        <path
+          d="M5 12H39"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+        />
+        {kind === 'arrow' && <path d="M40 12 27 5 31 12 27 19Z" fill="currentColor" />}
+        {kind === 'triangle' && <path d="M40 12 28 5V19Z" fill="currentColor" />}
+        {kind === 'open' && (
+          <path
+            d="m29 5 11 7-11 7"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinejoin="round"
+          />
+        )}
+        {kind === 'diamond' && <path d="m40 12-8-7-8 7 8 7Z" fill="currentColor" />}
+        {kind === 'circle' && <circle cx="34" cy="12" r="6" fill="currentColor" />}
+      </g>
+    </svg>
+  );
+}
+function LinePreview({ line, dash }: { line?: ArrowStyle['line']; dash?: ArrowStyle['dash'] }) {
+  return (
+    <svg width="48" height="26" viewBox="0 0 48 26" aria-hidden="true">
+      <path
+        d={
+          line === 'curve'
+            ? 'M5 19C16 -6 32 32 43 7'
+            : line === 'elbow'
+              ? 'M5 20H24V6H43'
+              : line === 'straight'
+                ? 'M5 20 43 6'
+                : 'M5 13H43'
+        }
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeDasharray={dash === 'dashed' ? '7 6' : dash === 'dotted' ? '0.1 6' : undefined}
+      />
+    </svg>
+  );
+}
 export default function ArrowControls({
   object,
   onChange,
   draftRef,
+  onCommitThickness,
 }: {
   draftRef: Ref<{ flush: () => void }>;
   object: CanvasObject;
-  onChange: (patch: Partial<CanvasObject>) => void;
+  onChange: (patch: Partial<CanvasObject>, record?: boolean) => void;
+  onCommitThickness: (before: number) => void;
 }) {
   const style = arrowStyle(object);
   const [label, setLabel] = useState(object.text || ''),
-    [showLabel, setShowLabel] = useState(false);
+    [showLabel, setShowLabel] = useState(false),
+    [menu, setMenu] = useState<'start' | 'end' | 'style' | null>(null);
+  const root = useRef<HTMLDivElement>(null),
+    thicknessBefore = useRef<number | null>(null);
+  const commitThickness = () => {
+    if (thicknessBefore.current === null) return;
+    const before = thicknessBefore.current;
+    thicknessBefore.current = null;
+    onCommitThickness(before);
+  };
+  useEffect(() => {
+    const dismiss = (e: PointerEvent) => {
+      if (!root.current?.contains(e.target as Node)) setMenu(null);
+    };
+    document.addEventListener('pointerdown', dismiss);
+    return () => document.removeEventListener('pointerdown', dismiss);
+  }, []);
   useEffect(() => setLabel(object.text || ''), [object.id, object.text]);
   const change = (patch: Partial<ArrowStyle>) => onChange({ arrow: { ...style, ...patch } });
   const save = () => {
     if (label !== (object.text || '')) onChange({ text: label });
   };
-  useImperativeHandle(draftRef, () => ({ flush: save }));
-  return (
-    <div className="arrow-controls">
-      <select
-        aria-label="Start arrowhead"
-        title="Start arrowhead"
-        value={style.start}
-        onChange={(e) => change({ start: e.target.value as ArrowHead })}
+  useImperativeHandle(draftRef, () => ({
+    flush: () => {
+      commitThickness();
+      save();
+    },
+  }));
+  const headMenu = (end: 'start' | 'end') => (
+    <div className="arrow-head-menu">
+      <button
+        className="arrow-head-trigger"
+        aria-label={`${end === 'start' ? 'Start' : 'End'} arrowhead`}
+        title={`${end === 'start' ? 'Start' : 'End'} arrowhead`}
+        aria-expanded={menu === end}
+        onClick={() => setMenu(menu === end ? null : end)}
       >
-        {heads.map(([id, name]) => (
-          <option key={id} value={id}>
-            {name}
-          </option>
-        ))}
-      </select>
+        <HeadPreview kind={style[end]} start={end === 'start'} />
+        <ChevronDown size={12} />
+      </button>
+      {menu === end && (
+        <div className="arrow-head-popover" role="group" aria-label={`${end} arrowhead choices`}>
+          {heads.map(([id, name]) => (
+            <button
+              key={id}
+              title={name}
+              aria-label={`${end} ${name}`}
+              aria-pressed={style[end] === id}
+              onClick={() => {
+                change({ [end]: id });
+                setMenu(null);
+              }}
+            >
+              <HeadPreview kind={id} start={end === 'start'} />
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+  return (
+    <div
+      className="arrow-controls"
+      ref={root}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape' && !showLabel) {
+          e.stopPropagation();
+          commitThickness();
+          setMenu(null);
+        }
+      }}
+    >
+      {headMenu('start')}
       <button
         className="icon-button"
         aria-label="Swap arrowheads"
@@ -51,64 +156,82 @@ export default function ArrowControls({
       >
         <ArrowLeftRight size={17} />
       </button>
-      <select
-        aria-label="End arrowhead"
-        title="End arrowhead"
-        value={style.end}
-        onChange={(e) => change({ end: e.target.value as ArrowHead })}
-      >
-        {heads.map(([id, name]) => (
-          <option key={id} value={id}>
-            {name}
-          </option>
-        ))}
-      </select>
-      <details className="arrow-style-menu">
-        <summary title="Line style" aria-label="Line style">
+      {headMenu('end')}
+      <div className="arrow-style-menu">
+        <button
+          className="icon-button"
+          title="Line style"
+          aria-label="Line style"
+          aria-expanded={menu === 'style'}
+          onClick={() => setMenu(menu === 'style' ? null : 'style')}
+        >
           <Spline size={19} />
-        </summary>
-        <div className="arrow-style-popover">
-          <label>
-            Path
-            <select
-              aria-label="Arrow path"
-              value={style.line}
-              onChange={(e) => change({ line: e.target.value as ArrowStyle['line'] })}
-            >
-              <option value="straight">Straight</option>
-              <option value="elbow">Elbow</option>
-              <option value="curve">Curved</option>
-            </select>
-          </label>
-          <label>
-            Stroke
-            <select
-              aria-label="Arrow stroke"
-              value={style.dash}
-              onChange={(e) => change({ dash: e.target.value as ArrowStyle['dash'] })}
-            >
-              <option value="solid">Solid</option>
-              <option value="dashed">Dashed</option>
-              <option value="dotted">Dotted</option>
-            </select>
-          </label>
-          <label>
-            Thickness
-            <select
+        </button>
+        {menu === 'style' && (
+          <div className="arrow-style-popover">
+            <div className="arrow-thickness-heading">
+              <label htmlFor="arrow-thickness">Thickness</label>
+              <output>{style.thickness}</output>
+            </div>
+            <input
+              id="arrow-thickness"
+              className="arrow-thickness"
+              type="range"
+              min="0.5"
+              max="40"
+              step="0.5"
               aria-label="Arrow thickness"
               value={style.thickness}
-              onChange={(e) => change({ thickness: Number(e.target.value) })}
-            >
-              {[...new Set([1, 2, 3, 4, 6, 8, 12, style.thickness])]
-                .sort((a, b) => a - b)
-                .map((n) => (
-                  <option key={n}>{n}</option>
+              onPointerDown={(e) => {
+                thicknessBefore.current = style.thickness;
+                e.currentTarget.setPointerCapture(e.pointerId);
+              }}
+              onChange={(e) => {
+                thicknessBefore.current ??= style.thickness;
+                onChange({ arrow: { ...style, thickness: Number(e.target.value) } }, false);
+              }}
+              onPointerUp={commitThickness}
+              onPointerCancel={commitThickness}
+              onLostPointerCapture={commitThickness}
+              onKeyUp={commitThickness}
+              onBlur={commitThickness}
+            />
+            <fieldset>
+              <legend>Path</legend>
+              <div className="arrow-options">
+                {(['straight', 'elbow', 'curve'] as const).map((line) => (
+                  <button
+                    key={line}
+                    title={line === 'curve' ? 'Curved' : line === 'elbow' ? 'Elbow' : 'Straight'}
+                    aria-label={`Arrow path ${line}`}
+                    aria-pressed={style.line === line}
+                    onClick={() => change({ line })}
+                  >
+                    <LinePreview line={line} />
+                  </button>
                 ))}
-            </select>
-          </label>
-          <small>Drag a dot to bend. Double-click a bend to remove it.</small>
-        </div>
-      </details>
+              </div>
+            </fieldset>
+            <fieldset>
+              <legend>Stroke</legend>
+              <div className="arrow-options">
+                {(['solid', 'dashed', 'dotted'] as const).map((dash) => (
+                  <button
+                    key={dash}
+                    title={dash}
+                    aria-label={`Arrow stroke ${dash}`}
+                    aria-pressed={style.dash === dash}
+                    onClick={() => change({ dash })}
+                  >
+                    <LinePreview dash={dash} />
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+            <small>Drag a dot to bend. Double-click a bend to remove it.</small>
+          </div>
+        )}
+      </div>
       <input
         type="color"
         className="arrow-color"

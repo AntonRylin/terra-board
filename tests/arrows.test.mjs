@@ -2,6 +2,28 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { arrowFromPoints, arrowPath, arrowHandles, hitsArrow } from '../src/canvas/arrows.ts';
 
+test('curved arrow ends follow steep terminal segments and insertion handles stay on the curve', () => {
+  const o = arrowFromPoints({ id: 'a', type: 'arrow', z: 1 }, [
+    { x: 0, y: 120 },
+    { x: 380, y: 260 },
+    { x: 610, y: 275 },
+    { x: 700, y: 0 },
+  ]);
+  const path = arrowPath(o),
+    end = path.at(-1),
+    previous = path.at(-2);
+  assert.ok(
+    end.y - previous.y < -2 * Math.abs(end.x - previous.x),
+    'head must point steeply upward',
+  );
+  for (const p of path) {
+    assert.ok(p.x >= -1e-8 && p.x <= o.width + 1e-8);
+    assert.ok(p.y >= -1e-8 && p.y <= o.height + 1e-8);
+  }
+  for (const handle of arrowHandles(o).filter((h) => h.insert))
+    assert.ok(hitsArrow(o, handle, 0.01), 'insertion dot must lie on its curve');
+});
+
 test('arrows preserve endpoint direction and stay hittable on horizontal and vertical paths', () => {
   const base = { id: 'a', type: 'arrow', x: 0, y: 0, width: 1, height: 1, z: 1 };
   for (const points of [

@@ -33,31 +33,51 @@ export function arrowFromPoints(o: CanvasObject, points: Point[]): CanvasObject 
     },
   };
 }
-function segment(a: Point, b: Point, line: ArrowStyle['line']): Point[] {
+function segment(points: Point[], index: number, line: ArrowStyle['line']): Point[] {
+  const a = points[index],
+    b = points[index + 1];
   if (line === 'straight') return [a, b];
   const mid = (a.x + b.x) / 2;
   if (line === 'elbow') return [a, { x: mid, y: a.y }, { x: mid, y: b.y }, b];
+  // Monotone Hermite tangents follow neighboring knots without overshooting
+  // their bounds. Endpoints follow the terminal segment, not a fixed axis.
+  const tangent = (i: number, axis: 'x' | 'y') => {
+    if (i === 0) return points[1][axis] - points[0][axis];
+    if (i === points.length - 1) return points[i][axis] - points[i - 1][axis];
+    const before = points[i][axis] - points[i - 1][axis],
+      after = points[i + 1][axis] - points[i][axis];
+    return before * after <= 0 ? 0 : (2 * before * after) / (before + after);
+  };
+  const c = { x: a.x + tangent(index, 'x') / 3, y: a.y + tangent(index, 'y') / 3 },
+    d = { x: b.x - tangent(index + 1, 'x') / 3, y: b.y - tangent(index + 1, 'y') / 3 };
   return Array.from({ length: 25 }, (_, i) => {
     const t = i / 24,
       u = 1 - t;
     return {
-      x: u * u * u * a.x + 3 * u * u * t * mid + 3 * u * t * t * mid + t * t * t * b.x,
-      y: u * u * u * a.y + 3 * u * u * t * a.y + 3 * u * t * t * b.y + t * t * t * b.y,
+      x: u * u * u * a.x + 3 * u * u * t * c.x + 3 * u * t * t * d.x + t * t * t * b.x,
+      y: u * u * u * a.y + 3 * u * u * t * c.y + 3 * u * t * t * d.y + t * t * t * b.y,
     };
   });
 }
 export function arrowPath(o: CanvasObject): Point[] {
   const points = arrowPoints(o),
     line = arrowStyle(o).line;
-  return points.flatMap((p, i) => (i ? segment(points[i - 1], p, line).slice(1) : [p]));
+  return points.flatMap((p, i) => (i ? segment(points, i - 1, line).slice(1) : [p]));
 }
 export function arrowHandles(o: CanvasObject) {
   const points = arrowPoints(o);
   return points.flatMap((p, i) => {
     const knot = { ...p, index: i, insert: false };
     if (i === points.length - 1 || points.length >= 32) return [knot];
-    const next = points[i + 1];
-    return [knot, { x: (p.x + next.x) / 2, y: (p.y + next.y) / 2, index: i + 1, insert: true }];
+    const path = segment(points, i, arrowStyle(o).line),
+      middle =
+        arrowStyle(o).line === 'curve'
+          ? path[12]
+          : {
+              x: (p.x + points[i + 1].x) / 2,
+              y: (p.y + points[i + 1].y) / 2,
+            };
+    return [knot, { ...middle, index: i + 1, insert: true }];
   });
 }
 export function hitsArrow(o: CanvasObject, q: Point, tolerance: number) {

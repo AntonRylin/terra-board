@@ -1080,21 +1080,50 @@ try {
   await key('z', 'KeyZ', 10);
   await until(async () => (await object(arrow.id)).arrow.points.length === 3, 'bend redo');
   await clickSelector('[aria-label="Line style"]');
-  const chooseArrow = async (label, value) => {
-    await read(
-      `(()=>{const e=document.querySelector('[aria-label="${label}"]');e.value=${JSON.stringify(value)};e.dispatchEvent(new Event('change',{bubbles:true}));})()`,
-    );
-    await sleep(100);
-  };
+  assert.equal(
+    await read(`document.querySelector('.arrow-style-popover').querySelectorAll('select').length`),
+    0,
+    'style choices must be visible without nested menus',
+  );
   for (const line of ['straight', 'elbow', 'curve']) {
-    await chooseArrow('Arrow path', line);
+    await clickSelector(`[aria-label="Arrow path ${line}"]`);
     await until(async () => (await object(arrow.id)).arrow.line === line, 'arrow path ' + line);
   }
-  await chooseArrow('Arrow stroke', 'dashed');
-  await chooseArrow('Arrow thickness', '4');
+  for (const dash of ['dotted', 'solid', 'dashed']) {
+    await clickSelector(`[aria-label="Arrow stroke ${dash}"]`);
+    await until(async () => (await object(arrow.id)).arrow.dash === dash, 'arrow stroke ' + dash);
+  }
+  const slider = await rect('[aria-label="Arrow thickness"]');
+  await drag(
+    { x: slider.x + 8 + ((slider.width - 16) * 2.5) / 39.5, y: slider.y + slider.height / 2 },
+    { x: slider.x + 8 + ((slider.width - 16) * 10) / 39.5, y: slider.y + slider.height / 2 },
+  );
+  const thickness = await until(async () => {
+    const n = (await object(arrow.id)).arrow.thickness;
+    return n > 8 && n < 13 ? n : false;
+  }, 'live thickness slider saved');
   await clickSelector('[aria-label="Line style"]');
-  await chooseArrow('Start arrowhead', 'diamond');
-  await chooseArrow('End arrowhead', 'triangle');
+  await key('z', 'KeyZ', 2);
+  await until(
+    async () => (await object(arrow.id)).arrow.thickness === 3,
+    'slider drag undoes in one step',
+  );
+  await key('z', 'KeyZ', 10);
+  await until(async () => (await object(arrow.id)).arrow.thickness === thickness, 'slider redo');
+  await clickSelector('[aria-label="Line style"]');
+  writeFileSync(
+    join(root, 'arrow-style-previews.png'),
+    Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64'),
+  );
+  await clickSelector('[aria-label="Line style"]');
+  await clickSelector('[aria-label="Start arrowhead"]');
+  await clickSelector('[aria-label="start Diamond"]');
+  await clickSelector('[aria-label="End arrowhead"]');
+  writeFileSync(
+    join(root, 'arrow-head-previews.png'),
+    Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64'),
+  );
+  await clickSelector('[aria-label="end Triangle"]');
   await clickSelector('[aria-label="Swap arrowheads"]');
   await until(async () => (await object(arrow.id)).arrow.start === 'triangle', 'swapped markers');
   await clickSelector('[aria-label="Arrow label"]');

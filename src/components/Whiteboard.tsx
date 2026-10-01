@@ -812,10 +812,22 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
               key={selected[0].id}
               draftRef={arrowDraft}
               object={selected[0]}
-              onChange={(patch) => {
+              onChange={(patch, record = true) => {
                 const e = engine.current,
                   o = e?.objects.get(selected[0].id);
-                if (o) e?.apply({ upserts: [{ ...o, ...patch }], deleted: [] });
+                if (o) e?.apply({ upserts: [{ ...o, ...patch }], deleted: [] }, record);
+              }}
+              onCommitThickness={(before) => {
+                const e = engine.current,
+                  o = e?.objects.get(selected[0].id);
+                if (!e || !o?.arrow || o.arrow.thickness === before) return;
+                e.history.push(
+                  { upserts: [o], deleted: [] },
+                  {
+                    upserts: [{ ...o, arrow: { ...o.arrow, thickness: before } }],
+                    deleted: [],
+                  },
+                );
               }}
             />
           )}

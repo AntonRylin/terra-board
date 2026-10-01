@@ -260,3 +260,8 @@ Native backup restoration, automatic asset cleanup, richer content types and fra
 - `npm test`: 120 passing; `npm run build`: passing.
 - Packaged desktop interactions passed with `.local-test/desktop-input-mBn06o`: mouse-drawn arrow, midpoint insertion, undo/redo, all path types, dashed stroke, thickness, marker swap, saved/cancelled label, bend deletion, endpoint movement, and persisted arrow after closing/reopening. Screenshot: `arrow-controls.png`.
 - Added a focused renderer regression for vertical elbows with a zero-length first segment; rebuilt the final executable after this correction.
+
+### 2026-10-01: arrow direction and visual settings
+- `npm test`: 121 passing; `npm run build`: passing. The new steep-end curve regression failed before the geometry fix and passes afterward; it also checks bounded geometry and insertion dots on the actual curve.
+- Packaged `node scripts/desktop-interactions.mjs` passed in `.local-test/desktop-input-YUaCkO` with no renderer exceptions. It clicks every path/stroke preview, drags the thickness slider, verifies single-step undo/redo, selects graphical endpoint markers, edits labels and bends, and checks persisted state after closing.
+- Inspected `arrow-style-previews.png` and `arrow-head-previews.png` from that run. The settings expose the slider and all six path/stroke choices without nested dropdowns.
