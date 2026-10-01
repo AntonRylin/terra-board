@@ -1052,6 +1052,8 @@ export class Engine {
         o.color,
         o.fontSize,
         o.textBox,
+        o.bold,
+        o.strikethrough,
         o.centerX,
         o.centerY,
         o.type,

@@ -9,6 +9,8 @@ import {
   useState,
 } from 'react';
 import {
+  Bold,
+  Strikethrough,
   MousePointer2,
   MoveUpRight,
   Hand,
@@ -169,6 +171,26 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           editingLayout.editorContentHeight,
         )
       : null;
+  const canFormat = (o: CanvasObject) =>
+    ['text', 'note', 'rect', 'ellipse', 'frame', 'arrow'].includes(o.type) ||
+    (o.type === 'image' && (!!o.imageTitle || editingSession.current?.object.id === o.id));
+  const formattingSelection = (editingObject ? [editingObject] : selected).filter(canFormat);
+  const toggleFormatting = (field: 'bold' | 'strikethrough') => {
+    const session = editingSession.current;
+    if (session) {
+      session.object = { ...session.object, [field]: !session.object[field] };
+      setEditing(session.object);
+      editorRef.current?.focus();
+    } else {
+      const objects = engine.current?.selected.filter(canFormat) || [];
+      if (!objects.length) return;
+      const enabled = !objects.every((o) => o[field]);
+      engine.current?.apply({
+        upserts: objects.map((o) => fitTextObject({ ...o, [field]: enabled })),
+        deleted: [],
+      });
+    }
+  };
   const alignmentSelection = (editingObject ? [editingObject] : selected).filter(
     (o) => !['image', 'frame', 'link', 'arrow'].includes(o.type),
   );
@@ -622,7 +644,10 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       if (!e) return;
       const mod = event.ctrlKey || event.metaKey;
       const k = event.key.toLowerCase();
-      if (mod && k === 'z') {
+      if (mod && k === 'b') {
+        event.preventDefault();
+        toggleFormatting('bold');
+      } else if (mod && k === 'z') {
         event.preventDefault();
         event.shiftKey ? e.redo() : e.undo();
       } else if (mod && k === 'y') {
@@ -902,6 +927,40 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
               {selected.some((o) => o.groupId) ? <Ungroup size={17} /> : <Group size={17} />}
             </button>
           )}
+          {formattingSelection.length > 0 && (
+            <>
+              <button
+                className="icon-button"
+                aria-label="Bold"
+                title="Bold (Ctrl+B)"
+                aria-pressed={
+                  formattingSelection.every((o) => o.bold)
+                    ? true
+                    : formattingSelection.some((o) => o.bold)
+                      ? 'mixed'
+                      : false
+                }
+                onClick={() => toggleFormatting('bold')}
+              >
+                <Bold size={17} />
+              </button>
+              <button
+                className="icon-button"
+                aria-label="Strikethrough"
+                title="Strikethrough"
+                aria-pressed={
+                  formattingSelection.every((o) => o.strikethrough)
+                    ? true
+                    : formattingSelection.some((o) => o.strikethrough)
+                      ? 'mixed'
+                      : false
+                }
+                onClick={() => toggleFormatting('strikethrough')}
+              >
+                <Strikethrough size={17} />
+              </button>
+            </>
+          )}
           {alignmentSelection.length > 0 && (
             <>
               <button
@@ -986,7 +1045,10 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           onKeyDown={(e) => {
             e.stopPropagation();
             if (e.nativeEvent.isComposing) return;
-            if (e.key === 'Escape') {
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
+              e.preventDefault();
+              toggleFormatting('bold');
+            } else if (e.key === 'Escape') {
               e.preventDefault();
               finishEdit(true);
             } else if (
@@ -1012,6 +1074,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             fontSize: editingAppearance.fontSize * camera.zoom,
             lineHeight: `${editingAppearance.lineHeight * camera.zoom}px`,
             fontFamily: editingAppearance.fontFamily,
+            fontWeight: editingAppearance.fontWeight,
+            textDecoration: editing.strikethrough ? 'line-through' : 'none',
             color: editingAppearance.color,
           }}
         />

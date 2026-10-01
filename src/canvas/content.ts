@@ -43,9 +43,9 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
       !(Number.isFinite(o.rotation) && o.rotation >= 0 && o.rotation <= 360)
     )
       throw Error('Invalid clipboard rotation');
-    for (const key of ['centerX', 'centerY', 'textBox'])
+    for (const key of ['centerX', 'centerY', 'textBox', 'bold', 'strikethrough'])
       if (o[key] !== undefined && typeof o[key] !== 'boolean')
-        throw Error('Invalid clipboard alignment');
+        throw Error('Invalid clipboard alignment or formatting');
     if (o.color !== undefined && !/^#[a-f0-9]{6}$/i.test(o.color))
       throw Error('Invalid clipboard color');
     if (
@@ -150,6 +150,8 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
       ...(o.imageTitle === undefined ? {} : { imageTitle: o.imageTitle }),
       ...(o.color === undefined ? {} : { color: o.color }),
       ...(o.fontSize === undefined ? {} : { fontSize: o.fontSize }),
+      ...(o.bold === undefined ? {} : { bold: o.bold }),
+      ...(o.strikethrough === undefined ? {} : { strikethrough: o.strikethrough }),
       ...(o.centerX === undefined ? {} : { centerX: o.centerX }),
       ...(o.centerY === undefined ? {} : { centerY: o.centerY }),
       ...(o.rotation === undefined ? {} : { rotation: o.rotation }),

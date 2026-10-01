@@ -24,7 +24,7 @@ function editorHeight(text: string, a: Layout['appearance']) {
     document.body.appendChild(probe);
   }
   probe.style.width = `${a.wrapWidth * 8}px`;
-  probe.style.font = `400 ${a.fontSize * 8}px ${a.fontFamily}`;
+  probe.style.font = `${a.fontWeight} ${a.fontSize * 8}px ${a.fontFamily}`;
   probe.style.lineHeight = `${a.lineHeight * 8}px`;
   probe.value = text;
   return probe.scrollHeight / 8;
@@ -36,7 +36,16 @@ export function textLayout(
   o: CanvasObject,
   text = (o.type === 'image' ? o.imageTitle : o.text) || '',
 ): Layout {
-  const key = JSON.stringify([o.type, o.width, o.height, o.fontSize, o.color, o.textBox, text]);
+  const key = JSON.stringify([
+    o.type,
+    o.width,
+    o.height,
+    o.fontSize,
+    o.color,
+    o.textBox,
+    o.bold,
+    text,
+  ]);
   const cached = cache.get(key);
   if (cached) {
     cache.delete(key);
@@ -60,7 +69,7 @@ export function textLayout(
       new TextStyle({
         fontFamily: appearance.fontFamily,
         fontSize,
-        fontWeight: '400',
+        fontWeight: appearance.fontWeight,
         lineHeight: appearance.lineHeight,
         wordWrap: o.type !== 'text' || !!o.textBox,
         breakWords: true,

@@ -122,9 +122,9 @@ function objectValue(o) {
     if (!number(o.rotation, 0, 360)) throw Error('Invalid rotation');
     result.rotation = o.rotation;
   }
-  for (const key of ['centerX', 'centerY', 'textBox']) {
+  for (const key of ['centerX', 'centerY', 'textBox', 'bold', 'strikethrough']) {
     if (o[key] !== undefined) {
-      if (typeof o[key] !== 'boolean') throw Error('Invalid text alignment');
+      if (typeof o[key] !== 'boolean') throw Error('Invalid text alignment or formatting');
       result[key] = o[key];
     }
   }

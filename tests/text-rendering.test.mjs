@@ -6,6 +6,8 @@ import ts from 'typescript';
 import { textPlacement } from '../src/canvas/text-alignment.ts';
 
 test('centered text outside the viewport allocates no texture; visible labels allocate only their ink bounds', () => {
+  const strokes = [],
+    fonts = [];
   const allocated = [],
     exports = {};
   class CanvasSource {
@@ -41,6 +43,7 @@ test('centered text outside the viewport allocates no texture; visible labels al
                   fontSize: 20,
                   lineHeight: 29,
                   fontFamily: 'sans-serif',
+                  fontWeight: '700',
                   color: '#000000',
                 },
                 metrics: { maxLineWidth: 30, lines: ['Hi'] },
@@ -54,8 +57,18 @@ test('centered text outside the viewport allocates no texture; visible labels al
           getContext: () => ({
             scale() {},
             translate() {},
+            set font(value) {
+              fonts.push(value);
+            },
             fillText() {},
-            measureText: () => ({ fontBoundingBoxAscent: 16, fontBoundingBoxDescent: 4 }),
+            fillRect(...args) {
+              strokes.push(args);
+            },
+            measureText: () => ({
+              width: 30,
+              fontBoundingBoxAscent: 16,
+              fontBoundingBoxDescent: 4,
+            }),
           }),
         };
         allocated.push(canvas);
@@ -68,6 +81,15 @@ test('centered text outside the viewport allocates no texture; visible labels al
   assert.equal(allocated.length, 0);
   assert.ok(exports.renderText(object, 'Hi', 1, { x: 1800, y: 1800, width: 1000, height: 700 }));
   assert.equal(allocated.length, 1);
+  assert.equal(strokes.length, 0);
+  exports.renderText({ ...object, strikethrough: true }, 'Hi', 1, {
+    x: 1800,
+    y: 1800,
+    width: 1000,
+    height: 700,
+  });
+  assert.deepEqual(strokes[0], [1985, 1999.375, 30, 1.25]);
+  assert.equal(fonts[0], '700 20px sans-serif');
   assert.ok(
     allocated[0].width < 50 && allocated[0].height < 50,
     'blank area allocated around centered ink',

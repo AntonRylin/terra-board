@@ -130,7 +130,7 @@ export function renderText(
   const ctx = canvas.getContext('2d')!;
   ctx.scale(resolution, resolution);
   ctx.translate(-left, -top);
-  ctx.font = `400 ${a.fontSize}px ${a.fontFamily}`;
+  ctx.font = `${a.fontWeight} ${a.fontSize}px ${a.fontFamily}`;
   ctx.fillStyle = a.color;
   ctx.textAlign = centered ? 'center' : 'left';
   const font = ctx.measureText('Mg');
@@ -142,8 +142,20 @@ export function renderText(
     metrics.lines.length,
     Math.ceil((bottom - placement.top) / a.lineHeight) + 1,
   );
-  for (let i = first; i < last; i++)
-    ctx.fillText(metrics.lines[i], anchor, placement.top + baseline + i * a.lineHeight);
+  for (let i = first; i < last; i++) {
+    const y = placement.top + baseline + i * a.lineHeight;
+    ctx.fillText(metrics.lines[i], anchor, y);
+    if (o.strikethrough) {
+      const width = ctx.measureText(metrics.lines[i]).width;
+      const thickness = Math.max(1, a.fontSize / 16);
+      ctx.fillRect(
+        anchor - (centered ? width / 2 : 0),
+        y - a.fontSize * 0.3 - thickness / 2,
+        width,
+        thickness,
+      );
+    }
+  }
   const texture = new Texture({ source: new CanvasSource({ resource: canvas, resolution }) });
   const sprite = new Sprite(texture);
   sprite.label = 'board-text';

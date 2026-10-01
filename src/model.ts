@@ -28,6 +28,8 @@ export interface CanvasObject {
   imageTitle?: string;
   color?: string;
   fontSize?: number;
+  bold?: boolean;
+  strikethrough?: boolean;
   centerX?: boolean;
   centerY?: boolean;
   rotation?: number;

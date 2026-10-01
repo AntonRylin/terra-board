@@ -6,6 +6,7 @@ export function textAppearance(o: CanvasObject) {
     o.type === 'image' ? 12 : o.fontSize || (o.type === 'note' ? 21 : o.type === 'frame' ? 14 : 18);
   return {
     fontSize,
+    fontWeight: o.bold ? ('700' as const) : ('400' as const),
     lineHeight: fontSize * 1.45,
     padding:
       o.type === 'text'
