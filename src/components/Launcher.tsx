@@ -5,6 +5,7 @@ import { Presence } from './Presence';
 import { BoardGlyph } from './Icon';
 import InlineName from './InlineName';
 import { useLauncherDock, type DockEdge } from './useLauncherDock';
+import { useLauncherReorder } from './useLauncherReorder';
 export function AppIcon({ board }: { board: Board }) {
   return (
     <span className={'app-icon ' + board.color + ' shape-' + (board.iconShape || 'rounded')}>
@@ -26,8 +27,8 @@ interface Props {
   onBoardMenu: (b: Board, x: number, y: number) => void;
   onIconDrop: (b: Board, file: File) => void;
   onFolderMenu: (f: Folder, x: number, y: number) => void;
-  onMove: (id: string, folderId: string | null, position?: number) => void;
-  onReorderFolder: (id: string, position: number) => void;
+  onMove: (id: string, folderId: string | null, position?: number) => Promise<void>;
+  onReorderFolder: (id: string, position: number) => Promise<void>;
   onNewBoard: (folderId: string) => void;
   onRenameBoard: (id: string, name: string) => Promise<void>;
   onRenameFolder: (id: string, name: string) => Promise<void>;
@@ -38,6 +39,15 @@ export default function Launcher(p: Props) {
     sheet = useRef<HTMLDivElement>(null);
   const dock = useLauncherDock(rail, p.dockEdge, p.onDock, () => p.onFolder(null));
   const horizontal = p.dockEdge === 'top' || p.dockEdge === 'bottom';
+  const reorder = useLauncherReorder(p.library, async (change) => {
+    if (change.kind === 'folder') await p.onReorderFolder(change.id, change.position!);
+    else
+      await p.onMove(
+        change.id,
+        change.folder || (change.group === 'root' ? null : change.group),
+        change.folder ? undefined : change.position,
+      );
+  });
   const boards = p.library.boards.filter((b) => !b.trashed);
   const items = [
     ...boards.filter((b) => !b.folderId).map((b) => ({ kind: 'board', item: b })),
@@ -99,7 +109,8 @@ export default function Launcher(p: Props) {
       strip.removeEventListener('scroll', place, true);
     };
   }, [folder?.id, p.dockEdge, horizontal]);
-  const drag = (e: React.DragEvent, id: string, kind = 'board') => {
+  const drag = (e: React.DragEvent<HTMLElement>, id: string, kind = 'board') => {
+    reorder.start(e, id, kind);
     e.dataTransfer.setData('application/x-terra-board', JSON.stringify({ id, kind }));
     e.dataTransfer.effectAllowed = 'move';
   };
@@ -125,6 +136,7 @@ export default function Launcher(p: Props) {
     target?: { kind: string; position: number },
   ) => {
     e.preventDefault();
+    e.stopPropagation();
     e.currentTarget.classList.remove('drop-target');
     try {
       const data = JSON.parse(e.dataTransfer.getData('application/x-terra-board'));
@@ -162,13 +174,22 @@ export default function Launcher(p: Props) {
         </div>
         <div
           className="launcher-scroll"
+          data-reorder-group="root"
           onWheel={(e) => {
             if (horizontal && Math.abs(e.deltaY) > Math.abs(e.deltaX))
               e.currentTarget.scrollLeft += e.deltaY;
           }}
-          onDragOver={(e) => e.preventDefault()}
+          onDragOver={(e) => {
+            e.preventDefault();
+            reorder.over(e);
+          }}
           onDrop={(e) => {
-            if (e.target === e.currentTarget) drop(e, null);
+            if (!reorder.drop(e)) {
+              const folderTarget = (e.target as HTMLElement).closest<HTMLElement>(
+                '[data-reorder-kind="folder"]',
+              );
+              drop(e, folderTarget?.dataset.reorderId || null);
+            }
           }}
         >
           {items.map(({ kind, item }) => {
@@ -182,8 +203,14 @@ export default function Launcher(p: Props) {
               <button
                 key={item.id}
                 data-item={item.id}
+                data-reorder-id={item.id}
+                data-reorder-kind={kind}
+                data-order={item.position}
+                style={reorder.style(item.id)}
                 className={
                   'launch-item ' +
+                  (reorder.source === item.id ? 'reorder-source ' : '') +
+                  (reorder.folder === item.id ? 'drop-target ' : '') +
                   (active ? 'active ' : '') +
                   (p.opened === item.id ? 'opened' : '')
                 }
@@ -193,15 +220,17 @@ export default function Launcher(p: Props) {
                 aria-pressed={isFolder ? undefined : active}
                 draggable
                 onDragStart={(e) => drag(e, item.id, kind)}
+                onDragEnd={reorder.end}
                 onDragOver={(e) => {
                   e.preventDefault();
-                  e.currentTarget.classList.add('drop-target');
                   if (!isFolder) iconDragOver(e);
                 }}
                 onDragLeave={(e) => e.currentTarget.classList.remove('drop-target')}
                 onDrop={(e) => {
                   if (!isFolder && dropIcon(e, b)) return;
-                  drop(e, isFolder ? item.id : null, { kind, position: item.position });
+                  // Internal moves are handled by the strip's live preview.
+                  if (!reorder.source)
+                    drop(e, isFolder ? item.id : null, { kind, position: item.position });
                 }}
                 onClick={() =>
                   isFolder ? p.onFolder(p.opened === item.id ? null : item.id) : p.onOpen(item.id)
@@ -315,8 +344,14 @@ export default function Launcher(p: Props) {
             </header>
             <div
               className="folder-grid"
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => drop(e, folder.id)}
+              data-reorder-group={folder.id}
+              onDragOver={(e) => {
+                e.preventDefault();
+                reorder.over(e);
+              }}
+              onDrop={(e) => {
+                if (!reorder.drop(e)) drop(e, folder.id);
+              }}
             >
               {boards
                 .filter((b) => b.folderId === folder.id)
@@ -324,10 +359,15 @@ export default function Launcher(p: Props) {
                 .map((b) => (
                   <div
                     key={b.id}
-                    className="folder-board"
+                    className={'folder-board' + (reorder.source === b.id ? ' reorder-source' : '')}
+                    data-reorder-id={b.id}
+                    data-reorder-kind="board"
+                    data-order={b.position}
+                    style={reorder.style(b.id)}
                     title={b.name}
                     draggable
                     onDragStart={(e) => drag(e, b.id)}
+                    onDragEnd={reorder.end}
                     onDragOver={iconDragOver}
                     onDragLeave={(e) => e.currentTarget.classList.remove('drop-target')}
                     onDrop={(e) => {

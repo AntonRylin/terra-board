@@ -117,6 +117,7 @@ p {
   flex-shrink: 0;
 }
 .launcher-scroll {
+  position: relative;
   width: 100%;
   flex: 1;
   min-height: 0;
@@ -138,6 +139,25 @@ p {
   justify-content: center;
   background: transparent;
   position: relative;
+}
+.folder-grid {
+  position: relative;
+}
+[data-reorder-group] > [data-reorder-id] {
+  transition: opacity 140ms;
+}
+[data-reorder-group]:has(.reorder-source) > [data-reorder-id] {
+  transition:
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 140ms;
+}
+.reorder-source {
+  opacity: 0.3;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-reorder-group]:has(.reorder-source) > [data-reorder-id] {
+    transition: none;
+  }
 }
 .launch-item::before {
   content: '';
