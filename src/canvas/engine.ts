@@ -1032,8 +1032,8 @@ export class Engine {
       const loading =
         o.type === 'link' &&
         (this.loadingLinks.has(o.id) || (!!key && !texture && !this.textures.failed(key)));
+      // Text scales with zoom; only decorative controls use the detail cutoff.
       const hasLabel =
-        detail &&
         this.editingId !== o.id &&
         (o.type === 'image'
           ? !!o.imageTitle?.trim() || !texture
@@ -1142,7 +1142,7 @@ export class Engine {
     if (o.type === 'arrow') {
       drawArrow(g, o);
       container.addChild(g);
-      if (o.text && detail) {
+      if (o.text) {
         const p = arrowLabelPoint(o),
           labelObject = arrowLabelObject(o);
         const label = renderText(labelObject, o.text, resolution, {
@@ -1239,7 +1239,7 @@ export class Engine {
         spinner.arc(0, 0, 10, -Math.PI / 2, Math.PI / 2).stroke({ color: '#6695e5', width: 2.5 });
         container.addChild(spinner);
       }
-      if (detail) {
+      {
         const label = renderLinkCaption(o, resolution, region, loading);
         if (label) container.addChild(label);
       }
@@ -1250,7 +1250,7 @@ export class Engine {
       sprite.width = o.width;
       sprite.height = o.height;
       container.addChild(sprite);
-      if (detail && this.editingId !== o.id && o.imageTitle?.trim()) {
+      if (this.editingId !== o.id && o.imageTitle?.trim()) {
         const label = renderText(o, o.imageTitle, resolution, region);
         if (label) container.addChild(label);
       }
@@ -1300,7 +1300,7 @@ export class Engine {
         );
     }
     container.addChild(g);
-    if (detail && this.editingId !== o.id) {
+    if (this.editingId !== o.id) {
       let text = o.text || '';
       if (o.type === 'frame') text = o.text || 'Untitled frame';
       if (o.type === 'image') text = o.imageTitle?.trim() ? o.imageTitle : 'Image';
