@@ -401,8 +401,52 @@ try {
     0,
     'emoji toggles off',
   );
+  const iconDialogBounds = await read(
+    `({width: document.querySelector('.modal').offsetWidth, height: document.querySelector('.modal').offsetHeight})`,
+  );
   await clickSelector('[aria-label="More emojis"]');
-  await clickSelector('[aria-label="Use emoji 🥰"]');
+  assert.equal(
+    await read(`document.querySelectorAll('.emoji-panel .emoji-choice').length > 900`),
+    true,
+  );
+  assert.equal(
+    await read(
+      `document.querySelector('.emoji-panel').getBoundingClientRect().width > document.querySelector('.modal').getBoundingClientRect().width`,
+    ),
+    true,
+    'overlay is wider than icon dialog',
+  );
+  assert.deepEqual(
+    await read(
+      `({width: document.querySelector('.modal').offsetWidth, height: document.querySelector('.modal').offsetHeight})`,
+    ),
+    iconDialogBounds,
+    'overlay does not expand the icon form',
+  );
+  await key('Tab', 'Tab', 8);
+  assert.equal(
+    await read(`document.activeElement.getAttribute('aria-label')`),
+    'Custom emoji',
+    'focus stays inside overlay',
+  );
+  await key('Escape', 'Escape');
+  assert.equal(
+    await read(`!document.querySelector('.emoji-overlay') && !!document.querySelector('.modal')`),
+    true,
+    'Escape only closes emoji overlay',
+  );
+  await clickSelector('[aria-label="More emojis"]');
+  writeFileSync(
+    join(root, 'emoji-overlay.png'),
+    Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64'),
+  );
+  await clickSelector('.emoji-panel [aria-label="Use emoji 🥰"]');
+  assert.equal(
+    await read(`!document.querySelector('.emoji-overlay')`),
+    true,
+    'picking returns to icon dialog',
+  );
+  await clickSelector('[aria-label="More emojis"]');
   await clickSelector('[aria-label="Custom emoji"]');
   await send('Input.insertText', { text: '👩🏽‍💻' });
   await clickSelector('.emoji-custom button');
@@ -410,7 +454,6 @@ try {
     await read(`document.querySelector('.icon-preview .board-emoji').textContent`),
     '👩🏽‍💻',
   );
-  await clickSelector('[aria-label="More emojis"]');
   await read(`document.querySelector('.modal').scrollTop=0`);
   writeFileSync(
     join(root, 'emoji-picker.png'),
