@@ -1,13 +1,31 @@
 import type { Asset, Board } from './model';
+export interface McpStatus {
+  enabled: boolean;
+  running: boolean;
+  url: string;
+  port: number;
+  error: string | null;
+  codexConfig: string;
+  claudeConfig: string;
+}
 interface DesktopBridge {
+  mcpStatus(): Promise<McpStatus>;
+  mcpUpdate(patch: { enabled: boolean; port?: number }): Promise<McpStatus>;
+  onMcpSync(
+    callback: (message: {
+      id: number;
+      phase: 'prepare' | 'finish';
+      change?: string;
+      idBoard?: string;
+    }) => void,
+  ): () => void;
+  mcpReady(id: number, error?: string): void;
   invoke(command: string, args?: unknown): Promise<any>;
   pickMedia(): Promise<Asset[]>;
   importPortable(): Promise<Board | null>;
   exportPortable(id: string): Promise<boolean>;
   openExternal(url: string): Promise<void>;
-  linkPreview(
-    url: string,
-  ): Promise<{
+  linkPreview(url: string): Promise<{
     text: string;
     linkDescription: string;
     assetId?: string;

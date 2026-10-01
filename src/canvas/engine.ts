@@ -823,6 +823,15 @@ export class Engine {
     }
     return [...moving.values()].map((o) => ({ ...o }));
   }
+  prepareExternalEdit() {
+    this.stopCameraAnimation();
+    this.cancel();
+  }
+  acceptExternalEdit(edit: Edit) {
+    for (const o of edit.upserts) this.linkPreviews.delete(o.id);
+    for (const id of edit.deleted) this.linkPreviews.delete(id);
+    this.apply(edit);
+  }
   apply(edit: Edit, record = true) {
     const inverse: Edit = { upserts: [], deleted: [] };
     for (const o of edit.upserts) {

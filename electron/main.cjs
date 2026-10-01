@@ -20,6 +20,48 @@ protocol.registerSchemesAsPrivileged([
     },
   },
 ]);
+const { McpService } = require('./mcp-server.cjs');
+let mcp,
+  externalPhase = null;
+const externalWaiters = new Map();
+let externalId = 0;
+function syncRenderer(phase, detail = {}) {
+  if (!win || win.isDestroyed() || closed) return Promise.reject(Error('Terra Board is closing.'));
+  return new Promise((resolve, reject) => {
+    const id = ++externalId;
+    const timer = setTimeout(() => {
+      externalWaiters.delete(id);
+      reject(Error('Board is busy. Retry when saving completes.'));
+    }, 30000);
+    externalWaiters.set(id, {
+      resolve: () => {
+        clearTimeout(timer);
+        resolve();
+      },
+      reject: (e) => {
+        clearTimeout(timer);
+        reject(e);
+      },
+    });
+    win.webContents.send('canvas:mcp-sync', { id, phase, ...detail });
+  });
+}
+async function mcpTransaction(job, detail) {
+  await rendererReady;
+  externalPhase = 'prepare';
+  try {
+    await syncRenderer('prepare');
+    externalPhase = 'apply';
+    return await job();
+  } finally {
+    externalPhase = 'refresh';
+    try {
+      await syncRenderer('finish', { change: detail.change, idBoard: detail.id });
+    } finally {
+      externalPhase = null;
+    }
+  }
+}
 const smoke = process.argv.includes('--smoke-test');
 const launchStarted = performance.now();
 const root = libraryRoot({
@@ -337,9 +379,27 @@ app
         previewWaiters.shift()?.();
       }
     });
+    mcp = new McpService({ root, call, transaction: mcpTransaction });
+    ipcMain.handle('canvas:mcp-status', (e) => {
+      trusted(e);
+      return mcp.status();
+    });
+    ipcMain.handle('canvas:mcp-update', (e, patch) => {
+      trusted(e);
+      return mcp.update(patch);
+    });
+    ipcMain.on('canvas:mcp-ready', (e, { id, error }) => {
+      trusted(e);
+      const waiting = externalWaiters.get(id);
+      if (!waiting) return;
+      externalWaiters.delete(id);
+      error ? waiting.reject(Error(error)) : waiting.resolve();
+    });
     ipcMain.handle('canvas:invoke', (e, command, args) => {
       trusted(e);
       if (!commands.has(command)) throw Error('Unknown command');
+      if (externalPhase === 'apply' && !['library', 'loadBoard'].includes(command))
+        throw Error('AI edit in progress. Retry after it completes.');
       return call(command, args);
     });
     ipcMain.handle('canvas:pick-media', async (e) => {
@@ -407,6 +467,7 @@ app
     await seed();
     if (dev) await win.loadURL(dev);
     else await win.loadURL('canvas-app://app/index.html');
+    await mcp.start();
     if (smoke) {
       await Promise.race([
         rendererReady,
@@ -457,6 +518,7 @@ app.on('before-quit', (event) => {
   }
   event.preventDefault();
   quitting = true;
+  void mcp?.stop();
   if (workerFailed) {
     worker.terminate();
     app.quit();

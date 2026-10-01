@@ -6,6 +6,14 @@ contextBridge.exposeInMainWorld('canvas', {
   exportPortable: (id) => ipcRenderer.invoke('canvas:export-board', id),
   openExternal: (url) => ipcRenderer.invoke('canvas:open-link', url),
   linkPreview: (url) => ipcRenderer.invoke('canvas:link-preview', url),
+  mcpStatus: () => ipcRenderer.invoke('canvas:mcp-status'),
+  mcpUpdate: (patch) => ipcRenderer.invoke('canvas:mcp-update', patch),
+  onMcpSync: (callback) => {
+    const handler = (_event, message) => callback(message);
+    ipcRenderer.on('canvas:mcp-sync', handler);
+    return () => ipcRenderer.removeListener('canvas:mcp-sync', handler);
+  },
+  mcpReady: (id, error) => ipcRenderer.send('canvas:mcp-ready', { id, error }),
   dataDirectory: () => ipcRenderer.invoke('canvas:data-directory'),
   onClose: (callback) => {
     const handler = () => callback();

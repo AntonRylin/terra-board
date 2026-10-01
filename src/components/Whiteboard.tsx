@@ -61,6 +61,8 @@ import { cropImage, uncroppedImage, fullCrop } from '../canvas/crop';
 import { selectionToolsPosition } from '../canvas/selection-tools';
 import type { Bounds } from '../canvas/geometry';
 export interface WhiteboardHandle {
+  prepareExternal: () => Promise<void>;
+  finishExternal: (doc?: Document) => void;
   flush: () => Promise<void>;
   importMedia: () => void;
   fit: () => void;
@@ -85,6 +87,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   { document: doc, onSave, onError },
   ref,
 ) {
+  const external = useRef(false);
+  const syncingExternal = useRef(false);
   const arrowDraft = useRef<{ flush: () => void }>(null);
   const host = useRef<HTMLDivElement>(null),
     engine = useRef<Engine | null>(null),
@@ -280,7 +284,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     void loadLinkPreview(
       o,
       (url) => window.canvas!.linkPreview(url),
-      () => engine.current === e,
+      () => engine.current === e && !external.current,
       (meta) => {
         e.hydrateLink(o.id, { ...meta, url: o.url! });
         const id = youtubeId(o.url!);
@@ -408,7 +412,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     if (resized.length) queue.current.enqueue({ upserts: resized, deleted: [] });
     const e = new Engine(host.current!, fitted, doc.camera, {
       edit: (edit) => {
-        queue.current!.enqueue(edit);
+        if (!syncingExternal.current) queue.current!.enqueue(edit);
         setCount(e.objects.size);
       },
       camera: (c) => {
@@ -540,15 +544,43 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   async function importMedia() {
     await performImport(pickMedia);
   }
+  const flush = async () => {
+    arrowDraft.current?.flush();
+    engine.current?.stopCameraAnimation();
+    if (editingSession.current) finishEdit();
+    if (cropSession.current) finishCrop();
+    await Promise.all([...imports.current]);
+    await queue.current?.flush();
+  };
   useImperativeHandle(ref, () => ({
-    flush: async () => {
-      arrowDraft.current?.flush();
-      engine.current?.stopCameraAnimation();
-      if (editing) finishEdit();
-      if (cropSession.current) finishCrop();
-      await Promise.all([...imports.current]);
-      await queue.current?.flush();
+    prepareExternal: async () => {
+      external.current = true;
+      engine.current?.prepareExternalEdit();
+      await flush();
     },
+    finishExternal: (updated) => {
+      const e = engine.current;
+      if (updated && e) {
+        const ids = new Set(updated.objects.map((o) => o.id));
+        const edit = {
+          upserts: updated.objects.filter(
+            (o) => JSON.stringify(e.objects.get(o.id)) !== JSON.stringify(o),
+          ),
+          deleted: e.all.filter((o) => !ids.has(o.id)).map((o) => o.id),
+        };
+        queue.current = new SaveQueue(doc.board.id, updated.revision, onSave, (args) =>
+          invoke('patchBoard', { ...args }),
+        );
+        syncingExternal.current = true;
+        try {
+          if (edit.upserts.length || edit.deleted.length) e.acceptExternalEdit(edit);
+        } finally {
+          syncingExternal.current = false;
+        }
+      }
+      external.current = false;
+    },
+    flush,
     importMedia,
     fit: () => engine.current?.fit(),
   }));

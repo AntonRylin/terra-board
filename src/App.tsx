@@ -1,5 +1,7 @@
+import McpSettings from './components/McpSettings';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Settings,
   Plus,
   FolderPlus,
   MoreHorizontal,
@@ -41,12 +43,15 @@ type ModalState = {
     | 'move'
     | 'search'
     | 'trash'
-    | 'help';
+    | 'help'
+    | 'settings';
   id?: string;
   folderId?: string | null;
   iconFile?: File;
 };
 export default function App() {
+  const [aiBusy, setAiBusy] = useState(false);
+  const activeDocument = useRef<Document | null>(null);
   const [dockEdge, setDockEdge] = useState(readDockEdge);
   const [library, setLibrary] = useState<Library>({ boards: [], folders: [], lastBoard: null }),
     [doc, setDoc] = useState<Document | null>(null),
@@ -64,6 +69,7 @@ export default function App() {
     [notice, setNotice] = useState(''),
     [busy, setBusy] = useState(false),
     [loading, setLoading] = useState(true);
+  activeDocument.current = doc;
   const [renameRequest, setRenameRequest] = useState<{
     kind: 'board' | 'folder';
     id: string;
@@ -142,6 +148,65 @@ export default function App() {
       }
     });
     return cleanup;
+  }, []);
+  useEffect(() => {
+    const block = (event: Event) => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    };
+    const events = ['keydown', 'pointerdown', 'pointermove', 'pointerup', 'wheel', 'paste', 'drop'];
+    const unlock = () => {
+      window.document.getElementById('root')?.removeAttribute('inert');
+      for (const event of events) window.removeEventListener(event, block, true);
+      setAiBusy(false);
+    };
+    const cleanup = window.canvas?.onMcpSync(async (message) => {
+      try {
+        if (message.phase === 'prepare') {
+          ++request.current;
+          setAiBusy(true);
+          window.document.getElementById('root')?.setAttribute('inert', '');
+          for (const event of events)
+            window.addEventListener(event, block, { capture: true, passive: false });
+          await flushInlineNames();
+          await whiteboard.current?.prepareExternal();
+        } else {
+          try {
+            if (message.change && message.change !== 'none') {
+              const l = await refresh();
+              const current = activeDocument.current;
+              if (current) {
+                const board = l.boards.find((b) => b.id === current.board.id && !b.trashed);
+                if (!board) {
+                  whiteboard.current?.finishExternal();
+                  setDoc(null);
+                } else if (message.change === 'content' && message.idBoard === board.id) {
+                  const updated = await invoke<Document>('loadBoard', { id: board.id });
+                  whiteboard.current?.finishExternal(updated);
+                  setDoc({ ...updated, board });
+                } else {
+                  whiteboard.current?.finishExternal();
+                  setDoc((d) => (d ? { ...d, board } : d));
+                }
+              }
+            } else whiteboard.current?.finishExternal();
+          } finally {
+            unlock();
+          }
+        }
+        window.canvas!.mcpReady(message.id);
+      } catch (e) {
+        whiteboard.current?.finishExternal();
+        unlock();
+        report(String(e));
+        window.canvas!.mcpReady(message.id, String(e));
+      }
+    });
+    window.canvas?.rendererReady();
+    return () => {
+      cleanup?.();
+      unlock();
+    };
   }, []);
   useEffect(() => {
     const before = (e: BeforeUnloadEvent) => {
@@ -319,6 +384,9 @@ export default function App() {
         { label: 'Import board…', icon: <Upload />, action: importBoard },
         null,
         { label: 'Trash', icon: <Trash2 />, action: () => ask({ kind: 'trash' }) },
+        ...(desktop
+          ? [{ label: 'Settings', icon: <Settings />, action: () => ask({ kind: 'settings' }) }]
+          : []),
         { label: 'Keyboard shortcuts', icon: <Keyboard />, action: () => ask({ kind: 'help' }) },
       ],
     });
@@ -364,6 +432,7 @@ export default function App() {
     search: 'Search boards',
     trash: 'Trash',
     help: 'Make yourself at home',
+    settings: 'Settings',
   };
   return (
     <div className="app-shell" data-dock={dockEdge}>
@@ -502,6 +571,12 @@ export default function App() {
           </div>
         )}
       </main>
+      {aiBusy && (
+        <div className="toast" role="status">
+          <LoaderCircle size={15} />
+          Syncing AI changes…
+        </div>
+      )}
       {notice && (
         <div className="toast" role="status">
           <Check size={15} />
@@ -701,6 +776,8 @@ export default function App() {
                     ))}
                 </div>
               </>
+            ) : modal.kind === 'settings' ? (
+              <McpSettings />
             ) : modal.kind === 'trash' ? (
               <div className="trash-list">
                 {library.boards.filter((b) => b.trashed).length ? (
