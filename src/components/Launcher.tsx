@@ -241,22 +241,24 @@ export default function Launcher(p: Props) {
               </button>
             );
           })}
+          <div className="launcher-create">
+            <button
+              className="icon-button create-button"
+              aria-label="Create"
+              title="Create board or folder"
+              onClick={(e) => {
+                const r = e.currentTarget.getBoundingClientRect();
+                p.onCreate(
+                  p.dockEdge === 'right' ? r.left - 232 : r.right + 12,
+                  p.dockEdge === 'top' ? r.bottom + 12 : r.top,
+                );
+              }}
+            >
+              <Plus size={20} />
+            </button>
+          </div>
         </div>
         <div className="launcher-footer">
-          <button
-            className="icon-button create-button"
-            aria-label="Create"
-            title="Create board or folder"
-            onClick={(e) => {
-              const r = e.currentTarget.getBoundingClientRect();
-              p.onCreate(
-                p.dockEdge === 'right' ? r.left - 232 : r.right + 12,
-                p.dockEdge === 'top' ? r.bottom + 12 : r.top,
-              );
-            }}
-          >
-            <Plus size={20} />
-          </button>
           <button
             className="icon-button"
             aria-label="Library options"

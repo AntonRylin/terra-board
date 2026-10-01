@@ -1,5 +1,11 @@
 # Verification — Local Canvas
 
+## Create button at the end of the board list — 2026-10-01
+
+The final requested layout keeps Create as the last item inside the scrolling board/folder list on every dock edge, with no divider. Only library options remain in the footer. This supersedes the initially requested conditional pinning behavior.
+
+Production compilation passed. Packaged docking checks passed in `.local-test/docking-3KRNpG`: Create follows the last item, remains the final scroll item in a 220px viewport, is reachable by scrolling, returns to its position after resizing, and opens its menu on all four edges. Existing docking, folder dragging and cancellation checks also pass. Packaging initially failed on an Electron download HTTP 504; using the matching installed `node_modules/electron/dist` distribution allowed packaging to finish. A final CSS-only pass removed the remaining footer separator too.
+
 ## File drops onto launcher board icons — 2026-10-01
 
 The original icon upload implementation handled drops only inside the icon dialog. The user's screenshot showed a drop onto the sidebar board button, whose existing handler only parsed internal board-move data and silently ignored files. Board buttons in both the launcher and folder sheet now distinguish file drops from internal moves, highlight copy targets and open the destination board's crop dialog with the dropped file.

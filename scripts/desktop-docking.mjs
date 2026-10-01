@@ -164,10 +164,9 @@ try {
     left: { x: shell.x + 22, y: shell.y + shell.height / 2 },
   };
   const begin = async () => {
-    const r = await rect('.launcher-scroll');
-    const horizontal = r.width > r.height;
-    const x = horizontal ? r.x + r.width - 30 : r.x + r.width / 2;
-    const y = horizontal ? r.y + r.height / 2 : r.y + r.height - 30;
+    const r = await rect('.launcher');
+    const x = r.x + 3;
+    const y = r.y + 3;
     await mouse('mousePressed', x, y);
     return { x, y };
   };
@@ -217,6 +216,55 @@ try {
           Math.max(rail.y, workspace.y),
       );
     assert.ok(overlap < 1, 'workspace stays clear of dock');
+    const isHorizontal = side === 'top' || side === 'bottom';
+    const last = await rect('.launcher-scroll > .launch-item:last-of-type');
+    const create = await rect('[aria-label="Create"]');
+    const gap = isHorizontal ? create.x - last.x - last.width : create.y - last.y - last.height;
+    assert.ok(gap >= 0 && gap < 45, `Create follows last item at ${side}`);
+    await send('Emulation.setDeviceMetricsOverride', {
+      width: 220,
+      height: 220,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+    await sleep(150);
+    assert.ok(
+      await read(
+        `(()=>{const e=document.querySelector('.launcher-scroll');return ${isHorizontal} ? e.scrollWidth > e.clientWidth : e.scrollHeight > e.clientHeight})()`,
+      ),
+      'small strip overflows',
+    );
+    const options = await rect('[aria-label="Library options"]');
+    await read(
+      `(()=>{const e=document.querySelector('.launcher-scroll');e.scrollTop=e.scrollHeight;e.scrollLeft=e.scrollWidth})()`,
+    );
+    await sleep(80);
+    const scrolledCreate = await rect('[aria-label="Create"]');
+    assert.ok(
+      scrolledCreate.x >= 0 &&
+        scrolledCreate.y >= 0 &&
+        scrolledCreate.x + scrolledCreate.width <= 220 &&
+        scrolledCreate.y + scrolledCreate.height <= 220,
+      'Create visible at end of scroll',
+    );
+    assert.ok(
+      await read(
+        `!!document.querySelector('.launcher-scroll > .launcher-create:last-child [aria-label="Create"]')`,
+      ),
+      'Create remains last scrolling item',
+    );
+    assert.deepEqual(await rect('[aria-label="Library options"]'), options, 'options stay pinned');
+    await read(
+      `(()=>{const e=document.querySelector('.launcher-scroll');e.scrollTop=0;e.scrollLeft=0})()`,
+    );
+    await send('Emulation.clearDeviceMetricsOverride');
+    await sleep(150);
+    const restored = await rect('[aria-label="Create"]');
+    assert.ok(
+      Math.abs(restored.x - create.x) < 1 && Math.abs(restored.y - create.y) < 1,
+      'Create returns beside items after resize',
+    );
+
     await clickSelector(`[aria-label="Open folder Docking folder"]`);
     await sleep(220);
     const sheet = await rect('.folder-sheet');

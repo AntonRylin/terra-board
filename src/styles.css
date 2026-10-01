@@ -227,11 +227,26 @@ p {
 .launcher-footer {
   width: 100%;
   padding: 13px 0 14px;
-  display: grid;
-  justify-items: center;
-  gap: 8px;
-  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
+}
+.launcher-footer > button {
+  flex-shrink: 0;
+}
+.launcher-create {
+  width: 100%;
+  height: 66px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.app-shell:is([data-dock='top'], [data-dock='bottom']) .launcher-create {
+  width: 66px;
+  height: 100%;
 }
 .create-button {
   width: 38px;
@@ -298,13 +313,11 @@ p {
   flex-shrink: 0;
 }
 .app-shell:is([data-dock='top'], [data-dock='bottom']) .launcher-footer {
-  display: flex;
+  flex-direction: row;
   width: auto;
   height: 100%;
   align-items: center;
   padding: 0 14px 0 13px;
-  border-top: 0;
-  border-left: 1px solid var(--line);
 }
 .app-shell:is([data-dock='top'], [data-dock='bottom']) .launch-item::before {
   width: 14px;

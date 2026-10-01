@@ -102,6 +102,7 @@ Async preview hydration must preserve later movement and undo/redo, reject stale
 ### Window and board panel
 
 - The board panel docks to left, right, top or bottom by dragging empty space. Destination preview, smooth transition, Escape/cancel, orientation-specific scrolling, saved placement, icon reordering and folder drops must coexist.
+- Final Create-button preference: the plus is always the last item inside `.launcher-scroll`, after all boards/folders, and scrolls with them. No divider. Only library options stay in the footer. The user explicitly simplified away the earlier conditional pinned behavior. The docking test begins in empty panel corner space so it does not accidentally hit a board or the Create button.
 - Content meets the window edges. The old full-width white header panel and reserved canvas inset were removed; name, save state and options float over the canvas, with empty header space passing pointer input through.
 - Native Windows chrome/resizing remains. A rounded inner panel is not proof the native window shape changed. A separate non-focusable click-through owned window provides the softer, wider shadow. The first stronger shadow was reduced after feedback (13% and 8% layers). Hide it for maximized/snapped/fullscreen/minimized states; destroy it with its owner or on shadow-renderer failure. Do not reintroduce a heavy halo.
 
@@ -157,3 +158,6 @@ Follow-up correction: the user meant dropping onto the **sidebar board icon**, n
 - The final pending UI changes for this handoff are hidden irrelevant alignment controls and the black/custom palette, alongside this document. Fresh `npm test` during handoff passed **104/104**. Record new verification rather than treating these counts as permanent requirements.
 
 Before committing: inspect the full diff, run appropriate verification and `git -c core.safecrlf=false diff --check`. Stage explicit task files. After committing, audit `git show --stat HEAD`. For a requested push, push the actual branch without force, then compare `git rev-parse HEAD` against `git ls-remote origin refs/heads/codex/local-canvas` and check the worktree. If a concurrent commit appeared, inspect and preserve it; never reset to the hash remembered in this document. Reopen the verified packaged app for the user after a UI feature. Report what changed, verification and any material limitation succinctly.
+
+
+Packaging fallback observed 2026-10-01: Electron Builder hit HTTP 504 while retrieving Electron even though `node_modules/electron/dist` already existed. After the failed process exited, `npm run build` followed by `npx electron-builder --win dir --config.electronDist=node_modules/electron/dist` successfully used the installed Electron distribution. Verify the installed Electron version matches the package version first; this avoids an unnecessary download, not compilation or packaged testing.
