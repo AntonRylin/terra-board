@@ -92,6 +92,7 @@ export class Engine {
   private textures: TextureCache;
   private observer: ResizeObserver;
   private frame = 0;
+  private wheelZoom: { target: number; point: Point; time: number } | null = null;
   private disposed = false;
   private ready = false;
   private rendered = false;
@@ -219,6 +220,7 @@ export class Engine {
   private down = (e: PointerEvent) => {
     if (e.target !== this.app.canvas || e.button > 2 || this.gesture) return;
     e.preventDefault();
+    this.stopCameraAnimation();
     this.host.focus();
     const p = this.point(e),
       w = this.screenPoint(p);
@@ -390,18 +392,47 @@ export class Engine {
     }
   };
   private blur = () => {
+    this.stopCameraAnimation();
     this.space = false;
     this.cancel();
   };
+  // Freeze at the visible camera before a gesture, explicit camera action or save flush.
+  stopCameraAnimation() {
+    this.wheelZoom = null;
+  }
+  private advanceWheelZoom(time: number) {
+    const animation = this.wheelZoom;
+    if (!animation) return;
+    const dt = Math.max(0, Math.min(64, time - animation.time));
+    animation.time = time;
+    const distance = Math.log(animation.target / this.camera.zoom);
+    const next = this.camera.zoom * Math.exp(distance * (1 - Math.exp(-dt / 55)));
+    const done = Math.abs(Math.log(animation.target / next)) < 0.0001;
+    this.camera = zoomAt(this.camera, animation.point, done ? animation.target : next);
+    if (done) this.wheelZoom = null;
+    this.callbacks.camera({ ...this.camera });
+  }
   private wheel = (e: WheelEvent) => {
     if (e.target !== this.app.canvas) return;
     e.preventDefault();
-    this.camera = zoomAt(
-      this.camera,
-      this.point(e),
-      this.camera.zoom * Math.exp(-e.deltaY * 0.004),
-    );
-    this.callbacks.camera({ ...this.camera });
+    if (this.gesture || !Number.isFinite(e.deltaY) || !e.deltaY) return;
+    const units = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? this.host.clientHeight : 1;
+    const delta = Math.max(-100, Math.min(100, e.deltaY * units));
+    const point = this.point(e);
+    const pending = this.wheelZoom;
+    // Reversing the wheel discards remaining motion in the old direction.
+    const base =
+      pending && Math.sign(Math.log(pending.target / this.camera.zoom)) === -Math.sign(delta)
+        ? pending.target
+        : this.camera.zoom;
+    const target = zoomAt(this.camera, point, base * Math.exp(-delta * 0.001)).zoom;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      this.stopCameraAnimation();
+      this.camera = zoomAt(this.camera, point, target);
+      this.callbacks.camera({ ...this.camera });
+    } else {
+      this.wheelZoom = { target, point, time: pending?.time ?? performance.now() };
+    }
     this.invalidate();
   };
   private keyDown = (e: KeyboardEvent) => {
@@ -457,6 +488,7 @@ export class Engine {
     this.updateCursor();
   }
   setEditing(id: string | null) {
+    this.stopCameraAnimation();
     this.editingId = id;
     if (!id) this.editingPreview = null;
     this.invalidate();
@@ -641,6 +673,7 @@ export class Engine {
     return z;
   }
   zoom(factor: number) {
+    this.stopCameraAnimation();
     this.camera = zoomAt(
       this.camera,
       { x: this.host.clientWidth / 2, y: this.host.clientHeight / 2 },
@@ -650,6 +683,7 @@ export class Engine {
     this.invalidate();
   }
   fit() {
+    this.stopCameraAnimation();
     const b = boundsOf(this.all);
     if (!b) {
       this.camera = { x: 0, y: 0, zoom: 1 };
@@ -675,9 +709,11 @@ export class Engine {
   }
   invalidate() {
     if (this.disposed || this.frame) return;
-    this.frame = requestAnimationFrame(() => {
+    this.frame = requestAnimationFrame((time) => {
       this.frame = 0;
+      this.advanceWheelZoom(time);
       if (this.ready) this.draw();
+      if (this.wheelZoom) this.invalidate();
     });
   }
   private draw() {
@@ -1142,6 +1178,7 @@ export class Engine {
     }
   }
   destroy() {
+    this.stopCameraAnimation();
     this.disposed = true;
     cancelAnimationFrame(this.frame);
     this.observer.disconnect();

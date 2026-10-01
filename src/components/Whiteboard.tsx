@@ -511,6 +511,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   }
   useImperativeHandle(ref, () => ({
     flush: async () => {
+      engine.current?.stopCameraAnimation();
       if (editing) finishEdit();
       if (cropSession.current) finishCrop();
       await Promise.all([...imports.current]);

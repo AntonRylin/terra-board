@@ -516,7 +516,7 @@ try {
   assert.ok(frameEditor.y + frameEditor.height < host.y + 70, 'name editor is above frame');
   assert.ok(Math.abs(frameEditor.x - (host.x + 390)) < 1, 'name starts at frame left edge');
   assert.equal(
-    await read(`document.querySelector('[aria-label="Center vertically"]').disabled`),
+    await read(`!document.querySelector('[aria-label="Center vertically"]')`),
     true,
   );
   await send('Input.insertText', { text: ' renamed' });
@@ -662,6 +662,9 @@ try {
   await mouse('mousePressed', panFrom.x + 20, panFrom.y - 30, 'right');
   await mouse('mouseMoved', panFrom.x, panFrom.y, 'right');
   await mouse('mouseReleased', panFrom.x, panFrom.y, 'right');
+  await read(
+    `(()=>{window.zoomFrames=[];const start=performance.now();function sample(){const e=document.querySelector('.canvas-surface');window.zoomFrames.push({time:performance.now()-start,zoom:parseFloat(e.style.backgroundSize)/24});if(performance.now()-start<650)requestAnimationFrame(sample)}requestAnimationFrame(sample)})()`,
+  );
   await send('Input.dispatchMouseEvent', {
     type: 'mouseWheel',
     x: panFrom.x,
@@ -671,8 +674,18 @@ try {
   });
   const zoomedCamera = await until(async () => {
     const c = (await documentState()).camera;
-    return c.zoom > 1.2 ? c : null;
+    return c.zoom > 1.07 ? c : null;
   }, 'zoom saved');
+  const zoomFrames = await read('window.zoomFrames');
+  const intermediate = zoomFrames.filter((f) => f.zoom > 1.001 && f.zoom < Math.exp(0.08) - 0.001);
+  assert.ok(
+    new Set(intermediate.map((f) => f.zoom.toFixed(4))).size >= 3,
+    'wheel must animate through intermediate scales',
+  );
+  assert.ok(Math.abs(zoomedCamera.zoom - Math.exp(0.08)) < 0.0001, 'gentler wheel endpoint');
+  assert.ok(Math.abs(650 * zoomedCamera.zoom + zoomedCamera.x - 650) < 0.001, 'wheel anchor x');
+  assert.ok(Math.abs(560 * zoomedCamera.zoom + zoomedCamera.y - 560) < 0.001, 'wheel anchor y');
+  writeFileSync(join(root, 'wheel-animation.json'), JSON.stringify(zoomFrames, null, 2));
   await checkToolbar(movedText, zoomedCamera);
   await send('Input.dispatchMouseEvent', {
     type: 'mouseWheel',
@@ -811,13 +824,14 @@ try {
   await key('a', 'KeyA', 2);
   await send('Input.insertText', { text: 'Tall editable text across the board\n'.repeat(30) });
   await sleep(100);
-  await send('Input.dispatchMouseEvent', {
-    type: 'mouseWheel',
-    x: host.x + 30,
-    y: host.y + 300,
-    deltaX: 0,
-    deltaY: -300,
-  });
+  for (let i = 0; i < 12; i++)
+    await send('Input.dispatchMouseEvent', {
+      type: 'mouseWheel',
+      x: host.x + 30,
+      y: host.y + 300,
+      deltaX: 0,
+      deltaY: -100,
+    });
   await until(async () => (await documentState()).camera.zoom > 3, 'tall editor zoom');
   await sleep(100);
   assert.equal(
@@ -834,13 +848,14 @@ try {
     'tall editor toolbar cannot be clicked',
   );
   await key('Escape', 'Escape');
-  await send('Input.dispatchMouseEvent', {
-    type: 'mouseWheel',
-    x: host.x + 30,
-    y: host.y + 300,
-    deltaX: 0,
-    deltaY: 300,
-  });
+  for (let i = 0; i < 12; i++)
+    await send('Input.dispatchMouseEvent', {
+      type: 'mouseWheel',
+      x: host.x + 30,
+      y: host.y + 300,
+      deltaX: 0,
+      deltaY: 100,
+    });
   await until(
     async () => Math.abs((await documentState()).camera.zoom - 1) < 0.001,
     'tall editor zoom restored',

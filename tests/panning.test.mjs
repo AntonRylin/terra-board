@@ -199,6 +199,16 @@ function fixture(tool = 'select') {
     );
   };
   // Resolve local imports through fileURLToPath, including non-ASCII checkout paths.
+  let now = 0,
+    frameId = 0;
+  const frames = new Map();
+  const motion = { matches: false };
+  const tick = (ms = 16) => {
+    now += ms;
+    const pending = [...frames.values()];
+    frames.clear();
+    for (const callback of pending) callback(now);
+  };
   const context = {
     exports,
     require: localRequire,
@@ -206,11 +216,14 @@ function fixture(tool = 'select') {
       observe() {}
       disconnect() {}
     },
-    window: { addEventListener() {}, removeEventListener() {} },
+    window: { addEventListener() {}, removeEventListener() {}, matchMedia: () => motion },
     devicePixelRatio: 1,
-    requestAnimationFrame: () => 1,
-    cancelAnimationFrame() {},
-    performance,
+    requestAnimationFrame: (cb) => {
+      frames.set(++frameId, cb);
+      return frameId;
+    },
+    cancelAnimationFrame: (id) => frames.delete(id),
+    performance: { now: () => now },
     crypto,
   };
   vm.runInNewContext(code, context);
@@ -257,7 +270,7 @@ function fixture(tool = 'select') {
     pointerId: 1,
     preventDefault() {},
   });
-  return { engine, host, menus, saves, event, activations, edits };
+  return { engine, host, menus, saves, event, activations, edits, tick, motion };
 }
 
 test('double click retargeted to the pointer-capturing surface opens the object editor', () => {
@@ -494,17 +507,24 @@ test('wheel zooms in and out around the cursor without requiring a modifier', ()
     });
     // Local cursor (300, 200) is over world point (140, 85) at the initial camera.
     f.engine.wheel(wheel(-100));
+    assert.equal(f.engine.camera.zoom, 2, 'wheel does not jump before animation');
+    f.tick();
+    const firstFrame = f.engine.camera.zoom;
+    for (let i = 0; i < 40; i++) f.tick();
     const zoomedIn = { ...f.engine.camera };
+    assert.ok(firstFrame > 2 && firstFrame < zoomedIn.zoom, 'zoom eases over multiple frames');
+    assert.ok(Math.abs(zoomedIn.zoom / 2 - Math.exp(0.1)) < 1e-9, 'one notch is about ten percent');
     assert.ok(zoomedIn.zoom > 2, 'wheel up must zoom in');
     f.engine.wheel(wheel(100));
+    for (let i = 0; i < 40; i++) f.tick();
     assert.ok(f.engine.camera.zoom < zoomedIn.zoom, 'wheel down must zoom out');
     for (const camera of [zoomedIn, f.engine.camera]) {
       assert.ok(Math.abs(140 * camera.zoom + camera.x - 300) < 1e-9);
       assert.ok(Math.abs(85 * camera.zoom + camera.y - 200) < 1e-9);
     }
     assert.equal(prevented, 2);
-    assert.equal(f.saves.length, 2);
-    assert.deepEqual(f.saves[1], { ...f.engine.camera });
+    assert.ok(f.saves.length > 2);
+    assert.deepEqual(f.saves.at(-1), { ...f.engine.camera });
   }
 });
 
@@ -657,3 +677,62 @@ for (const corner of ['nw', 'ne', 'sw', 'se']) {
     assert.equal(f.engine.objects.get(o.id).fontSize, 36);
   });
 }
+
+test('wheel animation reverses promptly, normalizes lines and respects reduced motion', () => {
+  const f = fixture();
+  const wheel = (deltaY, deltaMode = 0) => ({ ...f.event(300, 200), deltaY, deltaMode });
+  f.engine.wheel(wheel(-100));
+  f.tick();
+  const partial = f.engine.camera.zoom;
+  f.engine.wheel(wheel(100));
+  f.tick();
+  assert.ok(f.engine.camera.zoom < partial, 'reverse must not continue zooming in');
+  f.engine.stopCameraAnimation();
+  f.motion.matches = true;
+  const start = f.engine.camera.zoom;
+  f.engine.wheel(wheel(-3, 1));
+  assert.ok(Math.abs(f.engine.camera.zoom / start - Math.exp(0.048)) < 1e-9);
+  const immediate = f.engine.camera.zoom;
+  f.tick();
+  assert.equal(f.engine.camera.zoom, immediate);
+});
+
+test('wheel animation stops for pan, fit, flush and disposal and does not alter active drags', () => {
+  for (const stop of ['pan', 'fit', 'flush', 'destroy']) {
+    const f = fixture();
+    f.engine.wheel({ ...f.event(300, 200), deltaY: -100 });
+    f.tick();
+    if (stop === 'pan') f.engine.down(f.event(300, 200, 2));
+    if (stop === 'fit') f.engine.fit();
+    if (stop === 'flush') f.engine.stopCameraAnimation();
+    if (stop === 'destroy') f.engine.destroy();
+    const c = { ...f.engine.camera };
+    for (let i = 0; i < 40; i++) f.tick();
+    assert.deepEqual({ ...f.engine.camera }, c, stop);
+    if (stop === 'pan') {
+      f.engine.wheel({ ...f.event(300, 200), deltaY: -100 });
+      f.tick();
+      assert.deepEqual({ ...f.engine.camera }, c, 'ignore wheel during drag');
+    }
+  }
+});
+
+test('wheel bursts accumulate without overshoot and clamp at zoom limits', () => {
+  const f = fixture();
+  const wheel = (deltaY) => ({ ...f.event(300, 200), deltaY });
+  for (let i = 0; i < 5; i++) f.engine.wheel(wheel(-100));
+  let previous = 2;
+  for (let i = 0; i < 40; i++) {
+    f.tick();
+    assert.ok(f.engine.camera.zoom >= previous);
+    assert.ok(f.engine.camera.zoom <= 2 * Math.exp(0.5) + 1e-9);
+    previous = f.engine.camera.zoom;
+  }
+  assert.ok(Math.abs(f.engine.camera.zoom - 2 * Math.exp(0.5)) < 1e-9);
+  for (let i = 0; i < 100; i++) f.engine.wheel(wheel(-10000));
+  for (let i = 0; i < 60; i++) f.tick();
+  assert.equal(f.engine.camera.zoom, 8);
+  for (let i = 0; i < 100; i++) f.engine.wheel(wheel(10000));
+  for (let i = 0; i < 60; i++) f.tick();
+  assert.equal(f.engine.camera.zoom, 0.025);
+});

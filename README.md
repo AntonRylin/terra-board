@@ -28,6 +28,8 @@ Hold the **right mouse button and drag** to move around the board. A plain right
 
 Right-click board and folder icons for their actions. The three-dot menus expose board operations, canvas export, Trash, and the keyboard reference.
 
+Mouse-wheel zoom eases smoothly around the cursor with smaller steps (about 10% for a typical 100-pixel wheel event). Reversing direction responds immediately; starting a drag stops the remaining zoom motion. Reduced-motion settings keep the gentler steps without animation.
+
 Drop an image file directly onto a board icon in the sidebar or inside a folder to open its crop editor. In **Change icon**, you can also choose **Upload image** or drop an image into the dialog. Drag the crop preview to position the image and use **Zoom** to crop closer; arrow keys also reposition it. **Save** applies the square crop, while **Cancel** keeps the previous icon. PNG, JPEG, WebP, GIF, AVIF, TIFF and ICO use the local image pipeline (animated files use a static image). Uploaded icons are included when duplicating or exporting boards. Select a built-in symbol to switch back.
 
 Drag any empty space in the board panel toward the left, right, top or bottom window edge. A translucent preview marks the destination; release to glide into place. Top and bottom placements use a horizontal strip. Escape or releasing away from an edge returns the panel to its original position. Placement is remembered on this computer. Board icons still drag into folders or into a new order; the mouse wheel scrolls a horizontal strip.

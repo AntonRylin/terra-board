@@ -97,6 +97,8 @@ SQLite uses WAL and FULL synchronization; successful acknowledgment is what the 
 
 Async preview hydration must preserve later movement and undo/redo, reject stale board responses, and save committed geometry if metadata arrives during a gesture that is cancelled. Tests for these cases exist. Capturing an object before an async wait and later overwriting it loses user edits.
 
+Wheel zoom now uses the engine's existing RAF draw loop: logarithmic easing with a 55ms time constant, a target accumulated from normalized/clamped wheel deltas, and coefficient 0.001 instead of 0.004. A 100px event changes scale about 10.5% instead of 49%. Keep the previous frame timestamp across event bursts, or high-frequency wheels can starve interpolation. Reverse direction discards the old pending target. `zoomAt` preserves the cursor anchor each frame. `stopCameraAnimation` freezes the visible camera before pointer gestures, editing, explicit fit/zoom, blur, disposal and Whiteboard save/board-switch flush; wheel events during active gestures do not alter geometry. Reduced motion applies the smaller step immediately. Existing high-zoom desktop tests now send twelve smaller events instead of relying on a single giant wheel jump.
+
 ## Product behavior established in this chat
 
 ### Window and board panel

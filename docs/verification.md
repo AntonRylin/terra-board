@@ -1,5 +1,11 @@
 # Verification — Local Canvas
 
+## Smooth, gentler mouse-wheel zoom — 2026-10-01
+
+Wheel deltas now target approximately 10.5% per normalized 100px event rather than 49%, with pixel/line/page normalization and a per-event cap. The existing render loop eases logarithmic scale toward the target and anchors each frame to the cursor. Repeated events accumulate; reversing direction drops old pending motion. Pointer gestures, editing, explicit zoom/fit, blur, destruction and save flush stop animation at the visible camera. Active gestures ignore wheel zoom. Reduced motion applies the smaller step immediately.
+
+All 109 Node tests and Windows packaging pass. The packaged interaction suite passed in `.local-test/desktop-input-sbZjrx` with no renderer exceptions, including native wheel input, multiple distinct intermediate rendered scales, the final zoom ratio, cursor anchoring, toolbar placement, high-zoom editing and the existing move/resize/rotate/crop/close-save coverage. `wheel-animation.json` records sampled scales. The fixture's old disabled-frame-alignment assertion was updated to expect the previously requested hidden controls. Unit cases additionally verify reversal, accumulated bursts, zoom bounds, line units, reduced motion and cancellation without camera changes during a drag.
+
 ## Create button at the end of the board list — 2026-10-01
 
 The final requested layout keeps Create as the last item inside the scrolling board/folder list on every dock edge, with no divider. Only library options remain in the footer. This supersedes the initially requested conditional pinning behavior.
