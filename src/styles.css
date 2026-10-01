@@ -144,6 +144,7 @@ p {
   position: relative;
 }
 [data-reorder-group] > [data-reorder-id] {
+  touch-action: none;
   transition: opacity 140ms;
 }
 [data-reorder-group]:has(.reorder-source) > [data-reorder-id] {
@@ -152,7 +153,33 @@ p {
     opacity 140ms;
 }
 .reorder-source {
-  opacity: 0.3;
+  visibility: hidden;
+}
+body.reordering,
+body.reordering * {
+  cursor: grabbing !important;
+  user-select: none !important;
+}
+.app-icon[data-reorder-avatar] {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  border: 0;
+  visibility: visible;
+  opacity: 1;
+  overflow: visible;
+  pointer-events: none;
+  transform: none !important;
+  transition: none;
+  box-shadow: 0 8px 22px #24354f26;
+}
+/* Popovers get default padding; only the folder mosaic has its own. */
+.app-icon[data-reorder-avatar]:not(.folder-mosaic) {
+  padding: 0;
+}
+.app-icon[data-reorder-avatar]::backdrop {
+  background: transparent;
+  pointer-events: none;
 }
 @media (prefers-reduced-motion: reduce) {
   [data-reorder-group]:has(.reorder-source) > [data-reorder-id] {

@@ -305,6 +305,8 @@ try {
     'original name saved and panel refreshed',
   );
   const openIcon = async () => {
+    // A closing dialog's backdrop would otherwise receive the right-click.
+    await until(() => read(`!document.querySelector('.modal-backdrop')`), 'previous dialog closed');
     const r = await rect('[aria-label="Open board Desktop input verification"]');
     await click(r.x + r.width / 2, r.y + r.height / 2, 'right');
     await read(

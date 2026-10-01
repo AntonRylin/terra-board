@@ -156,24 +156,29 @@ try {
       );
   });
   await send('Runtime.enable');
-  await read(
-    `window.dragLog=[];for(const name of ['dragstart','dragover','drop','dragend']) document.addEventListener(name,e=>dragLog.push({name,target:e.target.closest('[data-reorder-id]')?.dataset.reorderId,source:document.querySelector('.reorder-source')?.dataset.reorderId,time:performance.now()}),true)`,
-  );
-  await until(
-    () => read(`!!document.querySelector('canvas')&&!document.querySelector('.canvas-loading')`),
-    'canvas ready',
-  );
-  let dragData;
-  socket.addEventListener('message', (event) => {
-    const message = JSON.parse(event.data);
-    if (message.method === 'Input.dragIntercepted') dragData = message.params.data;
-  });
-  await send('Input.setInterceptDrags', { enabled: true });
+  const ready = async () => {
+    await until(
+      () => read(`!!document.querySelector('canvas')&&!document.querySelector('.canvas-loading')`),
+      'canvas ready',
+    );
+    // Sorting must never enter the browser's own drag mode (ghost image, no-drop cursor).
+    await read(
+      `window.dragLog=[];for(const name of ['dragstart','dragover','drop','dragend']) document.addEventListener(name,e=>dragLog.push({name,target:e.target.closest?.('[data-reorder-id]')?.dataset.reorderId,time:performance.now()}),true)`,
+    );
+  };
+  await ready();
   const selector = (id) => `[data-reorder-id="${id}"]`;
   const center = (r) => ({ x: r.x + r.width / 2, y: r.y + r.height / 2 });
+  const lifted = '[data-reorder-avatar]:popover-open';
+  const icons = () => read(`document.querySelectorAll('.app-icon').length`);
+  const shot = async (name) =>
+    writeFileSync(
+      join(root, name),
+      Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64'),
+    );
+  // Hold the tile by the middle of its icon and carry it to a point.
   const begin = async (id, to) => {
-    dragData = null;
-    const from = center(await rect(selector(id)));
+    const from = center(await rect(selector(id) + ' .app-icon'));
     await mouse('mousePressed', from.x, from.y);
     for (let i = 1; i <= 10; i++)
       await mouse(
@@ -181,42 +186,80 @@ try {
         from.x + ((to.x - from.x) * i) / 10,
         from.y + ((to.y - from.y) * i) / 10,
       );
-    await until(() => dragData, 'native drag starts');
-    for (const type of ['dragEnter', 'dragOver'])
-      await send('Input.dispatchDragEvent', { type, ...to, data: dragData });
+    await until(() => read(`!!document.querySelector(${JSON.stringify(lifted)})`), 'tile lifts');
   };
+  const settled = () =>
+    until(
+      () => read(`!document.querySelector('[data-reorder-avatar],.reorder-source')`),
+      'tile settles',
+    );
   const finish = async (to) => {
-    await send('Input.dispatchDragEvent', { type: 'dragOver', ...to, data: dragData });
-    await send('Input.dispatchDragEvent', { type: 'drop', ...to, data: dragData });
     await mouse('mouseReleased', to.x, to.y);
-    await sleep(350);
+    await settled();
+  };
+  const held = async (id, at, label) => {
+    const avatar = center(await rect(lifted));
+    assert.ok(
+      Math.abs(avatar.x - at.x) < 2 && Math.abs(avatar.y - at.y) < 2,
+      label + ': the tile itself stays under the pointer',
+    );
+    assert.equal(
+      await read(
+        `document.querySelector(${JSON.stringify(lifted)}).closest('[data-reorder-id]').dataset.reorderId`,
+      ),
+      id,
+      label + ': the held tile is the real one',
+    );
+    assert.equal(
+      await read(`getComputedStyle(document.querySelector('.reorder-source')).visibility`),
+      'hidden',
+      label + ': nothing stays behind in the old slot',
+    );
+    assert.equal(
+      await read(`getComputedStyle(document.body).cursor`),
+      'grabbing',
+      label + ': no forbidden cursor',
+    );
   };
   const rootOrder = () =>
     read(
       `window.canvas.invoke('library').then(l=>[...l.boards.filter(b=>!b.folderId&&!b.trashed),...l.folders].sort((a,b)=>a.position-b.position).map(i=>i.id))`,
     );
+  const stripOrder = () =>
+    read(
+      `[...document.querySelectorAll('[data-reorder-group="root"] > [data-reorder-id]')].map(e=>e.dataset.reorderId)`,
+    );
+  const folderOf = (id) =>
+    read(
+      `window.canvas.invoke('library').then(l=>l.boards.find(b=>b.id===${JSON.stringify(id)}).folderId)`,
+    );
   const expected = [board.id, folder.id, ...extra.map((b) => b.id), secondFolder.id];
   assert.deepEqual(await rootOrder(), expected);
+  assert.equal(
+    await read(`document.querySelector('[data-reorder-id]').draggable`),
+    false,
+    'internal sorting must not invoke browser ghost/cursor drag mode',
+  );
+  const iconCount = await icons();
   const destination = center(await rect(selector(extra[1].id)));
   const original = await rect(selector(folder.id));
   await begin(board.id, destination);
   assert.equal(
     await read(
-      `document.querySelector(${JSON.stringify(selector(folder.id))}).getAnimations().some(a=>a.transitionProperty==='transform')`,
+      `[...document.querySelectorAll('[data-reorder-id]')].some(e=>e.getAnimations().some(a=>a.transitionProperty==='transform'))`,
     ),
     true,
     'siblings animate during held drag',
   );
+  await held(board.id, destination, 'vertical');
+  assert.equal(await icons(), iconCount, 'no duplicate ghost tile');
   assert.deepEqual(await rootOrder(), expected, 'hover does not persist order');
   await sleep(250);
   assert.ok(
     (await rect(selector(folder.id))).y < original.y - 30,
     'folder slides into earlier slot',
   );
-  writeFileSync(
-    join(root, 'reorder-preview.png'),
-    Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64'),
-  );
+  await shot('reorder-preview.png');
   await finish(destination);
   assert.deepEqual(await rootOrder(), [
     folder.id,
@@ -226,6 +269,14 @@ try {
     extra[2].id,
     secondFolder.id,
   ]);
+  assert.deepEqual(await stripOrder(), await rootOrder(), 'strip shows the saved order');
+  assert.equal(
+    await read(
+      `document.querySelector(${JSON.stringify(selector(board.id) + ' .app-icon')}).getAttribute('style')`,
+    ),
+    null,
+    'dropped tile returns to normal layout',
+  );
   const first = center(await rect(selector(folder.id)));
   await begin(secondFolder.id, first);
   await finish(first);
@@ -234,33 +285,52 @@ try {
     [secondFolder.id, folder.id],
     'folders reorder alongside boards',
   );
-  // A cancelled drag must restore the saved layout.
+  assert.equal(
+    await read(`!!document.querySelector('.folder-sheet')`),
+    false,
+    'finishing a drag is not a click',
+  );
+  // Escape during a held drag must restore the saved layout.
   const saved = await rootOrder();
   await begin(extra[2].id, first);
-  await send('Input.dispatchDragEvent', { type: 'dragCancel', ...first, data: dragData });
+  await key('Escape', 'Escape');
   await mouse('mouseReleased', first.x, first.y);
-  await sleep(250);
+  await settled();
   assert.deepEqual(await rootOrder(), saved);
   assert.equal(
-    await read(`document.querySelectorAll('.reorder-source').length`),
-    0,
-    'cancel clears drag styling',
+    await read(`document.querySelector('.launch-item.active').dataset.reorderId`),
+    board.id,
+    'cancelled drag does not open the board',
   );
+  // The tile is not clipped by the panel, and releasing far away changes nothing.
+  const shell = await rect('.app-shell');
+  const away = { x: shell.x + shell.width / 2, y: shell.y + shell.height / 2 };
+  await begin(extra[0].id, away);
+  await held(extra[0].id, away, 'outside the panel');
+  await shot('reorder-outside.png');
+  await finish(away);
+  assert.deepEqual(await rootOrder(), saved, 'release away from the panel cancels');
   // Keep the existing center-to-folder drop behavior.
   const into = center(await rect(selector(folder.id)));
   await begin(extra[2].id, into);
-  await finish(into);
   assert.equal(
     await read(
-      `window.canvas.invoke('library').then(l=>l.boards.find(b=>b.id==='${extra[2].id}').folderId)`,
+      `document.querySelector(${JSON.stringify(selector(folder.id))}).classList.contains('drop-target')`,
     ),
-    folder.id,
+    true,
+    'folder highlights as the destination',
   );
+  await finish(into);
+  assert.equal(await folderOf(extra[2].id), folder.id);
+  // A plain click still opens the folder.
   await clickSelector('[aria-label="Open folder Docking folder"]');
+  await until(() => rect('.folder-sheet'), 'folder opens on click');
   await sleep(250);
   const insideTarget = center(await rect(selector(inner[4].id)));
   await begin(inner[0].id, insideTarget);
+  await held(inner[0].id, insideTarget, 'folder grid');
   await sleep(250);
+  await shot('reorder-folder.png');
   await finish(insideTarget);
   const inside = await read(
     `window.canvas.invoke('library').then(l=>l.boards.filter(b=>b.folderId==='${folder.id}').sort((a,b)=>a.position-b.position).map(b=>b.id))`,
@@ -270,7 +340,13 @@ try {
     [inner[1].id, inner[2].id, inner[3].id, inner[4].id, inner[0].id],
     'folder grid reorders',
   );
-  await send('Input.setInterceptDrags', { enabled: false });
+  // Carry a board out of the open folder back onto the strip.
+  const out = center(await rect(selector(extra[1].id)));
+  await begin(inner[5].id, out);
+  await finish(out);
+  assert.equal(await folderOf(inner[5].id), null, 'board leaves the folder');
+  assert.ok((await rootOrder()).includes(inner[5].id), 'board lands on the strip');
+  assert.deepEqual(await read('dragLog'), [], 'no browser drag events');
   await read(`localStorage.setItem('terra-board.launcher-edge','top')`);
   await send('Page.reload');
   await until(
@@ -280,13 +356,18 @@ try {
       ),
     'horizontal launcher',
   );
+  await ready();
   await sleep(300);
-  await send('Input.setInterceptDrags', { enabled: true });
-  const horizontalTarget = center(await rect(selector(board.id)));
+  const horizontalTarget = center(
+    await rect('[data-reorder-group="root"] > [data-reorder-id]:last-of-type'),
+  );
   await begin(secondFolder.id, horizontalTarget);
+  await held(secondFolder.id, horizontalTarget, 'horizontal');
   await sleep(250);
+  await shot('reorder-horizontal.png');
   await finish(horizontalTarget);
   assert.equal((await rootOrder()).at(-1), secondFolder.id, 'horizontal reorder persists');
+  assert.deepEqual(await read('dragLog'), [], 'no browser drag events');
   assert.deepEqual(errors, []);
   console.log(
     JSON.stringify({
@@ -305,7 +386,7 @@ try {
   console.error(
     JSON.stringify(
       await read(
-        '({dragLog,errors:[...document.querySelectorAll(".error-banner")].map(e=>e.textContent)})',
+        '({dragLog:window.dragLog,errors:[...document.querySelectorAll(".error-banner")].map(e=>e.textContent)})',
       ),
     ),
   );

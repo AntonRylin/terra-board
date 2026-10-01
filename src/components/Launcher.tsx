@@ -113,19 +113,14 @@ export default function Launcher(p: Props) {
       strip.removeEventListener('scroll', place, true);
     };
   }, [folder?.id, p.dockEdge, horizontal]);
-  const drag = (e: React.DragEvent<HTMLElement>, id: string, kind = 'board') => {
-    reorder.start(e, id, kind);
-    e.dataTransfer.setData('application/x-terra-board', JSON.stringify({ id, kind }));
-    e.dataTransfer.effectAllowed = 'move';
-  };
+  // Boards and folders sort by pointer; HTML drops here are only image files.
   const dropIcon = (e: React.DragEvent, board: Board) => {
+    e.currentTarget.classList.remove('drop-target');
     const file = e.dataTransfer.files[0];
-    if (!file) return false;
+    if (!file) return;
     e.preventDefault();
     e.stopPropagation();
-    e.currentTarget.classList.remove('drop-target');
     p.onIconDrop(board, file);
-    return true;
   };
   const iconDragOver = (e: React.DragEvent) => {
     if (!e.dataTransfer.types.includes('Files')) return;
@@ -134,20 +129,9 @@ export default function Launcher(p: Props) {
     e.dataTransfer.dropEffect = 'copy';
     e.currentTarget.classList.add('drop-target');
   };
-  const drop = (
-    e: React.DragEvent,
-    fid: string | null,
-    target?: { kind: string; position: number },
-  ) => {
+  const ignoreDrop = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    e.currentTarget.classList.remove('drop-target');
-    try {
-      const data = JSON.parse(e.dataTransfer.getData('application/x-terra-board'));
-      if (data.kind === 'board')
-        p.onMove(data.id, fid, target?.kind === 'board' ? target.position - 0.5 : undefined);
-      else if (data.kind === 'folder' && target) p.onReorderFolder(data.id, target.position - 0.5);
-    } catch {}
   };
   return (
     <>
@@ -183,18 +167,8 @@ export default function Launcher(p: Props) {
             if (horizontal && Math.abs(e.deltaY) > Math.abs(e.deltaX))
               e.currentTarget.scrollLeft += e.deltaY;
           }}
-          onDragOver={(e) => {
-            e.preventDefault();
-            reorder.over(e);
-          }}
-          onDrop={(e) => {
-            if (!reorder.drop(e)) {
-              const folderTarget = (e.target as HTMLElement).closest<HTMLElement>(
-                '[data-reorder-kind="folder"]',
-              );
-              drop(e, folderTarget?.dataset.reorderId || null);
-            }
-          }}
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={ignoreDrop}
         >
           {items.map(({ kind, item }) => {
             const isFolder = kind === 'folder',
@@ -222,19 +196,16 @@ export default function Launcher(p: Props) {
                 aria-label={(isFolder ? 'Open folder ' : 'Open board ') + item.name}
                 aria-expanded={isFolder ? p.opened === item.id : undefined}
                 aria-pressed={isFolder ? undefined : active}
-                draggable
-                onDragStart={(e) => drag(e, item.id, kind)}
-                onDragEnd={reorder.end}
+                draggable={false}
+                onDragStart={(e) => e.preventDefault()}
+                onPointerDown={(e) => reorder.start(e, item.id, kind)}
                 onDragOver={(e) => {
                   e.preventDefault();
                   if (!isFolder) iconDragOver(e);
                 }}
                 onDragLeave={(e) => e.currentTarget.classList.remove('drop-target')}
                 onDrop={(e) => {
-                  if (!isFolder && dropIcon(e, b)) return;
-                  // Internal moves are handled by the strip's live preview.
-                  if (!reorder.source)
-                    drop(e, isFolder ? item.id : null, { kind, position: item.position });
+                  if (!isFolder) dropIcon(e, b);
                 }}
                 onClick={() =>
                   isFolder ? p.onFolder(p.opened === item.id ? null : item.id) : p.onOpen(item.id)
@@ -349,13 +320,8 @@ export default function Launcher(p: Props) {
             <div
               className="folder-grid"
               data-reorder-group={folder.id}
-              onDragOver={(e) => {
-                e.preventDefault();
-                reorder.over(e);
-              }}
-              onDrop={(e) => {
-                if (!reorder.drop(e)) drop(e, folder.id);
-              }}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={ignoreDrop}
             >
               {boards
                 .filter((b) => b.folderId === folder.id)
@@ -369,14 +335,12 @@ export default function Launcher(p: Props) {
                     data-order={b.position}
                     style={reorder.style(b.id)}
                     title={b.name}
-                    draggable
-                    onDragStart={(e) => drag(e, b.id)}
-                    onDragEnd={reorder.end}
+                    draggable={false}
+                    onDragStart={(e) => e.preventDefault()}
+                    onPointerDown={(e) => reorder.start(e, b.id, 'board')}
                     onDragOver={iconDragOver}
                     onDragLeave={(e) => e.currentTarget.classList.remove('drop-target')}
-                    onDrop={(e) => {
-                      dropIcon(e, b);
-                    }}
+                    onDrop={(e) => dropIcon(e, b)}
                     onContextMenu={(e) => {
                       e.preventDefault();
                       p.onBoardMenu(b, e.clientX, e.clientY);

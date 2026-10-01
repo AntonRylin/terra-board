@@ -337,33 +337,25 @@ try {
     'reduced motion skips flight',
   );
   assert.equal(await read(`document.querySelector('.app-shell').dataset.dock`), 'right');
-  // Board icons retain their own HTML drag-and-drop gesture.
-  let dragData;
-  socket.addEventListener('message', (event) => {
-    const message = JSON.parse(event.data);
-    if (message.method === 'Input.dragIntercepted') dragData = message.params.data;
-  });
-  await send('Input.setInterceptDrags', { enabled: true });
+  // Board icons keep their own pointer gesture; holding one never moves the panel.
   const icon = await rect(`[data-item="${board.id}"]`);
   const folderIcon = await rect(`[data-item="${folder.id}"]`);
+  const folderCenter = {
+    x: folderIcon.x + folderIcon.width / 2,
+    y: folderIcon.y + folderIcon.height / 2,
+  };
   await mouse('mousePressed', icon.x + icon.width / 2, icon.y + icon.height / 2);
-  await move(
-    { x: icon.x + icon.width / 2, y: icon.y + icon.height / 2 },
-    { x: folderIcon.x + folderIcon.width / 2, y: folderIcon.y + folderIcon.height / 2 },
+  await move({ x: icon.x + icon.width / 2, y: icon.y + icon.height / 2 }, folderCenter);
+  await until(
+    () => read(`!!document.querySelector('[data-reorder-avatar]:popover-open')`),
+    'board icon lifts',
   );
-  await until(() => dragData, 'native board drag');
   assert.equal(
     await read(`!!document.querySelector('.launcher.is-dragging')`),
     false,
     'icon drag does not move panel',
   );
-  for (const type of ['dragEnter', 'dragOver', 'drop'])
-    await send('Input.dispatchDragEvent', {
-      type,
-      x: folderIcon.x + folderIcon.width / 2,
-      y: folderIcon.y + folderIcon.height / 2,
-      data: dragData,
-    });
+  await mouse('mouseReleased', folderCenter.x, folderCenter.y);
   await until(
     () =>
       read(
@@ -371,8 +363,10 @@ try {
       ),
     'board moved into folder',
   );
-  await send('Input.setInterceptDrags', { enabled: false });
-  await mouse('mouseReleased', folderIcon.x, folderIcon.y);
+  await until(
+    () => read(`!document.querySelector('[data-reorder-avatar],.reorder-source')`),
+    'board icon settles',
+  );
   const cancelFrom = await begin();
   await move(cancelFrom, points.top);
   await read(
@@ -405,7 +399,7 @@ try {
     JSON.stringify({
       passed: true,
       checks:
-        'Four edges, live previews, animation, workspace clearance, folders, menus, Escape, invalid drop, persistence, reduced motion, native board-to-folder drag, pointer cancellation, small window',
+        'Four edges, live previews, animation, workspace clearance, folders, menus, Escape, invalid drop, persistence, reduced motion, pointer board-to-folder drag, pointer cancellation, small window',
       artifacts: root,
     }),
   );
