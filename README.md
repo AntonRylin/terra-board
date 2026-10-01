@@ -2,6 +2,8 @@
 
 A Windows-first local whiteboard with a minimal, iOS-inspired board launcher. Version 0.1.24 is a working preview release; the original product roadmap is broader than this implementation.
 
+**For coding agents:** read [LLM session memory and working guide](LLM_MEMORY.md) for the verified build/test/reopen workflow, delivery preferences, implementation lessons and important limitations.
+
 ## Run
 
 The project lives at `D:\Projects\terra`. Double-click `Open Local Canvas.cmd` in that folder, or open `D:\Projects\terra\release\win-unpacked\Local Canvas.exe`. Keep the executable's support files alongside it.
@@ -36,7 +38,7 @@ Drag the curved-arrow handle just outside the lower-left corner of a selected ob
 
 Click a text-bearing object once to select it; click it again to edit, with no double-click timing required. This includes plain text, notes, shapes, frames and local video titles. The cursor starts at the end, with no text selected, and the selection toolbar has no pencil button. Dragging still moves objects, corner dragging resizes them, and modifier clicks or clicks within a multi-selection keep their selection behavior. Board and folder name editors also place the cursor at the end.
 
-Use **Center horizontally** and **Center vertically** beside the selection/group actions to toggle text alignment independently. Each button highlights when enabled; toggle it off to return to left or top alignment. They work while editing or across selected text-bearing objects, and alignment survives copying, exporting and reopening. Image-only selections disable both buttons.
+Use **Center horizontally** and **Center vertically** beside the selection/group actions to toggle text alignment independently. Each button highlights when enabled; toggle it off to return to left or top alignment. They work while editing or across selected text-bearing objects, and alignment survives copying, exporting and reopening. The controls are hidden when no selected object supports text alignment. The color palette includes black; its multicolor **+** swatch opens a custom color picker.
 
 Drag a selection rectangle around multiple objects, then drag any selected object or the gap between them to move the whole selection. Copy, paste, duplicate, Delete and undo act on the complete selection. Shift/Ctrl-click toggles individual objects; Shift-drag adds a rectangle of objects and Ctrl-drag toggles them.
 
