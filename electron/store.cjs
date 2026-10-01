@@ -55,6 +55,11 @@ function objectValue(o) {
     if (typeof o.text !== 'string' || o.text.length > 100000) throw Error('Invalid text');
     result.text = o.text;
   }
+  if (o.imageTitle !== undefined) {
+    if (o.type !== 'image' || typeof o.imageTitle !== 'string' || o.imageTitle.length > 100000)
+      throw Error('Invalid image title');
+    result.imageTitle = o.imageTitle;
+  }
   if (o.color !== undefined) {
     if (!/^#[a-fA-F0-9]{6}$/.test(o.color)) throw Error('Invalid color');
     result.color = o.color;

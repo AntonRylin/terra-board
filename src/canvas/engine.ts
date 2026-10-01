@@ -10,7 +10,7 @@ import { TextureCache } from './textures';
 import { imageTiles } from './image-detail';
 import { resizeHandles, handlePoint, resizeObject, type ResizeHandle } from './resize';
 import { localToWorld, worldToLocal, rotationFromDrag, rotationHandlePoint } from './transform';
-import { hitsFrameLabel, visualBounds } from './frame-label';
+import { hitsFrameLabel, visualBounds, hasExternalLabel } from './frame-label';
 import {
   youtubeId,
   linkLayout,
@@ -255,7 +255,7 @@ export class Engine {
           const ids = this.members(hit);
           const editOnClick =
             !additive &&
-            hit.type !== 'image' &&
+            (hit.type !== 'image' || hitsFrameLabel(hit, worldToLocal(hit, w))) &&
             ((!hit.groupId &&
               (hitsFrameLabel(hit, worldToLocal(hit, w)) ||
                 hitsLinkPlay(hit, worldToLocal(hit, w)))) ||
@@ -784,7 +784,7 @@ export class Engine {
         detail &&
         this.editingId !== o.id &&
         (o.type === 'image'
-          ? !texture
+          ? !!o.imageTitle?.trim() || !texture
           : o.type === 'frame' || o.type === 'video' || o.type === 'link' || !!o.text);
       const resolution = 2 ** Math.ceil(Math.log2(c.zoom * devicePixelRatio));
       const region = textRegion(o, c, w, h);
@@ -792,6 +792,7 @@ export class Engine {
         o.width,
         o.height,
         o.text,
+        o.imageTitle,
         o.url,
         o.linkDescription,
         o.linkCompact,
@@ -974,6 +975,10 @@ export class Engine {
       sprite.width = o.width;
       sprite.height = o.height;
       container.addChild(sprite);
+      if (detail && this.editingId !== o.id && o.imageTitle?.trim()) {
+        const label = renderText(o, o.imageTitle, resolution, region);
+        if (label) container.addChild(label);
+      }
       return container;
     }
     if (o.type === 'ellipse')
@@ -991,10 +996,15 @@ export class Engine {
     if (detail && this.editingId !== o.id) {
       let text = o.text || '';
       if (o.type === 'frame') text = o.text || 'Untitled frame';
-      if (o.type === 'image') text = 'Image';
+      if (o.type === 'image') text = o.imageTitle?.trim() ? o.imageTitle : 'Image';
       if (o.type === 'video') text = o.text || 'Play video';
       if (text) {
-        const label = renderText(o, text, resolution, region);
+        const label = renderText(
+          o.type === 'image' && !o.imageTitle?.trim() ? { ...o, type: 'rect' } : o,
+          text,
+          resolution,
+          region,
+        );
         if (label) container.addChild(label);
       }
     }
@@ -1032,8 +1042,8 @@ export class Engine {
       : null;
     if (toolbarBounds && this.selection.size === 1) {
       const o = this.editingPreview || this.selected[0];
-      if (o.type === 'frame') {
-        const visual = visualBounds(o);
+      if (hasExternalLabel(o) || (o.type === 'image' && this.editingId === o.id)) {
+        const visual = visualBounds(o, this.editingId === o.id);
         toolbarBounds = {
           x: visual.x * c.zoom + c.x,
           y: visual.y * c.zoom + c.y,

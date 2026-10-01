@@ -32,7 +32,10 @@ function editorHeight(text: string, a: Layout['appearance']) {
 
 // Fit in board units, independent of pan/zoom. Reuse layouts while rendering and
 // editing so fitting does not run again for each GPU frame or change the note size.
-export function textLayout(o: CanvasObject, text = o.text || ''): Layout {
+export function textLayout(
+  o: CanvasObject,
+  text = (o.type === 'image' ? o.imageTitle : o.text) || '',
+): Layout {
   const key = JSON.stringify([o.type, o.width, o.height, o.fontSize, o.color, o.textBox, text]);
   const cached = cache.get(key);
   if (cached) {
@@ -101,7 +104,11 @@ export function textLayout(o: CanvasObject, text = o.text || ''): Layout {
 
 // Plain text grows with its explicit lines, rather than retaining an arbitrary
 // creation rectangle. Keep a little room for ink overhang and the editor caret.
-export function fitTextObject(o: CanvasObject, text = o.text || ''): CanvasObject {
+export function fitTextObject(
+  o: CanvasObject,
+  text = (o.type === 'image' ? o.imageTitle : o.text) || '',
+): CanvasObject {
+  if (o.type === 'image') return { ...o, imageTitle: text };
   if (o.type !== 'text' || o.textBox) return { ...o, text };
   const { appearance: a, metrics } = textLayout(o, text);
   const fitted = {

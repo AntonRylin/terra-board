@@ -4,17 +4,24 @@ import { textPlacement } from './text-alignment';
 import { localToWorld, objectBounds } from './transform';
 
 export function frameLabel(o: CanvasObject) {
-  const { appearance, metrics } = textLayout(o, o.text || 'Untitled frame');
+  const { appearance, metrics } = textLayout(
+    o,
+    o.type === 'image' ? o.imageTitle || '' : o.text || 'Untitled frame',
+  );
   return {
     ...textPlacement(o, appearance, metrics.lines.length),
     width: Math.min(o.width, Math.max(32, metrics.maxLineWidth)),
   };
 }
 
+export function hasExternalLabel(o: CanvasObject) {
+  return o.type === 'frame' || (o.type === 'image' && !!o.imageTitle?.trim());
+}
+
 // Include the external name in culling and pointer queries, but keep resize
 // handles on the frame body. Rotated labels use the same local coordinates.
-export function visualBounds(o: CanvasObject) {
-  if (o.type !== 'frame') return objectBounds(o);
+export function visualBounds(o: CanvasObject, editingTitle = false) {
+  if (!hasExternalLabel(o) && !(editingTitle && o.type === 'image')) return objectBounds(o);
   const top = frameLabel(o).top;
   const points = [
     { x: 0, y: top },
@@ -33,7 +40,7 @@ export function visualBounds(o: CanvasObject) {
 }
 
 export function hitsFrameLabel(o: CanvasObject, q: { x: number; y: number }) {
-  if (o.type !== 'frame') return false;
+  if (!hasExternalLabel(o)) return false;
   const label = frameLabel(o);
   return q.x >= 0 && q.x <= label.width && q.y >= label.top && q.y <= label.top + label.height;
 }

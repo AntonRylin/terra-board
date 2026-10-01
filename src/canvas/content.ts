@@ -53,6 +53,11 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
       throw Error('Invalid font size');
     if (o.text !== undefined && (typeof o.text !== 'string' || o.text.length > 100000))
       throw Error('Invalid clipboard text');
+    if (
+      o.imageTitle !== undefined &&
+      (o.type !== 'image' || typeof o.imageTitle !== 'string' || o.imageTitle.length > 100000)
+    )
+      throw Error('Invalid image title');
     if (['image', 'video'].includes(o.type) && !/^[a-f0-9]{64}$/.test(o.assetId))
       throw Error('Invalid media identifier');
     if (o.crop !== undefined) {
@@ -110,6 +115,7 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
       height: o.height,
       z: o.z,
       ...(o.text === undefined ? {} : { text: o.text }),
+      ...(o.imageTitle === undefined ? {} : { imageTitle: o.imageTitle }),
       ...(o.color === undefined ? {} : { color: o.color }),
       ...(o.fontSize === undefined ? {} : { fontSize: o.fontSize }),
       ...(o.centerX === undefined ? {} : { centerX: o.centerX }),

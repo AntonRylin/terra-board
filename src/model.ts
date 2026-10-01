@@ -15,6 +15,7 @@ export interface CanvasObject {
   height: number;
   z: number;
   text?: string;
+  imageTitle?: string;
   color?: string;
   fontSize?: number;
   centerX?: boolean;

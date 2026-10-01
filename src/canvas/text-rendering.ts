@@ -3,7 +3,7 @@ import type { Camera, CanvasObject } from '../model';
 import { textLayout } from './text-layout';
 import { textPlacement } from './text-alignment';
 import { localViewport } from './transform';
-import { frameLabel } from './frame-label';
+import { frameLabel, hasExternalLabel } from './frame-label';
 import { linkLayout, hasLinkImage } from './link-preview';
 
 export function renderLinkCaption(
@@ -84,8 +84,8 @@ export function renderLinkCaption(
 }
 
 export function textRegion(o: CanvasObject, c: Camera, width: number, height: number) {
-  if (o.rotation || o.type === 'frame') {
-    const b = localViewport(o, c, width, height, 64, o.type === 'frame' ? frameLabel(o).top : 0);
+  if (o.rotation || hasExternalLabel(o)) {
+    const b = localViewport(o, c, width, height, 64, hasExternalLabel(o) ? frameLabel(o).top : 0);
     return {
       x: Math.floor(b.left),
       y: Math.floor(b.top),
@@ -113,7 +113,7 @@ export function renderText(
 ) {
   const { appearance: a, metrics } = textLayout(o, text);
   const placement = textPlacement(o, a, metrics.lines.length);
-  const centered = o.type !== 'frame' && o.centerX;
+  const centered = o.type !== 'frame' && o.type !== 'image' && o.centerX;
   const anchor = centered ? o.width / 2 : a.padding;
   const overhang = a.fontSize * 0.25 + 2;
   const left = Math.max(region.x, anchor - (centered ? metrics.maxLineWidth / 2 : 0) - overhang);

@@ -200,10 +200,11 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     }
     if (editingSession.current) finishEdit();
     engine.current?.setSelection([o.id]);
-    editingSession.current = { object: { ...o }, draft: o.text || '' };
+    const value = (o.type === 'image' ? o.imageTitle : o.text) || '';
+    editingSession.current = { object: { ...o }, draft: value };
     engine.current?.setEditing(o.id);
     setEditing({ ...o });
-    setDraft(o.text || '');
+    setDraft(value);
   };
   const openObject = (o: CanvasObject) => {
     if (o.type === 'video') setVideo(o);
@@ -227,7 +228,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   const activate = (o: CanvasObject) => {
     if (o.type === 'link' && o.linkCompact) openLink(o.url!).catch(error);
     else if (o.type === 'link') openObject(o);
-    else if (o.type !== 'image') startEdit(o);
+    else if (o.type !== 'image' || o.imageTitle?.trim()) startEdit(o);
   };
   const previewRequests = useRef(new Map<string, Engine>());
   const refreshLink = (o: CanvasObject, e: Engine, autoplay = false) => {
@@ -322,6 +323,10 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           if (JSON.stringify(next) !== JSON.stringify(engine.current.objects.get(editing.id)))
             engine.current.apply({ upserts: [next], deleted: [] });
         }
+      } else if (editing.type === 'image') {
+        const next = { ...editing, imageTitle: draft.trim() };
+        if (JSON.stringify(next) !== JSON.stringify(engine.current.objects.get(editing.id)))
+          engine.current.apply({ upserts: [next], deleted: [] });
       } else {
         const { padding, lineHeight } = textAppearance(editing);
         const height =
@@ -432,7 +437,10 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   useLayoutEffect(() => {
     const el = editorRef.current;
     if (!editing || !el || !editingAppearance) return;
-    if ((editing.centerY || editing.type === 'frame') && editingPlacement) {
+    if (
+      (editing.centerY || editing.type === 'frame' || editing.type === 'image') &&
+      editingPlacement
+    ) {
       const available =
         (editingObject || editing).height - editingPlacement.top - editingAppearance.padding;
       el.style.height = `${Math.max(1, Math.min(editingPlacement.height, available)) * camera.zoom}px`;
@@ -675,7 +683,15 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         ]
       : []),
     ...(selected.length === 1 && selected[0].type === 'image'
-      ? [{ label: 'Crop image', icon: <Crop />, action: () => startCrop(selected[0]) }, null]
+      ? [
+          {
+            label: selected[0].imageTitle?.trim() ? 'Edit title' : 'Add title',
+            icon: <Type />,
+            action: () => startEdit(selected[0]),
+          },
+          { label: 'Crop image', icon: <Crop />, action: () => startCrop(selected[0]) },
+          null,
+        ]
       : []),
     {
       label: 'Undo',
@@ -855,6 +871,16 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           >
             <AlignVerticalJustifyCenter size={17} />
           </button>
+          {selected.length === 1 && selected[0].type === 'image' && (
+            <button
+              className="icon-button"
+              aria-label={selected[0].imageTitle?.trim() ? 'Edit title' : 'Add title'}
+              title={selected[0].imageTitle?.trim() ? 'Edit title' : 'Add title'}
+              onClick={() => startEdit(selected[0])}
+            >
+              <Type size={17} />
+            </button>
+          )}
           <button
             className="icon-button"
             aria-label="Duplicate selection"
@@ -881,7 +907,14 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         <textarea
           ref={editorRef}
           className={'text-editor ' + (editing.type === 'note' ? 'note-editor' : '')}
-          aria-label={editing.type === 'frame' ? 'Edit frame name' : 'Edit canvas text'}
+          aria-label={
+            editing.type === 'image'
+              ? 'Edit image title'
+              : editing.type === 'frame'
+                ? 'Edit frame name'
+                : 'Edit canvas text'
+          }
+          placeholder={editing.type === 'image' ? 'Image title' : undefined}
           maxLength={100000}
           value={draft}
           onChange={(e) => {
@@ -898,7 +931,9 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
               e.preventDefault();
               finishEdit(true);
             } else if (
-              (e.ctrlKey || e.metaKey || (editing.type === 'frame' && !e.shiftKey)) &&
+              (e.ctrlKey ||
+                e.metaKey ||
+                (['frame', 'image'].includes(editing.type) && !e.shiftKey)) &&
               e.key === 'Enter'
             ) {
               e.preventDefault();
@@ -912,7 +947,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             top: (editorOrigin?.y ?? editing.y) * camera.zoom + camera.y,
             transform: `rotate(${editing.rotation || 0}deg)`,
             transformOrigin: '0 0',
-            textAlign: editing.type !== 'frame' && editing.centerX ? 'center' : 'left',
+            textAlign:
+              !['frame', 'image'].includes(editing.type) && editing.centerX ? 'center' : 'left',
             width: editingAppearance.wrapWidth * camera.zoom,
             fontSize: editingAppearance.fontSize * camera.zoom,
             lineHeight: `${editingAppearance.lineHeight * camera.zoom}px`,
