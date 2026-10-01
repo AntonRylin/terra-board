@@ -1133,6 +1133,35 @@ try {
     async () => (await object(arrow.id)).text === 'Editable connection',
     'arrow label saved',
   );
+  // Font size uses a live range control with one history entry per drag.
+  await clickSelector('[aria-label="Arrow label"]');
+  const fontSlider = await rect('[aria-label="Arrow label size"]');
+  assert.equal(
+    await read(`document.querySelector('[aria-label="Arrow label size"]').type`),
+    'range',
+  );
+  const sliderX = (value) => fontSlider.x + 8 + ((fontSlider.width - 16) * (value - 8)) / 292;
+  const sliderY = fontSlider.y + fontSlider.height / 2;
+  await mouse('mousePressed', sliderX(18), sliderY);
+  for (const size of [28, 40, 54]) {
+    await mouse('mouseMoved', sliderX(size), sliderY);
+    await sleep(60);
+  }
+  const labelSize = await until(async () => {
+    const size = (await object(arrow.id)).fontSize;
+    return size >= 50 && size <= 58 ? size : false;
+  }, 'label size updates before releasing slider');
+  await mouse('mouseReleased', sliderX(54), sliderY);
+  writeFileSync(
+    join(root, 'arrow-font-slider.png'),
+    Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64'),
+  );
+  await clickSelector('[aria-label="Arrow label"]');
+  await key('z', 'KeyZ', 2);
+  await until(async () => (await object(arrow.id)).fontSize === 18, 'font slider single-step undo');
+  await key('z', 'KeyZ', 10);
+  await until(async () => (await object(arrow.id)).fontSize === labelSize, 'font slider redo');
+  assert.equal((await object(arrow.id)).text, 'Editable connection', 'font change preserved label');
   await clickSelector('[aria-label="Arrow label"]');
   await send('Input.insertText', { text: 'discard this' });
   await key('Escape', 'Escape');

@@ -27,7 +27,7 @@ import {
   type ResizeHandle,
 } from './resize';
 import { localToWorld, worldToLocal, rotationFromDrag, rotationHandlePoint } from './transform';
-import { hitsFrameLabel, visualBounds, hasExternalLabel } from './frame-label';
+import { hitsFrameLabel, visualBounds, hasExternalLabel, arrowLabelObject } from './frame-label';
 import {
   youtubeId,
   linkLayout,
@@ -217,10 +217,13 @@ export class Engine {
       .find((o) => {
         const q = worldToLocal(o, p);
         if (o.type === 'arrow') {
-          const label = arrowLabelPoint(o);
+          const label = arrowLabelPoint(o),
+            box = o.text ? arrowLabelObject(o) : null;
           return (
             hitsArrow(o, q, 8 / this.camera.zoom) ||
-            (!!o.text && Math.abs(q.x - label.x) < 120 && Math.abs(q.y - label.y) < 24)
+            (!!box &&
+              Math.abs(q.x - label.x) < box.width / 2 + 5 &&
+              Math.abs(q.y - label.y) < box.height / 2 + 2)
           );
         }
         if (hitsFrameLabel(o, q)) return true;
@@ -1090,24 +1093,16 @@ export class Engine {
       container.addChild(g);
       if (o.text && detail) {
         const p = arrowLabelPoint(o),
-          font = o.fontSize || 18;
-        const labelObject = {
-          ...o,
-          type: 'text' as const,
-          width: 240,
-          height: font * 3,
-          centerX: true,
-          centerY: true,
-        };
+          labelObject = arrowLabelObject(o);
         const label = renderText(labelObject, o.text, resolution, {
           x: 0,
           y: 0,
-          width: 240,
-          height: font * 3,
+          width: labelObject.width,
+          height: labelObject.height,
         });
         if (label) {
-          label.x += p.x - 120;
-          label.y += p.y - font * 1.5;
+          label.x += p.x - labelObject.width / 2;
+          label.y += p.y - labelObject.height / 2;
           const backdrop = new Graphics()
             .roundRect(label.x - 5, label.y - 2, label.width + 10, label.height + 4, 4)
             .fill('#fbfcfd');

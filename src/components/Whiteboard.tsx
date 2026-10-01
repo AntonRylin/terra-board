@@ -817,14 +817,20 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
                   o = e?.objects.get(selected[0].id);
                 if (o) e?.apply({ upserts: [{ ...o, ...patch }], deleted: [] }, record);
               }}
-              onCommitThickness={(before) => {
+              onCommitSlider={(field, before) => {
                 const e = engine.current,
                   o = e?.objects.get(selected[0].id);
-                if (!e || !o?.arrow || o.arrow.thickness === before) return;
+                if (!e || !o?.arrow) return;
+                const current = field === 'thickness' ? o.arrow.thickness : o.fontSize || 18;
+                if (current === before) return;
                 e.history.push(
                   { upserts: [o], deleted: [] },
                   {
-                    upserts: [{ ...o, arrow: { ...o.arrow, thickness: before } }],
+                    upserts: [
+                      field === 'thickness'
+                        ? { ...o, arrow: { ...o.arrow, thickness: before } }
+                        : { ...o, fontSize: before },
+                    ],
                     deleted: [],
                   },
                 );

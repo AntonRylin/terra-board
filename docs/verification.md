@@ -271,3 +271,8 @@ Native backup restoration, automatic asset cleanup, richer content types and fra
 - Focused packaged pointer check passed in `.local-test/desktop-input-v47g8H`, creating a diagonal arrow with triangle markers at both ends and thickness 40. Inspected `thick-arrow-tips.png`: clean tips with no rounded shaft protrusion; no renderer exceptions.
 - The broad desktop suite did not complete on this run: one attempt timed out at `Input.dispatchMouseEvent` during earlier text editing; its retry stalled before reaching arrows. This is not counted as a passing full interaction suite.
 - All three latest icon assets in packaged `app.asar` matched source bytes. Extracted the executable's Windows icon to `.local-test/packaged-app-icon-latest.png` and visually verified the latest pale-blue orbit artwork. Fixture generation no longer replaces application icons.
+
+### 2026-10-01: arrow label slider and input styling
+- `npm test`: 123 passing; production build and packaging passed.
+- Focused packaged font-slider check passed in `.local-test/desktop-input-DOFpSI`: actual pointer drag from 18 to 54, saved updates before pointer release, one-step undo/redo, unchanged label text and persisted size after close. No renderer exceptions. The reusable font-slider steps are in `scripts/desktop-interactions.mjs`; the entire broad desktop suite was not rerun for this change.
+- Inspected `arrow-font-slider.png`: rounded text input, size readout and slider; the complete larger label renders without the old fixed-width clipping.

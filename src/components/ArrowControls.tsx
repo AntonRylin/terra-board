@@ -66,24 +66,31 @@ export default function ArrowControls({
   object,
   onChange,
   draftRef,
-  onCommitThickness,
+  onCommitSlider,
 }: {
   draftRef: Ref<{ flush: () => void }>;
   object: CanvasObject;
   onChange: (patch: Partial<CanvasObject>, record?: boolean) => void;
-  onCommitThickness: (before: number) => void;
+  onCommitSlider: (field: 'thickness' | 'fontSize', before: number) => void;
 }) {
   const style = arrowStyle(object);
   const [label, setLabel] = useState(object.text || ''),
     [showLabel, setShowLabel] = useState(false),
     [menu, setMenu] = useState<'start' | 'end' | 'style' | null>(null);
   const root = useRef<HTMLDivElement>(null),
-    thicknessBefore = useRef<number | null>(null);
+    thicknessBefore = useRef<number | null>(null),
+    fontSizeBefore = useRef<number | null>(null);
   const commitThickness = () => {
     if (thicknessBefore.current === null) return;
     const before = thicknessBefore.current;
     thicknessBefore.current = null;
-    onCommitThickness(before);
+    onCommitSlider('thickness', before);
+  };
+  const commitFontSize = () => {
+    if (fontSizeBefore.current === null) return;
+    const before = fontSizeBefore.current;
+    fontSizeBefore.current = null;
+    onCommitSlider('fontSize', before);
   };
   useEffect(() => {
     const dismiss = (e: PointerEvent) => {
@@ -100,6 +107,7 @@ export default function ArrowControls({
   useImperativeHandle(draftRef, () => ({
     flush: () => {
       commitThickness();
+      commitFontSize();
       save();
     },
   }));
@@ -271,17 +279,40 @@ export default function ArrowControls({
               }
             }}
           />
-          <select
+          <div className="arrow-thickness-heading">
+            <label htmlFor="arrow-font-size">Font size</label>
+            <output>{Math.round(object.fontSize || 18)}</output>
+          </div>
+          <input
+            id="arrow-font-size"
+            className="arrow-font-size"
+            type="range"
+            min="8"
+            max="300"
+            step="1"
             aria-label="Arrow label size"
             value={object.fontSize || 18}
-            onChange={(e) => onChange({ fontSize: Number(e.target.value) })}
-          >
-            {[...new Set([12, 14, 18, 24, 32, 48, object.fontSize || 18])]
-              .sort((a, b) => a - b)
-              .map((n) => (
-                <option key={n}>{n}</option>
-              ))}
-          </select>
+            onPointerDown={(e) => {
+              fontSizeBefore.current = object.fontSize || 18;
+              e.currentTarget.setPointerCapture(e.pointerId);
+            }}
+            onChange={(e) => {
+              fontSizeBefore.current ??= object.fontSize || 18;
+              onChange({ fontSize: Number(e.target.value) }, false);
+            }}
+            onPointerUp={commitFontSize}
+            onPointerCancel={commitFontSize}
+            onLostPointerCapture={commitFontSize}
+            onKeyUp={commitFontSize}
+            onBlur={commitFontSize}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape' || e.key === 'Enter') {
+                e.stopPropagation();
+                commitFontSize();
+                setShowLabel(false);
+              }
+            }}
+          />
         </div>
       )}
     </div>
