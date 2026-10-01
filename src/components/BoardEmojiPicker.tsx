@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Plus, X } from 'lucide-react';
-import { emojiGroups } from './emoji-catalog';
+import EmojiGallery from './EmojiGallery';
 
 const favorites = ['🌿', '✨', '💡', '🎯'];
 export default function BoardEmojiPicker({
@@ -130,14 +130,7 @@ export default function BoardEmojiPicker({
                   <X size={20} />
                 </button>
               </header>
-              <div className="emoji-gallery">
-                {emojiGroups.map((group) => (
-                  <section key={group.name} aria-label={group.name}>
-                    <h3>{group.name}</h3>
-                    <div className="emoji-more-grid">{group.emojis.map(choice)}</div>
-                  </section>
-                ))}
-              </div>
+              <EmojiGallery renderEmoji={choice} />
               <div className="emoji-custom">
                 <input
                   aria-label="Custom emoji"

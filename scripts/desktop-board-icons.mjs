@@ -406,7 +406,9 @@ try {
   );
   await clickSelector('[aria-label="More emojis"]');
   assert.equal(
-    await read(`document.querySelectorAll('.emoji-panel .emoji-choice').length > 900`),
+    await read(
+      `document.querySelector('.emoji-gallery').dataset.emojiCount === '959' && document.querySelectorAll('.emoji-panel .emoji-choice').length < 200`,
+    ),
     true,
   );
   assert.equal(
@@ -436,6 +438,17 @@ try {
     'Escape only closes emoji overlay',
   );
   await clickSelector('[aria-label="More emojis"]');
+  await read(`document.querySelector('.emoji-gallery button').focus()`);
+  await key('End', 'End');
+  await until(
+    () => read(`document.activeElement.textContent === '🇲🇽'`),
+    'keyboard reaches last virtual emoji',
+  );
+  await key('Home', 'Home');
+  await until(
+    () => read(`document.activeElement.textContent === '😀'`),
+    'keyboard returns to first virtual emoji',
+  );
   writeFileSync(
     join(root, 'emoji-overlay.png'),
     Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64'),

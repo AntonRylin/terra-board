@@ -1442,11 +1442,22 @@ kbd {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 0 20px 20px;
+  scrollbar-gutter: stable;
   scrollbar-width: thin;
 }
+.emoji-gallery-content {
+  position: relative;
+  margin: 0 20px;
+}
+.emoji-virtual-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+}
 .emoji-gallery h3 {
-  margin: 14px 8px 10px;
+  margin: 0;
+  padding: 14px 8px 10px;
+  height: 40px;
   color: var(--muted);
   font-size: 12px;
   font-weight: 500;
