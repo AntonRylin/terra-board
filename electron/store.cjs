@@ -370,9 +370,13 @@ class Store {
   }
   async importAsset({ bytes, name }, prepareOnly = false) {
     name = String(name || 'image.png').slice(0, 240);
-    const data = Buffer.from(bytes);
+    let data = Buffer.from(bytes);
     if (!data.length || data.length > 256 * 1024 * 1024)
       throw Error('Files must be between 1 byte and 256 MB in this version');
+    if (data.length >= 4 && data.readUInt32LE(0) === 0x00010000) {
+      data = await require('./icon-image.cjs').iconPng(data);
+      name = name.replace(/\.[^.]+$/, '') + '.png';
+    }
     const id = createHash('sha256').update(data).digest('hex');
     const existing = this.db.prepare('SELECT * FROM assets WHERE id=?').get(id);
     if (existing) return existing;

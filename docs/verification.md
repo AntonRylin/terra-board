@@ -1,5 +1,13 @@
 # Verification — Local Canvas
 
+## 0.1.23 ICO logos and fallback image discovery — 2026-10-01
+
+Google Trends supplies a Windows bitmap ICO logo that both Sharp and Electron nativeImage rejected. Icons now undergo bounded ICO validation and decode through icojs in the storage worker, then enter the existing PNG asset pipeline. Rich image cards also render their saved site logo alongside the caption.
+
+Image discovery now considers microdata, image_src, JSON-LD image/primaryImageOfPage/thumbnailUrl fields and ranked page images after standard social metadata. Introductory images closely matching the page title outrank incidental references; visible hero/large images are also candidates. Four candidates at most are fetched, subject to existing public-network and byte/time bounds. Fallback images must decode and exceed thumbnail/tracking dimensions. Page scripts are never executed. Google Trends currently resolves to its own introductory logo-pattern artwork, not the different illustration shown by Miro.
+
+All 101 Node tests pass, including bitmap orientation/transparency, embedded PNG, malformed ICO bounds, structured metadata, candidate ranking and recovery after failed/tiny images. Production packaging and the live packaged suite pass in `.local-test/desktop-links-UdElzA`. A saved text-only Trends card automatically gains both image and logo, expands to image geometry, and survives portable export/import. `trends-preview.png` was visually inspected; existing loading, rounded rotation, thumbnail recovery and muted/full playback checks also pass with no renderer exceptions.
+
 ## 0.1.22 compact rounded link cards — 2026-10-01
 
 Text previews default to 440×112, close to the user's manually shortened 440×115 card. Descriptions use at most two lines with ellipsis, tighter spacing, and 16-unit card corners. Open buttons have softer corners. Single-link selection uses the same rounded outline under zoom and rotation, with circular resize handles. Reopening migrates old automatic heights but preserves custom card sizes.

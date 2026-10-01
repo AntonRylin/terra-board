@@ -91,3 +91,51 @@ test('Google homepage fallback does not replace page descriptions or apply to ot
     'Live summary',
   );
 });
+
+test('image discovery reads microdata, image_src and JSON-LD without executing scripts', () => {
+  for (const html of [
+    '<meta itemprop="image" content="/cover.png">',
+    '<link rel="image_src" href="/cover.png">',
+    '<script type="application/ld+json">{"@graph":[{"image":{"contentUrl":"/cover.png"}}]}</script>',
+  ])
+    assert.deepEqual(metadata(html, 'https://example.com/').fallbackImages, [
+      'https://example.com/cover.png',
+    ]);
+  assert.equal(
+    metadata(
+      '<script type="application/ld+json">alert(1)</script><meta itemprop="image" content="http://127.0.0.1/private">',
+      'https://example.com/',
+    ).fallbackImages,
+    undefined,
+  );
+});
+test('content fallback favors introductory artwork over incidental mentions, logos and trackers', () => {
+  const html =
+    '<title>Sample Trends</title><img src="/logo.png" width="400" height="200"><img src="/pixel.gif" width="1" height="1">' +
+    '<a><img src="/news.png">A long story about wildlife and data and how people use Sample Trends to discover seasonal changes in bird migration</a>' +
+    '<a><img src="/intro.png">What is Sample Trends?</a>';
+  assert.deepEqual(metadata(html, 'https://example.com/').fallbackImages, [
+    'https://example.com/intro.png',
+    'https://example.com/news.png',
+  ]);
+});
+test('a missing social image falls back to a real page image, skipping tiny images', async () => {
+  const sharp = createRequire(import.meta.url)('sharp');
+  const tiny = await sharp({ create: { width: 1, height: 1, channels: 3, background: '#ffffff' } })
+    .png()
+    .toBuffer();
+  const cover = await sharp({
+    create: { width: 400, height: 225, channels: 3, background: '#4486d9' },
+  })
+    .png()
+    .toBuffer();
+  const html =
+    '<meta property="og:image" content="/broken.png"><link rel="image_src" href="/tiny.png"><img class="hero" src="/cover.png">';
+  const result = await fetchPreview('https://example.com/', async (url) => {
+    if (url.endsWith('broken.png')) throw Error('404');
+    if (url.endsWith('.png'))
+      return { bytes: url.endsWith('tiny.png') ? tiny : cover, type: 'image/png', url };
+    return { bytes: Buffer.from(html), type: 'text/html', url };
+  });
+  assert.deepEqual(result.imageBytes, cover);
+});

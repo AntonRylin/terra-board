@@ -17,6 +17,19 @@ store.patchBoard({
   deleted: [],
   upserts: [
     {
+      id: 'trends-recovery',
+      type: 'link',
+      x: 550,
+      y: 100,
+      width: 440,
+      height: 112,
+      z: 2,
+      url: 'https://trends.google.com/trends/',
+      text: 'Google Trends',
+      linkDescription:
+        'Explore search interest of terms and topics by time, location and popularity on Google Trends',
+    },
+    {
       id: 'recovery',
       type: 'link',
       x: 50,
@@ -139,6 +152,10 @@ try {
     const object = (await state()).objects.find((o) => o.id === 'recovery');
     return object?.assetId && object.text.includes('+1 Speed') ? object : null;
   }, 'saved incomplete card gets a title and thumbnail without any click');
+  const trends = await until(async () => {
+    const o = (await state()).objects.find((o) => o.id === 'trends-recovery');
+    return o?.assetId && o.linkIconId && o.height === 314 ? o : null;
+  }, 'saved Google Trends card recovers its ICO logo and a page image');
   assert.equal(
     await read(`!!document.querySelector('.board-link-player')`),
     false,
@@ -147,6 +164,10 @@ try {
   await sleep(700);
   writeFileSync(
     join(root, 'recovered-thumbnail.png'),
+    Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64'),
+  );
+  writeFileSync(
+    join(root, 'trends-preview.png'),
     Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64'),
   );
   await paste('https://example.com/');
@@ -407,12 +428,15 @@ try {
   const importedGoogle = importedObjects.find((o) => o.id === google.id);
   assert.equal(importedGoogle.linkIconId, google.linkIconId);
   assert.equal(importedGoogle.linkDescription, google.linkDescription);
+  assert.equal(importedObjects.find((o) => o.id === trends.id).linkIconId, trends.linkIconId);
+  assert.ok(importedStore.asset({ id: trends.assetId, variant: 'preview' }).file);
+  assert.ok(importedStore.asset({ id: trends.linkIconId, variant: 'thumb' }).file);
   assert.ok(importedStore.asset({ id: google.linkIconId, variant: 'thumb' }).file);
   importedStore.close();
   assert.deepEqual(errors, []);
   console.log(
     JSON.stringify(
-      { library: root, recovered, google, youtube, wiki, mutedPreview, playback, errors },
+      { library: root, recovered, trends, google, youtube, wiki, mutedPreview, playback, errors },
       null,
       2,
     ),

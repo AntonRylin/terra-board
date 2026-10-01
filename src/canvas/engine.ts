@@ -720,12 +720,14 @@ export class Engine {
     const wanted = new Set<string>();
     let bytes = 0;
     const variants = new Map<string, string>();
+    const icons = new Map<string, string>();
     const tiles = new Map<string, ReturnType<typeof imageTiles>>();
     for (const o of [...visible].reverse()) {
       if (!['image', 'link'].includes(o.type) || !(o.assetId || o.linkIconId)) continue;
       const fullWidth = o.width / (o.crop?.width || 1),
         fullHeight = o.height / (o.crop?.height || 1);
-      let size = Math.max(fullWidth, fullHeight) * c.zoom * devicePixelRatio > 256 ? 1600 : 256;
+      let size =
+        o.assetId && Math.max(fullWidth, fullHeight) * c.zoom * devicePixelRatio > 256 ? 1600 : 256;
       let cost = size * size * Math.min(fullWidth / fullHeight, fullHeight / fullWidth) * 4;
       if (bytes + cost > 100 * 1024 * 1024) {
         size = 256;
@@ -737,6 +739,14 @@ export class Engine {
       if (!wanted.has(key)) bytes += cost;
       wanted.add(key);
       variants.set(o.id, key);
+      if (o.type === 'link' && o.assetId && o.linkIconId) {
+        const iconKey = o.linkIconId + '/thumb';
+        if (wanted.has(iconKey) || bytes + 256 * 256 * 4 <= 128 * 1024 * 1024) {
+          if (!wanted.has(iconKey)) bytes += 256 * 256 * 4;
+          wanted.add(iconKey);
+          icons.set(o.id, iconKey);
+        }
+      }
     }
     // Reserve base images for the whole viewport before spending on close-up
     // detail. Give foreground tiles priority; details cannot starve base images.
@@ -757,6 +767,8 @@ export class Engine {
     visible.forEach((o, i) => {
       const key = variants.get(o.id),
         texture = key ? this.textures.get(key) : null;
+      const iconKey = icons.get(o.id),
+        iconTexture = iconKey ? this.textures.get(iconKey) : null;
       const detailTiles = (tiles.get(o.id) || []).map((tile) => ({
         ...tile,
         texture: this.textures.get(tile.key),
@@ -789,6 +801,8 @@ export class Engine {
         o.crop,
         key,
         !!texture,
+        iconKey,
+        !!iconTexture,
         detail,
         hasLabel ? resolution : 0,
         hasLabel ? region : null,
@@ -801,7 +815,15 @@ export class Engine {
           this.world.removeChild(view.container);
           view.container.destroy({ children: true });
         }
-        const container = this.makeView(o, texture, detail, resolution, region, loading);
+        const container = this.makeView(
+          o,
+          texture,
+          detail,
+          resolution,
+          region,
+          loading,
+          iconTexture,
+        );
         const loadedTiles = detailTiles.filter((tile) => tile.texture);
         if (texture && loadedTiles.length) {
           // Cut detailed regions out of the preview so transparent pixels are
@@ -851,6 +873,7 @@ export class Engine {
     resolution: number,
     region: ReturnType<typeof textRegion>,
     loading = false,
+    iconTexture: Texture | null = null,
   ) {
     const container = new Container(),
       g = new Graphics(),
@@ -900,6 +923,14 @@ export class Engine {
           compact ? iconY - sprite.height / 2 : box.y + (box.height - sprite.height) / 2,
         );
         container.addChild(sprite);
+      }
+      if (!compact && iconTexture && detail) {
+        const icon = this.imageSprite(iconTexture);
+        const size = Math.min(24 / iconTexture.width, 24 / iconTexture.height);
+        icon.width = iconTexture.width * size;
+        icon.height = iconTexture.height * size;
+        icon.position.set(26 - icon.width / 2, box.y + box.height + 28 - icon.height / 2);
+        container.addChild(icon);
       }
       if (!compact && !loading && youtubeId(o.url || '')) {
         const cx = o.width / 2,

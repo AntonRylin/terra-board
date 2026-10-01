@@ -28,8 +28,8 @@ export function renderLinkCaption(
   ctx.scale(resolution, resolution);
   ctx.translate(-left, -top);
   const scale = Math.min(1, o.width / 440, compact ? o.height / 76 : box.footer / 56),
-    pad = (compact ? 52 : 14) * scale;
-  const available = o.width - pad - (compact ? 62 * scale : pad);
+    pad = (compact ? 52 : o.linkIconId ? 48 : 14) * scale;
+  const available = o.width - pad - (compact ? 62 : 14) * scale;
   const line = (text: string, y: number, font: number, color: string, weight = 400) => {
     ctx.font = `${weight} ${font * scale}px "Segoe UI", sans-serif`;
     ctx.fillStyle = color;

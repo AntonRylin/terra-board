@@ -118,12 +118,83 @@ function clean(value = '', limit = 500) {
     .trim()
     .slice(0, limit);
 }
+function attributes(tag) {
+  const attrs = {};
+  for (const m of tag.matchAll(/([\w:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/g))
+    attrs[m[1].toLowerCase()] = m[2] ?? m[3] ?? m[4];
+  return attrs;
+}
+function imageFallbacks(html, url, title) {
+  const candidates = [];
+  const add = (value, score) => {
+    if (typeof value !== 'string' || !value.trim()) return;
+    try {
+      candidates.push({ url: webUrl(new URL(clean(value, 8192), url).href).href, score });
+    } catch {}
+  };
+  for (const tag of html.match(/<(?:meta|link)\b[^>]*>/gi) || []) {
+    const a = attributes(tag);
+    if (a.itemprop?.toLowerCase() === 'image') add(a.content || a.href, 100);
+    if (/(?:^|\s)image_src(?:\s|$)/i.test(a.rel || '')) add(a.href, 100);
+  }
+  const imageValue = (v) => {
+    if (Array.isArray(v)) v.slice(0, 4).forEach(imageValue);
+    else if (typeof v === 'string') add(v, 95);
+    else if (v && typeof v === 'object') add(v.contentUrl || v.url, 95);
+  };
+  // Read data only; never execute page scripts or follow arbitrary JSON links.
+  for (const tag of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)) {
+    if (attributes(tag[1]).type?.toLowerCase() !== 'application/ld+json') continue;
+    try {
+      const queue = [JSON.parse(tag[2])];
+      for (let i = 0; i < queue.length && i < 64; i++) {
+        const node = queue[i];
+        if (Array.isArray(node)) queue.push(...node.slice(0, 32));
+        else if (node && typeof node === 'object') {
+          imageValue(node.image || node.thumbnailUrl);
+          if (node.primaryImageOfPage) imageValue(node.primaryImageOfPage);
+          if (node['@graph']) queue.push(node['@graph']);
+          if (node.mainEntity) queue.push(node.mainEntity);
+        }
+      }
+    } catch {}
+  }
+  const words = [...new Set(title.toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) || [])];
+  const visible = html.replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, '');
+  const consider = (tag, context = '') => {
+    const a = attributes(tag),
+      src = a.src || a['data-src'];
+    if (!src || a.role === 'presentation' || a['aria-hidden'] === 'true') return;
+    const width = parseInt(a.width),
+      height = parseInt(a.height);
+    if ((width > 0 && width < 160) || (height > 0 && height < 90)) return;
+    const label = clean([a.alt, a.title, context].filter(Boolean).join(' '), 2000).toLowerCase();
+    const matches = words.filter((w) => label.includes(w)).length;
+    const hero = /(?:hero|cover|banner|featured)/i.test([a.class, a.id, src].join(' '));
+    if (/logo|icon|avatar|badge|pixel|spacer/i.test([a.class, a.id, src].join(' '))) return;
+    const relevant = matches >= Math.min(2, words.length) && matches > 0;
+    const score = relevant
+      ? 70 +
+        Math.min(matches, 3) +
+        (label.length < 100 ? 8 : 0) +
+        (/^(?:what is|about)\b/i.test(label) ? 8 : 0)
+      : hero
+        ? 60
+        : width >= 320 && height >= 180
+          ? 40
+          : 0;
+    if (score) add(src, score);
+  };
+  for (const anchor of visible.matchAll(/<a\b[^>]*>([\s\S]*?)<\/a>/gi)) {
+    for (const tag of anchor[1].match(/<img\b[^>]*>/gi) || []) consider(tag, anchor[1]);
+  }
+  for (const tag of visible.match(/<img\b[^>]*>/gi) || []) consider(tag);
+  return [...new Set(candidates.sort((a, b) => b.score - a.score).map((c) => c.url))].slice(0, 4);
+}
 function metadata(html, url) {
   const values = new Map();
   for (const tag of html.match(/<meta\b[^>]*>/gi) || []) {
-    const attrs = {};
-    for (const m of tag.matchAll(/([\w:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/g))
-      attrs[m[1].toLowerCase()] = m[2] ?? m[3] ?? m[4];
+    const attrs = attributes(tag);
     const key = (attrs.property || attrs.name || attrs.itemprop || '').toLowerCase();
     if (attrs.content && !values.has(key)) values.set(key, attrs.content);
   }
@@ -146,9 +217,7 @@ function metadata(html, url) {
     description = 'Search the web for webpages, images, videos, news and more.';
   let icon;
   for (const tag of html.match(/<link\b[^>]*>/gi) || []) {
-    const attrs = {};
-    for (const m of tag.matchAll(/([\w:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/g))
-      attrs[m[1].toLowerCase()] = m[2] ?? m[3] ?? m[4];
+    const attrs = attributes(tag);
     if (/(?:^|\s)(?:icon|apple-touch-icon)(?:\s|$)/i.test(attrs.rel || '') && attrs.href) {
       try {
         icon = webUrl(new URL(clean(attrs.href, 8192), url).href).href;
@@ -167,11 +236,15 @@ function metadata(html, url) {
       new URL(clean(values.get('og:image') || values.get('twitter:image'), 8192), url).href,
     ).href;
   } catch {}
+  const fallbackImages = imageFallbacks(html, url, title).filter(
+    (value) => value !== icon && value !== image,
+  );
   return {
     title,
     description,
     image: values.get('og:image') || values.get('twitter:image') ? image : undefined,
     ...(icon ? { icon } : {}),
+    ...(fallbackImages.length ? { fallbackImages } : {}),
   };
 }
 async function fetchPreview(url, read = readPublic) {
@@ -212,10 +285,20 @@ async function fetchPreview(url, read = readPublic) {
     meta = metadata(result.bytes.toString('utf8'), result.url);
   }
   let imageBytes;
-  if (meta.image) {
+  for (const candidate of [
+    ...new Set([meta.image, ...(meta.fallbackImages || [])].filter(Boolean)),
+  ].slice(0, 4)) {
     try {
-      const result = await read(meta.image, 5 * 1024 * 1024);
-      if (/^image\/(jpeg|png|webp|gif|avif)\b/i.test(result.type)) imageBytes = result.bytes;
+      const result = await read(candidate, 5 * 1024 * 1024);
+      if (!/^image\/(jpeg|png|webp|gif|avif)\b/i.test(result.type)) continue;
+      if (candidate !== meta.image) {
+        const info = await require('sharp')(result.bytes, {
+          limitInputPixels: 25000000,
+        }).metadata();
+        if (info.width < 160 || info.height < 90 || info.width / info.height > 4) continue;
+      }
+      imageBytes = result.bytes;
+      break;
     } catch {}
   }
   let iconBytes;
