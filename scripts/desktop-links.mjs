@@ -11,6 +11,7 @@ mkdirSync(resolve('.local-test'), { recursive: true });
 const root = mkdtempSync(resolve('.local-test/desktop-links-'));
 const store = new Store(root);
 const board = store.createBoard({ name: 'Link previews' });
+store.createBoard({ name: 'Other board' });
 store.patchBoard({
   id: board.id,
   revision: 0,
@@ -119,6 +120,35 @@ async function click(selector) {
   });
 }
 const state = () => read(`window.canvas.invoke('loadBoard',{id:${JSON.stringify(board.id)}})`);
+async function linkMenuAction(o, label) {
+  const origin = await read(
+    `(()=>{const r=document.querySelector('.canvas-surface').getBoundingClientRect();return {x:r.x,y:r.y}})()`,
+  );
+  const p = { x: origin.x + o.x + o.width / 2, y: origin.y + o.y + 24 };
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...p, buttons: 0 });
+  await send('Input.dispatchMouseEvent', {
+    type: 'mousePressed',
+    ...p,
+    button: 'right',
+    buttons: 2,
+    clickCount: 1,
+  });
+  await send('Input.dispatchMouseEvent', {
+    type: 'mouseReleased',
+    ...p,
+    button: 'right',
+    buttons: 0,
+    clickCount: 1,
+  });
+  const index = await until(
+    () =>
+      read(
+        `(()=>{const b=[...document.querySelectorAll('.context-menu button')];return b.findIndex(e=>e.textContent.trim()===${JSON.stringify(label)})+1})()`,
+      ),
+    label,
+  );
+  await click(`.context-menu button:nth-of-type(${index})`);
+}
 const paste = (url) =>
   read(
     `(()=>{const data=new DataTransfer();data.setData('text/plain',${JSON.stringify(url)});document.dispatchEvent(new ClipboardEvent('paste',{clipboardData:data,bubbles:true,cancelable:true}));})()`,
@@ -170,6 +200,48 @@ try {
     join(root, 'trends-preview.png'),
     Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64'),
   );
+  await linkMenuAction(trends, 'Show compact card');
+  const compactTrends = await until(async () => {
+    const o = (await state()).objects.find((o) => o.id === trends.id);
+    return o.linkCompact && o.height === 112 ? o : null;
+  }, 'right-click switches to a compact card');
+  assert.equal(compactTrends.assetId, trends.assetId);
+  assert.equal(compactTrends.linkPreviewHeight, trends.height);
+  writeFileSync(
+    join(root, 'trends-compact.png'),
+    Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64'),
+  );
+  await linkMenuAction(compactTrends, 'Undo');
+  await until(
+    async () => !(await state()).objects.find((o) => o.id === trends.id).linkCompact,
+    'undo restores preview',
+  );
+  await linkMenuAction(trends, 'Show compact card');
+  await until(
+    async () => (await state()).objects.find((o) => o.id === trends.id).linkCompact,
+    'compact again',
+  );
+  await linkMenuAction(compactTrends, 'Show image preview');
+  await until(async () => {
+    const o = (await state()).objects.find((o) => o.id === trends.id);
+    return !o.linkCompact && o.height === trends.height;
+  }, 'right-click restores saved preview height');
+  await linkMenuAction(trends, 'Show compact card');
+  await until(
+    async () => (await state()).objects.find((o) => o.id === trends.id).linkCompact,
+    'compact choice saved',
+  );
+  await click('[aria-label="Open board Other board"]');
+  await until(() => read(`!!document.querySelector('.empty-canvas')`), 'switch to another board');
+  await click('[aria-label="Open board Link previews"]');
+  await until(
+    () =>
+      read(
+        `!!document.querySelector('.canvas-surface canvas') && !document.querySelector('.canvas-loading')`,
+      ),
+    'canvas reopens',
+  );
+  assert.equal((await state()).objects.find((o) => o.id === trends.id).linkCompact, true);
   await paste('https://example.com/');
   const compact = await until(
     async () => (await state()).objects.find((o) => o.url === 'https://example.com/'),
@@ -429,6 +501,8 @@ try {
   assert.equal(importedGoogle.linkIconId, google.linkIconId);
   assert.equal(importedGoogle.linkDescription, google.linkDescription);
   assert.equal(importedObjects.find((o) => o.id === trends.id).linkIconId, trends.linkIconId);
+  assert.equal(importedObjects.find((o) => o.id === trends.id).linkCompact, true);
+  assert.equal(importedObjects.find((o) => o.id === trends.id).linkPreviewHeight, trends.height);
   assert.ok(importedStore.asset({ id: trends.assetId, variant: 'preview' }).file);
   assert.ok(importedStore.asset({ id: trends.linkIconId, variant: 'thumb' }).file);
   assert.ok(importedStore.asset({ id: google.linkIconId, variant: 'thumb' }).file);
@@ -443,6 +517,10 @@ try {
   );
 } catch (e) {
   console.error(e);
+  if (socket)
+    try {
+      console.error('App state:', await read('document.body.innerText'));
+    } catch {}
   console.error('Contexts', [...contexts.values()]);
   if (socket)
     try {

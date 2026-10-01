@@ -122,12 +122,40 @@ test('portable export/import preserves image bytes and rejects malformed input',
     s.patchBoard({
       id: b.id,
       revision: 0,
-      upserts: [{ ...note(), type: 'image', assetId: asset.id }],
+      upserts: [
+        { ...note(), type: 'image', assetId: asset.id },
+        {
+          ...note(),
+          id: 'compact-link',
+          type: 'link',
+          url: 'https://example.com',
+          assetId: asset.id,
+          linkCompact: true,
+          linkPreviewHeight: 390,
+          height: 112,
+        },
+      ],
       deleted: [],
     });
     const packed = await s.exportBoard({ id: b.id });
     const copy = await s.importBoard({ bytes: packed });
     assert.equal(s.loadBoard({ id: copy.id }).objects[0].assetId, asset.id);
+    const link = s.loadBoard({ id: copy.id }).objects.find((o) => o.id === 'compact-link');
+    assert.equal(link.linkCompact, true);
+    assert.equal(link.linkPreviewHeight, 390);
+    const { clipboardObjects } = await import('../src/canvas/content.ts');
+    assert.deepEqual(clipboardObjects([link])[0], link);
+    assert.throws(() => clipboardObjects([{ ...link, linkCompact: 'yes' }]), /appearance/);
+    assert.throws(
+      () =>
+        s.patchBoard({
+          id: b.id,
+          revision: 1,
+          upserts: [{ ...link, linkPreviewHeight: -1 }],
+          deleted: [],
+        }),
+      /preview height/,
+    );
     assert.deepEqual(readFileSync(s.asset({ id: asset.id, variant: 'original' }).file), png);
     assert.throws(
       () =>

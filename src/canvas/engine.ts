@@ -17,6 +17,7 @@ import {
   hitsLinkPlay,
   withLinkPreview,
   linkCornerRadius,
+  hasLinkImage,
 } from './link-preview';
 interface Callbacks {
   edit: (e: Edit) => void;
@@ -723,23 +724,25 @@ export class Engine {
     const icons = new Map<string, string>();
     const tiles = new Map<string, ReturnType<typeof imageTiles>>();
     for (const o of [...visible].reverse()) {
-      if (!['image', 'link'].includes(o.type) || !(o.assetId || o.linkIconId)) continue;
+      if (!['image', 'link'].includes(o.type)) continue;
+      const showImage = o.type === 'image' || hasLinkImage(o);
+      const mediaId = showImage ? o.assetId : o.linkIconId;
+      if (!mediaId) continue;
       const fullWidth = o.width / (o.crop?.width || 1),
         fullHeight = o.height / (o.crop?.height || 1);
       let size =
-        o.assetId && Math.max(fullWidth, fullHeight) * c.zoom * devicePixelRatio > 256 ? 1600 : 256;
+        showImage && Math.max(fullWidth, fullHeight) * c.zoom * devicePixelRatio > 256 ? 1600 : 256;
       let cost = size * size * Math.min(fullWidth / fullHeight, fullHeight / fullWidth) * 4;
       if (bytes + cost > 100 * 1024 * 1024) {
         size = 256;
         cost = 256 * 256 * 4;
       }
       if (bytes + cost > 128 * 1024 * 1024) continue;
-      const key =
-        (o.assetId || o.linkIconId) + '/' + (size === 256 || !o.assetId ? 'thumb' : 'preview');
+      const key = mediaId + '/' + (size === 256 || !showImage ? 'thumb' : 'preview');
       if (!wanted.has(key)) bytes += cost;
       wanted.add(key);
       variants.set(o.id, key);
-      if (o.type === 'link' && o.assetId && o.linkIconId) {
+      if (o.type === 'link' && showImage && o.linkIconId) {
         const iconKey = o.linkIconId + '/thumb';
         if (wanted.has(iconKey) || bytes + 256 * 256 * 4 <= 128 * 1024 * 1024) {
           if (!wanted.has(iconKey)) bytes += 256 * 256 * 4;
@@ -791,6 +794,7 @@ export class Engine {
         o.text,
         o.url,
         o.linkDescription,
+        o.linkCompact,
         loading,
         o.color,
         o.fontSize,
@@ -880,7 +884,7 @@ export class Engine {
       color = o.color || '#e8edf5';
     container.eventMode = 'none';
     if (o.type === 'link') {
-      const compact = !o.assetId;
+      const compact = !hasLinkImage(o);
       const iconY = compact && o.linkDescription ? 36 : o.height / 2;
       const box = linkLayout(o.width, o.height);
       g.roundRect(0, 0, o.width, o.height, linkCornerRadius)

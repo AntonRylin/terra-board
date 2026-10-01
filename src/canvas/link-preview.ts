@@ -3,9 +3,28 @@ import type { CanvasObject } from '../model';
 export const compactLinkHeight = 76;
 export const descriptionLinkHeight = 112;
 export const linkCornerRadius = 16;
+export function hasLinkImage(o: { assetId?: string; linkCompact?: boolean }) {
+  return !!o.assetId && !o.linkCompact;
+}
+export function setLinkCompact(o: CanvasObject, compact: boolean): CanvasObject {
+  if (compact)
+    return {
+      ...o,
+      linkCompact: true,
+      linkPreviewHeight: hasLinkImage(o) ? o.height : o.linkPreviewHeight,
+      height: linkFallbackHeight(o),
+    };
+  return {
+    ...o,
+    linkCompact: false,
+    height: o.assetId
+      ? o.linkPreviewHeight || ((o.width - 24) * 9) / 16 + 80
+      : linkFallbackHeight(o),
+  };
+}
 export function normalizeLinkSize(o: CanvasObject): CanvasObject {
   // Migrate old automatic layouts, preserving cards the user resized.
-  return !o.assetId && [76, 168, 314].includes(o.height)
+  return !hasLinkImage(o) && !o.linkCompact && [76, 168, 314].includes(o.height)
     ? { ...o, height: linkFallbackHeight(o) }
     : o;
 }
@@ -13,12 +32,13 @@ export function linkFallbackHeight(o: Partial<CanvasObject>) {
   return o.linkDescription?.trim() ? descriptionLinkHeight : compactLinkHeight;
 }
 export function withLinkPreview(o: CanvasObject, meta: Partial<CanvasObject>): CanvasObject {
-  const automatic = !o.assetId && [compactLinkHeight, descriptionLinkHeight].includes(o.height);
+  const automatic =
+    !hasLinkImage(o) && [compactLinkHeight, descriptionLinkHeight].includes(o.height);
   const merged = { ...o, ...meta };
   return {
     ...merged,
     height: automatic
-      ? meta.assetId
+      ? hasLinkImage(merged)
         ? ((o.width - 24) * 9) / 16 + 80
         : linkFallbackHeight(merged)
       : o.height,
@@ -65,6 +85,7 @@ export function hitsLinkPlay(
     url?: string;
     assetId?: string;
     linkDescription?: string;
+    linkCompact?: boolean;
     width: number;
     height: number;
   },
@@ -72,12 +93,13 @@ export function hitsLinkPlay(
 ) {
   if (o.type !== 'link') return false;
   if (
-    !o.assetId &&
+    !hasLinkImage(o) &&
     p.x >= o.width - 48 &&
     p.x <= o.width - 12 &&
     Math.abs(p.y - (o.linkDescription ? 36 : o.height / 2)) <= 18
   )
     return true;
+  if (o.linkCompact) return false;
   if (!youtubeId(o.url || '')) return false;
   const box = linkLayout(o.width, o.height);
   return Math.abs(p.x - o.width / 2) <= 40 && Math.abs(p.y - box.y - box.height / 2) <= 30;

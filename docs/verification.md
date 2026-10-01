@@ -1,5 +1,11 @@
 # Verification — Local Canvas
 
+## 0.1.24 switch between compact and image link cards — 2026-10-01
+
+Right-click a single link with a cached preview to choose “Show compact card” or “Show image preview”. Compact mode retains the image asset while showing the logo, title, website and description. Switching back restores the previous preview height. The preference and height survive clipboard, duplication, save and portable export/import. Metadata arriving later cannot force a compact card open; switching closes any active player. Compact card external-link buttons open the website, while the explicit YouTube play action expands the card for playback.
+
+All 102 Node tests and production packaging pass. `.local-test/desktop-links-4XEUv8` passes real right-click switching in both directions, undo, saved compact state after switching away and reopening the board through the launcher, plus portable export/import. `trends-compact.png` was visually inspected in `.local-test/desktop-links-CKfXBW`. Existing preview recovery, loading animation, rotation and video playback checks pass with no renderer exceptions. An initial CDP renderer-reload check timed out waiting for canvas readiness; reopen validation uses the app's normal board navigation.
+
 ## 0.1.23 ICO logos and fallback image discovery — 2026-10-01
 
 Google Trends supplies a Windows bitmap ICO logo that both Sharp and Electron nativeImage rejected. Icons now undergo bounded ICO validation and decode through icojs in the storage worker, then enter the existing PNG asset pipeline. Rich image cards also render their saved site logo alongside the caption.

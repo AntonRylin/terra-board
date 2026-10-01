@@ -76,6 +76,14 @@ function objectValue(o) {
   if (o.groupId) result.groupId = idValue(o.groupId);
   if (o.assetId) result.assetId = idValue(o.assetId);
   if (o.type === 'link' && o.linkIconId) result.linkIconId = idValue(o.linkIconId);
+  if (o.type === 'link' && o.linkCompact !== undefined) {
+    if (typeof o.linkCompact !== 'boolean') throw Error('Invalid link appearance');
+    result.linkCompact = o.linkCompact;
+  }
+  if (o.type === 'link' && o.linkPreviewHeight !== undefined) {
+    if (!number(o.linkPreviewHeight, 1, 1e6)) throw Error('Invalid link preview height');
+    result.linkPreviewHeight = o.linkPreviewHeight;
+  }
   if (o.crop !== undefined) {
     const c = o.crop;
     if (

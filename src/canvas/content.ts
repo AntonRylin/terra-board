@@ -73,6 +73,18 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
         throw Error('Invalid image crop');
     }
     if (o.type === 'link') {
+      if (o.linkCompact !== undefined && typeof o.linkCompact !== 'boolean')
+        throw Error('Invalid link appearance');
+      if (
+        o.linkPreviewHeight !== undefined &&
+        !(
+          typeof o.linkPreviewHeight === 'number' &&
+          Number.isFinite(o.linkPreviewHeight) &&
+          o.linkPreviewHeight >= 1 &&
+          o.linkPreviewHeight <= 1e6
+        )
+      )
+        throw Error('Invalid link preview height');
       if (
         o.linkDescription !== undefined &&
         (typeof o.linkDescription !== 'string' || o.linkDescription.length > 500)
@@ -107,6 +119,10 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
       ...(o.groupId ? { groupId: o.groupId } : {}),
       ...(o.assetId ? { assetId: o.assetId } : {}),
       ...(o.type === 'link' && o.linkIconId ? { linkIconId: o.linkIconId } : {}),
+      ...(o.type === 'link' && o.linkCompact !== undefined ? { linkCompact: o.linkCompact } : {}),
+      ...(o.type === 'link' && o.linkPreviewHeight !== undefined
+        ? { linkPreviewHeight: o.linkPreviewHeight }
+        : {}),
       ...(o.crop
         ? { crop: { x: o.crop.x, y: o.crop.y, width: o.crop.width, height: o.crop.height } }
         : {}),

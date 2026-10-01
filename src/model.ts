@@ -27,6 +27,8 @@ export interface CanvasObject {
   url?: string;
   linkDescription?: string;
   linkIconId?: string;
+  linkCompact?: boolean;
+  linkPreviewHeight?: number;
 }
 export interface Camera {
   x: number;

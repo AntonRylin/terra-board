@@ -6,6 +6,9 @@ import {
   withLinkPreview,
   compactLinkHeight,
   normalizeLinkSize,
+  setLinkCompact,
+  hasLinkImage,
+  hitsLinkPlay,
 } from '../src/canvas/link-preview.ts';
 const object = { id: 'link', type: 'link', url: 'https://www.youtube.com/watch?v=YLz9IdSQ7IM' };
 test('a failed saved preview recovers its thumbnail without a click', async () => {
@@ -82,4 +85,32 @@ test('reopening migrates old automatic cards and preserves custom sizes', () => 
   assert.equal(normalizeLinkSize(card).height, 112);
   assert.equal(normalizeLinkSize({ ...card, height: 115.2 }).height, 115.2);
   assert.equal(normalizeLinkSize({ ...card, height: 314, assetId: 'image' }).height, 314);
+});
+
+test('compact mode retains cached media, restores preview height and survives late metadata', () => {
+  const card = {
+    ...object,
+    width: 440,
+    height: 390,
+    assetId: 'image',
+    linkIconId: 'icon',
+    linkDescription: 'Summary',
+  };
+  const compact = setLinkCompact(card, true);
+  assert.equal(compact.height, 112);
+  assert.equal(compact.assetId, 'image');
+  assert.equal(compact.linkIconId, 'icon');
+  assert.equal(hasLinkImage(compact), false);
+  assert.equal(
+    withLinkPreview(compact, { assetId: 'updated', linkDescription: 'New summary' }).height,
+    112,
+  );
+  assert.equal(normalizeLinkSize(compact).height, 112);
+  const expanded = setLinkCompact(compact, false);
+  assert.equal(expanded.height, 390);
+  assert.equal(hasLinkImage(expanded), true);
+  assert.equal(hitsLinkPlay(compact, { x: 220, y: 56 }), false);
+  assert.equal(hitsLinkPlay(compact, { x: 410, y: 36 }), true);
+  const pending = setLinkCompact({ ...card, assetId: undefined, height: 76 }, true);
+  assert.equal(withLinkPreview(pending, { assetId: 'new image' }).height, 112);
 });

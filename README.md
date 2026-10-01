@@ -1,6 +1,6 @@
 # Local Canvas
 
-A Windows-first local whiteboard with a minimal, iOS-inspired board launcher. Version 0.1.23 is a working preview release; the original product roadmap is broader than this implementation.
+A Windows-first local whiteboard with a minimal, iOS-inspired board launcher. Version 0.1.24 is a working preview release; the original product roadmap is broader than this implementation.
 
 ## Run
 

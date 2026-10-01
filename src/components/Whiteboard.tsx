@@ -41,6 +41,7 @@ import {
   linkLayout,
   compactLinkHeight,
   normalizeLinkSize,
+  setLinkCompact,
 } from '../canvas/link-preview';
 import { loadLinkPreview } from '../canvas/load-link-preview';
 import { Engine } from '../canvas/engine';
@@ -209,9 +210,14 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     else if (o.type === 'link') {
       const id = youtubeId(o.url!);
       if (id) {
-        if (o.height === compactLinkHeight)
+        if (o.linkCompact || o.height === compactLinkHeight)
           engine.current?.apply({
-            upserts: [{ ...o, height: ((o.width - 24) * 9) / 16 + 80 }],
+            upserts: [
+              {
+                ...setLinkCompact(o, false),
+                height: o.linkPreviewHeight || ((o.width - 24) * 9) / 16 + 80,
+              },
+            ],
             deleted: [],
           });
         setPlayer({ id: o.id, videoId: id, muted: false });
@@ -219,7 +225,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     }
   };
   const activate = (o: CanvasObject) => {
-    if (o.type === 'link') openObject(o);
+    if (o.type === 'link' && o.linkCompact) openLink(o.url!).catch(error);
+    else if (o.type === 'link') openObject(o);
     else if (o.type !== 'image') startEdit(o);
   };
   const previewRequests = useRef(new Map<string, Engine>());
@@ -234,7 +241,13 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       (meta) => {
         e.hydrateLink(o.id, { ...meta, url: o.url! });
         const id = youtubeId(o.url!);
-        if (autoplay && id && meta.assetId && e.objects.has(o.id))
+        if (
+          autoplay &&
+          id &&
+          meta.assetId &&
+          e.objects.has(o.id) &&
+          !e.objects.get(o.id)?.linkCompact
+        )
           setPlayer({ id: o.id, videoId: id, muted: true });
       },
     ).finally(() => {
@@ -645,6 +658,22 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     }
   }
   const contextItems: (MenuItem | null)[] = [
+    ...(selected.length === 1 && selected[0].type === 'link' && selected[0].assetId
+      ? [
+          {
+            label: selected[0].linkCompact ? 'Show image preview' : 'Show compact card',
+            icon: selected[0].linkCompact ? <ImagePlus /> : <Link2 />,
+            action: () => {
+              if (editingSession.current) finishEdit();
+              const o = engine.current?.objects.get(selected[0].id);
+              if (!o) return;
+              if (player?.id === o.id) setPlayer(null);
+              engine.current?.apply({ upserts: [setLinkCompact(o, !o.linkCompact)], deleted: [] });
+            },
+          },
+          null,
+        ]
+      : []),
     ...(selected.length === 1 && selected[0].type === 'image'
       ? [{ label: 'Crop image', icon: <Crop />, action: () => startCrop(selected[0]) }, null]
       : []),

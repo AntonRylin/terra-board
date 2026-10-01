@@ -4,7 +4,7 @@ import { textLayout } from './text-layout';
 import { textPlacement } from './text-alignment';
 import { localViewport } from './transform';
 import { frameLabel } from './frame-label';
-import { linkLayout } from './link-preview';
+import { linkLayout, hasLinkImage } from './link-preview';
 
 export function renderLinkCaption(
   o: CanvasObject,
@@ -12,7 +12,7 @@ export function renderLinkCaption(
   region: { x: number; y: number; width: number; height: number },
   loading = false,
 ) {
-  const compact = !o.assetId;
+  const compact = !hasLinkImage(o);
   const summary = compact && !!o.linkDescription?.trim();
   const box = linkLayout(o.width, o.height);
   const captionTop = compact ? 0 : box.y + box.height;
