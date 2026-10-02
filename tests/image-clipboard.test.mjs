@@ -214,3 +214,12 @@ test('a newer copy in another app is not overwritten by a pending image', async 
   assert.equal(await pending, false);
   assert.equal(items, external);
 });
+
+test('unchanged screenshot PNG bytes are reused and compressed source quality is retained', async () => {
+  const { bytes, asset } = await fixture();
+  const copied = await imagePng(asset, object);
+  assert.equal(copied, bytes, 'no PNG re-encode for an unmodified screenshot');
+  const jpeg = await sharp(bytes).jpeg({ quality: 88 }).toBuffer();
+  const png = await imagePng({ mime: 'image/jpeg', file: jpeg }, object);
+  assert.deepEqual(await sharp(png).raw().toBuffer(), await sharp(jpeg).raw().toBuffer());
+});

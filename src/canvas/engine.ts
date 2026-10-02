@@ -55,6 +55,7 @@ interface Callbacks {
   edit: (e: Edit) => void;
   camera: (c: Camera) => void;
   selection: (items: CanvasObject[]) => void;
+  hover?: (imageId: string | null) => void;
   selectionView?: (bounds: Bounds | null, viewport: { width: number; height: number }) => void;
   rotation?: (value: { angle: number; x: number; y: number } | null) => void;
   activate: (o: CanvasObject) => void;
@@ -207,6 +208,10 @@ export class Engine {
   }
   get clipboardSelection() {
     return selectionWithGalleryImages(this.selected, this.objects.values());
+  }
+  galleryImageAt(point: Point) {
+    const o = this.hit(this.screenPoint(point));
+    return o?.type === 'image' && o.galleryId ? o.id : null;
   }
   private rebuildGroups() {
     this.groupMembers.clear();
@@ -432,6 +437,11 @@ export class Engine {
   private move = (e: PointerEvent) => {
     const g = this.gesture;
     if (!g) {
+      const hovered =
+        this.tool === 'select' && !this.space && e.target === this.app.canvas
+          ? this.hit(this.screenPoint(this.point(e)))
+          : undefined;
+      this.callbacks.hover?.(hovered?.type === 'image' && hovered.galleryId ? hovered.id : null);
       this.updateCursor(
         e.target === this.app.canvas ? this.resizeCorner(this.point(e)) : undefined,
       );
@@ -444,6 +454,7 @@ export class Engine {
         this.host.style.cursor = 'move';
       return;
     }
+    this.callbacks.hover?.(null);
     const p = this.point(e),
       dx = p.x - g.start.x,
       dy = p.y - g.start.y;
@@ -905,6 +916,8 @@ export class Engine {
         groupId: o.groupId ? ids.get(o.groupId) : undefined,
         galleryId: o.galleryId ? objectIds.get(o.galleryId) : undefined,
         galleryIndex: o.galleryId && objectIds.has(o.galleryId) ? o.galleryIndex : undefined,
+        galleryRow: o.galleryId && objectIds.has(o.galleryId) ? o.galleryRow : undefined,
+        galleryColumn: o.galleryId && objectIds.has(o.galleryId) ? o.galleryColumn : undefined,
       };
     });
     if (copies.length) {

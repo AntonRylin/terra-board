@@ -1,6 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { galleryEdit, layoutGallery, selectionWithGalleryImages } from '../src/canvas/gallery.ts';
+import {
+  galleryEdit,
+  layoutGallery,
+  selectionWithGalleryImages,
+  insertGalleryImages,
+} from '../src/canvas/gallery.ts';
 const gallery = {
   id: 'gallery',
   type: 'frame',
@@ -105,27 +110,35 @@ test('gallery metadata survives clipboard, storage, duplication and portable exp
       .toBuffer();
     const asset = await store.importAsset({ bytes, name: 'image.png' });
     const objects = layoutGallery({ ...gallery, text: 'Vehicle references' }, [
-      { ...a, assetId: asset.id },
+      { ...a, assetId: asset.id, galleryRow: 0, galleryColumn: 0 },
+      {
+        ...a,
+        id: 'variation',
+        assetId: asset.id,
+        galleryIndex: 1,
+        galleryRow: 0,
+        galleryColumn: 1,
+      },
     ]);
     assert.deepEqual(clipboardObjects(objects), objects);
     const board = store.createBoard({ name: 'Gallery' });
     store.patchBoard({ id: board.id, revision: 0, upserts: objects, deleted: [] });
     const copy = store.duplicateBoard({ id: board.id });
     assert.deepEqual(
-      store.loadBoard({ id: copy.id }).objects.sort((a, b) => a.z - b.z),
-      objects,
+      store.loadBoard({ id: copy.id }).objects.sort((a, b) => a.id.localeCompare(b.id)),
+      [...objects].sort((a, b) => a.id.localeCompare(b.id)),
     );
     const packed = await store.exportBoard({ id: board.id });
     const imported = await store.importBoard({ bytes: packed });
     assert.deepEqual(
-      store.loadBoard({ id: imported.id }).objects.sort((a, b) => a.z - b.z),
-      objects,
+      store.loadBoard({ id: imported.id }).objects.sort((a, b) => a.id.localeCompare(b.id)),
+      [...objects].sort((a, b) => a.id.localeCompare(b.id)),
     );
     store.close();
     store = new Store(root);
     assert.deepEqual(
-      store.loadBoard({ id: board.id }).objects.sort((a, b) => a.z - b.z),
-      objects,
+      store.loadBoard({ id: board.id }).objects.sort((a, b) => a.id.localeCompare(b.id)),
+      [...objects].sort((a, b) => a.id.localeCompare(b.id)),
     );
     for (const bad of [
       { ...gallery, gallery: { ...gallery.gallery, direction: 'up' } },
@@ -140,4 +153,64 @@ test('gallery metadata survives clipboard, storage, duplication and portable exp
   } finally {
     store.close();
   }
+});
+
+test('gallery matrix inserts variations and steps without collisions, then transposes', () => {
+  const current = new Map(layoutGallery(gallery, [a, b]).map((o) => [o.id, o]));
+  const apply = (edit) => {
+    const result = galleryEdit(current, edit);
+    for (const o of result.upserts) current.set(o.id, o);
+    for (const id of result.deleted) current.delete(id);
+  };
+  const insert = (id, anchorId, direction) =>
+    apply(
+      insertGalleryImages(current, [{ ...a, id, galleryId: undefined, galleryIndex: undefined }], {
+        galleryId: gallery.id,
+        anchorId,
+        direction,
+      }),
+    );
+  insert('variation', 'a', 'right');
+  assert.equal(current.get('variation').galleryRow, 0);
+  assert.equal(current.get('variation').galleryColumn, 1);
+  assert.equal(current.get('b').galleryRow, 1);
+  assert.equal(current.get('b').galleryColumn, 0);
+  insert('closer', 'a', 'right');
+  assert.equal(current.get('closer').galleryColumn, 1);
+  assert.equal(current.get('variation').galleryColumn, 2);
+  insert('step', 'a', 'below');
+  assert.equal(current.get('step').galleryRow, 1);
+  assert.equal(current.get('b').galleryRow, 2);
+  assert.equal(current.get('variation').galleryRow, 0);
+  const before = [...current.values()].filter((o) => o.type === 'image');
+  assert.equal(
+    new Set(before.map((o) => o.galleryRow + ',' + o.galleryColumn)).size,
+    before.length,
+  );
+  for (const first of before)
+    for (const second of before) {
+      if (first.id === second.id) continue;
+      assert.ok(
+        first.x + first.width <= second.x ||
+          second.x + second.width <= first.x ||
+          first.y + first.height <= second.y ||
+          second.y + second.height <= first.y,
+        'no overlaps',
+      );
+    }
+  const parent = current.get(gallery.id);
+  apply({
+    upserts: [{ ...parent, gallery: { ...parent.gallery, direction: 'right' } }],
+    deleted: [],
+  });
+  for (const o of before) {
+    assert.equal(current.get(o.id).galleryRow, o.galleryColumn);
+    assert.equal(current.get(o.id).galleryColumn, o.galleryRow);
+  }
+  insert('under-variation', 'variation', 'below');
+  assert.equal(
+    current.get('under-variation').galleryColumn,
+    current.get('variation').galleryColumn,
+  );
+  assert.equal(current.get('under-variation').galleryRow, current.get('variation').galleryRow + 1);
 });

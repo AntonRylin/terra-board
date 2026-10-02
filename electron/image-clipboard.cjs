@@ -1,5 +1,6 @@
 const sharp = require('sharp');
 const { createHash } = require('node:crypto');
+const { readFile } = require('node:fs/promises');
 const { objectValue } = require('./store.cjs');
 const objectMime = 'web application/x-terra-board-objects';
 const maxObjectBytes = 16 * 1024 * 1024;
@@ -17,6 +18,16 @@ async function imagePng(asset, object) {
   if (!asset.mime.startsWith('image/')) throw Error('Only images can be copied as an image');
   const input = sharp(asset.file, { limitInputPixels: 100000000, animated: false });
   const metadata = await input.metadata();
+  // Most screenshots are already upright PNGs. Preserve their exact bytes
+  // instead of decoding and compressing millions of pixels for every cut.
+  if (
+    metadata.format === 'png' &&
+    (!metadata.orientation || metadata.orientation === 1) &&
+    (!metadata.pages || metadata.pages === 1) &&
+    !object.crop &&
+    !(object.rotation % 360)
+  )
+    return Buffer.isBuffer(asset.file) ? asset.file : readFile(asset.file);
   const width = metadata.orientation >= 5 ? metadata.height : metadata.width;
   const height = metadata.orientation >= 5 ? metadata.width : metadata.height;
   input.autoOrient();
@@ -29,12 +40,13 @@ async function imagePng(asset, object) {
     input.extract({ left, top, width: right - left, height: bottom - top });
   }
   // PNG preserves source detail and transparency; never use the 1600px preview.
-  const png = await input.png().toBuffer();
-  if (!object.rotation || object.rotation === 360) return png;
-  // Apply board rotation after EXIF orientation and crop, without another lossy encode.
-  return sharp(png, { limitInputPixels: 100000000 })
+  if (!object.rotation || object.rotation === 360)
+    return input.png({ compressionLevel: 1 }).toBuffer();
+  // A raw intermediate avoids an extra PNG compression/decompression round trip.
+  const { data, info } = await input.ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  return sharp(data, { raw: { width: info.width, height: info.height, channels: info.channels } })
     .rotate(object.rotation, { background: '#00000000' })
-    .png()
+    .png({ compressionLevel: 1 })
     .toBuffer();
 }
 

@@ -73,6 +73,17 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
     )
       throw Error('Invalid clipboard gallery image');
     if (
+      o.galleryId &&
+      (o.galleryRow !== undefined || o.galleryColumn !== undefined) &&
+      (!Number.isInteger(o.galleryRow) ||
+        o.galleryRow < 0 ||
+        o.galleryRow > 10000 ||
+        !Number.isInteger(o.galleryColumn) ||
+        o.galleryColumn < 0 ||
+        o.galleryColumn > 10000)
+    )
+      throw Error('Invalid clipboard gallery cell');
+    if (
       o.fontSize !== undefined &&
       !(Number.isFinite(o.fontSize) && o.fontSize >= 8 && o.fontSize <= 300)
     )
@@ -184,7 +195,15 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
       ...(o.gallery
         ? { gallery: { direction: o.gallery.direction, size: o.gallery.size, gap: o.gallery.gap } }
         : {}),
-      ...(o.galleryId ? { galleryId: o.galleryId, galleryIndex: o.galleryIndex } : {}),
+      ...(o.galleryId
+        ? {
+            galleryId: o.galleryId,
+            galleryIndex: o.galleryIndex,
+            ...(o.galleryRow !== undefined
+              ? { galleryRow: o.galleryRow, galleryColumn: o.galleryColumn }
+              : {}),
+          }
+        : {}),
       ...(o.assetId ? { assetId: o.assetId } : {}),
       ...(o.type === 'link' && o.linkIconId ? { linkIconId: o.linkIconId } : {}),
       ...(o.type === 'link' && o.linkCompact !== undefined ? { linkCompact: o.linkCompact } : {}),

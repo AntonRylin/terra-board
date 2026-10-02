@@ -964,3 +964,47 @@ test('gallery resize previews return to original size, cancel and undo together'
   f.engine.undo();
   for (const o of original) assert.deepEqual({ ...f.engine.objects.get(o.id) }, o);
 });
+
+test('matrix resize excludes fixed gaps and does not rescale again on release', () => {
+  const f = fixture();
+  f.engine.camera = { x: 0, y: 0, zoom: 1 };
+  const gallery = {
+    id: 'matrix',
+    type: 'frame',
+    text: 'Matrix',
+    x: 100,
+    y: 100,
+    width: 432,
+    height: 180,
+    z: 0,
+    gallery: { direction: 'below', size: 400, gap: 12 },
+  };
+  const images = Array.from({ length: 3 }, (_, i) => ({
+    id: 'cell-' + i,
+    type: 'image',
+    x: 0,
+    y: 0,
+    width: 400,
+    height: 200,
+    z: 1,
+    galleryId: 'matrix',
+    galleryIndex: i,
+    galleryRow: 0,
+    galleryColumn: i,
+  }));
+  f.engine.apply({ upserts: [gallery, ...images], deleted: [] });
+  f.engine.setSelection(['matrix']);
+  const original = structuredClone(f.engine.all),
+    g = f.engine.objects.get('matrix'),
+    edge = g.x + g.width,
+    y = g.y + g.height / 2;
+  f.engine.down(f.event(edge, y, 0));
+  f.engine.move(f.event(edge - 300, y, 0));
+  assert.equal(f.engine.objects.get('matrix').width, g.width - 300);
+  assert.equal(f.engine.objects.get('cell-0').width, 300);
+  f.engine.up(f.event(edge - 300, y, 0));
+  assert.equal(f.engine.objects.get('matrix').width, g.width - 300);
+  assert.equal(f.engine.objects.get('cell-0').width, 300);
+  f.engine.undo();
+  for (const o of original) assert.deepEqual({ ...f.engine.objects.get(o.id) }, o);
+});

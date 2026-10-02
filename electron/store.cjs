@@ -152,6 +152,17 @@ function objectValue(o) {
     if (o.type !== 'image' || !number(o.galleryIndex, 0, 1e7)) throw Error('Invalid gallery image');
     result.galleryId = idValue(o.galleryId);
     result.galleryIndex = o.galleryIndex;
+    if (o.galleryRow !== undefined || o.galleryColumn !== undefined) {
+      if (
+        !Number.isInteger(o.galleryRow) ||
+        !number(o.galleryRow, 0, 10000) ||
+        !Number.isInteger(o.galleryColumn) ||
+        !number(o.galleryColumn, 0, 10000)
+      )
+        throw Error('Invalid gallery cell');
+      result.galleryRow = o.galleryRow;
+      result.galleryColumn = o.galleryColumn;
+    }
   }
   if (o.assetId) result.assetId = idValue(o.assetId);
   if (o.type === 'link' && o.linkIconId) result.linkIconId = idValue(o.linkIconId);

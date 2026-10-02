@@ -185,6 +185,10 @@ try {
     writeFileSync(join(root, name + '.png'), Buffer.from(s.data, 'base64'));
   };
   const point = async (o, dx = 20, dy = -16) => {
+    await until(
+      () => read(`!!document.querySelector('[aria-label="Saved locally"]')`),
+      'pending view saved',
+    );
     const zoom = await read('parseFloat(document.querySelector(".zoom-value").textContent)');
     const c = await until(async () => {
       const c = (await documentState()).camera;
@@ -198,6 +202,13 @@ try {
       `window.canvas.copyObjects(${JSON.stringify([{ id: 'clipboard-source', type: 'image', assetId: asset.id, text: 'Landscape.png', x: 0, y: 0, width: i === 1 ? 225 : 400, height: i === 1 ? 400 : 225, z: 1 }])})`,
     );
   await clickSelector('[aria-label="Insert"]');
+  assert.deepEqual(
+    await read(
+      `(()=>{const e=document.querySelector('.insert-menu button'),icon=e.querySelector('svg');return {font:getComputedStyle(e).fontSize,icon:parseFloat(getComputedStyle(icon).width)};})()`,
+    ),
+    { font: '14px', icon: 19 },
+  );
+  await shot('insert-menu');
   await menuItem('Gallery');
   let d = await saved((d) => !!galleryOf(d), 'gallery created');
   let g = galleryOf(d);
@@ -335,12 +346,109 @@ try {
   d = await documentState();
   assert.equal(galleryOf(d).text, 'Vehicle references');
   assert.equal(membersOf(d).length, 3);
+  await clickSelector('[aria-label="Fit board"]');
+  g = galleryOf(await documentState());
+  p = await point(g);
+  await click(p.x, p.y);
+  await key('Enter', 'Enter');
+  await clickSelector('.gallery-controls button:last-child');
+  d = await saved((d) => galleryOf(d).gallery.direction === 'below', 'vertical matrix');
+  await clickSelector('[aria-label="Fit board"]');
+  const hoverTarget = async (id, direction) => {
+    const image = (await documentState()).objects.find((o) => o.id === id);
+    const p = await point(image, image.width / 2, image.height / 2);
+    await mouse('mouseMoved', p.x, p.y);
+    await until(() => read('!!document.querySelector(".gallery-insertion")'), 'hover targets');
+    const r = await rect('.gallery-insert-target.' + direction);
+    await mouse('mouseMoved', r.x + r.width / 2, r.y + r.height / 2);
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  };
+  const originalFirst = membersOf(d).find((o) => o.galleryRow === 0 && o.galleryColumn === 0);
+  const matrixPaste = async (anchor, direction) => {
+    const before = (await documentState()).objects.map((o) => o.id);
+    await copySource();
+    await hoverTarget(anchor, direction);
+    await key('v', 'KeyV', 2);
+    d = await saved((d) => d.objects.length === before.length + 1, 'matrix paste ' + direction);
+    return d.objects.find((o) => !before.includes(o.id));
+  };
+  const firstVariant = await matrixPaste(originalFirst.id, 'right');
+  assert.equal(firstVariant.galleryRow, 0);
+  assert.equal(firstVariant.galleryColumn, 1);
+  await clickSelector('[aria-label="Fit board"]');
+  const closerVariant = await matrixPaste(originalFirst.id, 'right');
+  assert.equal(closerVariant.galleryColumn, 1);
+  assert.equal(
+    d.objects.find((o) => o.id === firstVariant.id).galleryColumn,
+    2,
+    'existing variant shifts right',
+  );
+  await clickSelector('[aria-label="Fit board"]');
+  const nextStep = await matrixPaste(originalFirst.id, 'below');
+  assert.equal(nextStep.galleryRow, 1);
+  assert.equal(nextStep.galleryColumn, 0);
+  assert.equal(
+    d.objects.find((o) => o.id === firstVariant.id).galleryRow,
+    0,
+    'variants stay on their journey step',
+  );
+  await clickSelector('[aria-label="Fit board"]');
+  const dropPoint = await hoverTarget(nextStep.id, 'right');
+  const dropFile = join(root, 'Dropped image.png');
+  writeFileSync(dropFile, imageBytes);
+  const beforeDrop = d.objects.length;
+  for (const type of ['dragEnter', 'dragOver', 'drop'])
+    await send('Input.dispatchDragEvent', {
+      type,
+      ...dropPoint,
+      data: { items: [], files: [dropFile], dragOperationsMask: 1 },
+    });
+  d = await saved((d) => d.objects.length === beforeDrop + 1, 'file dropped into matrix target');
+  assert.equal(d.objects.filter((o) => o.galleryRow === 1 && o.galleryColumn === 1).length, 1);
+  await clickSelector('[aria-label="Fit board"]');
+  await hoverTarget(originalFirst.id, 'right');
+  await shot('matrix-column');
+  const cells = membersOf(d).map((o) => ({ id: o.id, row: o.galleryRow, column: o.galleryColumn }));
+  await clickSelector('.gallery-controls button:first-child');
+  d = await saved((d) => galleryOf(d).gallery.direction === 'right', 'matrix transposed');
+  for (const cell of cells) {
+    const o = d.objects.find((o) => o.id === cell.id);
+    assert.equal(o.galleryRow, cell.column);
+    assert.equal(o.galleryColumn, cell.row);
+  }
+  await clickSelector('[aria-label="Fit board"]');
+  const under = await matrixPaste(originalFirst.id, 'below');
+  assert.equal(under.galleryRow, 1);
+  assert.equal(under.galleryColumn, 0);
+  await clickSelector('[aria-label="Fit board"]');
+  await hoverTarget(under.id, 'below');
+  await shot('matrix-row');
+  await key('z', 'KeyZ', 2);
+  d = await saved((d) => !d.objects.some((o) => o.id === under.id), 'undo matrix insertion');
+  await key('y', 'KeyY', 2);
+  d = await saved((d) => d.objects.some((o) => o.id === under.id), 'redo matrix insertion');
+  const savedCells = membersOf(d).map((o) => [o.id, o.galleryRow, o.galleryColumn]);
+  await clickSelector('[aria-label="Open board Other board"]');
+  await until(
+    () => read('document.querySelector(".board-title")?.textContent === "Other board"'),
+    'switch for matrix reopen',
+  );
+  await clickSelector('[aria-label="Open board Gallery test"]');
+  await until(
+    () => read('document.querySelector(".board-title")?.textContent === "Gallery test"'),
+    'matrix reopened',
+  );
+  d = await documentState();
+  assert.deepEqual(
+    membersOf(d).map((o) => [o.id, o.galleryRow, o.galleryColumn]),
+    savedCells,
+  );
   assert.deepEqual(errors, []);
   console.log(
     JSON.stringify({
       passed: true,
       checks:
-        'Insert, empty hint, rename, repeated native clipboard paste, row/column, aspect ratio, drag by name, undo/redo, copy/delete whole gallery, ordinary paste, board reopening',
+        'Insert, empty hint, rename, repeated native clipboard paste, row/column, aspect ratio, drag by name, undo/redo, copy/delete whole gallery, ordinary paste, board reopening, matrix hover paste and native file drop, transpose, matrix undo/redo/reopen',
       artifacts: root,
     }),
   );

@@ -19,6 +19,8 @@ export interface CanvasObject {
   gallery?: { direction: 'right' | 'below'; size: number; gap: number };
   galleryId?: string;
   galleryIndex?: number;
+  galleryRow?: number;
+  galleryColumn?: number;
   arrow?: ArrowStyle;
   id: string;
   type: ObjectType;

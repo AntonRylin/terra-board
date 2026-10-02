@@ -92,11 +92,13 @@ export function ContextMenu({
   y,
   items,
   onClose,
+  className = '',
 }: {
   x: number;
   y: number;
   items: (MenuItem | null)[];
   onClose: () => void;
+  className?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
@@ -123,7 +125,7 @@ export function ContextMenu({
     };
   }, [onClose]);
   return (
-    <div ref={ref} className="context-menu" role="menu" style={{ left: x, top: y }}>
+    <div ref={ref} className={'context-menu ' + className} role="menu" style={{ left: x, top: y }}>
       {items.map((item, i) =>
         item ? (
           <button

@@ -40,28 +40,135 @@ export function layoutGallery(
     const resized = { ...image, x: 0, y: 0, width, height };
     return { image, width, height, visual: bounds(resized), body: objectBounds(resized) };
   });
-  const rowInset = Math.max(0, ...sized.map((o) => o.body.y - o.visual.y));
-  const upserts = sized.map(({ image, width, height, visual, body }) => {
-    const x = container.x + (below ? galleryPadding : cursor) - visual.x;
-    const y = container.y + (below ? cursor - visual.y : galleryPadding + rowInset - body.y);
-    cursor += (below ? visual.height : visual.width) + gap;
-    return { ...image, x, y, width, height, z: Math.max(image.z, container.z + 1) };
-  });
-  const length = images.length ? cursor - gap + galleryPadding : 180;
-  const rowHeight = Math.max(
-    size,
-    ...sized.map((o) => rowInset - o.body.y + o.visual.y + o.visual.height),
+  const cells = sized.map((o, index) => ({
+    ...o,
+    row: o.image.galleryRow ?? (below ? index : 0),
+    column: o.image.galleryColumn ?? (below ? 0 : index),
+  }));
+  const rowCells = new Map<number, typeof cells>();
+  const columnWidths = new Map<number, number>();
+  for (const cell of cells) {
+    const list = rowCells.get(cell.row) || [];
+    list.push(cell);
+    rowCells.set(cell.row, list);
+    columnWidths.set(cell.column, Math.max(columnWidths.get(cell.column) || 0, cell.visual.width));
+  }
+  const rows = [...rowCells.keys()].sort((a, b) => a - b);
+  const columns = [...columnWidths.keys()].sort((a, b) => a - b);
+  const rowIndices = new Map(rows.map((r, i) => [r, i])),
+    columnIndices = new Map(columns.map((c, i) => [c, i]));
+  const rowOffsets = new Map<number, number>(),
+    columnOffsets = new Map<number, number>();
+  const rowInsets = new Map<number, number>();
+  for (const row of rows) {
+    const members = rowCells.get(row)!;
+    const inset = Math.max(0, ...members.map((o) => o.body.y - o.visual.y));
+    rowInsets.set(row, inset);
+    rowOffsets.set(row, cursor);
+    cursor +=
+      Math.max(...members.map((o) => inset - o.body.y + o.visual.y + o.visual.height)) + gap;
+  }
+  const height = rows.length
+    ? cursor - gap + galleryPadding
+    : below
+      ? 180
+      : size + galleryPadding * 2;
+  cursor = galleryPadding;
+  for (const column of columns) {
+    columnOffsets.set(column, cursor);
+    cursor += columnWidths.get(column)! + gap;
+  }
+  const width = columns.length
+    ? cursor - gap + galleryPadding
+    : below
+      ? size + galleryPadding * 2
+      : 180;
+  const upserts = cells.map(({ image, width, height, visual, body, row, column }, index) => ({
+    ...image,
+    x: container.x + columnOffsets.get(column)! - visual.x,
+    y: container.y + rowOffsets.get(row)! + rowInsets.get(row)! - body.y,
+    width,
+    height,
+    z: Math.max(image.z, container.z + 1),
+    galleryRow: rowIndices.get(row)!,
+    galleryColumn: columnIndices.get(column)!,
+    galleryIndex: index,
+  }));
+  return [{ ...container, rotation: 0, gallery: { ...settings, size }, width, height }, ...upserts];
+}
+
+export interface GalleryTarget {
+  galleryId: string;
+  anchorId?: string;
+  direction?: 'right' | 'below';
+}
+
+// Main-axis insertion creates a journey step. Cross-axis insertion adds a variation
+// in the same row/column, moving only that step's later variations.
+export function insertGalleryImages(
+  current: Map<string, CanvasObject>,
+  incoming: CanvasObject[],
+  target?: GalleryTarget | null,
+): Edit {
+  const parent = target && current.get(target.galleryId);
+  if (!parent?.gallery) return { upserts: incoming, deleted: [] };
+  const members = layoutGallery(parent, galleryMembers(parent.id, current.values()))
+    .slice(1)
+    .map((o) => ({
+      ...current.get(o.id)!,
+      galleryRow: o.galleryRow,
+      galleryColumn: o.galleryColumn,
+      galleryIndex: o.galleryIndex,
+    }));
+  const anchor = members.find((o) => o.id === target?.anchorId);
+  const direction = (anchor && target?.direction) || parent.gallery.direction;
+  const main = direction === parent.gallery.direction;
+  const row = anchor
+    ? anchor.galleryRow! + (direction === 'below' ? 1 : 0)
+    : parent.gallery.direction === 'below'
+      ? Math.max(-1, ...members.map((o) => o.galleryRow!)) + 1
+      : 0;
+  const column = anchor
+    ? anchor.galleryColumn! + (direction === 'right' ? 1 : 0)
+    : parent.gallery.direction === 'right'
+      ? Math.max(-1, ...members.map((o) => o.galleryColumn!)) + 1
+      : 0;
+  const copiedGalleries = new Set(incoming.filter((o) => o.gallery).map((o) => o.id));
+  const images = incoming.filter(
+    (o) => o.type === 'image' && !copiedGalleries.has(o.galleryId || ''),
   );
-  return [
-    {
-      ...container,
-      rotation: 0,
-      gallery: { ...settings, size },
-      width: below ? size + galleryPadding * 2 : length,
-      height: below ? length : rowHeight + galleryPadding * 2,
-    },
-    ...upserts,
-  ];
+  if (!images.length) return { upserts: incoming, deleted: [] };
+  const moved = members
+    .filter((o) =>
+      direction === 'below'
+        ? o.galleryRow! >= row && (main || o.galleryColumn === column)
+        : o.galleryColumn! >= column && (main || o.galleryRow === row),
+    )
+    .map((o) => ({
+      ...o,
+      galleryRow: o.galleryRow! + (direction === 'below' ? images.length : 0),
+      galleryColumn: o.galleryColumn! + (direction === 'right' ? images.length : 0),
+    }));
+  const offsets = new Map(images.map((o, i) => [o.id, i]));
+  const index = Math.max(-1, ...members.map((o) => o.galleryIndex || 0)) + 1;
+  return {
+    upserts: [
+      ...moved,
+      ...incoming.map((o) =>
+        offsets.has(o.id)
+          ? {
+              ...o,
+              groupId: undefined,
+              galleryId: parent.id,
+              galleryIndex: index + offsets.get(o.id)!,
+              galleryRow: row + (direction === 'below' ? offsets.get(o.id)! : 0),
+              galleryColumn: column + (direction === 'right' ? offsets.get(o.id)! : 0),
+            }
+          : o,
+      ),
+    ],
+    deleted: [],
+  };
 }
 
 // Expand one user edit into one undoable layout transaction. Ordinary edits
@@ -90,14 +197,27 @@ export function galleryEdit(
     const before = current.get(o.id);
     if (o.gallery && before?.gallery && o.gallery.direction === before.gallery.direction) {
       const cross = o.gallery.direction === 'below' ? 'width' : 'height';
-      if (o[cross] !== before[cross])
+      if (o[cross] !== before[cross] && o.gallery.size === before.gallery.size) {
+        const members = galleryMembers(o.id, current.values());
+        const tracks = Math.max(
+          1,
+          new Set(
+            members.map((image) =>
+              cross === 'width' ? image.galleryColumn || 0 : image.galleryRow || 0,
+            ),
+          ).size,
+        );
         o = {
           ...o,
           gallery: {
             ...o.gallery,
-            size: Math.max(32, Math.min(8192, before.gallery.size + o[cross] - before[cross])),
+            size: Math.max(
+              32,
+              Math.min(8192, before.gallery.size + (o[cross] - before[cross]) / tracks),
+            ),
           },
         };
+      }
     }
     // Pulling an image outside releases it. Moving the whole gallery keeps it.
     if (
@@ -116,7 +236,13 @@ export function galleryEdit(
           cx > parent.x + parent.width ||
           cy > parent.y + parent.height)
       )
-        o = { ...o, galleryId: undefined, galleryIndex: undefined };
+        o = {
+          ...o,
+          galleryId: undefined,
+          galleryIndex: undefined,
+          galleryRow: undefined,
+          galleryColumn: undefined,
+        };
     }
     changes.set(o.id, o);
     next.set(o.id, o);
@@ -125,14 +251,27 @@ export function galleryEdit(
     const parent = next.get(id),
       images = galleryMembers(id, next.values());
     if (parent?.gallery) {
-      for (const o of layoutGallery(parent, images, bounds)) {
+      const previous = current.get(id);
+      const ordered =
+        previous?.gallery && previous.gallery.direction !== parent.gallery.direction
+          ? layoutGallery(previous, images, bounds)
+              .slice(1)
+              .map((o) => ({ ...o, galleryRow: o.galleryColumn, galleryColumn: o.galleryRow }))
+          : images;
+      for (const o of layoutGallery(parent, ordered, bounds)) {
         if (changes.has(o.id) || JSON.stringify(o) !== JSON.stringify(current.get(o.id)))
           changes.set(o.id, o);
         next.set(o.id, o);
       }
     } else
       for (const o of images)
-        changes.set(o.id, { ...o, galleryId: undefined, galleryIndex: undefined });
+        changes.set(o.id, {
+          ...o,
+          galleryId: undefined,
+          galleryIndex: undefined,
+          galleryRow: undefined,
+          galleryColumn: undefined,
+        });
   }
   return {
     upserts: [...changes.values()].filter((o) => !edit.deleted.includes(o.id)),
