@@ -69,7 +69,7 @@ import { ContextMenu, Modal, type MenuItem } from './Dialogs';
 import ImageCrop from './ImageCrop';
 import { cropImage, uncroppedImage, fullCrop } from '../canvas/crop';
 import { selectionToolsPosition } from '../canvas/selection-tools';
-import type { Bounds } from '../canvas/geometry';
+import { boundsOf, type Bounds } from '../canvas/geometry';
 export interface WhiteboardHandle {
   prepareExternal: () => Promise<void>;
   finishExternal: (doc?: Document) => void;
@@ -113,6 +113,36 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   const galleryHintRef = useRef<HTMLDivElement>(null);
   const galleryTargetsRef = useRef<HTMLDivElement>(null);
   const galleryTarget = useRef<GalleryTarget | null>(null);
+  const pointer = useRef<{ x: number; y: number } | null>(null);
+  const pastePoint = () => {
+    const e = engine.current,
+      rect = host.current?.getBoundingClientRect(),
+      p = pointer.current;
+    if (!e) return undefined;
+    if (!rect || !p || p.x < rect.left || p.y < rect.top || p.x > rect.right || p.y > rect.bottom)
+      return e.center();
+    return e.screenPoint({ x: p.x - rect.left, y: p.y - rect.top });
+  };
+  const pasteTarget = () => {
+    // Only an explicit insertion target captures a paste; selection alone does not.
+    const target = galleryTarget.current;
+    if (target) return { ...target };
+    const e = engine.current,
+      point = pastePoint(),
+      gallery = e?.selected.length === 1 ? e.selected[0] : undefined;
+    // The empty gallery's "Paste images here" area is its first insertion target.
+    if (
+      gallery?.gallery &&
+      point &&
+      !galleryMembers(gallery.id, e!.all).length &&
+      point.x >= gallery.x &&
+      point.x <= gallery.x + gallery.width &&
+      point.y >= gallery.y &&
+      point.y <= gallery.y + gallery.height
+    )
+      return { galleryId: gallery.id };
+    return null;
+  };
   const hoveredImage = useRef<string | null>(null);
   const [hoverImageId, setHoverImageId] = useState<string | null>(null);
   const hoverImage = (id: string | null) => {
@@ -676,12 +706,21 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     importMedia,
     fit: () => engine.current?.fit(),
   }));
-  const pasteObjects = (objects: CanvasObject[], target?: GalleryTarget | null) => {
+  const pasteObjects = (
+    objects: CanvasObject[],
+    target?: GalleryTarget | null,
+    point?: { x: number; y: number },
+  ) => {
     const e = engine.current;
     if (!e || !objects.length) return;
     const groups = new Map<string, string>();
     const objectIds = new Map(objects.map((o) => [o.id, uid()]));
     const top = e.topZ();
+    const bounds = point && objects.some((o) => o.type === 'image') ? boundsOf(objects) : null;
+    const offset =
+      point && bounds
+        ? { x: point.x - bounds.x - bounds.width / 2, y: point.y - bounds.y - bounds.height / 2 }
+        : { x: 30, y: 30 };
     const copies = objects.map((o, i) => {
       if (o.groupId && !groups.has(o.groupId)) groups.set(o.groupId, uid());
       return {
@@ -692,8 +731,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         galleryIndex: o.galleryId && objectIds.has(o.galleryId) ? o.galleryIndex : undefined,
         galleryRow: o.galleryId && objectIds.has(o.galleryId) ? o.galleryRow : undefined,
         galleryColumn: o.galleryId && objectIds.has(o.galleryId) ? o.galleryColumn : undefined,
-        x: o.x + 30,
-        y: o.y + 30,
+        x: o.x + offset.x,
+        y: o.y + offset.y,
         z: top + i + 1,
       };
     });
@@ -725,6 +764,9 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     return task;
   };
   useEffect(() => {
+    const rememberPointer = (event: PointerEvent) => {
+      pointer.current = { x: event.clientX, y: event.clientY };
+    };
     const typing = () =>
       !!editingSession.current ||
       !!(document.activeElement as HTMLElement)?.closest(
@@ -741,14 +783,15 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       const files = [...data.files];
       const json = data.getData('application/x-terra-board-objects');
       const text = data.getData('text/plain');
-      const target = selectedGalleryTarget();
+      const target = pasteTarget(),
+        point = pastePoint();
       if (window.canvas) {
         try {
           await clipboardTask.current;
           const objects = await window.canvas.clipboardObjects();
           if (!alive.current || engine.current !== e) return;
           if (objects) {
-            pasteObjects(clipboardObjects(objects), target);
+            pasteObjects(clipboardObjects(objects), target, point);
             return;
           }
         } catch (reason) {
@@ -758,14 +801,14 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       }
       if (json) {
         try {
-          pasteObjects(clipboardObjects(JSON.parse(json)), target);
+          pasteObjects(clipboardObjects(JSON.parse(json)), target, point);
         } catch {
           onError('The copied objects could not be pasted.');
         }
         return;
       }
       if (files.length) {
-        await performImport(() => importFiles(files), undefined, target);
+        await performImport(() => importFiles(files), point, target);
         return;
       }
       if (!text) return;
@@ -825,13 +868,14 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         // Chromium emits no paste event for an empty clipboard. A fast Ctrl+C,
         // Ctrl+V must still wait for an image that is currently being prepared.
         event.preventDefault();
-        const target = selectedGalleryTarget();
+        const target = pasteTarget(),
+          point = pastePoint();
         void clipboardTask.current
           .then(async (copied) => {
             if (!copied) return;
             const objects = await window.canvas!.clipboardObjects();
             if (objects && alive.current && engine.current === e)
-              pasteObjects(clipboardObjects(objects), target);
+              pasteObjects(clipboardObjects(objects), target, point);
           })
           .catch(error);
       } else if (mod && k === 'b') {
@@ -869,6 +913,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       }
     };
     window.addEventListener('paste', paste);
+    window.addEventListener('pointermove', rememberPointer, true);
     window.addEventListener('copy', copyEvent);
     const cut = (event: ClipboardEvent) => {
       if (typing()) {
@@ -887,6 +932,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     window.addEventListener('keydown', key);
     return () => {
       window.removeEventListener('paste', paste);
+      window.removeEventListener('pointermove', rememberPointer, true);
       window.removeEventListener('copy', copyEvent);
       window.removeEventListener('cut', cut);
       window.removeEventListener('keydown', key);

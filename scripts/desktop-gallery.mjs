@@ -224,8 +224,24 @@ try {
   await send('Input.insertText', { text: 'Vehicle references' });
   await key('Enter', 'Enter');
   d = await saved((d) => galleryOf(d)?.text === 'Vehicle references', 'gallery renamed');
+  const hoverTarget = async (id, direction) => {
+    const image = (await documentState()).objects.find((o) => o.id === id);
+    const p = await point(image, image.width / 2, image.height / 2);
+    await mouse('mouseMoved', p.x, p.y);
+    await until(() => read('!!document.querySelector(".gallery-insertion")'), 'hover targets');
+    const r = await rect('.gallery-insert-target.' + direction);
+    await mouse('mouseMoved', r.x + r.width / 2, r.y + r.height / 2);
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  };
   for (let i = 0; i < 3; i++) {
     await copySource(i);
+    if (i === 0) {
+      const p = await point(g, g.width / 2, g.height / 2);
+      await mouse('mouseMoved', p.x, p.y);
+    } else {
+      await clickSelector('[aria-label="Fit board"]');
+      await hoverTarget(membersOf(d).at(-1).id, 'below');
+    }
     await key('v', 'KeyV', 2);
     d = await saved((d) => membersOf(d).length === i + 1, 'image appended ' + i);
     assert.ok(
@@ -252,7 +268,7 @@ try {
   await sleep(200);
   await shot('row');
   g = galleryOf(await documentState());
-  const resizePoint = await point(g, g.width / 2, g.height);
+  const resizePoint = await point(g, g.width, g.height);
   await mouse('mousePressed', resizePoint.x, resizePoint.y);
   await mouse('mouseMoved', resizePoint.x, resizePoint.y - 40);
   await mouse('mouseReleased', resizePoint.x, resizePoint.y - 40);
@@ -310,6 +326,7 @@ try {
     },
   ];
   await read(`window.canvas.copyObjects(${JSON.stringify(mixed)})`);
+  await hoverTarget(membersOf(d).at(-1).id, 'right');
   await key('v', 'KeyV', 2);
   d = await saved((d) => d.objects.length === 6, 'mixed selection pasted');
   assert.equal(membersOf(d).length, 4, 'mixed images attach');
@@ -328,11 +345,36 @@ try {
   d = await saved((d) => d.objects.length === 8, 'undo gallery deletion');
   await key('z', 'KeyZ', 2);
   d = await saved((d) => d.objects.length === 4, 'undo gallery paste');
-  await key('Escape', 'Escape');
+  g = galleryOf(d);
+  p = await point(g);
+  await click(p.x, p.y);
+  await key('Enter', 'Enter');
   await copySource();
+  const cursor = { x: 320, y: 160 };
+  await mouse('mouseMoved', cursor.x, cursor.y);
+  const pasteCamera = (await documentState()).camera,
+    surface = await rect('.canvas-surface');
   await key('v', 'KeyV', 2);
+  await mouse('mouseMoved', cursor.x + 80, cursor.y + 50);
   d = await saved((d) => d.objects.length === 5, 'ordinary paste outside gallery');
-  assert.equal(d.objects.filter((o) => o.type === 'image' && !o.galleryId).length, 1);
+  const outside = d.objects.filter((o) => o.type === 'image' && !o.galleryId);
+  assert.equal(outside.length, 1, 'selected gallery does not capture paste away from targets');
+  assert.ok(
+    Math.abs(
+      (outside[0].x + outside[0].width / 2) * pasteCamera.zoom +
+        pasteCamera.x +
+        surface.x -
+        cursor.x,
+    ) < 0.01,
+  );
+  assert.ok(
+    Math.abs(
+      (outside[0].y + outside[0].height / 2) * pasteCamera.zoom +
+        pasteCamera.y +
+        surface.y -
+        cursor.y,
+    ) < 0.01,
+  );
   await clickSelector('[aria-label="Open board Other board"]');
   await until(
     () => read('document.querySelector(".board-title")?.textContent === "Other board"'),
@@ -354,15 +396,6 @@ try {
   await clickSelector('.gallery-controls button:last-child');
   d = await saved((d) => galleryOf(d).gallery.direction === 'below', 'vertical matrix');
   await clickSelector('[aria-label="Fit board"]');
-  const hoverTarget = async (id, direction) => {
-    const image = (await documentState()).objects.find((o) => o.id === id);
-    const p = await point(image, image.width / 2, image.height / 2);
-    await mouse('mouseMoved', p.x, p.y);
-    await until(() => read('!!document.querySelector(".gallery-insertion")'), 'hover targets');
-    const r = await rect('.gallery-insert-target.' + direction);
-    await mouse('mouseMoved', r.x + r.width / 2, r.y + r.height / 2);
-    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-  };
   const originalFirst = membersOf(d).find((o) => o.galleryRow === 0 && o.galleryColumn === 0);
   const matrixPaste = async (anchor, direction) => {
     const before = (await documentState()).objects.map((o) => o.id);

@@ -125,6 +125,9 @@ function createImageClipboard({ clipboard, ClipboardItem, loadAsset, saveImage }
       const item = items.find((item) => item.types.includes(objectMime));
       if (!item) return null;
       const data = await item.getType(objectMime);
+      // Empty custom data is not an editable selection. Let the renderer
+      // fall back to any native image or files present on the clipboard.
+      if (!data.size) return null;
       if (data.size > maxObjectBytes) throw Error('The copied selection is too large');
       return objectsValue(JSON.parse(await data.text()));
     },

@@ -241,9 +241,12 @@ try {
     'canvas ready',
   );
   await probeCall('clear');
+  const pointerAtPaste = { x: 750, y: 420 };
+  await mouse('mouseMoved', pointerAtPaste.x, pointerAtPaste.y);
   await key('a', 'KeyA', 2);
   await key('c', 'KeyC', 2);
   await key('v', 'KeyV', 2);
+  await mouse('mouseMoved', pointerAtPaste.x + 130, pointerAtPaste.y + 90);
   const copied = await until(async () => {
     const result = await probeCall('read');
     return result.image ? result : null;
@@ -264,6 +267,17 @@ try {
   assert.equal(roundTrip.assetId, asset.id);
   assert.equal(roundTrip.width, 480);
   assert.equal(roundTrip.imageTitle, original.imageTitle);
+  const surface = await rect('.canvas-surface');
+  assert.equal(
+    roundTrip.x + roundTrip.width / 2,
+    pointerAtPaste.x - surface.x,
+    'pending copy keeps paste-time cursor x',
+  );
+  assert.equal(
+    roundTrip.y + roundTrip.height / 2,
+    pointerAtPaste.y - surface.y,
+    'pending copy keeps paste-time cursor y',
+  );
   await clickSelector('[aria-label="Open board Cropped image"]');
   await until(
     () =>
@@ -350,17 +364,55 @@ try {
     'text copy unchanged',
   );
   await key('Escape', 'Escape');
+  await read(`window.canvas.copyObjects(${JSON.stringify([original])})`);
+  await probeCall('image-only');
+  await read(`document.querySelector('.canvas-surface').focus()`);
+  const nativePoint = { x: 690, y: 510 };
+  await mouse('mouseMoved', nativePoint.x, nativePoint.y);
+  const beforeNative = await read(
+    `window.canvas.invoke('loadBoard',{id:${JSON.stringify(croppedBoard.id)}})`,
+  );
+  await key('v', 'KeyV', 2);
+  await mouse('mouseMoved', nativePoint.x + 150, nativePoint.y + 100);
+  const nativeImage = await until(async () => {
+    const d = await read(
+      `window.canvas.invoke('loadBoard',{id:${JSON.stringify(croppedBoard.id)}})`,
+    );
+    return d.objects.length === beforeNative.objects.length + 1
+      ? d.objects.find((o) => !beforeNative.objects.some((old) => old.id === o.id))
+      : null;
+  }, 'native image pasted at cursor');
+  assert.ok(
+    Math.abs(
+      (nativeImage.x + nativeImage.width / 2) * beforeNative.camera.zoom +
+        beforeNative.camera.x +
+        surface.x -
+        nativePoint.x,
+    ) < 0.01,
+  );
+  assert.ok(
+    Math.abs(
+      (nativeImage.y + nativeImage.height / 2) * beforeNative.camera.zoom +
+        beforeNative.camera.y +
+        surface.y -
+        nativePoint.y,
+    ) < 0.01,
+  );
   assert.deepEqual(errors, []);
   console.log(
     JSON.stringify({
       passed: true,
       checks:
-        'Ctrl+C, native clipboard pixels, paste in another process, Copy as image, crop/rotation, editable round trips, ordinary text copy',
+        'Ctrl+C, native clipboard pixels, paste in another process, Copy as image, crop/rotation, editable round trips, ordinary text copy, internal and external images at paste-time cursor',
       artifacts: root,
     }),
   );
 } catch (error) {
   console.error(error, diagnostics);
+  console.error(await read('document.body.innerText'));
+  console.error(
+    await read(`window.canvas.invoke('loadBoard',{id:${JSON.stringify(croppedBoard.id)}})`),
+  );
   process.exitCode = 1;
 } finally {
   socket?.close();

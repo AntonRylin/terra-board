@@ -79,6 +79,13 @@ class Item {
     return this.data[type];
   }
 }
+test('empty custom clipboard data falls back to native image paste', async () => {
+  const service = createImageClipboard({
+    clipboard: { read: async () => [new Item({ [objectMime]: new Blob([]) })] },
+    ClipboardItem: Item,
+  });
+  assert.equal(await service.readObjects(), null);
+});
 test('clipboard writes native image and editable object data atomically; failure keeps previous content', async () => {
   const { asset } = await fixture();
   let items = [],

@@ -87,6 +87,13 @@ app
             }
             if (!bytes?.length) throw Error('Other application did not receive an image paste');
             reply(id, { result: await inspectImage(Buffer.from(bytes)) });
+          } else if (command === 'image-only') {
+            const item = (await clipboard.read()).find((item) => item.types.includes('image/png'));
+            if (!item) throw Error('Copy an image before requesting image-only clipboard');
+            await clipboard.write([
+              new ClipboardItem({ 'image/png': await item.getType('image/png') }),
+            ]);
+            reply(id, { result: true });
           } else if (command === 'clear') {
             await clipboard.clear();
             reply(id, { result: true });
