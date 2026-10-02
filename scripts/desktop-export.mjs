@@ -28,6 +28,16 @@ store.patchBoard({
   revision: 0,
   operationId: 'export-fixture',
   upserts: [
+    {
+      id: 'frame',
+      type: 'frame',
+      x: 100,
+      y: 100,
+      width: 1000,
+      height: 500,
+      z: -1,
+      text: 'Export frame',
+    },
     { id: 'red', type: 'rect', x: 200, y: 180, width: 150, height: 100, z: 1, color: '#e02030' },
     { id: 'green', type: 'rect', x: 260, y: 200, width: 150, height: 100, z: 2, color: '#20b060' },
     {
@@ -367,7 +377,7 @@ try {
     if (allPixels.data[i] < 80 && allPixels.data[i + 2] > 180) blue++;
   assert.ok(blue > 10000, 'offscreen blue object rendered');
   assert.equal(allMeta.width, 4096, '4K preset uses the requested long edge');
-  await click(hostRect.x + 1100, hostRect.y + 500);
+  await click(hostRect.x + 50, hostRect.y + 400);
   const imagePoint = { x: hostRect.x + 590, y: hostRect.y + 270 };
   await click(imagePoint.x, imagePoint.y);
   await click(imagePoint.x, imagePoint.y, 'right');
@@ -388,6 +398,54 @@ try {
     'Full quality retains original image density despite small on-board size',
   );
   console.log('FULL_QUALITY', fullMeta.width, fullMeta.height);
+  // Selecting only a normal frame must export the objects inside it as well.
+  await click(hostRect.x + 102, hostRect.y + 120);
+  for (const format of ['PNG', 'JPG', 'PDF']) {
+    await clickSelector('.selection-tools button[aria-label="Export selected"]');
+    assert.equal(
+      await read(`document.querySelector('.modal h2')?.textContent`),
+      'Export selected items',
+    );
+    await clickSelector('[data-quality="2k"]');
+    await choose(
+      format === 'PNG'
+        ? 'PNGCrisp images and text'
+        : format === 'JPG'
+          ? 'JPGSmaller file, easy to share'
+          : 'PDFOne page, ready to print',
+    );
+    await until(() => read(`!!document.querySelector('.export-actions')`), 'frame export');
+    assert.equal(await read(`document.querySelector('.error-banner')?.textContent || ''`), '');
+    const file = join(root, `Export fixture - selection.${format.toLowerCase()}`);
+    const bytes = readFileSync(file);
+    let data, channels;
+    if (format === 'PDF') {
+      const length = Number(
+        bytes.toString('latin1').match(/\/Filter \/FlateDecode \/Length (\d+)/)[1],
+      );
+      const start = bytes.indexOf(Buffer.from('stream\n')) + 7;
+      data = inflateSync(bytes.subarray(start, start + length));
+      channels = 3;
+    } else {
+      const raw = await sharp(bytes).raw().toBuffer({ resolveWithObject: true });
+      data = raw.data;
+      channels = raw.info.channels;
+      assert.equal(raw.info.width, 2048);
+    }
+    let red = 0,
+      green = 0,
+      purple = 0,
+      blue = 0;
+    for (let i = 0; i < data.length; i += channels) {
+      if (data[i] > 180 && data[i + 1] < 70) red++;
+      if (data[i] < 70 && data[i + 1] > 130 && data[i + 2] < 150) green++;
+      if (data[i] > 140 && data[i] < 190 && data[i + 1] < 100 && data[i + 2] > 180) purple++;
+      if (data[i] < 90 && data[i + 1] < 110 && data[i + 2] > 180) blue++;
+    }
+    assert.ok(red > 4000 && green > 4000 && purple > 4000, `${format}: frame contents rendered`);
+    assert.equal(blue, 0, `${format}: outside object excluded`);
+    console.log('FRAME_EXPORTED', file);
+  }
   assert.deepEqual(errors, []);
   console.log('EXPORT_DESKTOP_OK', root);
 } finally {

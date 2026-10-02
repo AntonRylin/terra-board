@@ -1,6 +1,6 @@
 import type { Camera, CanvasObject } from '../model';
 import type { Bounds } from './geometry';
-import { objectBounds } from './transform.ts';
+import { containsObject, objectBounds } from './transform.ts';
 import { selectionWithGalleryImages } from './gallery.ts';
 
 export type ExportScope = 'selection' | 'visible';
@@ -39,8 +39,11 @@ export function exportPlan(
   let bounds: Bounds;
   if (scope === 'selection') {
     const ids = new Set(selected);
+    // Normal frames own their contents by placement, just as when dragging them.
+    // Galleries keep their explicit membership, including galleries inside frames.
+    const frames = all.filter((o) => ids.has(o.id) && o.type === 'frame' && !o.gallery);
     objects = selectionWithGalleryImages(
-      all.filter((o) => ids.has(o.id)),
+      all.filter((o) => ids.has(o.id) || frames.some((frame) => containsObject(frame, o))),
       all,
     );
     if (!objects.length) throw Error('Select something to export.');

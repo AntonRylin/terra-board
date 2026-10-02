@@ -56,6 +56,69 @@ test('gallery selection exports its members and keeps offscreen selection', () =
     ['b', 'g'],
   );
 });
+
+test('frame export includes contained items once and excludes outside or partial items', () => {
+  const frame = { id: 'frame', type: 'frame', x: 0, y: 0, width: 500, height: 400, z: -2 };
+  const nested = { ...frame, id: 'nested', x: 50, y: 50, width: 150, height: 100, z: -1 };
+  const note = { ...a, id: 'note', type: 'note', x: 70, y: 70, z: 1 };
+  const photo = { ...a, id: 'photo', type: 'image', x: 200, y: 200, z: 2 };
+  const arrow = { ...a, id: 'arrow', type: 'arrow', x: 300, y: 100, z: 3 };
+  const edge = { ...a, id: 'edge', x: 420, y: 360, z: 4 };
+  const partial = { ...a, id: 'partial', x: 480 };
+  const outside = { ...a, id: 'outside', x: 600 };
+  const all = [outside, note, photo, frame, nested, arrow, partial, edge];
+  const plan = exportPlan(all, ['frame', 'nested', 'note'], 'selection', camera, viewport);
+  assert.deepEqual(
+    plan.objects.map((o) => o.id),
+    ['frame', 'nested', 'note', 'photo', 'arrow', 'edge'],
+  );
+  assert.deepEqual(plan.bounds, { x: 0, y: 0, width: 500, height: 400 });
+  assert.equal(all[0].id, 'outside', 'planning does not reorder the board');
+});
+
+test('frame export uses rotated geometry and current placement', () => {
+  const frame = {
+    id: 'frame',
+    type: 'frame',
+    x: 100,
+    y: 100,
+    width: 400,
+    height: 200,
+    rotation: 90,
+    z: -1,
+  };
+  const inside = { ...a, id: 'inside', x: 250, y: 150, width: 40, height: 40, rotation: 45 };
+  const outside = { ...inside, id: 'outside', x: 110, y: 110 };
+  const ids = (items) =>
+    exportPlan(items, ['frame'], 'selection', camera, viewport).objects.map((o) => o.id);
+  assert.deepEqual(ids([frame, inside, outside]), ['frame', 'inside']);
+  assert.deepEqual(ids([frame, { ...inside, x: 700 }, outside]), ['frame']);
+});
+
+test('frame export expands contained galleries while galleries retain explicit membership', () => {
+  const frame = { id: 'frame', type: 'frame', x: 0, y: 0, width: 500, height: 400, z: -2 };
+  const gallery = {
+    ...frame,
+    id: 'gallery',
+    x: 50,
+    y: 50,
+    width: 200,
+    height: 200,
+    z: -1,
+    gallery: {},
+  };
+  const member = { ...a, id: 'member', type: 'image', galleryId: 'gallery', x: 600 };
+  const loose = { ...a, id: 'loose', x: 80, y: 80, z: 3 };
+  const all = [frame, gallery, member, loose];
+  assert.deepEqual(
+    exportPlan(all, ['frame'], 'selection', camera, viewport).objects.map((o) => o.id),
+    ['frame', 'gallery', 'member', 'loose'],
+  );
+  assert.deepEqual(
+    exportPlan(all, ['gallery'], 'selection', camera, viewport).objects.map((o) => o.id),
+    ['gallery', 'member'],
+  );
+});
 test('empty selections fail and huge outputs scale proportionally within the pixel budget', () => {
   assert.throws(() => exportPlan([a], [], 'selection', camera, viewport), /select/i);
   const plan = exportPlan(

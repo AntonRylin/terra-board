@@ -40,6 +40,7 @@ import {
   rotationFromDrag,
   rotationHandlePoint,
   objectBounds,
+  containsObject,
 } from './transform';
 import { hitsFrameLabel, visualBounds, hasExternalLabel, arrowLabelObject } from './frame-label';
 import { galleryEdit, selectionWithGalleryImages } from './gallery';
@@ -837,22 +838,7 @@ export class Engine {
       if (frame.gallery) continue;
       for (const o of this.index.search(boundsOf([frame])!)) {
         if (moving.has(o.id)) continue;
-        const inside = [
-          { x: 0, y: 0 },
-          { x: o.width, y: 0 },
-          { x: o.width, y: o.height },
-          { x: 0, y: o.height },
-        ].every((corner) => {
-          const p = worldToLocal(frame, localToWorld(o, corner));
-          const epsilon = 1e-7;
-          return (
-            p.x >= -epsilon &&
-            p.y >= -epsilon &&
-            p.x <= frame.width + epsilon &&
-            p.y <= frame.height + epsilon
-          );
-        });
-        if (inside) moving.set(o.id, o);
+        if (containsObject(frame, o)) moving.set(o.id, o);
       }
     }
     return [...moving.values()].map((o) => ({ ...o }));

@@ -23,6 +23,23 @@ export function worldToLocal(o: CanvasObject, p: Point): Point {
   );
   return { x: q.x + o.width / 2, y: q.y + o.height / 2 };
 }
+export function containsObject(container: CanvasObject, object: CanvasObject) {
+  return [
+    { x: 0, y: 0 },
+    { x: object.width, y: 0 },
+    { x: object.width, y: object.height },
+    { x: 0, y: object.height },
+  ].every((corner) => {
+    const p = worldToLocal(container, localToWorld(object, corner));
+    const epsilon = 1e-7;
+    return (
+      p.x >= -epsilon &&
+      p.y >= -epsilon &&
+      p.x <= container.width + epsilon &&
+      p.y <= container.height + epsilon
+    );
+  });
+}
 export function objectBounds(o: CanvasObject) {
   if (!o.rotation) return { x: o.x, y: o.y, width: o.width, height: o.height };
   const points = [
