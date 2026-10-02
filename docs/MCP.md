@@ -6,9 +6,11 @@ Open **Library options (the three dots on the board strip) → Settings → AI a
 
 Copy **Codex configuration** from Settings into your user Codex `config.toml`, alongside your existing MCP entries, then restart Codex. The generated entry uses a loopback Streamable HTTP URL and a private Authorization header. If you change the port, copy the updated configuration. Do not share the access token.
 
-## Connect Claude Desktop
+## Connect Claude
 
-Copy **Claude configuration** from Settings. Merge its `terra_board` entry into the existing `mcpServers` object in Claude Desktop's Developer → Edit Config file, preserving other servers and preferences. Restart Claude Desktop. On Windows the config normally lives at `%APPDATA%/Claude/claude_desktop_config.json`; Store installs can keep it inside the Claude package's `LocalCache/Roaming/Claude` directory.
+Copy **Claude setup prompt** from Settings and paste it into Claude Code or the Code tab of Claude Desktop on the same computer. The prompt carries the `terra_board` entry generated for that installation and tells Claude to back up and merge it into `claude_desktop_config.json`, register it with Claude Code, and verify the paths. Restart Claude afterwards. Copy the prompt on each computer; its paths are not portable.
+
+To do it by hand, merge the `terra_board` entry from the prompt into the existing `mcpServers` object in Claude Desktop's Developer → Edit Config file, preserving other servers and preferences. On Windows the config normally lives at `%APPDATA%/Claude/claude_desktop_config.json`; Store installs can keep it inside the Claude package's `LocalCache/Roaming/Claude` directory.
 
 The generated command uses Terra Board's packaged Electron executable with `ELECTRON_RUN_AS_NODE=1` and its bundled `mcp-stdio.cjs`. No separate Node/Python installation or downloaded proxy is needed. Do not remove these arguments or environment settings. The connector can list its tools while access is disabled; data access and edits still require the app and its MCP switch to be on.
 
