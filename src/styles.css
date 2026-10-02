@@ -1302,6 +1302,9 @@ kbd {
   background: #edf2f8;
   color: #354e70;
 }
+.gallery-controls .icon-button {
+  padding: 0;
+}
 .gallery-controls button:hover {
   background: #f0f3f7;
 }

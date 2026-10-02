@@ -255,6 +255,20 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     [copying, setCopying] = useState(false),
     [count, setCount] = useState(doc.objects.length);
   const activeGallery = selected.length === 1 && selected[0].gallery ? selected[0] : null;
+  const canExportFromSelectionBar =
+    selected.some((object) => object.type === 'frame') ||
+    selected.filter((object) => object.type === 'image').length > 1;
+  const exportSelectionButton = (
+    <button
+      className="icon-button"
+      aria-label="Export selected"
+      title="Export selected"
+      disabled={!!exportProgress}
+      onClick={() => setExportScope('selection')}
+    >
+      <Download size={16} />
+    </button>
+  );
   const selectedGalleryTarget = (): GalleryTarget | null => {
     if (galleryTarget.current) return { ...galleryTarget.current };
     const objects = engine.current?.selected;
@@ -1263,6 +1277,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
               {direction === 'right' ? 'Right' : 'Below'}
             </button>
           ))}
+          {exportSelectionButton}
         </div>
       )}
       {activeGallery &&
@@ -1475,6 +1490,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
               <Type size={17} />
             </button>
           )}
+          {canExportFromSelectionBar && exportSelectionButton}
           <button
             className="icon-button"
             aria-label="Duplicate selection"
