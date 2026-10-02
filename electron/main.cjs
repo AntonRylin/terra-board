@@ -1,4 +1,16 @@
-const { app, BrowserWindow, ipcMain, protocol, net, dialog, shell, Menu } = require('electron');
+const {
+  app,
+  BrowserWindow,
+  ipcMain,
+  protocol,
+  net,
+  dialog,
+  shell,
+  Menu,
+  clipboard,
+  ClipboardItem,
+} = require('electron');
+const { createImageClipboard } = require('./image-clipboard.cjs');
 const { attachWindowShadow } = require('./window-shadow.cjs');
 const { fetchPreview } = require('./link-preview.cjs');
 const { Worker } = require('node:worker_threads');
@@ -6,6 +18,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
 const { Readable } = require('node:stream');
+const { createHash, randomUUID } = require('node:crypto');
 const { libraryRoot } = require('./storage-paths.cjs');
 protocol.registerSchemesAsPrivileged([
   { scheme: 'canvas-app', privileges: { standard: true, secure: true, supportFetchAPI: true } },
@@ -303,6 +316,40 @@ app
       },
     });
     Menu.setApplicationMenu(null);
+    const boardClipboard = createImageClipboard({
+      clipboard,
+      ClipboardItem,
+      loadAsset: (id) => call('asset', { id, variant: 'original' }),
+      saveImage: async (png) => {
+        const directory = path.join(root, 'temp', 'clipboard');
+        await fs.promises.mkdir(directory, { recursive: true });
+        const file = path.join(
+          directory,
+          `Image-${createHash('sha256').update(png).digest('hex')}.png`,
+        );
+        // Immutable, reusable files remain valid after switching boards or closing Terra.
+        const temporary = file + '.' + randomUUID() + '.tmp';
+        try {
+          await fs.promises.writeFile(temporary, png, { flag: 'wx' });
+          await fs.promises.rename(temporary, file);
+        } finally {
+          await fs.promises.unlink(temporary).catch(() => {});
+        }
+        return pathToFileURL(file).href;
+      },
+    });
+    ipcMain.handle('canvas:copy-objects', (event, objects) => {
+      trusted(event);
+      return boardClipboard.copy(objects);
+    });
+    ipcMain.handle('canvas:clipboard-objects', (event) => {
+      trusted(event);
+      return boardClipboard.readObjects();
+    });
+    ipcMain.on('canvas:cancel-copy', (event) => {
+      trusted(event);
+      boardClipboard.cancel();
+    });
     win.on('enter-full-screen', () => win.webContents.send('canvas:fullscreen-changed', true));
     win.on('leave-full-screen', () => win.webContents.send('canvas:fullscreen-changed', false));
     let fullscreenEscapeHeld = false;

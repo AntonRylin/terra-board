@@ -1,4 +1,4 @@
-import type { Asset, Board } from './model';
+import type { Asset, Board, CanvasObject } from './model';
 export interface McpStatus {
   enabled: boolean;
   running: boolean;
@@ -9,6 +9,9 @@ export interface McpStatus {
   claudeConfig: string;
 }
 interface DesktopBridge {
+  copyObjects(objects: CanvasObject[]): Promise<boolean>;
+  cancelCopy(): void;
+  clipboardObjects(): Promise<CanvasObject[] | null>;
   fullscreenState(): Promise<boolean>;
   toggleFullscreen(): Promise<void>;
   onFullscreenChange(callback: (fullscreen: boolean) => void): () => void;

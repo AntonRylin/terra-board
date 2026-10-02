@@ -96,7 +96,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     alive = useRef(true),
     editorRef = useRef<HTMLTextAreaElement>(null),
     editingSession = useRef<{ object: CanvasObject; draft: string } | null>(null),
-    copy = useRef<CanvasObject[]>([]),
+    clipboardTask = useRef<Promise<boolean> | null>(null),
     imports = useRef(new Set<Promise<void>>());
   const cropSession = useRef<{ object: CanvasObject; crop: CropBounds } | null>(null);
   const toolsRef = useRef<HTMLDivElement>(null);
@@ -156,6 +156,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     [linkValue, setLinkValue] = useState(''),
     [menu, setMenu] = useState<{ x: number; y: number } | null>(null),
     [busy, setBusy] = useState(0),
+    [copying, setCopying] = useState(false),
     [count, setCount] = useState(doc.objects.length);
   const editingObject = useMemo(
     () => (editing ? fitTextObject(editing, draft) : null),
@@ -550,6 +551,9 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     if (editingSession.current) finishEdit();
     if (cropSession.current) finishCrop();
     await Promise.all([...imports.current]);
+    // A cut commits its deletion only after the clipboard write succeeds.
+    // Finish that mutation before board switching or close flushes saved edits.
+    await clipboardTask.current?.catch(() => {});
     await queue.current?.flush();
   };
   useImperativeHandle(ref, () => ({
@@ -604,6 +608,24 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     e.setSelection(copies.map((o) => o.id));
     for (const o of copies) if (o.type === 'link' && !o.assetId) refreshLink(o, e);
   };
+  const copyDesktop = (objects: CanvasObject[], cut = false) => {
+    const e = engine.current;
+    const snapshot = structuredClone(objects);
+    const task = window.canvas!.copyObjects(snapshot).then((copied) => {
+      if (copied && cut && alive.current && engine.current === e)
+        e?.apply({ upserts: [], deleted: snapshot.map((o) => o.id) });
+      return copied;
+    });
+    setCopying(true);
+    clipboardTask.current = task;
+    void task.catch(error).finally(() => {
+      if (clipboardTask.current === task) {
+        clipboardTask.current = null;
+        if (alive.current) setCopying(false);
+      }
+    });
+    return task;
+  };
   useEffect(() => {
     const typing = () =>
       !!editingSession.current ||
@@ -617,12 +639,24 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       const data = event.clipboardData;
       if (!data) return;
       event.preventDefault();
+      // Snapshot event data before awaiting a pending native image copy.
       const files = [...data.files];
-      if (files.length) {
-        await performImport(() => importFiles(files));
-        return;
-      }
       const json = data.getData('application/x-terra-board-objects');
+      const text = data.getData('text/plain');
+      if (window.canvas) {
+        try {
+          await clipboardTask.current;
+          const objects = await window.canvas.clipboardObjects();
+          if (!alive.current || engine.current !== e) return;
+          if (objects) {
+            pasteObjects(clipboardObjects(objects));
+            return;
+          }
+        } catch (reason) {
+          error(reason);
+          return;
+        }
+      }
       if (json) {
         try {
           pasteObjects(clipboardObjects(JSON.parse(json)));
@@ -631,7 +665,10 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         }
         return;
       }
-      const text = data.getData('text/plain');
+      if (files.length) {
+        await performImport(() => importFiles(files));
+        return;
+      }
       if (!text) return;
       if (text.length > 100000) {
         onError('Paste up to 100,000 characters at once.');
@@ -659,10 +696,16 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       if (url) enrichLink(o, e);
     };
     const copyEvent = (event: ClipboardEvent) => {
-      if (typing() || !engine.current?.selected.length) return;
+      if (typing() || !engine.current?.selected.length) {
+        window.canvas?.cancelCopy();
+        return;
+      }
       event.preventDefault();
       const objects = engine.current.selected;
-      copy.current = objects;
+      if (window.canvas) {
+        void copyDesktop(objects);
+        return;
+      }
       event.clipboardData?.setData('application/x-terra-board-objects', JSON.stringify(objects));
       event.clipboardData?.setData(
         'text/plain',
@@ -676,7 +719,22 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       if (!e) return;
       const mod = event.ctrlKey || event.metaKey;
       const k = event.key.toLowerCase();
-      if (mod && k === 'b') {
+      if (window.canvas && mod && (k === 'c' || k === 'x') && e.selected.length) {
+        event.preventDefault();
+        if (!event.repeat) void copyDesktop(e.selected, k === 'x');
+      } else if (window.canvas && mod && k === 'v' && clipboardTask.current) {
+        // Chromium emits no paste event for an empty clipboard. A fast Ctrl+C,
+        // Ctrl+V must still wait for an image that is currently being prepared.
+        event.preventDefault();
+        void clipboardTask.current
+          .then(async (copied) => {
+            if (!copied) return;
+            const objects = await window.canvas!.clipboardObjects();
+            if (objects && alive.current && engine.current === e)
+              pasteObjects(clipboardObjects(objects));
+          })
+          .catch(error);
+      } else if (mod && k === 'b') {
         event.preventDefault();
         toggleFormatting('bold');
       } else if (mod && k === 'z') {
@@ -713,7 +771,15 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     window.addEventListener('paste', paste);
     window.addEventListener('copy', copyEvent);
     const cut = (event: ClipboardEvent) => {
-      if (typing()) return;
+      if (typing()) {
+        window.canvas?.cancelCopy();
+        return;
+      }
+      if (window.canvas && engine.current?.selected.length) {
+        event.preventDefault();
+        void copyDesktop(engine.current.selected, true);
+        return;
+      }
       copyEvent(event);
       engine.current?.deleteSelected();
     };
@@ -770,6 +836,17 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             action: () => startEdit(selected[0]),
           },
           { label: 'Crop image', icon: <Crop />, action: () => startCrop(selected[0]) },
+          ...(window.canvas
+            ? [
+                {
+                  label: 'Copy as image',
+                  icon: <Copy />,
+                  action: () => {
+                    void copyDesktop([selected[0]]);
+                  },
+                },
+              ]
+            : []),
           null,
         ]
       : []),
@@ -834,9 +911,9 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           </button>
         </div>
       )}
-      {busy > 0 && (
+      {(busy > 0 || copying) && (
         <div className="import-status" role="status">
-          Importing media…
+          {copying ? 'Copying to clipboard…' : 'Importing media…'}
         </div>
       )}
       {selected.length > 0 && !cropping && (
