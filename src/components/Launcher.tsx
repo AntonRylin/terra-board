@@ -4,6 +4,7 @@ import type { Board, Folder, Library } from '../model';
 import { Presence } from './Presence';
 import { BoardGlyph } from './Icon';
 import InlineName from './InlineName';
+import LauncherTooltip from './LauncherTooltip';
 import { useLauncherDock, type DockEdge } from './useLauncherDock';
 import { useLauncherReorder } from './useLauncherReorder';
 export function AppIcon({ board }: { board: Board }) {
@@ -135,6 +136,7 @@ export default function Launcher(p: Props) {
   };
   return (
     <>
+      <LauncherTooltip key={`${p.dockEdge}-${p.opened}-${p.active}`} edge={p.dockEdge} />
       {dock.target && <div className="dock-preview" data-edge={dock.target} aria-hidden="true" />}
       {dock.floating && (
         <div className="dock-hint" role="status">
@@ -192,7 +194,8 @@ export default function Launcher(p: Props) {
                   (active ? 'active ' : '') +
                   (p.opened === item.id ? 'opened' : '')
                 }
-                title={item.name}
+                title=""
+                data-launcher-label={item.name}
                 aria-label={(isFolder ? 'Open folder ' : 'Open board ') + item.name}
                 aria-expanded={isFolder ? p.opened === item.id : undefined}
                 aria-pressed={isFolder ? undefined : active}
@@ -334,7 +337,6 @@ export default function Launcher(p: Props) {
                     data-reorder-kind="board"
                     data-order={b.position}
                     style={reorder.style(b.id)}
-                    title={b.name}
                     draggable={false}
                     onDragStart={(e) => e.preventDefault()}
                     onPointerDown={(e) => reorder.start(e, b.id, 'board')}
@@ -348,6 +350,7 @@ export default function Launcher(p: Props) {
                   >
                     <button
                       className="folder-board-open"
+                      data-launcher-label={b.name}
                       aria-label={'Open board ' + b.name}
                       onClick={() => p.onOpen(b.id)}
                     >
