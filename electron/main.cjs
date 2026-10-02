@@ -11,6 +11,7 @@ const {
   ClipboardItem,
 } = require('electron');
 const { createImageClipboard } = require('./image-clipboard.cjs');
+const { createVisualExport } = require('./visual-export.cjs');
 const { attachWindowShadow } = require('./window-shadow.cjs');
 const { fetchPreview } = require('./link-preview.cjs');
 const { Worker } = require('node:worker_threads');
@@ -512,6 +513,15 @@ app
         filters: [{ name: 'Editable board with all media', extensions: ['canvas'] }],
       });
       return r.canceled ? false : call('exportFile', { id, file: r.filePath });
+    });
+    const visualExport = createVisualExport({ dialog, shell, getWindow: () => win });
+    ipcMain.handle('canvas:export-image', (e, args) => {
+      trusted(e);
+      return visualExport.save(args);
+    });
+    ipcMain.handle('canvas:open-export', (e, id, folder) => {
+      trusted(e);
+      return visualExport.open(id, folder === true);
     });
     ipcMain.handle('canvas:open-link', (e, url) => {
       trusted(e);

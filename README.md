@@ -16,7 +16,7 @@ The application stores boards, original media, settings, browser caches, logs an
 - Create, search, rename, duplicate, move, export, import, trash and restore boards. Rename or dissolve folders while keeping their boards.
 - An infinite GPU canvas with pan, cursor-anchored zoom, fit, selection, moving, resizing, grouping, undo/redo, copy/paste, text, sticky notes, shapes, frames and links.
 - Paste or drop images; import local images and MP4/WebM videos. Videos play on demand in a local player.
-- Portable editable `.canvas` files containing original media; PNG export of the visible canvas. Sharing means giving someone the exported file, with no online service.
+- Portable editable `.canvas` files containing original media. Right-click the canvas to export selected items or the visible area as PNG, JPG, or a single-page PDF, with progress and Open file / Open folder actions after saving. Sharing means giving someone the exported file, with no online service.
 - Frosted floating controls, animated folders/dialogs, keyboard focus handling and reduced-motion support.
 - A soft, wider Windows window shadow, with native title bar and resizing. The extra shadow hides when maximized, snapped or fullscreen.
 

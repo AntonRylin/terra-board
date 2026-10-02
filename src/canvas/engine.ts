@@ -23,6 +23,7 @@ import { SpatialIndex, screenToWorld, zoomAt, boundsOf, type Point, type Bounds 
 import { History } from './history';
 import { renderText, renderLinkCaption, textRegion } from './text-rendering';
 import { TextureCache } from './textures';
+import { exportPlan, type ExportScope } from './export-plan';
 import { imageTiles } from './image-detail';
 import {
   corners,
@@ -1185,6 +1186,7 @@ export class Engine {
     region: ReturnType<typeof textRegion>,
     loading = false,
     iconTexture: Texture | null = null,
+    exporting = false,
   ) {
     const container = new Container(),
       g = new Graphics(),
@@ -1301,7 +1303,7 @@ export class Engine {
       sprite.width = o.width;
       sprite.height = o.height;
       container.addChild(sprite);
-      if (this.editingId !== o.id && o.imageTitle?.trim()) {
+      if ((exporting || this.editingId !== o.id) && o.imageTitle?.trim()) {
         const label = renderText(o, o.imageTitle, resolution, region);
         if (label) container.addChild(label);
       }
@@ -1356,7 +1358,7 @@ export class Engine {
         );
     }
     container.addChild(g);
-    if (this.editingId !== o.id) {
+    if (exporting || this.editingId !== o.id) {
       let text = o.text || '';
       if (o.type === 'frame') text = o.text || 'Untitled frame';
       if (o.type === 'image') text = o.imageTitle?.trim() ? o.imageTitle : 'Image';
@@ -1529,6 +1531,154 @@ export class Engine {
         .fill({ color: '#4486d9', alpha: 0.08 })
         .stroke({ color: '#4486d9', width: 1 });
     }
+  }
+  async exportCanvas(
+    scope: ExportScope,
+    progress: (value: number, label: string) => void,
+    assetUrl: (id: string, variant: string) => string,
+  ) {
+    await this.initialized;
+    if (this.disposed || !this.ready) throw Error('The canvas is not ready to export.');
+    const getBounds = (o: CanvasObject) => {
+      const b = visualBounds(o);
+      const pad = o.type === 'note' ? Math.min(o.width, o.height) * 0.08 : 2;
+      return { x: b.x - pad, y: b.y - pad, width: b.width + 2 * pad, height: b.height + 2 * pad };
+    };
+    const plan = exportPlan(
+      this.all,
+      [...this.selection],
+      scope,
+      this.camera,
+      { width: this.host.clientWidth, height: this.host.clientHeight },
+      getBounds,
+    );
+    const canvas = document.createElement('canvas');
+    canvas.width = plan.width;
+    canvas.height = plan.height;
+    const context = canvas.getContext('2d')!;
+    context.fillStyle = '#fbfcfd';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    const camera = {
+      x: -plan.bounds.x * plan.scale,
+      y: -plan.bounds.y * plan.scale,
+      zoom: plan.scale,
+    };
+    // Draw one object at a time so original images and GPU textures are released
+    // as we go; exports do not disturb the on-screen camera, selection or cache.
+    for (let i = 0; i < plan.objects.length; i++) {
+      const o = plan.objects[i];
+      const textures: Texture[] = [];
+      const bitmaps: ImageBitmap[] = [];
+      let container: Container | undefined;
+      const load = async (id: string, icon = false) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        const decode = async (variant: string) => {
+          img.src = assetUrl(id, variant);
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          try {
+            await Promise.race([
+              img.decode(),
+              new Promise<never>((_, reject) => {
+                timer = setTimeout(() => {
+                  img.src = '';
+                  reject(Error('Image loading timed out.'));
+                }, 20000);
+              }),
+            ]);
+          } finally {
+            clearTimeout(timer);
+          }
+        };
+        if (icon) await decode('thumb');
+        else {
+          try {
+            await decode('original');
+          } catch {
+            await decode('preview');
+          }
+        }
+        const needed = icon
+          ? 256
+          : Math.min(
+              8192,
+              Math.max(o.width / (o.crop?.width || 1), o.height / (o.crop?.height || 1)) *
+                plan.scale,
+            );
+        const scale = Math.min(1, needed / Math.max(img.naturalWidth, img.naturalHeight));
+        const bitmap = await createImageBitmap(img, {
+          resizeWidth: Math.max(1, Math.ceil(img.naturalWidth * scale)),
+          resizeHeight: Math.max(1, Math.ceil(img.naturalHeight * scale)),
+          resizeQuality: 'high',
+        });
+        bitmaps.push(bitmap);
+        const texture = Texture.from(bitmap);
+        textures.push(texture);
+        return texture;
+      };
+      progress(
+        5 + Math.round((75 * i) / Math.max(1, plan.objects.length)),
+        `Rendering ${i + 1} of ${plan.objects.length} items…`,
+      );
+      // Yield to paint progress even when every item is a shape or text.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      try {
+        const imageId =
+          o.type === 'image' || (o.type === 'link' && hasLinkImage(o))
+            ? o.assetId
+            : o.type === 'link'
+              ? o.linkIconId
+              : undefined;
+        const texture = imageId ? await load(imageId, o.type === 'link' && !hasLinkImage(o)) : null;
+        const icon =
+          o.type === 'link' && hasLinkImage(o) && o.linkIconId
+            ? await load(o.linkIconId, true)
+            : null;
+        if (this.disposed) throw Error('The canvas closed before export finished.');
+        container = new Container();
+        const view = this.makeView(
+          o,
+          texture,
+          true,
+          plan.scale,
+          textRegion(o, camera, plan.width, plan.height),
+          false,
+          icon,
+          true,
+        );
+        view.pivot.set(o.width / 2, o.height / 2);
+        view.position.set(o.x + o.width / 2, o.y + o.height / 2);
+        view.rotation = ((o.rotation || 0) * Math.PI) / 180;
+        // Pixi extraction replaces the root transform. Keep the export camera
+        // on a child so the requested pixel frame uses that transform.
+        const scene = new Container();
+        scene.addChild(view);
+        scene.scale.set(plan.scale);
+        scene.position.set(camera.x, camera.y);
+        container.addChild(scene);
+        const b = getBounds(o);
+        const left = Math.max(0, Math.floor(b.x * plan.scale + camera.x));
+        const top = Math.max(0, Math.floor(b.y * plan.scale + camera.y));
+        const right = Math.min(plan.width, Math.ceil((b.x + b.width) * plan.scale + camera.x));
+        const bottom = Math.min(plan.height, Math.ceil((b.y + b.height) * plan.scale + camera.y));
+        if (right > left && bottom > top) {
+          const part = this.app.renderer.extract.canvas({
+            target: container,
+            frame: new Rectangle(left, top, right - left, bottom - top),
+            resolution: 1,
+            clearColor: [0, 0, 0, 0],
+          });
+          context.drawImage(part as HTMLCanvasElement, left, top);
+          part.width = part.height = 1;
+        }
+      } finally {
+        container?.destroy({ children: true });
+        for (const texture of textures) texture.destroy(true);
+        for (const bitmap of bitmaps) bitmap.close();
+      }
+    }
+    progress(82, 'Encoding file…');
+    return canvas;
   }
   async screenshot() {
     await this.initialized;

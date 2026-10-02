@@ -1,0 +1,69 @@
+import type { Camera, CanvasObject } from '../model';
+import type { Bounds } from './geometry';
+import { objectBounds } from './transform.ts';
+import { selectionWithGalleryImages } from './gallery.ts';
+
+export type ExportScope = 'selection' | 'visible';
+export function exportPlan(
+  all: CanvasObject[],
+  selected: string[],
+  scope: ExportScope,
+  camera: Camera,
+  viewport: { width: number; height: number },
+  getBounds = objectBounds,
+) {
+  let objects: CanvasObject[];
+  let bounds: Bounds;
+  if (scope === 'selection') {
+    const ids = new Set(selected);
+    objects = selectionWithGalleryImages(
+      all.filter((o) => ids.has(o.id)),
+      all,
+    );
+    if (!objects.length) throw Error('Select something to export.');
+    const boxes = objects.map(getBounds);
+    let left = Infinity,
+      top = Infinity,
+      right = -Infinity,
+      bottom = -Infinity;
+    for (const b of boxes) {
+      left = Math.min(left, b.x);
+      top = Math.min(top, b.y);
+      right = Math.max(right, b.x + b.width);
+      bottom = Math.max(bottom, b.y + b.height);
+    }
+    bounds = { x: left, y: top, width: right - left, height: bottom - top };
+  } else {
+    bounds = {
+      x: -camera.x / camera.zoom,
+      y: -camera.y / camera.zoom,
+      width: viewport.width / camera.zoom,
+      height: viewport.height / camera.zoom,
+    };
+    objects = all.filter((o) => {
+      const b = getBounds(o);
+      return (
+        b.x < bounds.x + bounds.width &&
+        b.x + b.width > bounds.x &&
+        b.y < bounds.y + bounds.height &&
+        b.y + b.height > bounds.y
+      );
+    });
+  }
+  const baseScale = scope === 'visible' ? camera.zoom : 1;
+  const scale = Math.min(
+    baseScale,
+    8192 / bounds.width,
+    8192 / bounds.height,
+    Math.sqrt(32_000_000 / (bounds.width * bounds.height)),
+  );
+  return {
+    // Freeze the content before asynchronous rendering starts.
+    objects: structuredClone(objects.sort((a, b) => a.z - b.z)),
+    bounds,
+    scale,
+    width: Math.max(1, Math.floor(bounds.width * scale)),
+    height: Math.max(1, Math.floor(bounds.height * scale)),
+  };
+}
+export type ExportPlan = ReturnType<typeof exportPlan>;

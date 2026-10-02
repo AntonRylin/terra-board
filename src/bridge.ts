@@ -9,6 +9,12 @@ export interface McpStatus {
   claudeConfig: string;
 }
 interface DesktopBridge {
+  exportImage(args: {
+    format: 'png' | 'jpg' | 'pdf';
+    name: string;
+    bytes: Uint8Array;
+  }): Promise<{ id: string; name: string } | null>;
+  openExport(id: string, folder: boolean): Promise<void>;
   copyObjects(objects: CanvasObject[]): Promise<boolean>;
   cancelCopy(): void;
   clipboardObjects(): Promise<CanvasObject[] | null>;

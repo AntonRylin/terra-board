@@ -1088,6 +1088,119 @@ kbd {
   z-index: 100;
   box-shadow: 0 5px 22px #2f486818;
 }
+.export-description {
+  color: var(--muted);
+  line-height: 1.5;
+  margin-bottom: 20px;
+}
+.export-formats {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.export-formats > button {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 15px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper);
+  text-align: left;
+}
+.export-formats > button:hover {
+  background: var(--blue);
+  border-color: #b8cfee;
+}
+.export-formats strong,
+.export-formats small {
+  display: block;
+}
+.export-formats strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+.export-formats small {
+  color: #657083;
+  margin-top: 3px;
+  font-size: 12px;
+}
+.export-toast {
+  position: fixed;
+  bottom: 105px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(360px, calc(100vw - 32px));
+  padding: 16px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: 0 8px 32px #2f486824;
+  z-index: 91;
+}
+.export-toast-heading {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.export-toast-heading strong {
+  font-size: 13px;
+  font-weight: 600;
+  flex: 1;
+}
+.export-toast-heading > span {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.export-toast-heading .icon-button {
+  width: 24px;
+  height: 24px;
+}
+.export-toast progress {
+  display: block;
+  width: 100%;
+  height: 5px;
+  border: 0;
+  border-radius: 3px;
+  overflow: hidden;
+  margin: 14px 0 10px;
+  appearance: none;
+}
+.export-toast progress::-webkit-progress-bar {
+  background: var(--panel);
+}
+.export-toast progress::-webkit-progress-value {
+  background: var(--accent);
+  border-radius: 3px;
+  transition: width 120ms ease;
+}
+.export-detail,
+.export-filename {
+  display: block;
+  color: #657083;
+  font-size: 12px;
+}
+.export-filename {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin: 8px 0 14px;
+}
+.export-actions {
+  display: flex;
+  gap: 8px;
+}
+.export-actions .button {
+  flex: 1;
+  justify-content: center;
+  font-size: 12px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .export-toast progress::-webkit-progress-value {
+    transition: none;
+  }
+}
 .error-banner svg {
   flex-shrink: 0;
 }

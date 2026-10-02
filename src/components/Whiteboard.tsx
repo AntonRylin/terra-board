@@ -70,6 +70,9 @@ import ImageCrop from './ImageCrop';
 import { cropImage, uncroppedImage, fullCrop } from '../canvas/crop';
 import { selectionToolsPosition } from '../canvas/selection-tools';
 import { boundsOf, type Bounds } from '../canvas/geometry';
+import { encodeExport, type ExportFormat } from '../canvas/export-format';
+import type { ExportScope } from '../canvas/export-plan';
+import ExportControls, { type ExportProgress, type ExportResult } from './ExportControls';
 export interface WhiteboardHandle {
   prepareExternal: () => Promise<void>;
   finishExternal: (doc?: Document) => void;
@@ -98,6 +101,16 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   ref,
 ) {
   const external = useRef(false);
+  const exportTask = useRef<Promise<void> | null>(null);
+  const [exportScope, setExportScope] = useState<ExportScope | null>(null);
+  const [exportProgress, setExportProgress] = useState<ExportProgress | null>(null);
+  const [exportResult, setExportResult] = useState<ExportResult | null>(null);
+  useEffect(
+    () => () => {
+      if (exportResult?.url) URL.revokeObjectURL(exportResult.url);
+    },
+    [exportResult],
+  );
   const syncingExternal = useRef(false);
   const arrowDraft = useRef<{ flush: () => void }>(null);
   const host = useRef<HTMLDivElement>(null),
@@ -663,7 +676,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   async function importMedia() {
     await performImport(pickMedia);
   }
-  const flush = async () => {
+  const flush = async (waitForExport = true) => {
     arrowDraft.current?.flush();
     engine.current?.stopCameraAnimation();
     if (editingSession.current) finishEdit();
@@ -673,6 +686,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     // Finish that mutation before board switching or close flushes saved edits.
     await clipboardTask.current?.catch(() => {});
     await queue.current?.flush();
+    if (waitForExport) await exportTask.current;
   };
   useImperativeHandle(ref, () => ({
     prepareExternal: async () => {
@@ -946,16 +960,47 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       point = engine.current!.screenPoint({ x: e.clientX - r.left, y: e.clientY - r.top });
     await performImport(() => importFiles(files), point);
   }
-  async function exportView() {
-    try {
-      const canvas = await engine.current!.screenshot();
-      if ('toBlob' in canvas)
-        (canvas as HTMLCanvasElement).toBlob((b) => {
-          if (b) download(b, 'Canvas view.png');
-        });
-    } catch (e) {
-      error(e);
-    }
+  function startExport(format: ExportFormat) {
+    if (exportTask.current || !exportScope) return;
+    const scope = exportScope;
+    setExportScope(null);
+    setExportResult(null);
+    const progress = (value: number, label: string) => setExportProgress({ value, label });
+    progress(0, 'Preparing canvas…');
+    const task = (async () => {
+      let canvas: HTMLCanvasElement | undefined;
+      try {
+        await flush(false);
+        const current = engine.current;
+        if (!current) throw Error('The canvas is not ready to export.');
+        canvas = await current.exportCanvas(scope, progress, mediaUrl);
+        const blob = await encodeExport(canvas, format);
+        const name = `${doc.board.name} - ${scope === 'selection' ? 'selection' : 'visible area'}`;
+        progress(90, window.canvas ? 'Choose a location, then save…' : 'Preparing download…');
+        // Let the final progress stage paint before opening the native dialog.
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        const result = window.canvas
+          ? await window.canvas.exportImage({
+              format,
+              name,
+              bytes: new Uint8Array(await blob.arrayBuffer()),
+            })
+          : (() => {
+              download(blob, `${name}.${format}`);
+              return { name: `${name}.${format}`, url: URL.createObjectURL(blob) };
+            })();
+        if (result) setExportResult(result);
+      } catch (e) {
+        error(e);
+      } finally {
+        if (canvas) canvas.width = canvas.height = 1;
+        setExportProgress(null);
+      }
+    })();
+    exportTask.current = task;
+    void task.finally(() => {
+      exportTask.current = null;
+    });
   }
   const contextItems: (MenuItem | null)[] = [
     ...(activeGallery
@@ -1057,7 +1102,18 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     },
     null,
     { label: 'Fit board', icon: <Maximize2 />, action: () => engine.current?.fit() },
-    { label: 'Export visible area as PNG', icon: <Download />, action: exportView },
+    {
+      label: 'Export selected…',
+      icon: <Download />,
+      action: () => setExportScope('selection'),
+      disabled: !selected.length || !!exportProgress,
+    },
+    {
+      label: 'Export visible area…',
+      icon: <Download />,
+      action: () => setExportScope('visible'),
+      disabled: !!exportProgress,
+    },
     null,
     {
       label: 'Delete selection',
@@ -1570,6 +1626,20 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         </button>
       </div>
       {menu && <ContextMenu {...menu} items={contextItems} onClose={() => setMenu(null)} />}
+      <ExportControls
+        scope={exportScope}
+        progress={exportProgress}
+        result={exportResult}
+        onClose={() => setExportScope(null)}
+        onExport={startExport}
+        onDismiss={() => setExportResult(null)}
+        onOpen={(folder) => {
+          if (exportResult?.id)
+            void window.canvas?.openExport(exportResult.id, folder).catch(error);
+          else if (exportResult?.url)
+            window.open(exportResult.url, '_blank', 'noopener,noreferrer');
+        }}
+      />
       {insertMenu && (
         <ContextMenu
           {...insertMenu}

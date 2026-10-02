@@ -14,6 +14,8 @@ contextBridge.exposeInMainWorld('canvas', {
   pickMedia: () => ipcRenderer.invoke('canvas:pick-media'),
   importPortable: () => ipcRenderer.invoke('canvas:import-board'),
   exportPortable: (id) => ipcRenderer.invoke('canvas:export-board', id),
+  exportImage: (args) => ipcRenderer.invoke('canvas:export-image', args),
+  openExport: (id, folder) => ipcRenderer.invoke('canvas:open-export', id, folder),
   openExternal: (url) => ipcRenderer.invoke('canvas:open-link', url),
   linkPreview: (url) => ipcRenderer.invoke('canvas:link-preview', url),
   mcpStatus: () => ipcRenderer.invoke('canvas:mcp-status'),
