@@ -49,6 +49,30 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
     if (o.color !== undefined && !/^#[a-f0-9]{6}$/i.test(o.color))
       throw Error('Invalid clipboard color');
     if (
+      o.gallery !== undefined &&
+      (o.type !== 'frame' ||
+        !o.gallery ||
+        !['right', 'below'].includes(o.gallery.direction) ||
+        !Number.isFinite(o.gallery.size) ||
+        o.gallery.size < 32 ||
+        o.gallery.size > 8192 ||
+        !Number.isFinite(o.gallery.gap) ||
+        o.gallery.gap < 0 ||
+        o.gallery.gap > 200 ||
+        (o.rotation || 0) !== 0)
+    )
+      throw Error('Invalid clipboard gallery');
+    if (
+      o.galleryId !== undefined &&
+      (o.type !== 'image' ||
+        typeof o.galleryId !== 'string' ||
+        !/^[\w-]{1,100}$/.test(o.galleryId) ||
+        !Number.isFinite(o.galleryIndex) ||
+        o.galleryIndex < 0 ||
+        o.galleryIndex > 1e7)
+    )
+      throw Error('Invalid clipboard gallery image');
+    if (
       o.fontSize !== undefined &&
       !(Number.isFinite(o.fontSize) && o.fontSize >= 8 && o.fontSize <= 300)
     )
@@ -157,6 +181,10 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
       ...(o.rotation === undefined ? {} : { rotation: o.rotation }),
       ...(o.textBox === undefined ? {} : { textBox: o.textBox }),
       ...(o.groupId ? { groupId: o.groupId } : {}),
+      ...(o.gallery
+        ? { gallery: { direction: o.gallery.direction, size: o.gallery.size, gap: o.gallery.gap } }
+        : {}),
+      ...(o.galleryId ? { galleryId: o.galleryId, galleryIndex: o.galleryIndex } : {}),
       ...(o.assetId ? { assetId: o.assetId } : {}),
       ...(o.type === 'link' && o.linkIconId ? { linkIconId: o.linkIconId } : {}),
       ...(o.type === 'link' && o.linkCompact !== undefined ? { linkCompact: o.linkCompact } : {}),

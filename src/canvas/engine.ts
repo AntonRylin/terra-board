@@ -41,6 +41,7 @@ import {
   objectBounds,
 } from './transform';
 import { hitsFrameLabel, visualBounds, hasExternalLabel, arrowLabelObject } from './frame-label';
+import { galleryEdit, selectionWithGalleryImages } from './gallery';
 import {
   youtubeId,
   linkLayout,
@@ -204,6 +205,9 @@ export class Engine {
   get all() {
     return [...this.objects.values()];
   }
+  get clipboardSelection() {
+    return selectionWithGalleryImages(this.selected, this.objects.values());
+  }
   private rebuildGroups() {
     this.groupMembers.clear();
     for (const o of this.objects.values())
@@ -341,7 +345,9 @@ export class Engine {
           world: w,
           camera: { ...this.camera },
           original:
-            this.selection.size > 1 ? this.moveObjects() : this.selected.map((o) => ({ ...o })),
+            this.selection.size > 1 || this.selected[0]?.gallery
+              ? this.moveObjects()
+              : this.selected.map((o) => ({ ...o })),
           scaleBounds: this.selection.size > 1 ? bounds || undefined : undefined,
         };
       else {
@@ -490,16 +496,25 @@ export class Engine {
           dy / g.camera.zoom,
         ))
           this.preview(o);
-      } else
-        this.preview(
-          resizeObject(
-            g.original[0],
-            g.corner!,
-            dx / g.camera.zoom,
-            dy / g.camera.zoom,
-            e.shiftKey,
-          ),
+      } else {
+        const resized = resizeObject(
+          g.original[0],
+          g.corner!,
+          dx / g.camera.zoom,
+          dy / g.camera.zoom,
+          e.shiftKey,
         );
+        if (resized.gallery) {
+          const before = new Map(this.objects);
+          for (const o of g.original) {
+            before.set(o.id, o);
+            this.preview(o);
+          }
+          for (const o of galleryEdit(before, { upserts: [resized], deleted: [] }, visualBounds)
+            .upserts)
+            this.preview(o);
+        } else this.preview(resized);
+      }
       this.invalidate();
     } else {
       const w = this.screenPoint(p);
@@ -537,9 +552,14 @@ export class Engine {
       (g.mode === 'move' || g.mode === 'resize' || g.mode === 'rotate' || g.mode === 'arrowPoint')
     ) {
       const after = g.original.map((o) => this.objects.get(o.id)!);
-      this.history.push({ upserts: after, deleted: [] }, { upserts: g.original, deleted: [] });
-      this.callbacks.edit({ upserts: after, deleted: [] });
-      this.callbacks.selection(this.selected);
+      if (g.original.some((o) => o.gallery || o.galleryId)) {
+        for (const o of g.original) this.preview(o);
+        this.apply({ upserts: after, deleted: [] });
+      } else {
+        this.history.push({ upserts: after, deleted: [] }, { upserts: g.original, deleted: [] });
+        this.callbacks.edit({ upserts: after, deleted: [] });
+        this.callbacks.selection(this.selected);
+      }
     } else if (
       g.mode === 'move' ||
       g.mode === 'resize' ||
@@ -744,6 +764,7 @@ export class Engine {
     let nearest: ResizeHandle | 'rotate' | undefined,
       distance = Infinity;
     for (const corner of [...resizeHandles, 'rotate'] as const) {
+      if (o.gallery && corner === 'rotate') continue;
       const q = localToWorld(
         o,
         corner === 'rotate' ? rotationHandlePoint(o, c.zoom) : handlePoint(o, corner),
@@ -799,8 +820,9 @@ export class Engine {
   private moveObjects(): CanvasObject[] {
     // Capture membership before the drag, so crossing other objects cannot
     // collect them mid-gesture. Geometry also releases items moved out of a frame.
-    const moving = new Map(this.selected.map((o) => [o.id, o]));
+    const moving = new Map(this.clipboardSelection.map((o) => [o.id, o]));
     for (const frame of this.selected.filter((o) => o.type === 'frame')) {
+      if (frame.gallery) continue;
       for (const o of this.index.search(boundsOf([frame])!)) {
         if (moving.has(o.id)) continue;
         const inside = [
@@ -833,6 +855,7 @@ export class Engine {
     this.apply(edit);
   }
   apply(edit: Edit, record = true) {
+    if (record) edit = galleryEdit(this.objects, edit, visualBounds);
     const inverse: Edit = { upserts: [], deleted: [] };
     for (const o of edit.upserts) {
       const before = this.objects.get(o.id);
@@ -863,25 +886,30 @@ export class Engine {
     if (edit) this.apply(edit, false);
   }
   deleteSelected() {
-    if (this.selection.size) this.apply({ upserts: [], deleted: [...this.selection] });
+    if (this.selection.size)
+      this.apply({ upserts: [], deleted: this.clipboardSelection.map((o) => o.id) });
   }
   duplicate() {
     const ids = new Map<string, string>();
+    const objects = this.clipboardSelection;
+    const objectIds = new Map(objects.map((o) => [o.id, uid()]));
     const top = this.topZ();
-    const copies = this.selected.map((o, i) => {
+    const copies = objects.map((o, i) => {
       if (o.groupId && !ids.has(o.groupId)) ids.set(o.groupId, uid());
       return {
         ...o,
-        id: uid(),
+        id: objectIds.get(o.id)!,
         x: o.x + 28,
         y: o.y + 28,
         z: top + i + 1,
         groupId: o.groupId ? ids.get(o.groupId) : undefined,
+        galleryId: o.galleryId ? objectIds.get(o.galleryId) : undefined,
+        galleryIndex: o.galleryId && objectIds.has(o.galleryId) ? o.galleryIndex : undefined,
       };
     });
     if (copies.length) {
       this.apply({ upserts: copies, deleted: [] });
-      this.setSelection(copies.map((o) => o.id));
+      this.setSelection(copies.filter((o) => !o.galleryId).map((o) => o.id));
     }
   }
   group() {
@@ -1050,6 +1078,7 @@ export class Engine {
       const resolution = 2 ** Math.ceil(Math.log2(c.zoom * devicePixelRatio));
       const region = textRegion(o, c, w, h);
       const signature = JSON.stringify([
+        !!o.gallery,
         o.width,
         o.height,
         o.text,
@@ -1268,7 +1297,12 @@ export class Engine {
     if (o.type === 'ellipse')
       g.ellipse(o.width / 2, o.height / 2, o.width / 2, o.height / 2).fill(color);
     else if (o.type === 'frame')
-      g.rect(0, 0, o.width, o.height).fill('#ffffff').stroke({ color: '#dce1e7', width: 1 });
+      o.gallery
+        ? g
+            .roundRect(0, 0, o.width, o.height, 8)
+            .fill({ color: '#ffffff', alpha: 0.48 })
+            .stroke({ color: '#dce3eb', width: 1 })
+        : g.rect(0, 0, o.width, o.height).fill('#ffffff').stroke({ color: '#dce1e7', width: 1 });
     else if (o.type !== 'text') {
       if (o.type === 'note') {
         // Paper stays almost flat. Most of the depth comes from a diffuse
@@ -1453,24 +1487,26 @@ export class Engine {
           else g.rect(p.x - 4, p.y - 4, 8, 8);
           g.fill('#ffffff').stroke({ color: '#4486d9', width: 1.5 });
         }
-        const rotation = screen(rotationHandlePoint(o, c.zoom));
-        // A compact curved arrow outside the lower-left corner, in screen pixels.
-        g.moveTo(rotation.x + 9, rotation.y)
-          .arc(rotation.x, rotation.y, 9, 0, Math.PI / 2, true)
-          .stroke({ color: '#252d38', width: 1.6 });
-        g.poly([
-          rotation.x + 4,
-          rotation.y + 9,
-          rotation.x - 2,
-          rotation.y + 5,
-          rotation.x - 2,
-          rotation.y + 13,
-        ]).fill('#252d38');
-        this.callbacks.rotation?.(
-          this.gesture?.mode === 'rotate'
-            ? { angle: o.rotation || 0, x: rotation.x, y: rotation.y }
-            : null,
-        );
+        if (!o.gallery) {
+          const rotation = screen(rotationHandlePoint(o, c.zoom));
+          // A compact curved arrow outside the lower-left corner, in screen pixels.
+          g.moveTo(rotation.x + 9, rotation.y)
+            .arc(rotation.x, rotation.y, 9, 0, Math.PI / 2, true)
+            .stroke({ color: '#252d38', width: 1.6 });
+          g.poly([
+            rotation.x + 4,
+            rotation.y + 9,
+            rotation.x - 2,
+            rotation.y + 5,
+            rotation.x - 2,
+            rotation.y + 13,
+          ]).fill('#252d38');
+          this.callbacks.rotation?.(
+            this.gesture?.mode === 'rotate'
+              ? { angle: o.rotation || 0, x: rotation.x, y: rotation.y }
+              : null,
+          );
+        }
       }
     }
     if (this.gesture?.mode !== 'rotate') this.callbacks.rotation?.(null);

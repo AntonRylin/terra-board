@@ -135,6 +135,24 @@ function objectValue(o) {
     }
   }
   if (o.groupId) result.groupId = idValue(o.groupId);
+  if (o.gallery !== undefined) {
+    const g = o.gallery;
+    if (
+      o.type !== 'frame' ||
+      !g ||
+      !['right', 'below'].includes(g.direction) ||
+      !number(g.size, 32, 8192) ||
+      !number(g.gap, 0, 200) ||
+      (o.rotation || 0) !== 0
+    )
+      throw Error('Invalid gallery');
+    result.gallery = { direction: g.direction, size: g.size, gap: g.gap };
+  }
+  if (o.galleryId !== undefined) {
+    if (o.type !== 'image' || !number(o.galleryIndex, 0, 1e7)) throw Error('Invalid gallery image');
+    result.galleryId = idValue(o.galleryId);
+    result.galleryIndex = o.galleryIndex;
+  }
   if (o.assetId) result.assetId = idValue(o.assetId);
   if (o.type === 'link' && o.linkIconId) result.linkIconId = idValue(o.linkIconId);
   if (o.type === 'link' && o.linkCompact !== undefined) {

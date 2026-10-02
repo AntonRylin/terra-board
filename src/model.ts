@@ -16,6 +16,9 @@ export interface ArrowStyle {
   thickness: number;
 }
 export interface CanvasObject {
+  gallery?: { direction: 'right' | 'below'; size: number; gap: number };
+  galleryId?: string;
+  galleryIndex?: number;
   arrow?: ArrowStyle;
   id: string;
   type: ObjectType;

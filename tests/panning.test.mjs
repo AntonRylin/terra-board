@@ -916,3 +916,51 @@ test('arrow draw, midpoint insertion, endpoint drag, undo and Escape work in scr
   f.engine.cancel();
   assert.equal(f.engine.objects.size, 0);
 });
+
+test('gallery resize previews return to original size, cancel and undo together', () => {
+  const f = fixture();
+  f.engine.camera = { x: 0, y: 0, zoom: 1 };
+  f.engine.apply({
+    upserts: [
+      {
+        id: 'gallery',
+        type: 'frame',
+        text: 'Gallery',
+        x: 100,
+        y: 100,
+        width: 432,
+        height: 180,
+        z: 0,
+        gallery: { direction: 'below', size: 400, gap: 12 },
+      },
+      {
+        id: 'image',
+        type: 'image',
+        x: 0,
+        y: 0,
+        width: 400,
+        height: 200,
+        z: 1,
+        galleryId: 'gallery',
+        galleryIndex: 0,
+      },
+    ],
+    deleted: [],
+  });
+  f.engine.setSelection(['gallery']);
+  const original = structuredClone(f.engine.all);
+  f.engine.down(f.event(532, 216, 0));
+  f.engine.move(f.event(732, 216, 0));
+  assert.equal(f.engine.objects.get('image').width, 600);
+  f.engine.move(f.event(532, 216, 0));
+  assert.equal(f.engine.objects.get('image').width, 400, 'returning pointer resets image preview');
+  f.engine.move(f.event(632, 216, 0));
+  f.engine.cancel();
+  for (const o of original) assert.deepEqual({ ...f.engine.objects.get(o.id) }, o);
+  f.engine.down(f.event(532, 216, 0));
+  f.engine.move(f.event(632, 216, 0));
+  f.engine.up(f.event(632, 216, 0));
+  assert.equal(f.engine.objects.get('image').width, 500);
+  f.engine.undo();
+  for (const o of original) assert.deepEqual({ ...f.engine.objects.get(o.id) }, o);
+});

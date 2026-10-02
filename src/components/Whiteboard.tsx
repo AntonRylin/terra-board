@@ -20,6 +20,9 @@ import {
   Frame,
   Link2,
   ImagePlus,
+  Images,
+  ArrowRight,
+  ArrowDown,
   Minus,
   Plus,
   Maximize2,
@@ -49,6 +52,7 @@ import {
 } from '../canvas/link-preview';
 import { loadLinkPreview } from '../canvas/load-link-preview';
 import { Engine } from '../canvas/engine';
+import { defaultGallery, galleryMembers, selectionWithGalleryImages } from '../canvas/gallery';
 import { textAppearance } from '../canvas/text-style';
 import { textLayout, fitTextObject } from '../canvas/text-layout';
 import { textPlacement } from '../canvas/text-alignment';
@@ -100,6 +104,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     imports = useRef(new Set<Promise<void>>());
   const cropSession = useRef<{ object: CanvasObject; crop: CropBounds } | null>(null);
   const toolsRef = useRef<HTMLDivElement>(null);
+  const galleryHintRef = useRef<HTMLDivElement>(null);
   const angleRef = useRef<HTMLDivElement>(null);
   const toolsSize = useRef({ width: 0, height: 0 });
   const selectionView = useRef<{
@@ -107,6 +112,15 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     viewport: { width: number; height: number };
   } | null>(null);
   const positionTools = () => {
+    const hint = galleryHintRef.current,
+      e = engine.current,
+      gallery = e?.selected[0];
+    if (hint && e && gallery?.gallery) {
+      hint.style.left = `${gallery.x * e.camera.zoom + e.camera.x}px`;
+      hint.style.top = `${gallery.y * e.camera.zoom + e.camera.y}px`;
+      hint.style.width = `${gallery.width * e.camera.zoom}px`;
+      hint.style.height = `${gallery.height * e.camera.zoom}px`;
+    }
     const el = toolsRef.current,
       view = selectionView.current;
     if (!el || !view?.bounds) return;
@@ -155,9 +169,38 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     [linkPoint, setLinkPoint] = useState<{ x: number; y: number } | null>(null),
     [linkValue, setLinkValue] = useState(''),
     [menu, setMenu] = useState<{ x: number; y: number } | null>(null),
+    [insertMenu, setInsertMenu] = useState<{ x: number; y: number } | null>(null),
     [busy, setBusy] = useState(0),
     [copying, setCopying] = useState(false),
     [count, setCount] = useState(doc.objects.length);
+  const activeGallery = selected.length === 1 && selected[0].gallery ? selected[0] : null;
+  const selectedGalleryId = () => {
+    const objects = engine.current?.selected;
+    return objects?.length === 1 && objects[0].gallery ? objects[0].id : undefined;
+  };
+  const createGallery = () => {
+    finishEdit();
+    const e = engine.current;
+    if (!e) return;
+    const p = e.center();
+    const o: CanvasObject = {
+      id: uid(),
+      type: 'frame',
+      text: 'Gallery',
+      fontSize: 14,
+      color: '#66758a',
+      x: p.x - 216,
+      y: p.y - 90,
+      width: 432,
+      height: 180,
+      z: e.topZ() + 1,
+      gallery: { ...defaultGallery },
+    };
+    e.apply({ upserts: [o], deleted: [] });
+    e.setSelection([o.id]);
+    selectTool('select');
+    host.current?.focus();
+  };
   const editingObject = useMemo(
     () => (editing ? fitTextObject(editing, draft) : null),
     [editing, draft],
@@ -501,11 +544,15 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     el.style.height = '0px';
     el.style.height = `${Math.max(editingAppearance.lineHeight * camera.zoom, el.scrollHeight)}px`;
   }, [editing, editingObject, editingAppearance, draft, camera.zoom]);
-  async function addAssets(assets: Asset[], point?: { x: number; y: number }) {
+  async function addAssets(assets: Asset[], point?: { x: number; y: number }, galleryId?: string) {
     const e = engine.current;
     if (!e || !alive.current) return;
     const p = point || e.center();
     const top = e.topZ();
+    const gallery = galleryId && e.objects.get(galleryId)?.gallery ? galleryId : undefined;
+    const index = gallery
+      ? Math.max(-1, ...galleryMembers(gallery, e.all).map((o) => o.galleryIndex || 0)) + 1
+      : 0;
     const objects = assets.map((a, i) => {
       const width = Math.min(a.width, 480),
         height = (width * a.height) / a.width;
@@ -519,16 +566,25 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         height,
         z: top + i + 1,
         text: a.name,
+        ...(gallery && a.mime.startsWith('image/')
+          ? { galleryId: gallery, galleryIndex: index + i }
+          : {}),
       } as CanvasObject;
     });
     e.apply({ upserts: objects, deleted: [] });
-    e.setSelection(objects.map((o) => o.id));
+    e.setSelection(
+      gallery && objects.some((o) => o.galleryId) ? [gallery] : objects.map((o) => o.id),
+    );
   }
-  async function performImport(load: () => Promise<Asset[]>, point?: { x: number; y: number }) {
+  async function performImport(
+    load: () => Promise<Asset[]>,
+    point?: { x: number; y: number },
+    galleryId: string | null = selectedGalleryId() || null,
+  ) {
     setBusy((n) => n + 1);
     const task = (async () => {
       try {
-        await addAssets(await load(), point);
+        await addAssets(await load(), point, galleryId || undefined);
       } catch (e) {
         error(e);
       } finally {
@@ -588,29 +644,46 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     importMedia,
     fit: () => engine.current?.fit(),
   }));
-  const pasteObjects = (objects: CanvasObject[]) => {
+  const pasteObjects = (objects: CanvasObject[], targetGallery?: string) => {
     const e = engine.current;
     if (!e || !objects.length) return;
     const groups = new Map<string, string>();
+    const objectIds = new Map(objects.map((o) => [o.id, uid()]));
+    const gallery =
+      targetGallery && e.objects.get(targetGallery)?.gallery ? targetGallery : undefined;
+    const index = gallery
+      ? Math.max(-1, ...galleryMembers(gallery, e.all).map((o) => o.galleryIndex || 0)) + 1
+      : 0;
     const top = e.topZ();
     const copies = objects.map((o, i) => {
       if (o.groupId && !groups.has(o.groupId)) groups.set(o.groupId, uid());
+      const attach = gallery && o.type === 'image' && !(o.galleryId && objectIds.has(o.galleryId));
       return {
         ...o,
-        id: uid(),
-        groupId: o.groupId ? groups.get(o.groupId) : undefined,
+        id: objectIds.get(o.id)!,
+        groupId: !attach && o.groupId ? groups.get(o.groupId) : undefined,
+        galleryId: attach ? gallery : o.galleryId ? objectIds.get(o.galleryId) : undefined,
+        galleryIndex: attach
+          ? index + i
+          : o.galleryId && objectIds.has(o.galleryId)
+            ? o.galleryIndex
+            : undefined,
         x: o.x + 30,
         y: o.y + 30,
         z: top + i + 1,
       };
     });
     e.apply({ upserts: copies, deleted: [] });
-    e.setSelection(copies.map((o) => o.id));
+    e.setSelection(
+      gallery && copies.some((o) => o.galleryId === gallery)
+        ? [gallery]
+        : copies.filter((o) => !o.galleryId).map((o) => o.id),
+    );
     for (const o of copies) if (o.type === 'link' && !o.assetId) refreshLink(o, e);
   };
   const copyDesktop = (objects: CanvasObject[], cut = false) => {
     const e = engine.current;
-    const snapshot = structuredClone(objects);
+    const snapshot = structuredClone(selectionWithGalleryImages(objects, e?.all || []));
     const task = window.canvas!.copyObjects(snapshot).then((copied) => {
       if (copied && cut && alive.current && engine.current === e)
         e?.apply({ upserts: [], deleted: snapshot.map((o) => o.id) });
@@ -643,13 +716,14 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       const files = [...data.files];
       const json = data.getData('application/x-terra-board-objects');
       const text = data.getData('text/plain');
+      const galleryId = selectedGalleryId();
       if (window.canvas) {
         try {
           await clipboardTask.current;
           const objects = await window.canvas.clipboardObjects();
           if (!alive.current || engine.current !== e) return;
           if (objects) {
-            pasteObjects(clipboardObjects(objects));
+            pasteObjects(clipboardObjects(objects), galleryId);
             return;
           }
         } catch (reason) {
@@ -659,14 +733,14 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       }
       if (json) {
         try {
-          pasteObjects(clipboardObjects(JSON.parse(json)));
+          pasteObjects(clipboardObjects(JSON.parse(json)), galleryId);
         } catch {
           onError('The copied objects could not be pasted.');
         }
         return;
       }
       if (files.length) {
-        await performImport(() => importFiles(files));
+        await performImport(() => importFiles(files), undefined, galleryId || null);
         return;
       }
       if (!text) return;
@@ -701,7 +775,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         return;
       }
       event.preventDefault();
-      const objects = engine.current.selected;
+      const objects = engine.current.clipboardSelection;
       if (window.canvas) {
         void copyDesktop(objects);
         return;
@@ -726,12 +800,13 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         // Chromium emits no paste event for an empty clipboard. A fast Ctrl+C,
         // Ctrl+V must still wait for an image that is currently being prepared.
         event.preventDefault();
+        const galleryId = selectedGalleryId();
         void clipboardTask.current
           .then(async (copied) => {
             if (!copied) return;
             const objects = await window.canvas!.clipboardObjects();
             if (objects && alive.current && engine.current === e)
-              pasteObjects(clipboardObjects(objects));
+              pasteObjects(clipboardObjects(objects), galleryId);
           })
           .catch(error);
       } else if (mod && k === 'b') {
@@ -812,6 +887,31 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     }
   }
   const contextItems: (MenuItem | null)[] = [
+    ...(activeGallery
+      ? [
+          { label: 'Rename gallery', icon: <Type />, action: () => startEdit(activeGallery) },
+          {
+            label: 'Release images',
+            icon: <Ungroup />,
+            action: () => engine.current?.apply({ upserts: [], deleted: [activeGallery.id] }),
+          },
+          null,
+        ]
+      : []),
+    ...(selected.length === 1 && selected[0].galleryId
+      ? [
+          {
+            label: 'Remove from gallery',
+            icon: <Ungroup />,
+            action: () =>
+              engine.current?.apply({
+                upserts: [{ ...selected[0], galleryId: undefined, galleryIndex: undefined }],
+                deleted: [],
+              }),
+          },
+          null,
+        ]
+      : []),
     ...(selected.length === 1 && selected[0].type === 'link' && selected[0].assetId
       ? [
           {
@@ -916,7 +1016,52 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           {copying ? 'Copying to clipboard…' : 'Importing media…'}
         </div>
       )}
-      {selected.length > 0 && !cropping && (
+      {activeGallery && !editing && (
+        <div
+          ref={toolsRef}
+          className="selection-tools gallery-controls"
+          role="toolbar"
+          aria-label="Gallery layout"
+        >
+          {(['right', 'below'] as const).map((direction) => (
+            <button
+              key={direction}
+              aria-pressed={activeGallery.gallery!.direction === direction}
+              onClick={() => {
+                const o = engine.current?.objects.get(activeGallery.id);
+                if (o?.gallery)
+                  engine.current?.apply({
+                    upserts: [{ ...o, gallery: { ...o.gallery, direction } }],
+                    deleted: [],
+                  });
+                host.current?.focus();
+              }}
+            >
+              {direction === 'right' ? <ArrowRight size={16} /> : <ArrowDown size={16} />}
+              {direction === 'right' ? 'Right' : 'Below'}
+            </button>
+          ))}
+        </div>
+      )}
+      {activeGallery &&
+        !galleryMembers(activeGallery.id, engine.current?.all || []).length &&
+        camera.zoom > 0.35 && (
+          <div
+            ref={galleryHintRef}
+            className="gallery-empty"
+            style={{
+              left: activeGallery.x * camera.zoom + camera.x,
+              top: activeGallery.y * camera.zoom + camera.y,
+              width: activeGallery.width * camera.zoom,
+              height: activeGallery.height * camera.zoom,
+            }}
+          >
+            <Images size={22} strokeWidth={1.4} />
+            <span>Paste images here</span>
+            <kbd>Ctrl V</kbd>
+          </div>
+        )}
+      {selected.length > 0 && !cropping && !activeGallery && (
         <div
           ref={toolsRef}
           className="selection-tools"
@@ -1137,9 +1282,11 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           aria-label={
             editing.type === 'image'
               ? 'Edit image title'
-              : editing.type === 'frame'
-                ? 'Edit frame name'
-                : 'Edit canvas text'
+              : editing.gallery
+                ? 'Edit gallery name'
+                : editing.type === 'frame'
+                  ? 'Edit frame name'
+                  : 'Edit canvas text'
           }
           placeholder={editing.type === 'image' ? 'Image title' : undefined}
           maxLength={100000}
@@ -1228,6 +1375,18 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         >
           <ImagePlus size={19} />
         </button>
+        <button
+          className="icon-button"
+          aria-label="Insert"
+          title="Insert"
+          aria-expanded={!!insertMenu}
+          onClick={(event) => {
+            const r = event.currentTarget.getBoundingClientRect();
+            setInsertMenu({ x: r.left, y: r.top - 60 });
+          }}
+        >
+          <Plus size={19} />
+        </button>
       </div>
       <div className="canvas-zoom">
         <button
@@ -1264,6 +1423,13 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         </button>
       </div>
       {menu && <ContextMenu {...menu} items={contextItems} onClose={() => setMenu(null)} />}
+      {insertMenu && (
+        <ContextMenu
+          {...insertMenu}
+          items={[{ label: 'Gallery', icon: <Images />, action: createGallery }]}
+          onClose={() => setInsertMenu(null)}
+        />
+      )}
       {video && (
         <Modal title={video.text || 'Video'} onClose={() => setVideo(null)} wide>
           <video
