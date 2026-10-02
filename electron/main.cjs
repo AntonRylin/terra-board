@@ -146,6 +146,7 @@ const commands = new Set([
   'patchBoard',
   'setLastBoard',
   'importAsset',
+  'removeBackground',
 ]);
 const dev = process.env.CANVAS_DEV_URL;
 function trusted(event) {

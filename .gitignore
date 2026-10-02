@@ -2,6 +2,7 @@
 node_modules/
 dist/
 release/
+assets/models/*.onnx
 
 # Personal data: the board library (boards, media, Electron profile, cookies)
 Library/

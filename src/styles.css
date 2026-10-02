@@ -1719,7 +1719,7 @@ kbd {
 
 /* Custom board icons share the same rounded masks as built-in launcher icons. */
 .board-image-icon {
-  object-fit: cover;
+  object-fit: contain;
   border-radius: 4px;
 }
 .app-icon > .board-image-icon {
@@ -1913,6 +1913,26 @@ kbd {
   max-width: none;
   pointer-events: none;
   user-select: none;
+  animation: icon-image-reveal 180ms ease-out;
+}
+@keyframes icon-image-reveal {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .board-icon-crop img { animation: none; }
+}
+.board-icon-upload .button.icon-background-action {
+  min-height: 28px;
+  padding: 4px 8px;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 12px;
+  border-color: transparent;
+  background: transparent;
+}
+.board-icon-upload .button.icon-background-action:hover {
+  background: #e9eef5;
 }
 .icon-crop-grid {
   position: absolute;

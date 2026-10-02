@@ -107,6 +107,11 @@
     inset 0 1px 0 #ffffff85,
     0 2px 5px #293f6410;
 }
+/* Transparent PNG pixels reveal the panel, including folder and search icons. */
+.app-icon:has(> .board-image-icon) {
+  background: transparent;
+  box-shadow: none;
+}
 .launcher .create-button {
   border-color: #ffffffb3;
 }

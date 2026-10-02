@@ -33,6 +33,7 @@ export default defineConfig({
           'patchBoard',
           'setLastBoard',
           'importAsset',
+          'removeBackground',
           'importBoard',
           'exportBoard',
         ]);

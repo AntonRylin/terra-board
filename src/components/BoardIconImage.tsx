@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { Upload, RotateCcw } from 'lucide-react';
+import { Upload, RotateCcw, Eraser } from 'lucide-react';
 import { chooseFiles, importFiles, invoke, mediaUrl } from '../bridge';
 import type { Asset } from '../model';
 import { BoardGlyph } from './Icon';
@@ -11,6 +11,14 @@ export interface BoardIconImageHandle {
   importFile: (file?: File) => Promise<void>;
 }
 const viewport = 200;
+async function decodeIcon(id: string) {
+  const image = new Image();
+  image.crossOrigin = 'anonymous';
+  // Crop the lossless, orientation-correct original, including its alpha channel.
+  image.src = mediaUrl(id, 'export');
+  await image.decode();
+  return image;
+}
 const BoardIconImage = forwardRef<
   BoardIconImageHandle,
   {
@@ -28,6 +36,17 @@ const BoardIconImage = forwardRef<
   const [zoom, setZoom] = useState(1);
   const [center, setCenter] = useState({ x: 0.5, y: 0.5 });
   const [loading, setLoading] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const [removed, setRemoved] = useState(false);
+  const [source, setSource] = useState<{ id: string; image: HTMLImageElement } | null>(null);
+  const generation = useRef(0);
+  const pending = useRef(false);
+  useEffect(
+    () => () => {
+      generation.current++;
+    },
+    [],
+  );
   const [error, setError] = useState('');
   const [over, setOver] = useState(false);
   const drag = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
@@ -39,24 +58,66 @@ const BoardIconImage = forwardRef<
     ? iconCrop(image.naturalWidth, image.naturalHeight, zoom, center.x, center.y)
     : null;
   async function load(file?: File) {
-    if (!file || loading) return;
+    if (!file || pending.current) return;
+    const token = ++generation.current;
+    pending.current = true;
     setLoading(true);
     onBusy(true);
     setError('');
     try {
       const [asset] = await importFiles([file]);
       if (!asset.mime.startsWith('image/')) throw Error('Choose an image for your board icon.');
-      const next = new Image();
-      next.crossOrigin = 'anonymous';
-      next.src = mediaUrl(asset.id);
-      await next.decode();
+      const next = await decodeIcon(asset.id);
+      if (token !== generation.current) return;
+      setSource({ id: asset.id, image: next });
       setImage(next);
+      setRemoved(false);
       reset();
     } catch (e) {
-      setError(String(e).replace(/^Error: /, ''));
+      if (token === generation.current) setError(String(e).replace(/^Error: /, ''));
     } finally {
-      setLoading(false);
-      onBusy(false);
+      if (token === generation.current) {
+        pending.current = false;
+        setLoading(false);
+        setRemoving(false);
+        onBusy(false);
+      }
+    }
+  }
+  async function removeBackground() {
+    if (pending.current) return;
+    if (removed && source) {
+      setImage(source.image);
+      setRemoved(false);
+      return;
+    }
+    const id = source?.id || (/^asset-[a-f0-9]{64}$/.test(value) ? value.slice(6) : null);
+    if (!id) return;
+    const token = ++generation.current;
+    pending.current = true;
+    setLoading(true);
+    setRemoving(true);
+    setError('');
+    onBusy(true);
+    try {
+      const original = source || { id, image: await decodeIcon(id) };
+      if (token !== generation.current) return;
+      setSource(original);
+      setImage(original.image);
+      const cutout = await invoke<Asset>('removeBackground', { id, icon: true });
+      const next = await decodeIcon(cutout.id);
+      if (token !== generation.current) return;
+      setImage(next);
+      setRemoved(true);
+    } catch (e) {
+      if (token === generation.current) setError(String(e).replace(/^Error: /, ''));
+    } finally {
+      if (token === generation.current) {
+        pending.current = false;
+        setLoading(false);
+        setRemoving(false);
+        onBusy(false);
+      }
     }
   }
   const loadedFile = useRef<File | null>(null);
@@ -69,11 +130,18 @@ const BoardIconImage = forwardRef<
   useImperativeHandle(ref, () => ({
     importFile: load,
     clear() {
+      generation.current++;
+      pending.current = false;
+      setLoading(false);
+      setRemoving(false);
+      setRemoved(false);
+      setSource(null);
       setImage(null);
       setError('');
       reset();
     },
     async save() {
+      if (pending.current) throw Error('Wait for the icon to finish processing.');
       if (!image || !crop) return value;
       const canvas = document.createElement('canvas');
       canvas.width = canvas.height = 512;
@@ -97,6 +165,7 @@ const BoardIconImage = forwardRef<
     <section
       className={'board-icon-upload' + (over ? ' drag-over' : '')}
       aria-label="Upload board icon"
+      aria-busy={loading}
       onDragOver={(e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -175,6 +244,7 @@ const BoardIconImage = forwardRef<
             }}
           >
             <img
+              key={image.src}
               src={image.src}
               alt="Icon crop preview"
               draggable={false}
@@ -238,9 +308,27 @@ const BoardIconImage = forwardRef<
         }}
       >
         <Upload size={15} />
-        {loading ? 'Loading image…' : image ? 'Choose another image' : 'Upload image'}
+        {removing
+          ? 'Removing background…'
+          : loading
+            ? 'Loading image…'
+            : image
+              ? 'Choose another image'
+              : 'Upload image'}
       </button>
       <p>{over ? 'Drop image here' : 'or drag an image here'}</p>
+      {(image || value.startsWith('asset-')) && (
+        <button
+          type="button"
+          className="button icon-background-action"
+          disabled={loading}
+          onClick={() => void removeBackground()}
+        >
+          {removed ? <RotateCcw size={14} /> : <Eraser size={14} />}
+          {removed ? 'Restore original' : 'Remove background'}
+        </button>
+      )}
+      {removing && <p role="status">Removing background on your computer…</p>}
       {image && (
         <button
           type="button"

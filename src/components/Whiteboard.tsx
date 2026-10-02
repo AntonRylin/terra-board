@@ -37,6 +37,7 @@ import {
   Play,
   ExternalLink,
   Crop,
+  Eraser,
   AlignHorizontalJustifyCenter,
   AlignVerticalJustifyCenter,
 } from 'lucide-react';
@@ -109,6 +110,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   ref,
 ) {
   const external = useRef(false);
+  const backgroundJob = useRef<Promise<void> | null>(null);
+  const [removingBackground, setRemovingBackground] = useState(false);
   const exportTask = useRef<Promise<void> | null>(null);
   const [exportScope, setExportScope] = useState<ExportScope | null>(null);
   const [exportProgress, setExportProgress] = useState<ExportProgress | null>(null);
@@ -698,12 +701,52 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   async function importMedia() {
     await performImport(pickMedia);
   }
+  function removeImageBackground(object: CanvasObject) {
+    const currentEngine = engine.current;
+    if (!currentEngine || !object.assetId || backgroundJob.current || external.current) return;
+    if (editingSession.current) finishEdit();
+    if (cropSession.current) finishCrop();
+    setRemovingBackground(true);
+    const task = (async () => {
+      try {
+        const asset = await invoke<Asset>('removeBackground', { id: object.assetId });
+        // Let an in-progress drag, crop or title edit commit its original snapshot
+        // before replacing pixels; otherwise its final commit could undo the cutout.
+        while (
+          alive.current &&
+          engine.current === currentEngine &&
+          (currentEngine.hasActiveGesture ||
+            editingSession.current?.object.id === object.id ||
+            cropSession.current?.object.id === object.id)
+        )
+          await new Promise((resolve) => setTimeout(resolve, 32));
+        if (!alive.current || engine.current !== currentEngine) return;
+        const current = currentEngine.objects.get(object.id);
+        if (
+          !alive.current ||
+          engine.current !== currentEngine ||
+          !current ||
+          current.assetId !== object.assetId
+        )
+          return;
+        // Preserve any repositioning, crop or title edits made while processing.
+        currentEngine.apply({ upserts: [{ ...current, assetId: asset.id }], deleted: [] });
+      } catch (e) {
+        if (alive.current) error(e);
+      } finally {
+        backgroundJob.current = null;
+        if (alive.current) setRemovingBackground(false);
+      }
+    })();
+    backgroundJob.current = task;
+  }
   const flush = async (waitForExport = true) => {
     arrowDraft.current?.flush();
     engine.current?.stopCameraAnimation();
     if (editingSession.current) finishEdit();
     if (cropSession.current) finishCrop();
     await Promise.all([...imports.current]);
+    await backgroundJob.current;
     // A cut commits its deletion only after the clipboard write succeeds.
     // Finish that mutation before board switching or close flushes saved edits.
     await clipboardTask.current?.catch(() => {});
@@ -1093,6 +1136,12 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             action: () => startEdit(selected[0]),
           },
           { label: 'Crop image', icon: <Crop />, action: () => startCrop(selected[0]) },
+          {
+            label: removingBackground ? 'Removing background…' : 'Remove background',
+            icon: <Eraser />,
+            action: () => removeImageBackground(selected[0]),
+            disabled: removingBackground,
+          },
           ...(window.canvas
             ? [
                 {
@@ -1193,9 +1242,13 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           </button>
         </div>
       )}
-      {(busy > 0 || copying) && (
+      {(busy > 0 || copying || removingBackground) && (
         <div className="import-status" role="status">
-          {copying ? 'Copying to clipboard…' : 'Importing media…'}
+          {removingBackground
+            ? 'Removing background…'
+            : copying
+              ? 'Copying to clipboard…'
+              : 'Importing media…'}
         </div>
       )}
       {hoverImageId &&

@@ -847,6 +847,9 @@ export class Engine {
     this.stopCameraAnimation();
     this.cancel();
   }
+  get hasActiveGesture() {
+    return this.gesture !== null;
+  }
   acceptExternalEdit(edit: Edit) {
     for (const o of edit.upserts) this.linkPreviews.delete(o.id);
     for (const id of edit.deleted) this.linkPreviews.delete(id);
