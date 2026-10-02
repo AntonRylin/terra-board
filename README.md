@@ -24,6 +24,8 @@ Pasted web links start as compact title/website cards with an open-link button. 
 
 ## Useful controls
 
+Press **F11** to toggle full screen, or choose **Full screen** from the library's three-dot menu. Press **Escape** or choose **Exit full screen** to return to the previous window size. Leaving full screen with Escape keeps an active text edit open.
+
 Hold the **right mouse button and drag** to move around the board. A plain right-click opens the canvas menu. Use **V** to select, **H** or hold **Space** to pan, **T** for text, **N** for a note, **R** for a shape, **A** for an arrow, **F** for a frame, **L** for a link, and **0** to fit the board. Use the **mouse wheel** to zoom in and out toward the cursor, **Ctrl+K** to search, **Ctrl+Z / Ctrl+Shift+Z** for undo/redo, and **Ctrl+Enter** to finish editing. Double-click text to edit it. Drag any of the four selection corners to resize. Plain text scales its font and box together, keeping the opposite corner fixed; images keep their proportions unless Shift is held. Selection actions stay beside the selected object or group and follow movement, pan and zoom.
 
 Right-click board and folder icons for their actions. The three-dot menus expose board operations, canvas export, Trash, and the keyboard reference.

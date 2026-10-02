@@ -9,6 +9,9 @@ export interface McpStatus {
   claudeConfig: string;
 }
 interface DesktopBridge {
+  fullscreenState(): Promise<boolean>;
+  toggleFullscreen(): Promise<void>;
+  onFullscreenChange(callback: (fullscreen: boolean) => void): () => void;
   mcpStatus(): Promise<McpStatus>;
   mcpUpdate(patch: { enabled: boolean; port?: number }): Promise<McpStatus>;
   onMcpSync(

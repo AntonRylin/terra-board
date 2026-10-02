@@ -5,6 +5,8 @@ import {
   Plus,
   FolderPlus,
   MoreHorizontal,
+  Maximize,
+  Minimize,
   Pencil,
   Palette,
   Copy,
@@ -55,6 +57,9 @@ export default function App() {
   const [aiBusy, setAiBusy] = useState(false);
   const activeDocument = useRef<Document | null>(null);
   const [dockEdge, setDockEdge] = useState(readDockEdge);
+  const [fullscreen, setFullscreen] = useState(false);
+  const fullscreenNow = useRef(false);
+  const fullscreenEscapeHeld = useRef(false);
   const [library, setLibrary] = useState<Library>({ boards: [], folders: [], lastBoard: null }),
     [doc, setDoc] = useState<Document | null>(null),
     [opened, setOpened] = useState<string | null>(null),
@@ -102,6 +107,68 @@ export default function App() {
       report(e instanceof Error ? e.message : String(e));
     }
   };
+  const toggleFullscreen = async () => {
+    if (window.canvas) await window.canvas.toggleFullscreen();
+    else if (document.fullscreenElement) await document.exitFullscreen();
+    else await document.documentElement.requestFullscreen();
+  };
+  useEffect(() => {
+    let active = true;
+    const update = (value: boolean) => {
+      if (!active) return;
+      fullscreenNow.current = value;
+      setFullscreen(value);
+      setMenu(null);
+    };
+    if (window.canvas) {
+      const unsubscribe = window.canvas.onFullscreenChange(update);
+      window.canvas
+        .fullscreenState()
+        .then(update)
+        .catch((e) => report(String(e)));
+      return () => {
+        active = false;
+        unsubscribe();
+      };
+    }
+    const changed = () => update(!!document.fullscreenElement);
+    changed();
+    document.addEventListener('fullscreenchange', changed);
+    return () => {
+      active = false;
+      document.removeEventListener('fullscreenchange', changed);
+    };
+  }, [report]);
+  useEffect(() => {
+    const key = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && fullscreenEscapeHeld.current) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return;
+      }
+      if (event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) return;
+      if (event.key !== 'F11' && !(event.key === 'Escape' && fullscreenNow.current)) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (event.key === 'Escape') fullscreenEscapeHeld.current = true;
+      if (!event.repeat) void toggleFullscreen().catch((e) => report(String(e)));
+    };
+    const release = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') fullscreenEscapeHeld.current = false;
+    };
+    const blur = () => {
+      fullscreenEscapeHeld.current = false;
+    };
+    // Capture before editors/dialogs so exiting fullscreen preserves their drafts.
+    window.addEventListener('keydown', key, true);
+    window.addEventListener('keyup', release, true);
+    window.addEventListener('blur', blur);
+    return () => {
+      window.removeEventListener('keydown', key, true);
+      window.removeEventListener('keyup', release, true);
+      window.removeEventListener('blur', blur);
+    };
+  }, [report]);
   const openBoard = async (id: string) => {
     const n = ++request.current;
     try {
@@ -388,6 +455,15 @@ export default function App() {
         { label: 'Import board…', icon: <Upload />, action: importBoard },
         null,
         { label: 'Trash', icon: <Trash2 />, action: () => ask({ kind: 'trash' }) },
+        ...(desktop || document.fullscreenEnabled
+          ? [
+              {
+                label: fullscreen ? 'Exit full screen' : 'Full screen',
+                icon: fullscreen ? <Minimize /> : <Maximize />,
+                action: () => void run(toggleFullscreen),
+              },
+            ]
+          : []),
         ...(desktop
           ? [{ label: 'Settings', icon: <Settings />, action: () => ask({ kind: 'settings' }) }]
           : []),
@@ -870,6 +946,8 @@ export default function App() {
                       ['Undo / redo', 'Ctrl Z / Ctrl Shift Z'],
                       ['Group / ungroup', 'Ctrl G / Ctrl Shift G'],
                       ['Search your boards', 'Ctrl K'],
+                      ['Toggle full screen', 'F11'],
+                      ['Exit full screen', 'Esc'],
                       ['Pan around', 'Right-drag · Space + drag'],
                       ['Move without snapping', 'Alt + drag'],
                       ['Zoom toward pointer', 'Mouse wheel'],

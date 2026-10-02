@@ -1,5 +1,12 @@
 const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('canvas', {
+  fullscreenState: () => ipcRenderer.invoke('canvas:fullscreen-state'),
+  toggleFullscreen: () => ipcRenderer.invoke('canvas:toggle-fullscreen'),
+  onFullscreenChange: (callback) => {
+    const handler = (_event, fullscreen) => callback(fullscreen);
+    ipcRenderer.on('canvas:fullscreen-changed', handler);
+    return () => ipcRenderer.removeListener('canvas:fullscreen-changed', handler);
+  },
   invoke: (command, args) => ipcRenderer.invoke('canvas:invoke', command, args),
   pickMedia: () => ipcRenderer.invoke('canvas:pick-media'),
   importPortable: () => ipcRenderer.invoke('canvas:import-board'),

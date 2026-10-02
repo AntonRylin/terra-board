@@ -303,6 +303,38 @@ app
       },
     });
     Menu.setApplicationMenu(null);
+    win.on('enter-full-screen', () => win.webContents.send('canvas:fullscreen-changed', true));
+    win.on('leave-full-screen', () => win.webContents.send('canvas:fullscreen-changed', false));
+    let fullscreenEscapeHeld = false;
+    win.webContents.on('before-input-event', (event, input) => {
+      if (input.key === 'Escape' && input.type === 'keyUp') fullscreenEscapeHeld = false;
+      if (input.key === 'Escape' && input.type === 'keyDown' && fullscreenEscapeHeld) {
+        event.preventDefault();
+        return;
+      }
+      if (input.type !== 'keyDown' || input.control || input.alt || input.meta || input.shift)
+        return;
+      if (input.key === 'F11') {
+        event.preventDefault();
+        if (!input.isAutoRepeat) win.setFullScreen(!win.isFullScreen());
+      } else if (input.key === 'Escape' && win.isFullScreen()) {
+        // Consume this Escape so leaving fullscreen does not also cancel an edit.
+        event.preventDefault();
+        fullscreenEscapeHeld = true;
+        win.setFullScreen(false);
+      }
+    });
+    win.on('blur', () => {
+      fullscreenEscapeHeld = false;
+    });
+    ipcMain.handle('canvas:fullscreen-state', (event) => {
+      trusted(event);
+      return win.isFullScreen();
+    });
+    ipcMain.handle('canvas:toggle-fullscreen', (event) => {
+      trusted(event);
+      win.setFullScreen(!win.isFullScreen());
+    });
     win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     win.webContents.on('will-navigate', (e) => e.preventDefault());
     win.webContents.session.setPermissionRequestHandler((_wc, _p, cb) => cb(false));
