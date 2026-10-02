@@ -165,8 +165,9 @@ try {
   };
   const begin = async () => {
     const r = await rect('.launcher');
-    const x = r.x + 3;
-    const y = r.y + 3;
+    // Stay inside the rounded glass surface, beyond its transparent corner.
+    const x = r.x + (r.width > r.height ? 32 : 3);
+    const y = r.y + (r.width > r.height ? 3 : 32);
     await mouse('mousePressed', x, y);
     return { x, y };
   };
@@ -215,7 +216,7 @@ try {
         Math.min(rail.y + rail.height, workspace.y + workspace.height) -
           Math.max(rail.y, workspace.y),
       );
-    assert.ok(overlap < 1, 'workspace stays clear of dock');
+    assert.ok(overlap > 0, 'canvas continues behind the floating glass dock');
     const isHorizontal = side === 'top' || side === 'bottom';
     const last = await rect('.launcher-scroll > .launch-item:last-of-type');
     const create = await rect('[aria-label="Create"]');
@@ -399,7 +400,7 @@ try {
     JSON.stringify({
       passed: true,
       checks:
-        'Four edges, live previews, animation, workspace clearance, folders, menus, Escape, invalid drop, persistence, reduced motion, pointer board-to-folder drag, pointer cancellation, small window',
+        'Four edges, live previews, animation, canvas behind glass, folders, menus, Escape, invalid drop, persistence, reduced motion, pointer board-to-folder drag, pointer cancellation, small window',
       artifacts: root,
     }),
   );

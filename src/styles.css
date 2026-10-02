@@ -103,7 +103,7 @@ p {
   background: var(--panel);
   border-right: 1px solid var(--line);
   z-index: 5;
-  cursor: grab;
+  cursor: default;
   touch-action: none;
   user-select: none;
   overflow: hidden;
@@ -399,6 +399,26 @@ body.reordering * {
   top: auto;
   bottom: 0;
   border-radius: 3px 3px 0 0;
+}
+/* Equal end controls keep the centered group aligned with the workspace. */
+.launcher[data-centered='true'] .launcher-top,
+.launcher[data-centered='true'] .launcher-footer {
+  flex-basis: 62px;
+  padding: 0;
+}
+.launcher[data-centered='true'] .launcher-scroll {
+  display: flex;
+  flex-direction: column;
+  justify-content: safe center;
+  padding: 5px 0;
+}
+.launcher[data-centered='true'] .launch-item {
+  flex-shrink: 0;
+}
+.app-shell:is([data-dock='top'], [data-dock='bottom'])
+  .launcher[data-centered='true'] .launcher-scroll {
+  flex-direction: row;
+  padding: 0 5px;
 }
 .launcher.is-dragging {
   z-index: 30;
@@ -773,7 +793,14 @@ body.reordering * {
   border-radius: 7px;
   min-height: 34px;
 }
+.context-menu:focus {
+  outline: none;
+}
 .context-menu button:hover {
+  background: var(--panel);
+}
+.context-menu button:focus-visible {
+  outline: none;
   background: var(--panel);
 }
 .context-menu svg {

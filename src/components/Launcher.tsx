@@ -7,6 +7,8 @@ import InlineName from './InlineName';
 import LauncherTooltip from './LauncherTooltip';
 import { useLauncherDock, type DockEdge } from './useLauncherDock';
 import { useLauncherReorder } from './useLauncherReorder';
+import { useLauncherAlignment } from './useLauncherAlignment';
+import type { MenuPlacement } from './Dialogs';
 export function AppIcon({ board }: { board: Board }) {
   return (
     <span className={'app-icon ' + board.color + ' shape-' + (board.iconShape || 'rounded')}>
@@ -20,6 +22,7 @@ export function AppIcon({ board }: { board: Board }) {
 }
 interface Props {
   dockEdge: DockEdge;
+  centered: boolean;
   onDock: (edge: DockEdge) => void;
   library: Library;
   active: string | null;
@@ -29,6 +32,7 @@ interface Props {
   onCreate: (x: number, y: number) => void;
   onSearch: () => void;
   onOptions: (x: number, y: number) => void;
+  onPanelMenu: (x: number, y: number, placement: MenuPlacement) => void;
   onBoardMenu: (b: Board, x: number, y: number) => void;
   onIconDrop: (b: Board, file: File) => void;
   onFolderMenu: (f: Folder, x: number, y: number) => void;
@@ -43,6 +47,7 @@ export default function Launcher(p: Props) {
   const rail = useRef<HTMLElement>(null),
     sheet = useRef<HTMLDivElement>(null);
   const dock = useLauncherDock(rail, p.dockEdge, p.onDock, () => p.onFolder(null));
+  useLauncherAlignment(rail, p.centered, p.dockEdge);
   const horizontal = p.dockEdge === 'top' || p.dockEdge === 'bottom';
   const reorder = useLauncherReorder(p.library, async (change) => {
     if (change.kind === 'folder') await p.onReorderFolder(change.id, change.position!);
@@ -104,16 +109,28 @@ export default function Launcher(p: Props) {
       panel.style.top = `${Math.max(8, Math.min(y, innerHeight - height - 8))}px`;
     };
     place();
+    let frame = 0;
+    const followAlignment = () => {
+      place();
+      if (
+        strip
+          .getAnimations({ subtree: true })
+          .some((a) => a.id === 'launcher-alignment' && a.playState === 'running')
+      )
+        frame = requestAnimationFrame(followAlignment);
+    };
+    frame = requestAnimationFrame(followAlignment);
     const observer = new ResizeObserver(place);
     observer.observe(panel);
     window.addEventListener('resize', place);
     strip.addEventListener('scroll', place, true);
     return () => {
+      cancelAnimationFrame(frame);
       observer.disconnect();
       window.removeEventListener('resize', place);
       strip.removeEventListener('scroll', place, true);
     };
-  }, [folder?.id, p.dockEdge, horizontal]);
+  }, [folder?.id, p.dockEdge, horizontal, p.centered]);
   // Boards and folders sort by pointer; HTML drops here are only image files.
   const dropIcon = (e: React.DragEvent, board: Board) => {
     e.currentTarget.classList.remove('drop-target');
@@ -151,6 +168,11 @@ export default function Launcher(p: Props) {
         aria-label="Boards and folders"
         title="Drag empty space to move this panel"
         {...dock.handlers}
+        onContextMenu={(e) => {
+          if (e.defaultPrevented) return;
+          e.preventDefault();
+          p.onPanelMenu(e.clientX, e.clientY, 'pointer');
+        }}
       >
         <div className="launcher-top">
           <button

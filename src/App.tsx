@@ -1,4 +1,5 @@
 import SettingsPage from './components/SettingsPage';
+import { useGlassAppearance } from './components/useGlassAppearance';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Settings,
@@ -19,6 +20,7 @@ import {
   Keyboard,
   FolderOpen,
   Check,
+  AlignCenter,
   AlertCircle,
   LoaderCircle,
   ImagePlus,
@@ -35,7 +37,7 @@ import BoardEmojiPicker from './components/BoardEmojiPicker';
 import { BoardGlyph } from './components/Icon';
 import BoardSymbolPicker from './components/BoardSymbolPicker';
 import { Presence } from './components/Presence';
-import { ContextMenu, Modal, type MenuItem } from './components/Dialogs';
+import { ContextMenu, Modal, type MenuItem, type MenuPlacement } from './components/Dialogs';
 import { readDockEdge } from './components/useLauncherDock';
 type ModalState = {
   kind:
@@ -54,16 +56,29 @@ type ModalState = {
   iconFile?: File;
 };
 export default function App() {
+  const glass = useGlassAppearance();
   const [aiBusy, setAiBusy] = useState(false);
   const activeDocument = useRef<Document | null>(null);
   const [dockEdge, setDockEdge] = useState(readDockEdge);
+  const [launcherCentered, setLauncherCentered] = useState(() => {
+    try {
+      return localStorage.getItem('terra-board.launcher-centered') === 'true';
+    } catch {
+      return false;
+    }
+  });
   const [fullscreen, setFullscreen] = useState(false);
   const fullscreenNow = useRef(false);
   const fullscreenEscapeHeld = useRef(false);
   const [library, setLibrary] = useState<Library>({ boards: [], folders: [], lastBoard: null }),
     [doc, setDoc] = useState<Document | null>(null),
     [opened, setOpened] = useState<string | null>(null),
-    [menu, setMenu] = useState<{ x: number; y: number; items: (MenuItem | null)[] } | null>(null),
+    [menu, setMenu] = useState<{
+      x: number;
+      y: number;
+      placement?: MenuPlacement;
+      items: (MenuItem | null)[];
+    } | null>(null),
     [modal, setModal] = useState<ModalState | null>(null),
     [name, setName] = useState(''),
     [glyph, setGlyph] = useState('lightbulb'),
@@ -353,6 +368,17 @@ export default function App() {
         setBusy(false);
       }
     });
+  const launcherAlignmentItem: MenuItem = {
+    label: launcherCentered ? 'Uncenter panel' : 'Center panel',
+    icon: <AlignCenter />,
+    action: () => {
+      const centered = !launcherCentered;
+      setLauncherCentered(centered);
+      try {
+        localStorage.setItem('terra-board.launcher-centered', String(centered));
+      } catch {}
+    },
+  };
   const boardMenu = (b: Board, x: number, y: number) =>
     setMenu({
       x,
@@ -388,6 +414,8 @@ export default function App() {
         null,
         { label: 'Export / share a copy…', icon: <Download />, action: () => exportBoard(b.id) },
         null,
+        launcherAlignmentItem,
+        null,
         { label: 'Move to Trash', icon: <Trash2 />, danger: true, action: () => trash(b.id) },
       ],
     });
@@ -406,6 +434,8 @@ export default function App() {
           icon: <Plus />,
           action: () => ask({ kind: 'new-board', folderId: f.id }, 'Untitled'),
         },
+        null,
+        launcherAlignmentItem,
         null,
         {
           label: 'Ungroup folder',
@@ -439,6 +469,25 @@ export default function App() {
         { label: 'Import board…', icon: <Upload />, action: importBoard },
       ],
     });
+  const panelMenu = (x: number, y: number, placement: MenuPlacement) =>
+    setMenu({
+      x,
+      y,
+      placement,
+      items: [
+        launcherAlignmentItem,
+        {
+          label: 'New board',
+          icon: <Plus />,
+          action: () => ask({ kind: 'new-board', folderId: null }, 'Untitled'),
+        },
+        {
+          label: 'New folder',
+          icon: <FolderPlus />,
+          action: () => ask({ kind: 'new-folder' }, 'Untitled folder'),
+        },
+      ],
+    });
   const libraryMenu = (x: number, y: number) =>
     setMenu({
       x,
@@ -455,6 +504,7 @@ export default function App() {
         { label: 'Import board…', icon: <Upload />, action: importBoard },
         null,
         { label: 'Trash', icon: <Trash2 />, action: () => ask({ kind: 'trash' }) },
+        launcherAlignmentItem,
         ...(desktop || document.fullscreenEnabled
           ? [
               {
@@ -524,6 +574,7 @@ export default function App() {
       >
         <Launcher
           dockEdge={dockEdge}
+          centered={launcherCentered}
           onDock={setDockEdge}
           library={library}
           active={doc?.board.id || null}
@@ -536,6 +587,7 @@ export default function App() {
             ask({ kind: 'search' });
           }}
           onOptions={libraryMenu}
+          onPanelMenu={panelMenu}
           onBoardMenu={boardMenu}
           onIconDrop={(board, file) => {
             if (busy) return;
@@ -975,7 +1027,13 @@ export default function App() {
           )}
         </Presence>
       </div>
-      {modal?.kind === 'settings' && <SettingsPage onClose={() => setModal(null)} />}
+      {modal?.kind === 'settings' && (
+        <SettingsPage
+          onClose={() => setModal(null)}
+          transparency={glass.transparency}
+          onTransparency={glass.setTransparency}
+        />
+      )}
     </>
   );
 }

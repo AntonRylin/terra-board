@@ -87,26 +87,37 @@ export interface MenuItem {
   danger?: boolean;
   disabled?: boolean;
 }
+export type MenuPlacement = 'below' | 'above' | 'left' | 'pointer';
 export function ContextMenu({
   x,
   y,
   items,
   onClose,
   className = '',
+  placement = 'below',
 }: {
   x: number;
   y: number;
   items: (MenuItem | null)[];
   onClose: () => void;
   className?: string;
+  placement?: MenuPlacement;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const el = ref.current!;
-    el.style.left = Math.max(8, Math.min(x, innerWidth - el.offsetWidth - 12)) + 'px';
-    el.style.top = Math.max(8, Math.min(y, innerHeight - el.offsetHeight - 12)) + 'px';
-    el.querySelector('button')?.focus();
-  }, [x, y]);
+    const left =
+      placement === 'left' || (placement === 'pointer' && x + el.offsetWidth > innerWidth - 12)
+        ? x - el.offsetWidth
+        : x;
+    const top =
+      placement === 'above' || (placement === 'pointer' && y + el.offsetHeight > innerHeight - 12)
+        ? y - el.offsetHeight
+        : y;
+    el.style.left = Math.max(8, Math.min(left, innerWidth - el.offsetWidth - 12)) + 'px';
+    el.style.top = Math.max(8, Math.min(top, innerHeight - el.offsetHeight - 12)) + 'px';
+    el.focus({ preventScroll: true });
+  }, [x, y, placement]);
   useEffect(() => {
     const down = (e: PointerEvent) => {
       if (!ref.current?.contains(e.target as Node)) onClose();
@@ -125,7 +136,7 @@ export function ContextMenu({
     };
   }, [onClose]);
   return (
-    <div ref={ref} className={'context-menu ' + className} role="menu" style={{ left: x, top: y }}>
+    <div ref={ref} className={'context-menu ' + className} role="menu" tabIndex={-1} style={{ left: x, top: y }}>
       {items.map((item, i) =>
         item ? (
           <button

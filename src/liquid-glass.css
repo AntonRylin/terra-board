@@ -1,0 +1,290 @@
+@property --glass-fill {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 0.45;
+}
+@property --glass-shine {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 0.176;
+}
+
+/* The canvas continues beneath the edge-to-edge dock for a real glass backdrop. */
+.app-shell[data-dock] .workspace {
+  inset: 0;
+}
+.app-shell[data-dock='left'] .launcher {
+  inset: 0 auto 0 0;
+}
+.app-shell[data-dock='right'] .launcher {
+  inset: 0 0 0 auto;
+}
+.app-shell[data-dock='top'] .launcher {
+  inset: 0 0 auto;
+}
+.app-shell[data-dock='bottom'] .launcher {
+  inset: auto 0 0;
+}
+.app-shell[data-dock='left'] .board-header {
+  left: 72px;
+}
+.app-shell[data-dock='right'] .board-header {
+  right: 72px;
+}
+.app-shell[data-dock='top'] .board-header {
+  top: 72px;
+}
+.app-shell[data-dock='bottom'] .canvas-toolbar {
+  bottom: 94px;
+}
+.app-shell[data-dock='bottom'] .canvas-zoom {
+  bottom: 97px;
+}
+.app-shell[data-dock='left'] .canvas-toolbar {
+  left: calc(50% + 36px);
+  max-width: calc(100% - 102px);
+}
+.app-shell[data-dock='right'] .canvas-toolbar {
+  left: calc(50% - 36px);
+  max-width: calc(100% - 102px);
+}
+.app-shell[data-dock='right'] .canvas-zoom {
+  right: 86px;
+}
+
+:is(.app-shell[data-dock] .launcher, .canvas-toolbar, .selection-tools, .glass-surface) {
+  background-color: rgb(247 250 255 / var(--glass-fill));
+  background-image: linear-gradient(
+    145deg,
+    rgb(255 255 255 / var(--glass-shine)) 0%,
+    rgb(255 255 255 / 0) 44%,
+    rgb(221 233 251 / var(--glass-shine)) 100%
+  );
+  backdrop-filter: blur(24px) saturate(1.55);
+  border: 1px solid rgb(255 255 255 / 0.74);
+  border-radius: 24px;
+  box-shadow:
+    0 0 0 1px rgb(79 103 137 / 0.1),
+    0 8px 28px rgb(37 59 90 / 0.12),
+    0 2px 5px rgb(37 59 90 / 0.04),
+    inset 0 1px 1px rgb(255 255 255 / 0.95),
+    inset 1px 0 1px rgb(255 255 255 / 0.55),
+    inset 0 -1px 1px rgb(134 161 195 / 0.15);
+  transition:
+    --glass-fill 180ms ease,
+    --glass-shine 180ms ease;
+}
+.app-shell[data-dock] .launcher:not(.is-dragging) {
+  border-radius: 0;
+}
+.canvas-toolbar {
+  padding: 7px 8px;
+  gap: 4px;
+}
+.selection-tools {
+  border-radius: 18px;
+  padding: 6px 8px;
+}
+:is(.launcher, .canvas-toolbar, .selection-tools) .icon-button {
+  border-radius: 12px;
+  background-color: rgb(255 255 255 / var(--glass-control, 0.3565));
+}
+:is(.launcher, .canvas-toolbar, .selection-tools) .icon-button:hover {
+  background-color: rgb(255 255 255 / 0.8);
+  box-shadow:
+    0 2px 7px #334c6a0d,
+    inset 0 1px 0 #ffffffb3;
+}
+:is(.canvas-toolbar, .selection-tools) .icon-button[aria-pressed='true'] {
+  color: #276ab8;
+  background: #dceafbdf;
+  box-shadow:
+    inset 0 1px 0 #ffffffd9,
+    0 1px 4px #3a70a51a;
+}
+.launcher .app-icon {
+  box-shadow:
+    inset 0 1px 0 #ffffff85,
+    0 2px 5px #293f6410;
+}
+.launcher .create-button {
+  border-color: #ffffffb3;
+}
+.canvas-toolbar .divider {
+  background: #72839b30;
+}
+
+.settings-section + .settings-section {
+  margin-top: 24px;
+}
+.appearance-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.appearance-heading h2 {
+  margin: 0 0 6px;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.4px;
+}
+.appearance-heading p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.glass-reset {
+  flex: none;
+  font-size: 12px;
+}
+.glass-preview {
+  position: relative;
+  height: 250px;
+  overflow: hidden;
+  border-radius: 18px;
+  background:
+    radial-gradient(#c9d5df99 0.6px, transparent 0.6px) 0 0 / 18px 18px,
+    #edf2f7;
+  border: 1px solid #e5ebf2;
+  margin-bottom: 28px;
+}
+.glass-preview-landscape {
+  position: absolute;
+  inset: -35px auto -25px 14%;
+  width: 37%;
+  transform: rotate(-15deg);
+  border: 8px solid #ffffffa6;
+  border-radius: 10px;
+  background:
+    radial-gradient(ellipse at 76% 21%, #e9f2eb 0 12%, transparent 12.5%),
+    linear-gradient(152deg, transparent 50%, #547e7680 50.5% 66%, #b1c6b4 66.5%),
+    linear-gradient(23deg, #799d9b 40%, #c4dae5 40.5%);
+  box-shadow: 0 12px 28px #27303d14;
+}
+.glass-preview-note {
+  position: absolute;
+  right: 10%;
+  top: 25px;
+  width: 165px;
+  height: 180px;
+  padding: 23px;
+  border-radius: 3px;
+  background: #efd7b5;
+  color: #806649;
+  font-size: 21px;
+  line-height: 1.4;
+  transform: rotate(9deg);
+  box-shadow: 0 8px 22px #5b46351a;
+}
+.glass-preview-tools,
+.glass-preview-boards {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px;
+}
+.glass-preview-tools {
+  top: 71px;
+}
+.glass-preview-boards {
+  bottom: 0;
+  width: 100%;
+  gap: 18px;
+  padding: 12px;
+}
+.glass-preview .glass-preview-boards.glass-surface {
+  border-radius: 0;
+}
+.preview-tool,
+.preview-board {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  color: #455366;
+}
+.preview-tool {
+  background: rgb(255 255 255 / var(--glass-control, 0.3565));
+}
+.preview-tool.selected {
+  color: #276ab8;
+  background: #dceafbdf;
+}
+.preview-board.blue {
+  background: var(--blue);
+}
+.preview-board.green {
+  background: var(--green);
+}
+.preview-board.purple {
+  background: var(--purple);
+}
+.glass-slider-label,
+.glass-slider-scale {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.glass-slider-label {
+  margin-bottom: 16px;
+  font-weight: 500;
+}
+.glass-slider-label output {
+  color: #526a88;
+  font-variant-numeric: tabular-nums;
+}
+.glass-slider {
+  display: block;
+  width: 100%;
+  height: 24px;
+  margin: 0;
+  accent-color: #668cb8;
+  cursor: pointer;
+}
+.glass-slider-scale {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.glass-setting-hint {
+  margin: 20px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+@media (max-width: 1050px) {
+  .app-shell[data-dock='bottom'] .canvas-zoom {
+    bottom: 150px;
+  }
+}
+@media (max-width: 650px) {
+  .canvas-toolbar {
+    gap: 1px;
+  }
+  .app-shell[data-dock='bottom'] .canvas-toolbar {
+    bottom: 86px;
+  }
+  .app-shell[data-dock='bottom'] .canvas-zoom {
+    bottom: 192px;
+  }
+  .glass-preview-note {
+    right: -20px;
+  }
+  .appearance-heading {
+    align-items: flex-start;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  :is(.app-shell[data-dock] .launcher, .canvas-toolbar, .selection-tools, .glass-surface) {
+    transition: none;
+  }
+}

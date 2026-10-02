@@ -52,6 +52,7 @@ export function useLauncherDock(
     landing.current = null;
     if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     const to = el.getBoundingClientRect();
+    const appearance = getComputedStyle(el);
     animation.current = el.animate(
       [
         {
@@ -65,8 +66,8 @@ export function useLauncherDock(
           transform: 'translate(0, 0)',
           width: `${to.width}px`,
           height: `${to.height}px`,
-          borderRadius: '0px',
-          boxShadow: '0 0 0 #273c5a00',
+          borderRadius: appearance.borderRadius,
+          boxShadow: appearance.boxShadow,
         },
       ],
       { duration: 360, easing: 'cubic-bezier(.22, 1, .36, 1)' },
