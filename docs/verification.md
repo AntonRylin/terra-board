@@ -1,5 +1,16 @@
 # Verification — Terra Board
 
+## MCP capability audit — 2026-10-02
+
+The MCP editing schema was missing the gallery fields already supported by the canvas and storage. Reading a gallery and sending its complete objects back to `edit_board` failed with unrecognized-key errors. The schema now accepts gallery settings and image membership/cell fields with the same numeric limits as storage. A regression reproduced the failure before the fix and now verifies edits, image copies, invalid inputs and persisted fields after reopening.
+
+- `npm test`: **172 passed, 0 failed**. MCP integration coverage includes all board colors, built-in/emoji/image icons, icon shape, initial visibility, rename, folder moves, ordering, trash/restore, media imports, pagination, stale revisions and authentication.
+- `npm run package` passed. Packaged MCP files, storage and renderer entry point match the tested source/build. The package contains SDK **1.31.0**, matching the current npm release of `@modelcontextprotocol/sdk`. Upstream also offers the separate v2 SDK line; no major-version migration was performed.
+- Expanded packaged `scripts/desktop-mcp.mjs` passed in `.local-test/desktop-input-tCqhJO`: HTTP and stdio, creating/opening boards, all board settings, imported/custom icons, gallery image copies, duplicate/trash/restore, folders, unsaved draft synchronization, undo/redo and disabling access. No renderer exceptions. Visually inspected `mcp-created-board.png` showing both images and the custom circle icon.
+- Packaged icon checks passed in `.local-test/desktop-input-xwLyVv`: file drop, crop/zoom, shape/color/initial, emoji/symbol selection, cancellation and portable icons. The crop screenshot was visually inspected.
+- Packaged native clipboard checks passed in `.local-test/clipboard-QH5g8O`: original image pixels read by another process, Ctrl+C, Copy as image, crop/rotation, editable round trips, ordinary text copy and paste-time cursor placement.
+- Reopened the normal app and verified 11 tools and the updated gallery schema through both live HTTP and a fresh packaged stdio connection. Real-library checks were read-only; all mutation tests used disposable repository-local libraries. MCP reads board objects and previews individual assets; it has no dedicated whole-board screenshot or open-board tool, so opening and visual inspection were tested through the desktop UI.
+
 ## Export quality presets — 2026-10-02
 
 Export resolution now offers Full quality (default), 2K (2048 px longest edge), and 4K (4096 px). Full quality derives pixel density from original image dimensions and normalized crops, with at least 2x rendering and a 4K floor for text/shape-only content. All modes rerender objects at the chosen resolution, retaining proportions and the 8192-edge / 32-million-pixel bounds. The toast reports actual dimensions and any size limiting. JPG uses maximum encoder quality. PDF now embeds losslessly compressed RGB pixels, while keeping physical page size independent of resolution. Unsupported browser image formats use a cached, lossless, orientation-correct PNG of the original rather than the 1600px WebP preview. A previous success toast is hidden while the format dialog is open so it cannot cover format buttons.

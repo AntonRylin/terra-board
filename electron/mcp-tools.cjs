@@ -35,6 +35,17 @@ const object = z
     rotation: z.number().min(0).max(360).optional(),
     textBox: z.boolean().optional(),
     groupId: id.optional(),
+    gallery: z
+      .object({
+        direction: z.enum(['right', 'below']),
+        size: z.number().min(32).max(8192),
+        gap: z.number().min(0).max(200),
+      })
+      .optional(),
+    galleryId: id.optional(),
+    galleryIndex: z.number().min(0).max(1e7).optional(),
+    galleryRow: z.number().int().min(0).max(10000).optional(),
+    galleryColumn: z.number().int().min(0).max(10000).optional(),
     assetId: id.optional(),
     crop: z
       .object({
@@ -162,7 +173,7 @@ function tools(call) {
   );
   add(
     'edit_board',
-    'Atomically create, replace or delete objects. Upserts are COMPLETE objects, not partial patches; preserve fields read earlier. Coordinates are board units; z controls stacking. Images/videos require imported assetId; arrows require normalized points; links require http(s) URL. This is undoable on the open board. Stale revisions never overwrite changes.',
+    'Atomically create, replace or delete objects. Upserts are COMPLETE objects, not partial patches; preserve fields read earlier, including gallery layout and image membership. Coordinates are board units; z controls stacking. Images/videos require imported assetId; arrows require normalized points; links require http(s) URL. Galleries are frames with gallery settings; member images use galleryId, galleryIndex, galleryRow and galleryColumn. This is undoable on the open board. Stale revisions never overwrite changes.',
     {
       id,
       revision,

@@ -142,6 +142,161 @@ test('MCP interoperates with SDK: board/folder CRUD, complete object edits, stal
     await f.close();
   }
 });
+test('MCP can edit and copy existing gallery objects without losing their layout fields', async () => {
+  const f = await fixture();
+  try {
+    const call = async (name, args = {}) =>
+      data(await f.client.callTool({ name, arguments: args }));
+    const board = await call('create_board', { name: 'Gallery compatibility' });
+    const png = await sharp({
+      create: { width: 32, height: 24, channels: 3, background: '#3377cc' },
+    })
+      .png()
+      .toBuffer();
+    const asset = await call('import_media', {
+      base64: png.toString('base64'),
+      name: 'Gallery.png',
+    });
+    // Seed objects as the UI does: the MCP must accept complete objects it reads back.
+    f.store.patchBoard({
+      id: board.id,
+      revision: 0,
+      upserts: [
+        {
+          id: 'gallery',
+          type: 'frame',
+          x: 0,
+          y: 0,
+          width: 680,
+          height: 280,
+          z: 1,
+          text: 'Journey',
+          gallery: { direction: 'below', size: 320, gap: 20 },
+        },
+        {
+          id: 'photo',
+          type: 'image',
+          x: 20,
+          y: 20,
+          width: 320,
+          height: 240,
+          z: 2,
+          assetId: asset.id,
+          galleryId: 'gallery',
+          galleryIndex: 0,
+          galleryRow: 0,
+          galleryColumn: 0,
+          imageTitle: 'Original',
+        },
+      ],
+      deleted: [],
+    });
+    const before = await call('read_board', { id: board.id });
+    const frame = before.objects.find((o) => o.id === 'gallery');
+    const photo = before.objects.find((o) => o.id === 'photo');
+    await call('edit_board', {
+      id: board.id,
+      revision: before.revision,
+      upserts: [
+        { ...frame, text: 'Updated journey', gallery: { ...frame.gallery, direction: 'right' } },
+        { ...photo, imageTitle: 'Updated original' },
+        { ...photo, id: 'photo-copy', x: 360, z: 3, galleryIndex: 1, galleryColumn: 1 },
+      ],
+    });
+    const edited = await call('read_board', { id: board.id });
+    assert.equal(edited.objects.length, 3);
+    assert.deepEqual(edited.objects.find((o) => o.id === 'gallery').gallery, {
+      direction: 'right',
+      size: 320,
+      gap: 20,
+    });
+    assert.deepEqual(
+      edited.objects.find((o) => o.id === 'photo'),
+      { ...photo, imageTitle: 'Updated original' },
+    );
+    const copy = edited.objects.find((o) => o.id === 'photo-copy');
+    assert.equal(copy.assetId, asset.id);
+    assert.equal(copy.galleryId, 'gallery');
+    assert.equal(copy.galleryRow, 0);
+    assert.equal(copy.galleryColumn, 1);
+    for (const invalid of [
+      { ...frame, gallery: { direction: 'below', size: 0, gap: 20 } },
+      { ...photo, galleryRow: 0.5 },
+      { ...photo, galleryColumn: 10001 },
+      { ...photo, galleryId: 'invalid/id' },
+    ]) {
+      const result = await f.client.callTool({
+        name: 'edit_board',
+        arguments: {
+          id: board.id,
+          revision: edited.revision,
+          upserts: [invalid],
+        },
+      });
+      assert.equal(result.isError, true);
+    }
+    const reopened = new Store(f.root);
+    try {
+      assert.deepEqual(reopened.loadBoard({ id: board.id }).objects, edited.objects);
+    } finally {
+      reopened.close();
+    }
+  } finally {
+    await f.close();
+  }
+});
+
+test('MCP board settings persist across rename, icons, colors, shape, initial, move, reorder and trash', async () => {
+  const f = await fixture();
+  try {
+    const call = async (name, args = {}) =>
+      data(await f.client.callTool({ name, arguments: args }));
+    const folder = await call('create_folder', { name: 'Settings folder' });
+    const board = await call('create_board', { name: 'Settings board' });
+    for (const color of ['blue', 'green', 'purple', 'orange', 'rose', 'gray', 'yellow']) {
+      await call('update_board', { id: board.id, patch: { color } });
+      assert.equal((await call('read_board', { id: board.id })).board.color, color);
+    }
+    for (const icon of ['none', 'lightbulb', 'emoji:🌿']) {
+      await call('update_board', { id: board.id, patch: { icon } });
+      assert.equal((await call('read_board', { id: board.id })).board.icon, icon);
+    }
+    const patch = {
+      name: 'Renamed settings',
+      iconShape: 'circle',
+      showInitial: false,
+      folderId: folder.id,
+      position: 2.5,
+      trashed: true,
+    };
+    await call('update_board', { id: board.id, patch });
+    const saved = (await call('read_board', { id: board.id })).board;
+    for (const [key, value] of Object.entries(patch)) assert.equal(saved[key], value, key);
+    await call('update_board', {
+      id: board.id,
+      patch: {
+        iconShape: 'rounded',
+        showInitial: true,
+        folderId: null,
+        trashed: false,
+      },
+    });
+    const restored = (await call('read_board', { id: board.id })).board;
+    assert.equal(restored.trashed, false);
+    assert.equal(restored.folderId, null);
+    assert.equal(restored.iconShape, 'rounded');
+    assert.equal(restored.showInitial, true);
+    const reopened = new Store(f.root);
+    try {
+      assert.deepEqual(reopened.loadBoard({ id: board.id }).board, restored);
+    } finally {
+      reopened.close();
+    }
+  } finally {
+    await f.close();
+  }
+});
+
 test('MCP rejects unauthenticated requests, foreign origins/hosts, malformed data, disabled and queued access', async () => {
   const f = await fixture();
   try {

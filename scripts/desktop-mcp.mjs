@@ -410,6 +410,122 @@ try {
   assert.equal((await claude.listTools()).tools.length, 11);
   const listed = await claude.callTool({ name: 'list_boards', arguments: {} });
   assert.ok(!listed.isError, listed.content[0]?.text);
+  // Exercise the board lifecycle through the packaged connector, then open
+  // the result through the real launcher to verify the UI sees MCP changes.
+  const stdioCall = async (name, args = {}) => {
+    const result = await claude.callTool({ name, arguments: args });
+    assert.ok(!result.isError, result.content[0]?.text);
+    return JSON.parse(result.content[0].text);
+  };
+  const folder = await stdioCall('create_folder', { name: 'MCP checks' });
+  const created = await stdioCall('create_board', { name: 'MCP board', folderId: folder.id });
+  for (const color of ['blue', 'green', 'purple', 'orange', 'rose', 'gray', 'yellow']) {
+    await stdioCall('update_board', { id: created.id, patch: { color } });
+    assert.equal((await stdioCall('read_board', { id: created.id })).board.color, color);
+  }
+  for (const icon of ['none', 'lightbulb', 'emoji:🌿', 'asset-' + upload.id]) {
+    await stdioCall('update_board', { id: created.id, patch: { icon } });
+    assert.equal((await stdioCall('read_board', { id: created.id })).board.icon, icon);
+  }
+  const boardPatch = {
+    name: 'MCP verified board',
+    iconShape: 'circle',
+    showInitial: false,
+    folderId: null,
+    position: 0.5,
+  };
+  await stdioCall('update_board', { id: created.id, patch: boardPatch });
+  const configured = (await stdioCall('read_board', { id: created.id })).board;
+  for (const [field, value] of Object.entries(boardPatch)) assert.equal(configured[field], value);
+  await stdioCall('edit_board', {
+    id: created.id,
+    revision: 0,
+    upserts: [
+      {
+        id: 'journey',
+        type: 'frame',
+        x: 100,
+        y: 150,
+        width: 690,
+        height: 230,
+        z: 1,
+        text: 'MCP gallery',
+        gallery: { direction: 'below', size: 320, gap: 20 },
+      },
+      {
+        id: 'original',
+        type: 'image',
+        x: 115,
+        y: 195,
+        width: 320,
+        height: 160,
+        z: 2,
+        assetId: upload.id,
+        imageTitle: 'Imported image',
+        galleryId: 'journey',
+        galleryIndex: 0,
+        galleryRow: 0,
+        galleryColumn: 0,
+      },
+    ],
+  });
+  const gallery = await stdioCall('read_board', { id: created.id });
+  const source = gallery.objects.find((o) => o.id === 'original');
+  await stdioCall('edit_board', {
+    id: created.id,
+    revision: gallery.revision,
+    upserts: [
+      {
+        ...source,
+        id: 'image-copy',
+        x: 455,
+        z: 3,
+        imageTitle: 'Copied image',
+        galleryIndex: 1,
+        galleryColumn: 1,
+      },
+    ],
+  });
+  await clickSelector('[aria-label="Open board MCP verified board"]');
+  await until(
+    () =>
+      read(`document.querySelector('.board-title')?.textContent === 'MCP verified board'
+    && !!document.querySelector('canvas') && !document.querySelector('.canvas-loading')`),
+    'open MCP-created board',
+  );
+  await until(
+    () =>
+      read(
+        `!!document.querySelector('[aria-label="Open board MCP verified board"] .board-image-icon')?.naturalWidth`,
+      ),
+    'MCP icon visible',
+  );
+  await sleep(500);
+  writeFileSync(
+    join(root, 'mcp-created-board.png'),
+    Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64'),
+  );
+  const complete = await stdioCall('read_board', { id: created.id });
+  assert.equal(complete.objects.length, 3);
+  assert.equal(complete.objects.find((o) => o.id === 'image-copy').assetId, upload.id);
+  assert.equal(complete.objects.find((o) => o.id === 'image-copy').galleryColumn, 1);
+  const duplicate = await stdioCall('duplicate_board', { id: created.id });
+  assert.equal((await stdioCall('read_board', { id: duplicate.id })).objects.length, 3);
+  assert.equal(duplicate.icon, 'asset-' + upload.id);
+  await stdioCall('update_board', { id: duplicate.id, patch: { trashed: true } });
+  assert.equal((await stdioCall('read_board', { id: duplicate.id })).board.trashed, true);
+  await stdioCall('update_board', { id: duplicate.id, patch: { trashed: false } });
+  await stdioCall('update_folder', {
+    id: folder.id,
+    patch: { name: 'Renamed checks', position: 4 },
+  });
+  await stdioCall('remove_folder', { id: folder.id });
+  await clickSelector('[aria-label="Open board Desktop input verification"]');
+  await until(
+    () =>
+      read(`document.querySelector('.board-title')?.textContent === 'Desktop input verification'`),
+    'original board reopened',
+  );
   await clickSelector('[aria-label="Library options"]');
   await click(settings.x, settings.y);
   await until(() => rect('[aria-label="Enable MCP server"]'), 'reopen settings');
@@ -446,6 +562,10 @@ try {
       undo: true,
       redo: true,
       upload: true,
+      boardSettings: true,
+      boardCreationAndOpening: true,
+      galleryCopy: true,
+      duplicateAndTrash: true,
       disable: true,
       errors,
     }),
