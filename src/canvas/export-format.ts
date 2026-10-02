@@ -1,7 +1,17 @@
 export type ExportFormat = 'png' | 'jpg' | 'pdf';
+export interface ExportPageSize {
+  width: number;
+  height: number;
+}
 
 /** A single raster page at 96 dpi, with byte-accurate PDF stream/xref offsets. */
-export function imagePdf(jpeg: Uint8Array, width: number, height: number): Uint8Array<ArrayBuffer> {
+export function imagePdf(
+  jpeg: Uint8Array,
+  width: number,
+  height: number,
+  lossless = false,
+  pageSize?: ExportPageSize,
+): Uint8Array<ArrayBuffer> {
   const encoder = new TextEncoder();
   const chunks: Uint8Array[] = [];
   const offsets = [0];
@@ -15,8 +25,8 @@ export function imagePdf(jpeg: Uint8Array, width: number, height: number): Uint8
     offsets[id] = length;
     append(`${id} 0 obj\n${content}\nendobj\n`);
   };
-  const w = width * 0.75,
-    h = height * 0.75;
+  const w = pageSize?.width ?? width * 0.75,
+    h = pageSize?.height ?? height * 0.75;
   append('%PDF-1.4\n');
   object(1, '<< /Type /Catalog /Pages 2 0 R >>');
   object(2, '<< /Type /Pages /Kids [3 0 R] /Count 1 >>');
@@ -26,7 +36,7 @@ export function imagePdf(jpeg: Uint8Array, width: number, height: number): Uint8
   );
   offsets[4] = length;
   append(
-    `4 0 obj\n<< /Type /XObject /Subtype /Image /Width ${width} /Height ${height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpeg.length} >>\nstream\n`,
+    `4 0 obj\n<< /Type /XObject /Subtype /Image /Width ${width} /Height ${height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /${lossless ? 'FlateDecode' : 'DCTDecode'} /Length ${jpeg.length} >>\nstream\n`,
   );
   append(jpeg);
   append('\nendstream\nendobj\n');
@@ -45,17 +55,35 @@ export function imagePdf(jpeg: Uint8Array, width: number, height: number): Uint8
   return result;
 }
 
-export async function encodeExport(canvas: HTMLCanvasElement, format: ExportFormat) {
+export async function encodeExport(
+  canvas: HTMLCanvasElement,
+  format: ExportFormat,
+  pageSize?: ExportPageSize,
+) {
+  if (format === 'pdf') {
+    const pixels = canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data;
+    const rgb = new Uint8Array(canvas.width * canvas.height * 3);
+    for (let from = 0, to = 0; from < pixels.length; from += 4) {
+      rgb[to++] = pixels[from];
+      rgb[to++] = pixels[from + 1];
+      rgb[to++] = pixels[from + 2];
+    }
+    const compressed = await new Response(
+      new Blob([rgb]).stream().pipeThrough(new CompressionStream('deflate')),
+    ).arrayBuffer();
+    return new Blob(
+      [imagePdf(new Uint8Array(compressed), canvas.width, canvas.height, true, pageSize)],
+      {
+        type: 'application/pdf',
+      },
+    );
+  }
   const blob = await new Promise<Blob>((resolve, reject) =>
     canvas.toBlob(
       (b) => (b ? resolve(b) : reject(Error('Could not encode the export.'))),
       format === 'png' ? 'image/png' : 'image/jpeg',
-      0.95,
+      1,
     ),
   );
-  return format === 'pdf'
-    ? new Blob([imagePdf(new Uint8Array(await blob.arrayBuffer()), canvas.width, canvas.height)], {
-        type: 'application/pdf',
-      })
-    : blob;
+  return blob;
 }

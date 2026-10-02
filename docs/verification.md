@@ -1,5 +1,13 @@
 # Verification — Terra Board
 
+## Export quality presets — 2026-10-02
+
+Export resolution now offers Full quality (default), 2K (2048 px longest edge), and 4K (4096 px). Full quality derives pixel density from original image dimensions and normalized crops, with at least 2x rendering and a 4K floor for text/shape-only content. All modes rerender objects at the chosen resolution, retaining proportions and the 8192-edge / 32-million-pixel bounds. The toast reports actual dimensions and any size limiting. JPG uses maximum encoder quality. PDF now embeds losslessly compressed RGB pixels, while keeping physical page size independent of resolution. Unsupported browser image formats use a cached, lossless, orientation-correct PNG of the original rather than the 1600px WebP preview. A previous success toast is hidden while the format dialog is open so it cannot cover format buttons.
+
+All 167 Node tests and the production build passed. Desktop export checks passed in `.local-test/export-jO8CtU`, covering six scope/format combinations at 2K, a 4K selection, and a small rotated/cropped on-board image exported at 4402 × 3874 pixels using its original density. PDF decoded RGB matches separate PNG renders within one level of GPU edge rounding; a direct encoder test proves exact pixel retention. TIFF fallback retains all 2400 × 1200 original pixels. Cancellation, progress, offscreen selections and open actions still pass. The new dialog was visually inspected, and Poppler successfully rendered the lossless PDF with unchanged page dimensions.
+
+Windows packaging and packaged startup smoke also passed. The archived main/preload/store files and renderer assets match the verified source build byte for byte.
+
 ## Selected and visible-area image/PDF exports — 2026-10-02
 
 The canvas menu exports either the selection (including selected gallery members and offscreen items) or the exact viewport as PNG, JPG, or a single raster PDF page. Export rendering snapshots objects, waits for images, respects cropping/rotation and external titles, excludes selection handles, and releases per-object textures. Dimensions are proportionally limited to 8192 pixels per edge and 32 million pixels total. PDF embeds a high-quality JPEG at 96 dpi; it is not a vector/editable board format. Progress reports rendering, encoding and saving, followed by persistent Open file / Open folder actions. Native saves write a temporary file before replacement and only successfully saved exports receive open-action tokens.

@@ -1098,6 +1098,47 @@ kbd {
   flex-direction: column;
   gap: 8px;
 }
+.export-quality {
+  display: grid;
+  grid-template-columns: 1.35fr 1fr 1fr;
+  gap: 6px;
+}
+.export-quality button {
+  padding: 12px 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper);
+}
+.export-quality button[aria-pressed='true'] {
+  background: #eaf2fd;
+  border-color: #75a4df;
+  color: #245b9d;
+}
+.export-quality strong,
+.export-quality small {
+  display: block;
+}
+.export-quality strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+.export-quality small {
+  font-size: 11px;
+  margin-top: 4px;
+}
+.export-quality-note {
+  color: #657083;
+  font-size: 11px;
+  line-height: 1.5;
+  min-height: 33px;
+  margin: 9px 0 16px;
+}
+.export-result-detail {
+  display: block;
+  color: #657083;
+  font-size: 11px;
+  margin: -7px 0 14px;
+}
 .export-formats > button {
   display: flex;
   align-items: center;

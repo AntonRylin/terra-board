@@ -606,6 +606,21 @@ class Store {
     };
   }
   async readAsset({ id, variant = 'preview' }) {
+    // Lossless, orientation-correct fallback for formats Chromium cannot decode
+    // directly (notably TIFF). Never substitute the small WebP preview in exports.
+    if (variant === 'export') {
+      const original = this.asset({ id, variant: 'original' });
+      if (!original.mime.startsWith('image/')) throw Error('Only images can be exported as PNG');
+      const file = path.join(this.root, 'assets', `${id}.export.png`);
+      if (!fs.existsSync(file)) {
+        const bytes = await sharp(original.file, { limitInputPixels: 100000000 })
+          .rotate()
+          .png()
+          .toBuffer();
+        durableWrite(file, bytes);
+      }
+      return { ...original, file, contentType: 'image/png' };
+    }
     if (!variant.startsWith('tile-')) return this.asset({ id, variant });
     const match = /^tile-(\d+)-(\d+)-(\d+)-(\d+)$/.exec(variant);
     if (!match) throw Error('Invalid image tile');

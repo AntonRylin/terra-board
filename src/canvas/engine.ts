@@ -23,7 +23,7 @@ import { SpatialIndex, screenToWorld, zoomAt, boundsOf, type Point, type Bounds 
 import { History } from './history';
 import { renderText, renderLinkCaption, textRegion } from './text-rendering';
 import { TextureCache } from './textures';
-import { exportPlan, type ExportScope } from './export-plan';
+import { exportPlan, exportResolution, type ExportScope, type ExportQuality } from './export-plan';
 import { imageTiles } from './image-detail';
 import {
   corners,
@@ -1536,6 +1536,8 @@ export class Engine {
     scope: ExportScope,
     progress: (value: number, label: string) => void,
     assetUrl: (id: string, variant: string) => string,
+    quality: ExportQuality,
+    dimensions: (id: string) => Promise<{ width: number; height: number }>,
   ) {
     await this.initialized;
     if (this.disposed || !this.ready) throw Error('The canvas is not ready to export.');
@@ -1552,6 +1554,32 @@ export class Engine {
       { width: this.host.clientWidth, height: this.host.clientHeight },
       getBounds,
     );
+    let sourceScale = 1;
+    const images = plan.objects.filter(
+      (o) => o.assetId && (o.type === 'image' || (o.type === 'link' && hasLinkImage(o))),
+    );
+    if (quality === 'full') {
+      const sizes = new Map<string, { width: number; height: number }>();
+      for (let i = 0; i < images.length; i++) {
+        const o = images[i];
+        progress(Math.round((4 * i) / images.length), `Reading original image sizes…`);
+        if (!sizes.has(o.assetId!)) sizes.set(o.assetId!, await dimensions(o.assetId!));
+        const size = sizes.get(o.assetId!)!;
+        const box = o.type === 'link' ? linkLayout(o.width, o.height) : o;
+        sourceScale = Math.max(
+          sourceScale,
+          (size.width * (o.crop?.width || 1)) / box.width,
+          (size.height * (o.crop?.height || 1)) / box.height,
+        );
+      }
+      // Text/shape-only exports have no source pixel density: render at least 4K.
+      if (!images.length)
+        sourceScale = Math.max(2, 4096 / Math.max(plan.bounds.width, plan.bounds.height));
+    }
+    // Resolution changes pixel density, not the PDF's physical page dimensions.
+    const pageSize = { width: plan.width * 0.75, height: plan.height * 0.75 };
+    const resolution = exportResolution(plan.bounds, quality, sourceScale);
+    Object.assign(plan, resolution);
     const canvas = document.createElement('canvas');
     canvas.width = plan.width;
     canvas.height = plan.height;
@@ -1595,11 +1623,11 @@ export class Engine {
           try {
             await decode('original');
           } catch {
-            await decode('preview');
+            await decode('export');
           }
         }
         const needed = icon
-          ? 256
+          ? Math.max(256, 24 * plan.scale)
           : Math.min(
               8192,
               Math.max(o.width / (o.crop?.width || 1), o.height / (o.crop?.height || 1)) *
@@ -1678,7 +1706,7 @@ export class Engine {
       }
     }
     progress(82, 'Encoding file…');
-    return canvas;
+    return { canvas, limited: resolution.limited, pageSize };
   }
   async screenshot() {
     await this.initialized;

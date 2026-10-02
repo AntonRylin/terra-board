@@ -64,14 +64,22 @@ import { textLayout, fitTextObject } from '../canvas/text-layout';
 import { textPlacement } from '../canvas/text-alignment';
 import { localToWorld, objectBounds } from '../canvas/transform';
 import { SaveQueue, type SaveState } from '../canvas/save-queue';
-import { importFiles, pickMedia, openLink, mediaUrl, download, invoke } from '../bridge';
+import {
+  importFiles,
+  pickMedia,
+  openLink,
+  mediaUrl,
+  assetDimensions,
+  download,
+  invoke,
+} from '../bridge';
 import { ContextMenu, Modal, type MenuItem } from './Dialogs';
 import ImageCrop from './ImageCrop';
 import { cropImage, uncroppedImage, fullCrop } from '../canvas/crop';
 import { selectionToolsPosition } from '../canvas/selection-tools';
 import { boundsOf, type Bounds } from '../canvas/geometry';
 import { encodeExport, type ExportFormat } from '../canvas/export-format';
-import type { ExportScope } from '../canvas/export-plan';
+import type { ExportScope, ExportQuality } from '../canvas/export-plan';
 import ExportControls, { type ExportProgress, type ExportResult } from './ExportControls';
 export interface WhiteboardHandle {
   prepareExternal: () => Promise<void>;
@@ -960,7 +968,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       point = engine.current!.screenPoint({ x: e.clientX - r.left, y: e.clientY - r.top });
     await performImport(() => importFiles(files), point);
   }
-  function startExport(format: ExportFormat) {
+  function startExport(format: ExportFormat, quality: ExportQuality) {
     if (exportTask.current || !exportScope) return;
     const scope = exportScope;
     setExportScope(null);
@@ -973,8 +981,15 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         await flush(false);
         const current = engine.current;
         if (!current) throw Error('The canvas is not ready to export.');
-        canvas = await current.exportCanvas(scope, progress, mediaUrl);
-        const blob = await encodeExport(canvas, format);
+        const rendered = await current.exportCanvas(
+          scope,
+          progress,
+          mediaUrl,
+          quality,
+          assetDimensions,
+        );
+        canvas = rendered.canvas;
+        const blob = await encodeExport(canvas, format, rendered.pageSize);
         const name = `${doc.board.name} - ${scope === 'selection' ? 'selection' : 'visible area'}`;
         progress(90, window.canvas ? 'Choose a location, then save…' : 'Preparing download…');
         // Let the final progress stage paint before opening the native dialog.
@@ -989,7 +1004,11 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
               download(blob, `${name}.${format}`);
               return { name: `${name}.${format}`, url: URL.createObjectURL(blob) };
             })();
-        if (result) setExportResult(result);
+        if (result)
+          setExportResult({
+            ...result,
+            detail: `${canvas.width} × ${canvas.height} px${rendered.limited ? ' · Sized to the export limit' : ''}`,
+          });
       } catch (e) {
         error(e);
       } finally {

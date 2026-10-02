@@ -515,6 +515,11 @@ app
       return r.canceled ? false : call('exportFile', { id, file: r.filePath });
     });
     const visualExport = createVisualExport({ dialog, shell, getWindow: () => win });
+    ipcMain.handle('canvas:asset-dimensions', async (e, id) => {
+      trusted(e);
+      const { width, height } = await call('asset', { id, variant: 'original' });
+      return { width, height };
+    });
     ipcMain.handle('canvas:export-image', (e, args) => {
       trusted(e);
       return visualExport.save(args);

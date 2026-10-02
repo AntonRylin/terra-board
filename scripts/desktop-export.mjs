@@ -6,6 +6,7 @@ import sharp from 'sharp';
 import { resolve, join } from 'node:path';
 import { createServer } from 'node:net';
 import assert from 'node:assert/strict';
+import { inflateSync } from 'node:zlib';
 const require = createRequire(import.meta.url);
 const { Store } = require('../electron/store.cjs');
 mkdirSync(resolve('.local-test'), { recursive: true });
@@ -16,7 +17,7 @@ const image = await store.importAsset({
   name: 'reference.png',
   bytes: await sharp(
     Buffer.from(
-      '<svg width="400" height="200"><rect width="400" height="200" fill="#f5bd25"/><rect width="200" height="200" fill="#a046d0"/></svg>',
+      '<svg width="4000" height="2000"><rect width="4000" height="2000" fill="#f5bd25"/><rect width="2000" height="2000" fill="#a046d0"/></svg>',
     ),
   )
     .png()
@@ -238,6 +239,15 @@ try {
       await click(point.x, point.y, 'right');
       await choose(scope === 'selection' ? 'Export selected…' : 'Export visible area…');
       assert.ok(await read(`!!document.querySelector('.export-formats')`));
+      if (scope === 'selection' && format === 'PNG')
+        assert.equal(
+          await read(
+            `document.querySelector('[data-quality="full"]').getAttribute('aria-pressed')`,
+          ),
+          'true',
+          'Full quality is the default',
+        );
+      await clickSelector('[data-quality="2k"]');
       if (scope === 'selection' && format === 'PNG') {
         await sleep(220);
         writeFileSync(
@@ -267,11 +277,34 @@ try {
       const file = join(root, `Export fixture - ${scope}.${format.toLowerCase()}`);
       assert.ok(existsSync(file), file);
       const bytes = readFileSync(file);
-      if (format === 'PDF') assert.ok(bytes.subarray(0, 5).equals(Buffer.from('%PDF-')));
-      else {
+      if (format === 'PDF') {
+        assert.ok(bytes.subarray(0, 5).equals(Buffer.from('%PDF-')));
+        const text = bytes.toString('latin1');
+        const length = Number(text.match(/\/Filter \/FlateDecode \/Length (\d+)/)[1]);
+        const start = bytes.indexOf(Buffer.from('stream\n')) + 7;
+        const rgb = inflateSync(bytes.subarray(start, start + length));
+        const png = await sharp(join(root, `Export fixture - ${scope}.png`))
+          .removeAlpha()
+          .raw()
+          .toBuffer();
+        assert.equal(rgb.length, png.length);
+        // Separate GPU renders can differ by one rounding level at antialiased edges.
+        assert.ok(
+          rgb.every((value, i) => Math.abs(value - png[i]) <= 1),
+          'PDF preserves PNG detail without compression artifacts',
+        );
+      } else {
         const { data, info } = await sharp(bytes).raw().toBuffer({ resolveWithObject: true });
-        assert.equal(info.width, scope === 'selection' ? 154 : Math.floor(hostRect.width));
-        assert.equal(info.height, scope === 'selection' ? 104 : Math.floor(hostRect.height));
+        assert.equal(info.width, 2048);
+        assert.equal(
+          info.height,
+          Math.floor(
+            2048 *
+              (scope === 'selection'
+                ? 104 / 154
+                : Math.floor(hostRect.height) / Math.floor(hostRect.width)),
+          ),
+        );
         let red = 0,
           green = 0,
           gold = 0,
@@ -310,6 +343,7 @@ try {
   writeFileSync(join(root, 'cancel-next'), '');
   await click(point.x, point.y, 'right');
   await choose('Export selected…');
+  await clickSelector('[data-quality="4k"]');
   await clickSelector('.export-formats button');
   await until(() => !existsSync(join(root, 'cancel-next')), 'save dialog canceled');
   await sleep(120);
@@ -332,6 +366,28 @@ try {
   for (let i = 0; i < allPixels.data.length; i += allPixels.info.channels)
     if (allPixels.data[i] < 80 && allPixels.data[i + 2] > 180) blue++;
   assert.ok(blue > 10000, 'offscreen blue object rendered');
+  assert.equal(allMeta.width, 4096, '4K preset uses the requested long edge');
+  await click(hostRect.x + 1100, hostRect.y + 500);
+  const imagePoint = { x: hostRect.x + 590, y: hostRect.y + 270 };
+  await click(imagePoint.x, imagePoint.y);
+  await click(imagePoint.x, imagePoint.y, 'right');
+  await choose('Export selected…');
+  await clickSelector('[data-quality="full"]');
+  await clickSelector('.export-formats button');
+  await until(
+    () =>
+      read(
+        `!!document.querySelector('.export-actions') || !!document.querySelector('.error-banner')`,
+      ),
+    'full quality image export',
+  );
+  assert.equal(await read(`document.querySelector('.error-banner')?.textContent || ''`), '');
+  const fullMeta = await sharp(allFile).metadata();
+  assert.ok(
+    fullMeta.width > 4000 && fullMeta.height > 2000,
+    'Full quality retains original image density despite small on-board size',
+  );
+  console.log('FULL_QUALITY', fullMeta.width, fullMeta.height);
   assert.deepEqual(errors, []);
   console.log('EXPORT_DESKTOP_OK', root);
 } finally {

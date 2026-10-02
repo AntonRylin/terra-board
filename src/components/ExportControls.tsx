@@ -1,6 +1,7 @@
 import { Check, Download, ExternalLink, FolderOpen, X } from 'lucide-react';
+import { useState } from 'react';
 import { Modal } from './Dialogs';
-import type { ExportScope } from '../canvas/export-plan';
+import type { ExportScope, ExportQuality } from '../canvas/export-plan';
 import type { ExportFormat } from '../canvas/export-format';
 
 export interface ExportProgress {
@@ -8,6 +9,7 @@ export interface ExportProgress {
   label: string;
 }
 export interface ExportResult {
+  detail?: string;
   id?: string;
   name: string;
   url?: string;
@@ -25,10 +27,11 @@ export default function ExportControls({
   progress: ExportProgress | null;
   result: ExportResult | null;
   onClose: () => void;
-  onExport: (format: ExportFormat) => void;
+  onExport: (format: ExportFormat, quality: ExportQuality) => void;
   onDismiss: () => void;
   onOpen: (folder: boolean) => void;
 }) {
+  const [quality, setQuality] = useState<ExportQuality>('full');
   return (
     <>
       {scope && (
@@ -41,6 +44,31 @@ export default function ExportControls({
               ? 'Save the selected items together in one file.'
               : 'Save the area currently in view.'}
           </p>
+          <div className="export-quality" role="group" aria-label="Export resolution">
+            {(
+              [
+                ['full', 'Full quality', 'Original detail'],
+                ['2k', '2K', '2048 px'],
+                ['4k', '4K', '4096 px'],
+              ] as const
+            ).map(([value, label, detail]) => (
+              <button
+                key={value}
+                type="button"
+                data-quality={value}
+                aria-pressed={quality === value}
+                onClick={() => setQuality(value)}
+              >
+                <strong>{label}</strong>
+                <small>{detail}</small>
+              </button>
+            ))}
+          </div>
+          <p className="export-quality-note">
+            {quality === 'full'
+              ? 'Original image detail and sharp text. Up to 8K / 32 megapixels.'
+              : 'Sets the longest edge; keeps the original proportions.'}
+          </p>
           <div className="export-formats">
             {(
               [
@@ -49,7 +77,7 @@ export default function ExportControls({
                 ['pdf', 'PDF', 'One page, ready to print'],
               ] as const
             ).map(([format, label, detail]) => (
-              <button key={format} onClick={() => onExport(format)}>
+              <button key={format} onClick={() => onExport(format, quality)}>
                 <Download size={18} />
                 <span>
                   <strong>{label}</strong>
@@ -71,7 +99,7 @@ export default function ExportControls({
           <span className="export-detail">{progress.label}</span>
         </div>
       )}
-      {!progress && result && (
+      {!scope && !progress && result && (
         <div className="export-toast" role="status">
           <div className="export-toast-heading">
             <Check size={18} />
@@ -87,6 +115,7 @@ export default function ExportControls({
           <span className="export-filename" title={result.name}>
             {result.name}
           </span>
+          {result.detail && <span className="export-result-detail">{result.detail}</span>}
           <div className="export-actions">
             <button className="button" onClick={() => onOpen(false)}>
               <ExternalLink size={15} />

@@ -4,6 +4,29 @@ import { objectBounds } from './transform.ts';
 import { selectionWithGalleryImages } from './gallery.ts';
 
 export type ExportScope = 'selection' | 'visible';
+export type ExportQuality = 'full' | '2k' | '4k';
+export function exportResolution(
+  bounds: Pick<Bounds, 'width' | 'height'>,
+  quality: ExportQuality,
+  sourceScale = 1,
+) {
+  const requested =
+    quality === 'full'
+      ? Math.max(2, sourceScale)
+      : (quality === '2k' ? 2048 : 4096) / Math.max(bounds.width, bounds.height);
+  const scale = Math.min(
+    requested,
+    8192 / bounds.width,
+    8192 / bounds.height,
+    Math.sqrt(32_000_000 / (bounds.width * bounds.height)),
+  );
+  return {
+    scale,
+    width: Math.max(1, Math.floor(bounds.width * scale + 1e-7)),
+    height: Math.max(1, Math.floor(bounds.height * scale + 1e-7)),
+    limited: scale < requested,
+  };
+}
 export function exportPlan(
   all: CanvasObject[],
   selected: string[],

@@ -9,6 +9,7 @@ export interface McpStatus {
   claudeConfig: string;
 }
 interface DesktopBridge {
+  assetDimensions(id: string): Promise<{ width: number; height: number }>;
   exportImage(args: {
     format: 'png' | 'jpg' | 'pdf';
     name: string;
@@ -78,6 +79,13 @@ export async function invoke<T = any>(
 }
 export const mediaUrl = (id: string, variant = 'preview') =>
   desktop ? `canvas-media://asset/${id}/${variant}` : `/__local/asset/${id}/${variant}`;
+export async function assetDimensions(id: string) {
+  if (window.canvas) return window.canvas.assetDimensions(id);
+  const img = new Image();
+  img.src = mediaUrl(id, 'export');
+  await img.decode();
+  return { width: img.naturalWidth, height: img.naturalHeight };
+}
 export async function importFiles(files: File[]) {
   const result: Asset[] = [];
   for (const file of files) {
