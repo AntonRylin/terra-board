@@ -5,7 +5,6 @@ import {
   Settings,
   Plus,
   FolderPlus,
-  MoreHorizontal,
   Maximize,
   Minimize,
   Pencil,
@@ -22,7 +21,6 @@ import {
   Check,
   AlignCenter,
   PanelLeftClose,
-  ChevronRight,
   AlertCircle,
   LoaderCircle,
   ImagePlus,
@@ -403,6 +401,12 @@ export default function App() {
         setLauncherHidden(true);
       }),
   };
+  const toggleLauncher = () =>
+    void run(async () => {
+      await flushInlineNames();
+      setOpened(null);
+      setLauncherHidden((hidden) => !hidden);
+    });
   const boardMenu = (b: Board, x: number, y: number) =>
     setMenu({
       x,
@@ -602,81 +606,106 @@ export default function App() {
         data-panel-hidden={launcherHidden || undefined}
         inert={modal?.kind === 'settings' ? true : undefined}
       >
-        {!launcherHidden && (
-          <Launcher
-            dockEdge={dockEdge}
-            centered={launcherCentered}
-            onDock={setDockEdge}
-            library={library}
-            active={doc?.board.id || null}
-            opened={opened}
-            onOpen={openBoard}
-            onFolder={setOpened}
-            onCreate={newMenu}
-            onSearch={() => {
-              setSearch('');
-              ask({ kind: 'search' });
-            }}
-            onOptions={libraryMenu}
-            onPanelMenu={panelMenu}
-            onBoardMenu={boardMenu}
-            onIconDrop={(board, file) => {
-              if (busy) return;
-              setGlyph(board.icon);
-              setColor(board.color);
-              setIconShape(board.iconShape || 'rounded');
-              setShowInitial(board.showInitial !== false);
-              ask({ kind: 'icon', id: board.id, iconFile: file });
-            }}
-            onFolderMenu={folderMenu}
-            onRenameBoard={(id, name) => change(id, { name })}
-            onRenameFolder={renameFolder}
-            renameFolderRequest={renameRequest?.kind === 'folder' ? renameRequest : null}
-            onMove={(id, folderId, position) =>
-              run(async () => {
-                await change(id, { folderId, ...(position === undefined ? {} : { position }) });
-              })
-            }
-            onReorderFolder={(id, position) =>
-              run(async () => {
-                await invoke('updateFolder', { id, patch: { position } });
-                await refresh();
-              })
-            }
-            onNewBoard={(folderId) => ask({ kind: 'new-board', folderId }, 'Untitled')}
-          />
-        )}
+        <Launcher
+          hidden={launcherHidden}
+          dockEdge={dockEdge}
+          centered={launcherCentered}
+          onDock={setDockEdge}
+          library={library}
+          active={doc?.board.id || null}
+          opened={opened}
+          onOpen={openBoard}
+          onFolder={setOpened}
+          onCreate={newMenu}
+          onSearch={() => {
+            setSearch('');
+            ask({ kind: 'search' });
+          }}
+          onOptions={libraryMenu}
+          onPanelMenu={panelMenu}
+          onBoardMenu={boardMenu}
+          onIconDrop={(board, file) => {
+            if (busy) return;
+            setGlyph(board.icon);
+            setColor(board.color);
+            setIconShape(board.iconShape || 'rounded');
+            setShowInitial(board.showInitial !== false);
+            ask({ kind: 'icon', id: board.id, iconFile: file });
+          }}
+          onFolderMenu={folderMenu}
+          onRenameBoard={(id, name) => change(id, { name })}
+          onRenameFolder={renameFolder}
+          renameFolderRequest={renameRequest?.kind === 'folder' ? renameRequest : null}
+          onMove={(id, folderId, position) =>
+            run(async () => {
+              await change(id, { folderId, ...(position === undefined ? {} : { position }) });
+            })
+          }
+          onReorderFolder={(id, position) =>
+            run(async () => {
+              await invoke('updateFolder', { id, patch: { position } });
+              await refresh();
+            })
+          }
+          onNewBoard={(folderId) => ask({ kind: 'new-board', folderId }, 'Untitled')}
+        />
         <main className="workspace">
           <header className="board-header">
             {doc && (
               <>
-                <span
-                  className={
-                    'board-glyph shape-' +
-                    (doc.board.iconShape || 'rounded') +
-                    (doc.board.icon === 'none' ? ' app-icon ' + doc.board.color : '')
-                  }
+                <div
+                  className="board-identity"
+                  role="button"
+                  tabIndex={0}
+                  aria-label={launcherHidden ? 'Show board panel' : 'Hide board panel'}
+                  aria-expanded={!launcherHidden}
+                  title={launcherHidden ? 'Show board panel' : 'Hide board panel'}
+                  onClick={toggleLauncher}
+                  onKeyDown={(e) => {
+                    if (e.target !== e.currentTarget) return;
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      toggleLauncher();
+                    } else if (e.key === 'F2') {
+                      e.preventDefault();
+                      beginRename('board', doc.board.id);
+                    }
+                  }}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    boardMenu(doc.board, e.clientX, e.clientY);
+                  }}
                 >
-                  <BoardGlyph
-                    name={doc.board.icon}
-                    size={34}
-                    boardName={doc.board.name}
-                    showInitial={doc.board.showInitial !== false}
+                  <span
+                    className={
+                      'board-glyph shape-' +
+                      (doc.board.iconShape || 'rounded') +
+                      (doc.board.icon === 'none' ? ' app-icon ' + doc.board.color : '')
+                    }
+                  >
+                    <BoardGlyph
+                      name={doc.board.icon}
+                      size={34}
+                      boardName={doc.board.name}
+                      showInitial={doc.board.showInitial !== false}
+                    />
+                  </span>
+                  <InlineName
+                    key={doc.board.id}
+                    className="board-title"
+                    onActivate={toggleLauncher}
+                    activationTitle={launcherHidden ? 'Show board panel' : 'Hide board panel'}
+                    label="Board name"
+                    value={doc.board.name}
+                    editRequest={
+                      renameRequest?.kind === 'board' && renameRequest.id === doc.board.id
+                        ? renameRequest.token
+                        : 0
+                    }
+                    onCommit={(name) => change(doc.board.id, { name })}
                   />
-                </span>
-                <InlineName
-                  key={doc.board.id}
-                  className="board-title"
-                  singleClick
-                  label="Board name"
-                  value={doc.board.name}
-                  editRequest={
-                    renameRequest?.kind === 'board' && renameRequest.id === doc.board.id
-                      ? renameRequest.token
-                      : 0
-                  }
-                  onCommit={(name) => change(doc.board.id, { name })}
-                />
+                </div>
                 <button
                   className={'save-indicator ' + saveState}
                   title={
@@ -708,17 +737,17 @@ export default function App() {
                     <LoaderCircle size={14} />
                   )}
                 </button>
-                <button
-                  className="icon-button board-options"
-                  aria-label="Board options"
-                  onClick={(e) => {
-                    const r = e.currentTarget.getBoundingClientRect();
-                    boardMenu(doc.board, r.right, r.bottom + 5);
-                  }}
-                >
-                  <MoreHorizontal size={20} />
-                </button>
               </>
+            )}
+            {!doc && launcherHidden && (
+              <button
+                className="board-identity"
+                onClick={toggleLauncher}
+                aria-label="Show board panel"
+              >
+                <FolderIcon size={34} strokeWidth={1.3} />
+                <span className="board-title">Boards</span>
+              </button>
             )}
           </header>
           {doc ? (
@@ -751,17 +780,6 @@ export default function App() {
                 </>
               )}
             </div>
-          )}
-          {launcherHidden && (
-            <button
-              className="icon-button restore-panel"
-              aria-label="Show panel"
-              title="Show panel"
-              autoFocus
-              onClick={() => setLauncherHidden(false)}
-            >
-              <ChevronRight size={16} strokeWidth={1.5} />
-            </button>
           )}
         </main>
         {aiBusy && (

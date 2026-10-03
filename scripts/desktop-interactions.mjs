@@ -1190,12 +1190,18 @@ try {
   );
   await click(host.x + 1100, host.y + 650);
   const title = await rect('.board-title');
-  await click(title.x + title.width / 2, title.y + title.height / 2);
+  await click(title.x + title.width / 2, title.y + title.height / 2, 'right');
+  const renameTitle = await read(`(() => {
+    const e = [...document.querySelectorAll('[role="menuitem"]')].find(e => e.textContent.trim() === 'Rename');
+    const r = e.getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  })()`);
+  await click(renameTitle.x, renameTitle.y);
   await sleep(100);
   assert.equal(
     await read(`document.querySelector('.board-title').isContentEditable`),
     true,
-    'board name single click failed',
+    'board name context-menu rename failed',
   );
   await key('a', 'KeyA', 2);
   await send('Input.insertText', { text: 'Renamed with one click' });
@@ -1285,7 +1291,17 @@ try {
   }, 'rotated crop saved');
   // The active title draft must survive an actual desktop close request.
   const name = await rect('.board-title');
-  await doubleClick(name.x + name.width / 2, name.y + name.height / 2);
+  await click(name.x + name.width / 2, name.y + name.height / 2, 'right');
+  const renameDraft = await read(`(() => {
+    const e = [...document.querySelectorAll('[role="menuitem"]')].find(e => e.textContent.trim() === 'Rename');
+    const r = e.getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  })()`);
+  await click(renameDraft.x, renameDraft.y);
+  await until(
+    () => read(`document.querySelector('.board-title').isContentEditable`),
+    'active title editor ready',
+  );
   await key('a', 'KeyA', 2);
   await send('Input.insertText', { text: 'Active title saved on close' });
   assert.equal(

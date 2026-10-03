@@ -23,6 +23,9 @@ export default function LauncherTooltip({ edge }: { edge: DockEdge }) {
       }
       const next = target(event.target);
       if (!next || next === target(event.relatedTarget)) return;
+      const rail = next.closest('.launcher');
+      // A revealing dock can move its icons under the stationary pointer.
+      if (rail && Number(getComputedStyle(rail).opacity) < 1) return;
       clear();
       setAnchor(next);
     };

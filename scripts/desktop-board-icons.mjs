@@ -225,7 +225,7 @@ const clickSelector = async (selector) => {
 const key = async (key, code, modifiers = 0) => {
   const windowsVirtualKeyCode = code.startsWith('Key')
     ? code.charCodeAt(3)
-    : { Enter: 13, Backspace: 8, Escape: 27, Tab: 9, Delete: 46 }[code] || 0;
+    : { Enter: 13, Backspace: 8, Escape: 27, Tab: 9, Delete: 46, F2: 113 }[code] || 0;
   await send('Input.dispatchKeyEvent', {
     type: 'keyDown',
     key,
@@ -285,7 +285,9 @@ try {
     'D',
     'new boards show uppercase initial',
   );
-  await clickSelector('.board-title');
+  await read(`document.querySelector('.board-identity').focus()`);
+  await key('F2', 'F2');
+  await until(() => read(`document.querySelector('.board-title').isContentEditable && document.activeElement === document.querySelector('.board-title')`), 'name editor ready');
   await key('a', 'KeyA', 2);
   await send('Input.insertText', { text: 'alpha' });
   await key('Enter', 'Enter');
@@ -293,7 +295,9 @@ try {
     () => read(`document.querySelector('.board-glyph .board-initial')?.textContent === 'A'`),
     'renaming updates the initial',
   );
-  await clickSelector('.board-title');
+  await read(`document.querySelector('.board-identity').focus()`);
+  await key('F2', 'F2');
+  await until(() => read(`document.querySelector('.board-title').isContentEditable && document.activeElement === document.querySelector('.board-title')`), 'name editor ready');
   await key('a', 'KeyA', 2);
   await send('Input.insertText', { text: 'Desktop input verification' });
   await key('Enter', 'Enter');

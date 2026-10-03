@@ -13,6 +13,8 @@ interface Props {
   className?: string;
   editRequest?: number;
   singleClick?: boolean;
+  onActivate?: () => void;
+  activationTitle?: string;
   onCommit: (value: string) => Promise<void>;
 }
 
@@ -23,6 +25,8 @@ export default function InlineName({
   className = '',
   editRequest = 0,
   singleClick = false,
+  onActivate,
+  activationTitle,
   onCommit,
 }: Props) {
   const ref = useRef<HTMLSpanElement>(null),
@@ -124,22 +128,25 @@ export default function InlineName({
     <span
       ref={ref}
       className={`inline-name ${className}`}
-      role={editing ? 'textbox' : 'button'}
+      role={editing ? 'textbox' : onActivate ? undefined : 'button'}
       aria-label={label}
       aria-invalid={!!error}
       aria-busy={saving}
-      title={error || (singleClick ? 'Click to rename' : 'Double-click to rename')}
-      tabIndex={0}
+      title={
+        error || activationTitle || (singleClick ? 'Click to rename' : 'Double-click to rename')
+      }
+      tabIndex={onActivate && !editing ? undefined : 0}
       contentEditable={editing && !saving ? 'plaintext-only' : false}
       suppressContentEditableWarning
       spellCheck={false}
       onDoubleClick={(e) => {
         e.stopPropagation();
-        begin();
+        if (!onActivate) begin();
       }}
       onClick={(e) => {
         e.stopPropagation();
-        if (singleClick) begin();
+        if (onActivate && !active.current) onActivate();
+        else if (singleClick) begin();
       }}
       onPointerDown={(e) => e.stopPropagation()}
       onDragStart={(e) => {
@@ -151,6 +158,7 @@ export default function InlineName({
       onPaste={(e) => e.stopPropagation()}
       onBlur={() => finishFromInput()}
       onKeyDown={(e) => {
+        if (onActivate && !active.current && !['Enter', ' ', 'F2'].includes(e.key)) return;
         e.stopPropagation();
         if (pending.current) {
           e.preventDefault();
@@ -160,9 +168,11 @@ export default function InlineName({
         if (e.key === 'Escape' && editing) {
           e.preventDefault();
           finishFromInput(true);
-        } else if (e.key === 'Enter') {
+        } else if (e.key === 'Enter' || (e.key === ' ' && onActivate && !editing)) {
           e.preventDefault();
-          editing ? finishFromInput() : begin();
+          if (editing) finishFromInput();
+          else if (onActivate) onActivate();
+          else begin();
         } else if (e.key === 'F2') {
           e.preventDefault();
           begin();

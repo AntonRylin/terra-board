@@ -259,7 +259,10 @@ try {
       `(()=>{const e=document.querySelector('.launcher-scroll');e.scrollTop=0;e.scrollLeft=0})()`,
     );
     await send('Emulation.clearDeviceMetricsOverride');
-    await sleep(150);
+    await until(async () => {
+      const restored = await rect('[aria-label="Create"]');
+      return restored && Math.abs(restored.x - create.x) < 1 && Math.abs(restored.y - create.y) < 1;
+    }, 'Create settles after resize');
     const restored = await rect('[aria-label="Create"]');
     assert.ok(
       Math.abs(restored.x - create.x) < 1 && Math.abs(restored.y - create.y) < 1,
@@ -289,7 +292,7 @@ try {
 
     // Hiding the strip must leave the current canvas alive and offer a way back
     // at every dock edge, including when a folder is open.
-    assert.equal(await rect('[aria-label="Show panel"]'), null, 'no extra control while visible');
+    assert.equal(await rect('[aria-label="Show board panel"]'), null, 'no extra control while visible');
     await read(`window.panelTestCanvas = document.querySelector('canvas')`);
     await clickSelector('[aria-label="Open folder Docking folder"]');
     await sleep(180);
@@ -312,7 +315,7 @@ try {
     await until(
       () =>
         read(
-          `!document.querySelector('.launcher') && !!document.querySelector('[aria-label="Show panel"]')`,
+          `getComputedStyle(document.querySelector('.launcher')).visibility === 'hidden' && !!document.querySelector('[aria-label="Show board panel"]')`,
         ),
       'panel hidden',
     );
@@ -323,18 +326,18 @@ try {
       true,
       'hiding preserves canvas',
     );
-    const restore = await rect('[aria-label="Show panel"]');
+    const restore = await rect('[aria-label="Show board panel"]');
     assert.ok(
       restore.x >= 0 &&
         restore.y >= 0 &&
         restore.x + restore.width <= shell.width &&
         restore.y + restore.height <= shell.height,
-      'restore icon stays on screen',
+      'board header stays on screen',
     );
     assert.equal(
-      await read(`document.querySelector('[aria-label="Show panel"]').textContent.trim()`),
-      '',
-      'restore control is icon-only',
+      await read(`document.querySelector('[aria-label="Show board panel"] .board-title').textContent.trim()`),
+      'Docking test',
+      'board header restores the panel',
     );
     const hiddenHeader = await rect('.board-header');
     assert.equal(hiddenHeader.x, 0, 'hidden dock releases header left margin');
@@ -342,24 +345,26 @@ try {
     const hiddenShot = await send('Page.captureScreenshot');
     writeFileSync(join(root, `hidden-${side}.png`), Buffer.from(hiddenShot.data, 'base64'));
     if (side === 'left') {
+      await read(`window.dockReloadPending = true`);
       await send('Page.reload');
       await until(
         () =>
           read(
-            `!!document.querySelector('canvas') && !!document.querySelector('[aria-label="Show panel"]')`,
+            `!window.dockReloadPending && !!document.querySelector('canvas') && !document.querySelector('.canvas-loading') && !!document.querySelector('[aria-label="Show board panel"]')`,
           ),
         'hidden state survives reload',
       );
-      assert.equal(await rect('.launcher'), null, 'panel stays hidden after reload');
+      assert.equal(await read(`getComputedStyle(document.querySelector('.launcher')).visibility`), 'hidden', 'panel stays hidden after reload');
     }
-    await clickSelector('[aria-label="Show panel"]');
+    await clickSelector('[aria-label="Show board panel"]');
     await until(
       () =>
         read(
-          `!!document.querySelector('.launcher') && !document.querySelector('[aria-label="Show panel"]')`,
+          `!!document.querySelector('.launcher:not([inert])') && !document.querySelector('[aria-label="Show board panel"]')`,
         ),
       'panel restored',
     );
+    await until(() => read(`!document.querySelector('.launcher').getAnimations().some(a => a.playState === 'running')`), 'panel motion settles');
     assert.deepEqual(await rect('.launcher'), rail, `restores the same dock position at ${side}`);
   }
   const from = await begin();
@@ -475,7 +480,7 @@ try {
     JSON.stringify({
       passed: true,
       checks:
-        'Four edges, live previews, animation, canvas behind glass, folders, menus, right-click hide, icon-only restore, canvas preservation, hidden-state persistence, Escape, invalid drop, persistence, reduced motion, pointer board-to-folder drag, pointer cancellation, small window',
+        'Four edges, live previews, animation, canvas behind glass, folders, menus, right-click hide, board header restore, canvas preservation, hidden-state persistence, Escape, invalid drop, persistence, reduced motion, pointer board-to-folder drag, pointer cancellation, small window',
       artifacts: root,
     }),
   );

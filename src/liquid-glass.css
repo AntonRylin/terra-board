@@ -77,6 +77,54 @@
 .app-shell[data-dock] .launcher:not(.is-dragging) {
   border-radius: 0;
 }
+.app-shell[data-dock] .launcher {
+  opacity: 1;
+  translate: 0 0;
+  visibility: visible;
+  transition:
+    --glass-fill 180ms ease,
+    --glass-shine 180ms ease,
+    opacity 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    translate 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    visibility 0s;
+}
+.app-shell[data-panel-hidden] .launcher {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition-delay: 0s, 0s, 0s, 0s, 260ms;
+}
+.app-shell[data-dock='left'][data-panel-hidden] .launcher {
+  translate: -24px 0;
+}
+.app-shell[data-dock='right'][data-panel-hidden] .launcher {
+  translate: 24px 0;
+}
+.app-shell[data-dock='top'][data-panel-hidden] .launcher {
+  translate: 0 -24px;
+}
+.app-shell[data-dock='bottom'][data-panel-hidden] .launcher {
+  translate: 0 24px;
+}
+.app-shell[data-dock] .board-header {
+  transition:
+    left 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    right 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    top 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.app-shell[data-dock] .canvas-toolbar {
+  transition:
+    --glass-fill 180ms ease,
+    --glass-shine 180ms ease,
+    left 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    bottom 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    max-width 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.app-shell[data-dock] .canvas-zoom {
+  transition:
+    bottom 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    right 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
 .canvas-toolbar {
   padding: 7px 8px;
   gap: 4px;

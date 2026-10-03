@@ -21,6 +21,7 @@ export function AppIcon({ board }: { board: Board }) {
   );
 }
 interface Props {
+  hidden: boolean;
   dockEdge: DockEdge;
   centered: boolean;
   onDock: (edge: DockEdge) => void;
@@ -153,7 +154,9 @@ export default function Launcher(p: Props) {
   };
   return (
     <>
-      <LauncherTooltip key={`${p.dockEdge}-${p.opened}-${p.active}`} edge={p.dockEdge} />
+      {!p.hidden && (
+        <LauncherTooltip key={`${p.dockEdge}-${p.opened}-${p.active}`} edge={p.dockEdge} />
+      )}
       {dock.target && <div className="dock-preview" data-edge={dock.target} aria-hidden="true" />}
       {dock.floating && (
         <div className="dock-hint" role="status">
@@ -166,6 +169,8 @@ export default function Launcher(p: Props) {
         className={'launcher' + (dock.floating ? ' is-dragging' : '')}
         style={dock.floating || undefined}
         aria-label="Boards and folders"
+        aria-hidden={p.hidden || undefined}
+        inert={p.hidden || undefined}
         title="Drag empty space to move this panel"
         {...dock.handlers}
         onContextMenu={(e) => {
