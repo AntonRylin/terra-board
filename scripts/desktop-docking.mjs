@@ -286,6 +286,81 @@ try {
     assert.ok(await rect('.context-menu'), `Create menu opens at ${side}`);
     await key('Escape', 'Escape');
     await sleep(100);
+
+    // Hiding the strip must leave the current canvas alive and offer a way back
+    // at every dock edge, including when a folder is open.
+    assert.equal(await rect('[aria-label="Show panel"]'), null, 'no extra control while visible');
+    await read(`window.panelTestCanvas = document.querySelector('canvas')`);
+    await clickSelector('[aria-label="Open folder Docking folder"]');
+    await sleep(180);
+    const hideTarget = await rect(
+      side === 'top'
+        ? `[data-item="${board.id}"]`
+        : side === 'bottom'
+          ? `[data-item="${folder.id}"]`
+          : '.launcher-top',
+    );
+    await click(hideTarget.x + hideTarget.width / 2, hideTarget.y + hideTarget.height / 2, 'right');
+    const hide = await read(`(() => {
+      const item = [...document.querySelectorAll('[role="menuitem"]')].find(e => e.textContent.trim() === 'Hide panel');
+      if (!item) return null;
+      const r = item.getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    })()`);
+    assert.ok(hide, `right-click menu offers Hide panel at ${side}`);
+    await click(hide.x, hide.y);
+    await until(
+      () =>
+        read(
+          `!document.querySelector('.launcher') && !!document.querySelector('[aria-label="Show panel"]')`,
+        ),
+      'panel hidden',
+    );
+    assert.equal(await rect('.folder-sheet'), null, 'open folder closes with panel');
+    assert.equal(await rect('.context-menu'), null, 'hide menu closes');
+    assert.equal(
+      await read(`window.panelTestCanvas === document.querySelector('canvas')`),
+      true,
+      'hiding preserves canvas',
+    );
+    const restore = await rect('[aria-label="Show panel"]');
+    assert.ok(
+      restore.x >= 0 &&
+        restore.y >= 0 &&
+        restore.x + restore.width <= shell.width &&
+        restore.y + restore.height <= shell.height,
+      'restore icon stays on screen',
+    );
+    assert.equal(
+      await read(`document.querySelector('[aria-label="Show panel"]').textContent.trim()`),
+      '',
+      'restore control is icon-only',
+    );
+    const hiddenHeader = await rect('.board-header');
+    assert.equal(hiddenHeader.x, 0, 'hidden dock releases header left margin');
+    assert.equal(hiddenHeader.y, 0, 'hidden dock releases header top margin');
+    const hiddenShot = await send('Page.captureScreenshot');
+    writeFileSync(join(root, `hidden-${side}.png`), Buffer.from(hiddenShot.data, 'base64'));
+    if (side === 'left') {
+      await send('Page.reload');
+      await until(
+        () =>
+          read(
+            `!!document.querySelector('canvas') && !!document.querySelector('[aria-label="Show panel"]')`,
+          ),
+        'hidden state survives reload',
+      );
+      assert.equal(await rect('.launcher'), null, 'panel stays hidden after reload');
+    }
+    await clickSelector('[aria-label="Show panel"]');
+    await until(
+      () =>
+        read(
+          `!!document.querySelector('.launcher') && !document.querySelector('[aria-label="Show panel"]')`,
+        ),
+      'panel restored',
+    );
+    assert.deepEqual(await rect('.launcher'), rail, `restores the same dock position at ${side}`);
   }
   const from = await begin();
   await move(from, points.right);
@@ -400,7 +475,7 @@ try {
     JSON.stringify({
       passed: true,
       checks:
-        'Four edges, live previews, animation, canvas behind glass, folders, menus, Escape, invalid drop, persistence, reduced motion, pointer board-to-folder drag, pointer cancellation, small window',
+        'Four edges, live previews, animation, canvas behind glass, folders, menus, right-click hide, icon-only restore, canvas preservation, hidden-state persistence, Escape, invalid drop, persistence, reduced motion, pointer board-to-folder drag, pointer cancellation, small window',
       artifacts: root,
     }),
   );

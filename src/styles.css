@@ -504,6 +504,17 @@ body.reordering * {
   display: flex;
   color: #7e8897;
 }
+.restore-panel {
+  position: absolute;
+  left: 14px;
+  bottom: 25px;
+  z-index: 3;
+  color: var(--muted);
+}
+.restore-panel:hover,
+.restore-panel:focus-visible {
+  color: inherit;
+}
 .board-title {
   background: none;
   padding: 3px 0;
@@ -1568,6 +1579,9 @@ kbd {
     bottom: 14px;
   }
   .canvas-zoom {
+    bottom: 100px;
+  }
+  .restore-panel {
     bottom: 100px;
   }
   .color-options {

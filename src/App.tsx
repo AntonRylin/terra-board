@@ -21,6 +21,8 @@ import {
   FolderOpen,
   Check,
   AlignCenter,
+  PanelLeftClose,
+  ChevronRight,
   AlertCircle,
   LoaderCircle,
   ImagePlus,
@@ -67,6 +69,18 @@ export default function App() {
       return false;
     }
   });
+  const [launcherHidden, setLauncherHidden] = useState(() => {
+    try {
+      return localStorage.getItem('terra-board.launcher-hidden') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem('terra-board.launcher-hidden', String(launcherHidden));
+    } catch {}
+  }, [launcherHidden]);
   const [fullscreen, setFullscreen] = useState(false);
   const fullscreenNow = useRef(false);
   const fullscreenEscapeHeld = useRef(false);
@@ -379,6 +393,16 @@ export default function App() {
       } catch {}
     },
   };
+  const hideLauncherItem: MenuItem = {
+    label: 'Hide panel',
+    icon: <PanelLeftClose />,
+    action: () =>
+      void run(async () => {
+        await flushInlineNames();
+        setOpened(null);
+        setLauncherHidden(true);
+      }),
+  };
   const boardMenu = (b: Board, x: number, y: number) =>
     setMenu({
       x,
@@ -415,6 +439,7 @@ export default function App() {
         { label: 'Export / share a copy…', icon: <Download />, action: () => exportBoard(b.id) },
         null,
         launcherAlignmentItem,
+        hideLauncherItem,
         null,
         { label: 'Move to Trash', icon: <Trash2 />, danger: true, action: () => trash(b.id) },
       ],
@@ -436,6 +461,7 @@ export default function App() {
         },
         null,
         launcherAlignmentItem,
+        hideLauncherItem,
         null,
         {
           label: 'Ungroup folder',
@@ -476,6 +502,8 @@ export default function App() {
       placement,
       items: [
         launcherAlignmentItem,
+        hideLauncherItem,
+        null,
         {
           label: 'New board',
           icon: <Plus />,
@@ -505,6 +533,7 @@ export default function App() {
         null,
         { label: 'Trash', icon: <Trash2 />, action: () => ask({ kind: 'trash' }) },
         launcherAlignmentItem,
+        hideLauncherItem,
         ...(desktop || document.fullscreenEnabled
           ? [
               {
@@ -570,50 +599,53 @@ export default function App() {
       <div
         className="app-shell"
         data-dock={dockEdge}
+        data-panel-hidden={launcherHidden || undefined}
         inert={modal?.kind === 'settings' ? true : undefined}
       >
-        <Launcher
-          dockEdge={dockEdge}
-          centered={launcherCentered}
-          onDock={setDockEdge}
-          library={library}
-          active={doc?.board.id || null}
-          opened={opened}
-          onOpen={openBoard}
-          onFolder={setOpened}
-          onCreate={newMenu}
-          onSearch={() => {
-            setSearch('');
-            ask({ kind: 'search' });
-          }}
-          onOptions={libraryMenu}
-          onPanelMenu={panelMenu}
-          onBoardMenu={boardMenu}
-          onIconDrop={(board, file) => {
-            if (busy) return;
-            setGlyph(board.icon);
-            setColor(board.color);
-            setIconShape(board.iconShape || 'rounded');
-            setShowInitial(board.showInitial !== false);
-            ask({ kind: 'icon', id: board.id, iconFile: file });
-          }}
-          onFolderMenu={folderMenu}
-          onRenameBoard={(id, name) => change(id, { name })}
-          onRenameFolder={renameFolder}
-          renameFolderRequest={renameRequest?.kind === 'folder' ? renameRequest : null}
-          onMove={(id, folderId, position) =>
-            run(async () => {
-              await change(id, { folderId, ...(position === undefined ? {} : { position }) });
-            })
-          }
-          onReorderFolder={(id, position) =>
-            run(async () => {
-              await invoke('updateFolder', { id, patch: { position } });
-              await refresh();
-            })
-          }
-          onNewBoard={(folderId) => ask({ kind: 'new-board', folderId }, 'Untitled')}
-        />
+        {!launcherHidden && (
+          <Launcher
+            dockEdge={dockEdge}
+            centered={launcherCentered}
+            onDock={setDockEdge}
+            library={library}
+            active={doc?.board.id || null}
+            opened={opened}
+            onOpen={openBoard}
+            onFolder={setOpened}
+            onCreate={newMenu}
+            onSearch={() => {
+              setSearch('');
+              ask({ kind: 'search' });
+            }}
+            onOptions={libraryMenu}
+            onPanelMenu={panelMenu}
+            onBoardMenu={boardMenu}
+            onIconDrop={(board, file) => {
+              if (busy) return;
+              setGlyph(board.icon);
+              setColor(board.color);
+              setIconShape(board.iconShape || 'rounded');
+              setShowInitial(board.showInitial !== false);
+              ask({ kind: 'icon', id: board.id, iconFile: file });
+            }}
+            onFolderMenu={folderMenu}
+            onRenameBoard={(id, name) => change(id, { name })}
+            onRenameFolder={renameFolder}
+            renameFolderRequest={renameRequest?.kind === 'folder' ? renameRequest : null}
+            onMove={(id, folderId, position) =>
+              run(async () => {
+                await change(id, { folderId, ...(position === undefined ? {} : { position }) });
+              })
+            }
+            onReorderFolder={(id, position) =>
+              run(async () => {
+                await invoke('updateFolder', { id, patch: { position } });
+                await refresh();
+              })
+            }
+            onNewBoard={(folderId) => ask({ kind: 'new-board', folderId }, 'Untitled')}
+          />
+        )}
         <main className="workspace">
           <header className="board-header">
             {doc && (
@@ -719,6 +751,17 @@ export default function App() {
                 </>
               )}
             </div>
+          )}
+          {launcherHidden && (
+            <button
+              className="icon-button restore-panel"
+              aria-label="Show panel"
+              title="Show panel"
+              autoFocus
+              onClick={() => setLauncherHidden(false)}
+            >
+              <ChevronRight size={16} strokeWidth={1.5} />
+            </button>
           )}
         </main>
         {aiBusy && (
