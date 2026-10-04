@@ -1813,7 +1813,10 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         <ContextMenu
           {...insertMenu}
           className="insert-menu"
-          items={[{ label: 'Gallery', icon: <Images />, action: createGallery }]}
+          items={[
+            { label: 'Gallery', icon: <Images />, action: createGallery },
+            { label: 'List', icon: <ListTodo />, action: createList },
+          ]}
           onClose={() => setInsertMenu(null)}
         />
       )}

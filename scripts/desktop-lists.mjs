@@ -140,7 +140,12 @@ try {
     'canvas',
   );
   await sleep(600);
-  await click('[aria-label="Add list"]');
+  await click('[aria-label="Insert"]');
+  const listMenuIndex = await read(
+    `Array.from(document.querySelectorAll('.insert-menu button')).findIndex(button=>button.textContent.trim()==='List')+1`,
+  );
+  assert.ok(listMenuIndex > 0, 'the plus menu offers List beside Gallery');
+  await click(`.insert-menu button:nth-of-type(${listMenuIndex})`);
   await until(() => read(`document.querySelectorAll('.canvas-list').length===1`), 'new list');
   assert.equal(await read(`document.querySelector('.canvas-list').innerText.trim()`), '');
   assert.equal(
