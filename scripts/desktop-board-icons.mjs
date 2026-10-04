@@ -281,23 +281,38 @@ try {
   const initial = await documentState();
   assert.equal(initial.board.showInitial, true);
   assert.equal(
-    await read(`document.querySelector('.board-glyph .board-initial')?.textContent`),
+    await read(`document.querySelector('.board-identity .app-icon .board-initial')?.textContent`),
     'D',
     'new boards show uppercase initial',
   );
   await read(`document.querySelector('.board-identity').focus()`);
   await key('F2', 'F2');
-  await until(() => read(`document.querySelector('.board-title').isContentEditable && document.activeElement === document.querySelector('.board-title')`), 'name editor ready');
+  await until(
+    () =>
+      read(
+        `document.querySelector('.board-title').isContentEditable && document.activeElement === document.querySelector('.board-title')`,
+      ),
+    'name editor ready',
+  );
   await key('a', 'KeyA', 2);
   await send('Input.insertText', { text: 'alpha' });
   await key('Enter', 'Enter');
   await until(
-    () => read(`document.querySelector('.board-glyph .board-initial')?.textContent === 'A'`),
+    () =>
+      read(
+        `document.querySelector('.board-identity .app-icon .board-initial')?.textContent === 'A'`,
+      ),
     'renaming updates the initial',
   );
   await read(`document.querySelector('.board-identity').focus()`);
   await key('F2', 'F2');
-  await until(() => read(`document.querySelector('.board-title').isContentEditable && document.activeElement === document.querySelector('.board-title')`), 'name editor ready');
+  await until(
+    () =>
+      read(
+        `document.querySelector('.board-title').isContentEditable && document.activeElement === document.querySelector('.board-title')`,
+      ),
+    'name editor ready',
+  );
   await key('a', 'KeyA', 2);
   await send('Input.insertText', { text: 'Desktop input verification' });
   await key('Enter', 'Enter');
@@ -439,7 +454,7 @@ try {
   assert.equal((await documentState()).board.color, 'green');
   assert.equal((await documentState()).board.showInitial, false);
   assert.equal(
-    await read(`document.querySelector('.board-glyph').children.length`),
+    await read(`document.querySelector('.board-identity .app-icon').children.length`),
     0,
     'header has no fallback glyph',
   );
@@ -454,7 +469,10 @@ try {
   await clickSelector('[aria-label="Use emoji 🌿"]');
   await clickSelector('.dialog-actions .primary');
   await until(async () => (await documentState()).board.icon === 'emoji:🌿', 'emoji saved');
-  assert.equal(await read(`document.querySelector('.board-glyph .board-emoji').textContent`), '🌿');
+  assert.equal(
+    await read(`document.querySelector('.board-identity .app-icon .board-emoji').textContent`),
+    '🌿',
+  );
   await openIcon();
   await clickSelector('[aria-label="Use emoji 🌿"]');
   assert.equal(

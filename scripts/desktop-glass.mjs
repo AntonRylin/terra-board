@@ -270,7 +270,8 @@ try {
     writeFileSync(join(root, name + '.png'), Buffer.from(shot.data, 'base64'));
   };
   const openSettings = async () => {
-    await clickSelector('[aria-label="Library options"]');
+    const panel = await rect('.launcher');
+    await click(panel.x + panel.width / 2, panel.y + panel.height - 12, 'right');
     await until(() => read(`!!document.querySelector('.context-menu')`), 'library menu');
     await read(
       `Array.from(document.querySelectorAll('.context-menu button')).find(b=>b.textContent==='Settings').click()`,
@@ -289,7 +290,7 @@ try {
     '55',
     'default transparency',
   );
-  for (const selector of ['.launcher', '.canvas-toolbar']) {
+  for (const selector of ['.launcher', '.toolbar-glass']) {
     const m = await material(selector);
     assert.ok(m.backdrop.includes('blur(24px)'), 'real backdrop blur');
     assert.equal(m.opacity, '1', 'content stays opaque');
@@ -308,7 +309,7 @@ try {
     'keyboard slider to solid',
   );
   assert.equal((await material('.launcher')).fill, 1);
-  assert.equal((await material('.canvas-toolbar')).fill, 1);
+  assert.equal((await material('.toolbar-glass')).fill, 1);
   assert.equal((await material('.glass-preview-tools')).fill, 1);
   await screenshot('settings-solid');
   await key('End', 'End');
@@ -319,7 +320,7 @@ try {
     'keyboard slider to clear',
   );
   assert.equal((await material('.launcher')).fill, 0);
-  assert.equal((await material('.canvas-toolbar')).fill, 0);
+  assert.equal((await material('.toolbar-glass')).fill, 0);
   assert.equal((await material('.glass-preview-tools')).fill, 0);
   assert.equal(
     await read(`localStorage.getItem('terra-board.panel-transparency')`),

@@ -61,6 +61,7 @@ export default function CanvasToolbar({ tools }: { tools: ToolbarAction[] }) {
   const bar = useRef<HTMLDivElement>(null);
   const inventory = useRef<HTMLDivElement>(null);
   const avatar = useRef<HTMLDivElement>(null);
+  const surface = useRef<HTMLDivElement>(null);
   const gesture = useRef<Gesture | null>(null);
   const before = useRef(new Map<string, DOMRect>());
   const animations = useRef(new Map<Element, Animation>());
@@ -73,6 +74,7 @@ export default function CanvasToolbar({ tools }: { tools: ToolbarAction[] }) {
     Array.from(root.current?.querySelectorAll<HTMLElement>('[data-tool-id]') || []);
   const snapshot = () => {
     before.current = new Map(nodes().map((el) => [el.dataset.toolId!, el.getBoundingClientRect()]));
+    if (surface.current) before.current.set('surface', surface.current.getBoundingClientRect());
   };
   const preview = (next: ToolbarLayout) => {
     if (JSON.stringify(next) === JSON.stringify(current.current)) return;
@@ -86,6 +88,32 @@ export default function CanvasToolbar({ tools }: { tools: ToolbarAction[] }) {
     } catch {}
   };
   useLayoutEffect(() => {
+    // Layout uses its final size immediately. Only the glass stretches, so a growing
+    // bar never wraps icons into a temporary row during the width animation.
+    const glass = surface.current;
+    const previousGlass = before.current.get('surface');
+    if (glass && previousGlass) {
+      animations.current.get(glass)?.cancel();
+      animations.current.delete(glass);
+      const next = glass.getBoundingClientRect();
+      if (!reducedMotion()) {
+        const dx = previousGlass.left + previousGlass.width / 2 - next.left - next.width / 2;
+        const dy = previousGlass.top + previousGlass.height / 2 - next.top - next.height / 2;
+        const animation = glass.animate(
+          [
+            {
+              transform: `translate(${dx}px, ${dy}px) scale(${previousGlass.width / next.width}, ${previousGlass.height / next.height})`,
+            },
+            { transform: 'none' },
+          ],
+          { duration: 220, easing: 'cubic-bezier(.22,1,.36,1)' },
+        );
+        animations.current.set(glass, animation);
+        animation.onfinish = () => {
+          if (animations.current.get(glass) === animation) animations.current.delete(glass);
+        };
+      }
+    }
     for (const el of nodes()) {
       const previous = before.current.get(el.dataset.toolId!);
       animations.current.get(el)?.cancel();
@@ -137,6 +165,7 @@ export default function CanvasToolbar({ tools }: { tools: ToolbarAction[] }) {
     settleFrame.current = requestAnimationFrame(() => {
       const target = nodes()
         .find((el) => el.dataset.toolId === g.id)
+        ?.querySelector('svg')
         ?.getBoundingClientRect();
       const held = avatar.current;
       if (!target || !held || reducedMotion()) {
@@ -147,7 +176,7 @@ export default function CanvasToolbar({ tools }: { tools: ToolbarAction[] }) {
         [
           { transform: 'translate(0, 0) scale(1.06)' },
           {
-            transform: `translate(${target.left - (g.x - g.offsetX)}px, ${target.top - (g.y - g.offsetY)}px) scale(1)`,
+            transform: `translate(${target.left + (target.width - g.width) / 2 - (g.x - g.offsetX)}px, ${target.top + (target.height - g.height) / 2 - (g.y - g.offsetY)}px) scale(1)`,
           },
         ],
         { duration: 180, easing: 'cubic-bezier(.22,1,.36,1)', fill: 'forwards' },
@@ -188,7 +217,7 @@ export default function CanvasToolbar({ tools }: { tools: ToolbarAction[] }) {
     const positions = slots.map((el) => ({
       id: el.dataset.toolId!,
       x: bounds.left + el.offsetLeft + el.offsetWidth / 2,
-      y: bounds.top + el.offsetTop + el.offsetHeight / 2,
+      y: bounds.top + el.offsetTop + el.offsetHeight / 2 - container.scrollTop,
       width: el.offsetWidth,
     }));
     let index = 0;
@@ -201,7 +230,11 @@ export default function CanvasToolbar({ tools }: { tools: ToolbarAction[] }) {
         { index: 0, distance: Infinity },
       ).index;
       index = nearest;
-      if (!current.current[zone].includes(g.id) && g.x > positions[nearest].x) index++;
+      if (
+        !current.current[zone].includes(g.id) &&
+        (zone === 'inventory' ? g.y > positions[nearest].y : g.x > positions[nearest].x)
+      )
+        index++;
     }
     preview(moveToolbarTool(current.current, g.id, zone, index));
   };
@@ -262,6 +295,7 @@ export default function CanvasToolbar({ tools }: { tools: ToolbarAction[] }) {
   const start = (event: ReactPointerEvent<HTMLButtonElement>, id: ToolbarId) => {
     if (event.button !== 0 || gesture.current) return;
     const r = event.currentTarget.getBoundingClientRect();
+    const size = Math.min(r.height, 34);
     gesture.current = {
       id,
       pointer: event.pointerId,
@@ -269,10 +303,10 @@ export default function CanvasToolbar({ tools }: { tools: ToolbarAction[] }) {
       startY: event.clientY,
       x: event.clientX,
       y: event.clientY,
-      offsetX: event.clientX - r.left,
-      offsetY: event.clientY - r.top,
-      width: r.width,
-      height: r.height,
+      offsetX: size / 2,
+      offsetY: size / 2,
+      width: size,
+      height: size,
       base: current.current,
       active: false,
       released: false,
@@ -281,6 +315,7 @@ export default function CanvasToolbar({ tools }: { tools: ToolbarAction[] }) {
   };
   const renderTool = (id: ToolbarId, zone: ToolbarZone) => {
     const item = toolsById.get(id)!;
+    const name = id === 'list' ? 'List' : id === 'media' ? 'Images and video' : item.label;
     const Icon = item.icon;
     return (
       <div
@@ -294,7 +329,7 @@ export default function CanvasToolbar({ tools }: { tools: ToolbarAction[] }) {
           aria-label={item.label}
           aria-pressed={item.active}
           aria-description="Drag to rearrange. Alt and arrow keys move this tool. Alt and Enter moves it between the toolbar and more tools."
-          data-tool-label={item.label}
+          data-tool-label={zone === 'bar' ? name : undefined}
           draggable={false}
           onPointerDown={(event) => start(event, id)}
           onClick={() => {
@@ -328,6 +363,7 @@ export default function CanvasToolbar({ tools }: { tools: ToolbarAction[] }) {
           }}
         >
           <Icon size={19} strokeWidth={1.7} />
+          {zone === 'inventory' && <span className="tool-inventory-name">{name}</span>}
         </button>
       </div>
     );
@@ -343,6 +379,7 @@ export default function CanvasToolbar({ tools }: { tools: ToolbarAction[] }) {
         data-reordering={!!dragging || undefined}
         style={{ '--tool-count': layout.bar.length } as CSSProperties}
       >
+        <div ref={surface} className="toolbar-glass glass-surface" aria-hidden="true" />
         <div ref={bar} className="toolbar-slots" data-tool-zone="bar">
           {layout.bar.map((id) => renderTool(id, 'bar'))}
         </div>

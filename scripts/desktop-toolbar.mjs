@@ -140,6 +140,15 @@ try {
     'canvas',
   );
   await sleep(600);
+  const matchingBoardIcons = async () => {
+    const styles =
+      await read(`['.board-identity > .app-icon','.launch-item.active .app-icon'].map(selector=>{
+      const el=document.querySelector(selector),s=getComputedStyle(el),glyph=getComputedStyle(el.firstElementChild);
+      return [s.width,s.height,s.backgroundColor,s.color,s.borderRadius,s.boxShadow,glyph.fontSize,glyph.fontWeight];
+    })`);
+    assert.deepEqual(styles[0], styles[1], 'header and panel use identical board icon styling');
+  };
+  await matchingBoardIcons();
   const zoneIds = (zone) =>
     read(
       `Array.from(document.querySelectorAll('[data-tool-zone="${zone}"] [data-tool-id]'),el=>el.dataset.toolId)`,
@@ -181,7 +190,27 @@ try {
   );
   await click('[aria-label="Insert"]');
   assert.deepEqual(await zoneIds('inventory'), ['gallery', 'list']);
-  assert.equal(await read(`document.querySelector('.insert-menu').innerText.trim()`), '');
+  assert.deepEqual(
+    await read(`Array.from(document.querySelectorAll('.tool-inventory-name'),el=>el.textContent)`),
+    ['Gallery', 'List'],
+  );
+  const menuWidth = await read(`document.querySelector('.tool-inventory').offsetWidth`);
+  const longestName = await read(
+    `Math.max(...Array.from(document.querySelectorAll('.tool-inventory-name'),el=>el.offsetWidth))`,
+  );
+  assert.ok(
+    Math.abs(menuWidth - longestName - 73) < 3,
+    `menu fits longest name plus icon and padding: ${menuWidth}, ${longestName}`,
+  );
+  const hover = await center('[data-tool-id="text"] button');
+  await mouse('mouseMoved', hover.x, hover.y);
+  assert.deepEqual(
+    await read(
+      `(()=>{const s=getComputedStyle(document.querySelector('[data-tool-id="text"] button'),'::after');return [s.opacity,s.transitionDelay,s.transitionDuration]})()`,
+    ),
+    ['1', '0s', '0s'],
+    'hover label appears immediately',
+  );
   assert.equal(
     await read(`document.querySelectorAll('.canvas-toolbar [draggable="true"]').length`),
     0,
@@ -191,6 +220,11 @@ try {
   );
   let from = await begin('gallery'),
     to = await center('[data-tool-id="text"]');
+  await read(`window.__toolbarFrames=[]; window.__toolbarRecording=true; (function sample(){
+    const bar=document.querySelector('.canvas-toolbar'), icon=document.querySelector('[data-tool-id="select"]');
+    window.__toolbarFrames.push({height:bar.getBoundingClientRect().height,y:icon.getBoundingClientRect().y});
+    if(window.__toolbarRecording)requestAnimationFrame(sample);
+  })()`);
   await moveTo(from, to);
   assert.ok(
     await read(
@@ -203,8 +237,23 @@ try {
     'held icon follows the pointer',
   );
   await release(to);
+  await read(`window.__toolbarRecording=false`);
+  const dragFrames = await read(`window.__toolbarFrames`);
+  assert.ok(
+    Math.max(...dragFrames.map((f) => f.height)) - Math.min(...dragFrames.map((f) => f.height)) < 1,
+    'adding a tool must not temporarily wrap the bar',
+  );
+  assert.ok(
+    Math.max(...dragFrames.map((f) => f.y)) - Math.min(...dragFrames.map((f) => f.y)) < 1,
+    'stationary icons must not jump vertically',
+  );
   assert.equal((await zoneIds('bar'))[2], 'gallery');
   assert.deepEqual(await zoneIds('inventory'), ['list']);
+  assert.ok(
+    (await read(`document.querySelector('.tool-inventory').getBoundingClientRect().width`)) <
+      menuWidth,
+    'menu shrinks when its longest name leaves',
+  );
   assert.equal((await state()).objects.length, 0, 'drag must not create a gallery');
   assert.equal(await read('window.__nativeDrags'), 0);
   from = await begin('gallery');
@@ -273,6 +322,7 @@ try {
     features: [{ name: 'prefers-color-scheme', value: 'dark' }],
   });
   await sleep(350);
+  await matchingBoardIcons();
   await screenshot('toolbar-dark.png');
   await send('Emulation.setDeviceMetricsOverride', {
     width: 430,

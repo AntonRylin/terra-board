@@ -6,13 +6,21 @@
   z-index: 25;
 }
 .app-shell[data-dock] .canvas-toolbar.customizable-toolbar {
+  /* The separate glass layer owns these effects in every appearance mode. */
+  background: none !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
   transition:
-    width 220ms cubic-bezier(0.22, 1, 0.36, 1),
     left 260ms cubic-bezier(0.22, 1, 0.36, 1),
     bottom 260ms cubic-bezier(0.22, 1, 0.36, 1),
-    max-width 260ms cubic-bezier(0.22, 1, 0.36, 1),
-    --glass-fill 180ms ease,
-    --glass-shine 180ms ease;
+    max-width 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.toolbar-glass {
+  position: absolute;
+  inset: -1px;
+  z-index: -1;
+  pointer-events: none;
 }
 .toolbar-slots {
   position: relative;
@@ -49,24 +57,43 @@
   position: absolute;
   right: 0;
   bottom: calc(100% + 12px);
-  width: 180px;
-  min-height: 100px;
-  padding: 12px;
+  width: max-content;
+  min-width: 56px;
+  max-width: calc(100vw - 32px);
+  min-height: 56px;
+  max-height: calc(100dvh - 170px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 8px;
   display: grid;
-  grid-template-columns: repeat(4, var(--tool-size));
-  grid-auto-rows: 34px;
-  gap: 6px;
+  grid-template-columns: minmax(0, 1fr);
+  grid-auto-rows: 38px;
+  gap: 3px;
   align-content: start;
   animation: inventory-appear 180ms cubic-bezier(0.22, 1, 0.36, 1);
   transform-origin: bottom right;
 }
 .tool-inventory.insert-menu button {
   min-width: 0;
-  justify-content: center;
-  gap: 0;
+  justify-content: flex-start;
+  gap: 12px;
+}
+.tool-inventory .toolbar-slot {
+  width: 100%;
+  height: 38px;
+}
+.customizable-toolbar .tool-inventory .toolbar-slot .icon-button {
+  width: 100%;
+  height: 38px;
+  padding: 0 12px;
+  text-align: left;
+}
+.tool-inventory-name {
+  font-size: 14px;
+  white-space: nowrap;
 }
 .tool-inventory .toolbar-slot .icon-button {
-  background: rgb(255 255 255 / var(--glass-control, 0.3565));
+  background: rgb(var(--control-rgb, 255 255 255) / var(--glass-control, 0.3565));
 }
 .inventory-empty {
   position: absolute;
@@ -95,7 +122,7 @@ body.toolbar-reordering * {
   position: absolute;
   bottom: calc(100% + 10px);
   left: 50%;
-  transform: translateX(-50%) translateY(3px);
+  transform: translateX(-50%);
   padding: 6px 10px;
   border: 1px solid var(--line);
   border-radius: 9px;
@@ -106,9 +133,7 @@ body.toolbar-reordering * {
   white-space: nowrap;
   pointer-events: none;
   opacity: 0;
-  transition:
-    opacity 120ms ease,
-    transform 120ms ease;
+  transition: none;
   z-index: 2;
 }
 .customizable-toolbar [data-tool-label] {
@@ -117,7 +142,6 @@ body.toolbar-reordering * {
 .customizable-toolbar:not([data-reordering]) [data-tool-label]:is(:hover, :focus-visible)::after {
   opacity: 1;
   transform: translateX(-50%);
-  transition-delay: 450ms;
 }
 @keyframes inventory-appear {
   from {
@@ -132,9 +156,6 @@ body.toolbar-reordering * {
 @media (max-width: 1050px) {
   .canvas-toolbar.customizable-toolbar {
     --tool-size: 32px;
-  }
-  .tool-inventory {
-    width: 172px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

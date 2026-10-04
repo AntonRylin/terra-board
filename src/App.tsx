@@ -710,20 +710,7 @@ export default function App() {
                     boardMenu(doc.board, e.clientX, e.clientY);
                   }}
                 >
-                  <span
-                    className={
-                      'board-glyph shape-' +
-                      (doc.board.iconShape || 'rounded') +
-                      (doc.board.icon === 'none' ? ' app-icon ' + doc.board.color : '')
-                    }
-                  >
-                    <BoardGlyph
-                      name={doc.board.icon}
-                      size={34}
-                      boardName={doc.board.name}
-                      showInitial={doc.board.showInitial !== false}
-                    />
-                  </span>
+                  <AppIcon board={doc.board} />
                   <InlineName
                     key={doc.board.id}
                     className="board-title"
