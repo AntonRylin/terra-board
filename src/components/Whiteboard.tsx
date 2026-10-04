@@ -276,12 +276,15 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     const o: CanvasObject = {
       id: uid(),
       type: 'list',
-      text: '',
-      items: [],
+      text: 'Title',
+      items: [
+        { id: uid(), text: 'Item 1', checked: false },
+        { id: uid(), text: 'Item 2', checked: false },
+      ],
       x: p.x - 160,
-      y: p.y - 46,
+      y: p.y - listHeight(2) / 2,
       width: 320,
-      height: listHeight(0),
+      height: listHeight(2),
       z: e.topZ() + 1,
     };
     e.apply({ upserts: [o], deleted: [] });

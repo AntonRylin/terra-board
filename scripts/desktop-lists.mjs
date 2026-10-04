@@ -148,6 +148,19 @@ try {
   await click(`.insert-menu button:nth-of-type(${listMenuIndex})`);
   await until(() => read(`document.querySelectorAll('.canvas-list').length===1`), 'new list');
   assert.equal(await read(`document.querySelector('.canvas-list').innerText.trim()`), '');
+  assert.equal(await read(`document.querySelector('[aria-label="List name"]').value`), 'Title');
+  assert.deepEqual(
+    await read(
+      `Array.from(document.querySelectorAll('.canvas-list-row input'), input=>input.value)`,
+    ),
+    ['Item 1', 'Item 2'],
+  );
+  assert.equal(
+    await read(
+      `Array.from(document.querySelectorAll('.canvas-list-circle')).every(circle=>circle.getAttribute('aria-checked')==='false')`,
+    ),
+    true,
+  );
   assert.equal(
     await read(`!!document.querySelector('[aria-label="Add list item"]')`),
     false,
@@ -155,6 +168,8 @@ try {
   );
   assert.equal(await read(`!!document.querySelector('.canvas-list-grip')`), false, 'no drag dots');
   await click('[aria-label="Edit list"]');
+  await click('[aria-label="Remove item 2"]');
+  await click('[aria-label="Remove item 1"]');
   await click('[aria-label="Add list item"]');
   await until(
     () => read(`document.activeElement?.getAttribute('aria-label')==='List item 1'`),
@@ -183,6 +198,7 @@ try {
     () => read(`document.activeElement?.getAttribute('aria-label')==='List name'`),
     'name focus',
   );
+  await read(`document.querySelector('[aria-label="List name"]').select()`);
   await send('Input.insertText', { text: 'Weekend away' });
   await key('Enter');
   const saved = await until(async () => {
@@ -303,6 +319,8 @@ try {
   await click('[aria-label="Add list"]');
   await until(() => read(`document.querySelectorAll('.canvas-list').length===2`), 'second list');
   await click('.canvas-list:last-child [aria-label="Edit list"]');
+  await click('.canvas-list:last-child [aria-label="Remove item 2"]');
+  await click('.canvas-list:last-child [aria-label="Remove item 1"]');
   await click('.canvas-list:last-child [aria-label="Add list item"]');
   await until(
     () =>
