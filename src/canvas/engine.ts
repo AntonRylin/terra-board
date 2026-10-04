@@ -1263,7 +1263,7 @@ export class Engine {
             .lineTo(Math.min(o.width - 22, x + text.width), y + 10)
             .stroke({ color: '#87928e', width: 1 });
       };
-      if (o.text) label(o.text, 16, 20, 15);
+      if (o.text) label(o.text, 51, 20, 15);
       (o.items || []).forEach((item, i) => {
         const y = 72 + i * 44;
         if (y + 14 > o.height) return;

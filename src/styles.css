@@ -225,9 +225,9 @@ body.reordering * {
   content: '';
   position: absolute;
   width: 3px;
-  height: 14px;
+  height: 26px;
   left: 0;
-  top: 26px;
+  top: 20px;
   border-radius: 0 3px 3px 0;
   background: transparent;
 }
@@ -379,9 +379,9 @@ body.reordering * {
   flex-shrink: 0;
 }
 .app-shell:is([data-dock='top'], [data-dock='bottom']) .launch-item::before {
-  width: 14px;
+  width: 26px;
   height: 3px;
-  left: 26px;
+  left: 20px;
   top: 0;
   border-radius: 0 0 3px 3px;
 }

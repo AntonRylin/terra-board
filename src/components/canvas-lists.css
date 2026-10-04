@@ -28,6 +28,7 @@
   flex-shrink: 0;
   cursor: grab;
   margin-bottom: 6px;
+  padding-left: 37px;
 }
 .canvas-list-name-space {
   flex: 1;

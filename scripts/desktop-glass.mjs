@@ -385,6 +385,24 @@ try {
             : { x: 0, y: 828, width: 1280, height: 72 },
       'dock fills its side without edge gaps',
     );
+    const marker = await read(
+      `(()=>{const el=document.querySelector('.launch-item.active'),s=getComputedStyle(el,'::before');return {width:parseFloat(s.width),height:parseFloat(s.height),top:parseFloat(s.top),left:parseFloat(s.left),tileWidth:el.offsetWidth,tileHeight:el.offsetHeight}})()`,
+    );
+    if (edge === 'left' || edge === 'right') {
+      assert.equal(marker.width, 3, 'vertical marker keeps its thickness');
+      assert.ok(marker.height > 14, 'vertical marker is longer');
+      assert.ok(
+        Math.abs(marker.top + marker.height / 2 - marker.tileHeight / 2) < 1,
+        'vertical marker stays centered',
+      );
+    } else {
+      assert.equal(marker.height, 3, 'horizontal marker keeps its thickness');
+      assert.ok(marker.width > 14, 'horizontal marker is longer');
+      assert.ok(
+        Math.abs(marker.left + marker.width / 2 - marker.tileWidth / 2) < 1,
+        'horizontal marker stays centered',
+      );
+    }
     assert.equal((await material('.launcher')).border, '0px', 'no rounded corner gaps');
     assert.ok(overlap(rail, surface) > 0, 'canvas renders beneath dock');
     assert.equal(overlap(rail, toolbar), 0, 'tools stay clear of dock');

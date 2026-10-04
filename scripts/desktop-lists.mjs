@@ -149,6 +149,12 @@ try {
   await until(() => read(`document.querySelectorAll('.canvas-list').length===1`), 'new list');
   assert.equal(await read(`document.querySelector('.canvas-list').innerText.trim()`), '');
   assert.equal(await read(`document.querySelector('[aria-label="List name"]').value`), 'Title');
+  assert.ok(
+    await read(
+      `Math.abs(document.querySelector('[aria-label="List name"]').getBoundingClientRect().left - document.querySelector('.canvas-list-row input').getBoundingClientRect().left) < 1`,
+    ),
+    'title aligns with item text',
+  );
   assert.deepEqual(
     await read(
       `Array.from(document.querySelectorAll('.canvas-list-row input'), input=>input.value)`,
