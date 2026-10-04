@@ -6,6 +6,8 @@ A Windows-first local whiteboard with a minimal, iOS-inspired board launcher. Ve
 
 ## Run
 
+To share the app with other people, run `npm run installer` and send `release/installer/Terra-Board-Setup-0.1.24-x64.exe`. This is a standalone Windows x64 installer with the app and its offline resources included. It offers an installation directory and creates Start menu and desktop shortcuts. Installed copies keep each user's boards in `%LOCALAPPDATA%\Terra Board\Library`, outside the installation directory, so upgrading or uninstalling the app preserves the library. No boards or personal settings from this repository are included. The installer is unsigned unless a signing certificate is configured.
+
 The project lives at `D:\Projects\terra`. Double-click `Open Terra Board.cmd` in that folder, or open `D:\Projects\terra\release\win-unpacked\Terra Board.exe`. Keep the executable's support files alongside it.
 
 The application stores boards, original media, settings, browser caches, logs and temporary runtime files in `D:\Projects\terra\Library`. Development and packaged builds share this repository-local library, outside the replaceable `release` directory. `Library` and compiled builds are ignored by Git. Core board editing works offline without an account, server or telemetry. Pasting a web link now fetches its public preview metadata and image; cached previews remain local. YouTube playback requires a connection and contacts YouTube. Ordinary links open the default browser when activated.

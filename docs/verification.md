@@ -1,5 +1,16 @@
 # Verification — Terra Board
 
+## Shareable Windows installer — 2026-10-04
+
+`npm run installer` builds the current app into a standalone Windows x64 NSIS installer in `release/installer`, separate from the repository-local executable. Only this distribution has `terraDistribution: installed` in its packaged metadata. It uses `%LOCALAPPDATA%\Terra Board\Library` for each user's data; the ordinary development/repository package retains its existing library path. Explicit `CANVAS_DATA_DIR` overrides both. The installer offers a destination folder and shortcuts, and does not remove saved boards on uninstall.
+
+- `npm test`: **285 passed, 0 failed**, including new installed-path/invalid-path coverage and the existing repository-local path regression.
+- `npm run installer`: passed. `Terra-Board-Setup-0.1.24-x64.exe` is **363,021,034 bytes**, including offline PDF, document, image and background-removal resources. Authenticode reports **NotSigned**; no signing certificate was configured.
+- `node scripts/installer-check.mjs`: passed in `.local-test/installer-7ZVTGk`. The actual installer was run silently into a disposable path containing spaces. It created the Start menu shortcut and registered the app. The installed payload matches the current main/storage source and renderer entry point, carries the distribution marker, and excludes personal library/database/portable-board files.
+- Three installed-app startup checks passed: the default per-user path, reinstalling with a saved board, and an explicit isolated library override. All runtime paths remained within their intended libraries. Actual uninstall removed the executable, shortcut and registration while retaining the saved board. The test cleaned its installer cache and left the repository Library untouched.
+
+This verifies installation on the current Windows machine, including native installer/uninstaller execution; it does not claim a clean virtual-machine or interactive wizard audit. The check refuses existing Terra Board installations, running processes and conflicting shortcuts/cache files before making changes.
+
 ## PDF workspace and original-resolution image viewer — 2026-10-04
 
 PDFs have a full-window reader and a page editor with thumbnail reordering, move/rotate/duplicate/remove, undo/redo, PDF/image merging, page extraction, and local PDF ↔ PNG/JPG / PDF → text conversion. Page editing runs in a disposable pdf-lib worker; a shared PDF.js worker renders workspace previews. Save copy creates a sibling attachment and leaves the original untouched. Double-clicking an image body opens its full-resolution, orientation-correct source with fit, actual size, zoom, pan and original download. Existing image title clicks, the T action and the title context action retain inline editing.

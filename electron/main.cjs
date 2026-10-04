@@ -83,6 +83,8 @@ const root = libraryRoot({
   appPath: app.getAppPath(),
   exePath: app.getPath('exe'),
   dataDir: process.env.CANVAS_DATA_DIR,
+  distribution: require('../package.json').terraDistribution,
+  localAppData: process.env.LOCALAPPDATA || app.getPath('appData'),
 });
 for (const [name, directory] of Object.entries({
   userData: 'settings',
