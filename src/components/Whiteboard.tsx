@@ -65,7 +65,7 @@ import { textAppearance } from '../canvas/text-style';
 import { textLayout, fitTextObject } from '../canvas/text-layout';
 import { textPlacement } from '../canvas/text-alignment';
 import { localToWorld, objectBounds } from '../canvas/transform';
-import { SaveQueue, type SaveState } from '../canvas/save-queue';
+import { SaveQueue, CameraSaveQueue, type SaveState } from '../canvas/save-queue';
 import {
   importFiles,
   pickMedia,
@@ -131,6 +131,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   const host = useRef<HTMLDivElement>(null),
     engine = useRef<Engine | null>(null),
     queue = useRef<SaveQueue | null>(null),
+    cameraQueue = useRef<CameraSaveQueue | null>(null),
     alive = useRef(true),
     editorRef = useRef<HTMLTextAreaElement>(null),
     editingSession = useRef<{ object: CanvasObject; draft: string } | null>(null),
@@ -547,6 +548,11 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     queue.current = new SaveQueue(doc.board.id, doc.revision, onSave, (args) =>
       invoke('patchBoard', { ...args }),
     );
+    cameraQueue.current = new CameraSaveQueue(
+      doc.camera,
+      (camera) => invoke('saveCamera', { id: doc.board.id, camera }),
+      error,
+    );
     const fitted = doc.objects.map((o) =>
       o.type === 'text'
         ? fitTextObject(o)
@@ -565,7 +571,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       },
       camera: (c) => {
         setCamera(c);
-        queue.current!.enqueue({ upserts: [], deleted: [] }, c);
+        cameraQueue.current!.enqueue(c);
       },
       selection: setSelected,
       hover: hoverImage,
@@ -606,6 +612,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       e.destroy();
       engine.current = null;
       queue.current?.flush().catch(error);
+      cameraQueue.current?.flush().catch(error);
     };
   }, []);
   useLayoutEffect(() => {
@@ -761,6 +768,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     // Finish that mutation before board switching or close flushes saved edits.
     await clipboardTask.current?.catch(() => {});
     await queue.current?.flush();
+    await cameraQueue.current?.flush();
     if (waitForExport) await exportTask.current;
   };
   useImperativeHandle(ref, () => ({

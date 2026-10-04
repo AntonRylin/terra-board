@@ -1,5 +1,21 @@
 # Verification — Terra Board
 
+## MCP concurrency and quiet view persistence — 2026-10-04
+
+Camera movement previously entered the content save queue, changed the board revision and updated the modified timestamp. It now uses a separate queue retaining one latest view, debounced for 1.2 seconds and flushed on board switch/close. Its SQLite update touches only the camera column; it does not change object rows, revision, modified time, or the content save indicator.
+
+Object revision tracking now merges independent stale edits atomically. Changes or deletions to a target object still reject the complete conflicting request and identify the object IDs. Deleted-object history survives restart and is pruned with a 500-revision merge window. Existing libraries require a fresh read before their first tracked edit. SQLite schema version 2 prevents older app versions from writing without updating this history.
+
+- `npm test`: **197 passed, 0 failed**. Includes independent merges, overlapping edits/deletions, atomic failure, reopen, history pruning, legacy history, retries, and camera coalescing/flush.
+- Production build and `electron-builder --win dir --config.directories.output=.local-test/mcp-candidate` passed. Candidate packaged main/storage/worker/MCP files and renderer index matched source/build. Packaged smoke passed.
+- Packaged `scripts/desktop-mcp.mjs` passed in `.local-test/desktop-input-WFR5lI`: HTTP and Claude stdio; quiet real wheel zoom without revision/timestamp/content changes or save-indicator transitions; user typing after the AI read preserved alongside an independent AI edit; overlapping deletion rejected; draft synchronization, undo/redo, media import/read, board settings/create/open, gallery copy, duplicate/trash/restore, folders and disabling access. No renderer exceptions.
+- The audit's obsolete Settings entry was updated for the current contextual menu; controls are scrolled into view. The audit also reproduced and fixed Ctrl+K opening board search from Settings. Reload checks now await the new renderer document before testing readiness.
+- A disposable 20,000-object SQLite board received 10,000 camera events: **one persistence call, one SQLite row update, unchanged content revision**, 78.7 ms for enqueueing and persistence. This isolates view persistence, not complete frame-rendering cost. A two-second packaged idle sample measured 1.30% renderer task time and 8.79 MiB JavaScript heap; this excludes native/GPU/process memory and is not a whole-app benchmark.
+- Claude Desktop's actual Microsoft Store configuration was tested before and after replacement: **11 tools, 15 boards, no connector stderr or tool errors**. No connection failure was reproduced. The HTTP connection also worked after restart. Mutation audits used disposable libraries.
+- Terra was closed through its normal save-and-exit path, the verified candidate promoted to `release/win-unpacked`, and the normal app reopened. Previous package: `release/win-unpacked-before-mcp-20261004`; pre-upgrade metadata backup: `Library/backups/before-concurrent-edits-20261004.sqlite`. Installed library schema is 2; `PRAGMA quick_check` returned `ok`.
+
+The short renderer synchronization barrier during each MCP call remains. Concurrent changes to the same object require the assistant to read it again and reconcile the edit; they are not silently overwritten. Overall CPU and native memory use across large image/video boards was not comprehensively profiled in this change.
+
 ## MCP capability audit — 2026-10-02
 
 The MCP editing schema was missing the gallery fields already supported by the canvas and storage. Reading a gallery and sending its complete objects back to `edit_board` failed with unrecognized-key errors. The schema now accepts gallery settings and image membership/cell fields with the same numeric limits as storage. A regression reproduced the failure before the fix and now verifies edits, image copies, invalid inputs and persisted fields after reopening.

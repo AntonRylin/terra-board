@@ -193,11 +193,22 @@ const doubleClick = async (x, y) => {
   await click(x, y, 'left', 2);
   await sleep(100);
 };
-const clickSelector = async (selector) => {
+const clickSelector = async (selector, button = 'left') => {
+  await read(
+    `document.querySelector(${JSON.stringify(selector)})?.scrollIntoView({block:'center',inline:'nearest'})`,
+  );
   await sleep(100);
   const r = await rect(selector);
   assert.ok(r, selector);
-  await click(r.x + r.width / 2, r.y + r.height / 2);
+  await click(r.x + r.width / 2, r.y + r.height / 2, button);
+};
+const openSettings = async () => {
+  await clickSelector('[aria-label="Create"]', 'right');
+  const settings = await read(
+    `(()=>{const e=[...document.querySelectorAll('[role="menuitem"]')].find(e=>e.textContent.includes('Settings'));const r=e?.getBoundingClientRect();return r?{x:r.x+r.width/2,y:r.y+r.height/2}:null;})()`,
+  );
+  assert.ok(settings, 'Settings menu item');
+  await click(settings.x, settings.y);
 };
 const key = async (key, code, modifiers = 0) => {
   const windowsVirtualKeyCode = code.startsWith('Key')
@@ -271,12 +282,7 @@ try {
   const beforeSettings = await documentState();
   await read('window.settingsCanvas = document.querySelector("canvas")');
   await key('a', 'KeyA', 2);
-  await clickSelector('[aria-label="Library options"]');
-  const settings = await read(
-    `(()=>{const e=[...document.querySelectorAll('[role="menuitem"]')].find(e=>e.textContent.includes('Settings'));const r=e?.getBoundingClientRect();return r?{x:r.x+r.width/2,y:r.y+r.height/2}:null;})()`,
-  );
-  assert.ok(settings);
-  await click(settings.x, settings.y);
+  await openSettings();
   await until(() => rect('[aria-label="Enable MCP server"]'), 'MCP settings');
   assert.equal(
     await read(`(() => {
@@ -350,6 +356,72 @@ try {
     return JSON.parse(r.content[0].text);
   };
   assert.equal((await client.listTools()).tools.length, 11);
+  const viewBefore = await documentState();
+  await read(
+    `window.saveTransitions=[];window.saveObserver=new MutationObserver(()=>saveTransitions.push(document.querySelector('.save-indicator')?.className));saveObserver.observe(document.querySelector('.save-indicator'),{attributes:true,attributeFilter:['class']});`,
+  );
+  for (let i = 0; i < 12; i++)
+    await send('Input.dispatchMouseEvent', {
+      type: 'mouseWheel',
+      x: host.x + 450,
+      y: host.y + 300,
+      deltaX: 0,
+      deltaY: -12,
+    });
+  await until(
+    async () => (await documentState()).camera.zoom !== viewBefore.camera.zoom,
+    'camera persisted quietly',
+  );
+  const viewAfter = await documentState();
+  assert.equal(viewAfter.revision, viewBefore.revision, 'zoom does not invalidate an AI read');
+  assert.equal(
+    viewAfter.board.updated,
+    viewBefore.board.updated,
+    'zoom does not modify board content time',
+  );
+  assert.deepEqual(viewAfter.objects, viewBefore.objects);
+  assert.deepEqual(await read('saveTransitions'), [], 'zoom never flashes content save state');
+  await read('saveObserver.disconnect()');
+  // Restore the original view before coordinate-based text tests.
+  await read(
+    `window.canvas.invoke('saveCamera',{id:${JSON.stringify(board.id)},camera:${JSON.stringify(viewBefore.camera)}})`,
+  );
+  const previousOrigin = await read('performance.timeOrigin');
+  await send('Page.reload');
+  await until(async () => {
+    try {
+      return (await read('performance.timeOrigin')) !== previousOrigin;
+    } catch {
+      return false;
+    }
+  }, 'new renderer document');
+  await until(
+    () => read(`!!document.querySelector('canvas')&&!document.querySelector('.canvas-loading')`),
+    'reloaded camera',
+  );
+  const staleRead = await call('read_board', { id: board.id });
+  await doubleClick(host.x + 160, host.y + 440);
+  await until(() => rect('.text-editor'), 'concurrent editor');
+  await key('a', 'KeyA', 2);
+  await send('Input.insertText', { text: 'Human edit during AI thinking' });
+  const separate = staleRead.objects.find((o) => o.id === 'caption-right');
+  await call('edit_board', {
+    id: board.id,
+    revision: staleRead.revision,
+    upserts: [{ ...separate, text: 'Concurrent AI edit' }],
+  });
+  const merged = await documentState();
+  assert.equal(
+    merged.objects.find((o) => o.id === 'caption-left').text,
+    'Human edit during AI thinking',
+  );
+  assert.equal(merged.objects.find((o) => o.id === 'caption-right').text, 'Concurrent AI edit');
+  const conflict = await client.callTool({
+    name: 'edit_board',
+    arguments: { id: board.id, revision: staleRead.revision, deleted: ['caption-left'] },
+  });
+  assert.equal(conflict.isError, true, 'overlapping edits remain protected');
+  assert.match(conflict.content[0].text, /caption-left/);
   // Unsaved typing must be flushed before the AI reads the board.
   await doubleClick(host.x + 160, host.y + 440);
   await until(() => rect('.text-editor'), 'editor');
@@ -535,8 +607,7 @@ try {
       read(`document.querySelector('.board-title')?.textContent === 'Desktop input verification'`),
     'original board reopened',
   );
-  await clickSelector('[aria-label="Library options"]');
-  await click(settings.x, settings.y);
+  await openSettings();
   await until(() => rect('[aria-label="Enable MCP server"]'), 'reopen settings');
   await until(
     () =>
@@ -561,12 +632,31 @@ try {
     'Escape returns to board',
   );
   assert.deepEqual(errors, []);
+  await send('Performance.enable');
+  const metricValues = async () =>
+    Object.fromEntries(
+      (await send('Performance.getMetrics')).metrics.map((m) => [m.name, m.value]),
+    );
+  const idleBefore = await metricValues();
+  await sleep(2000);
+  const idleAfter = await metricValues();
+  const idle = {
+    sampleSeconds: idleAfter.Timestamp - idleBefore.Timestamp,
+    rendererBusyPercent:
+      (100 * (idleAfter.TaskDuration - idleBefore.TaskDuration)) /
+      (idleAfter.Timestamp - idleBefore.Timestamp),
+    jsHeapMiB: idleAfter.JSHeapUsedSize / 1024 / 1024,
+    layouts: idleAfter.LayoutCount - idleBefore.LayoutCount,
+  };
   console.log(
     JSON.stringify({
       library: root,
       http: true,
       packagedStdio: true,
       liveEdit: true,
+      cameraSavesQuietly: true,
+      independentEditsMerge: true,
+      conflictingEditsProtected: true,
       draftPreserved: true,
       undo: true,
       redo: true,
@@ -577,6 +667,7 @@ try {
       duplicateAndTrash: true,
       disable: true,
       errors,
+      idle,
     }),
   );
 } catch (error) {

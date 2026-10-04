@@ -269,7 +269,7 @@ export default function App() {
   }, []);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (aiBusy || e.isComposing || e.repeat) return;
+      if (aiBusy || modal?.kind === 'settings' || e.isComposing || e.repeat) return;
       if (
         (e.ctrlKey || e.metaKey) &&
         !e.altKey &&
@@ -283,7 +283,7 @@ export default function App() {
     };
     window.addEventListener('keydown', key, true);
     return () => window.removeEventListener('keydown', key, true);
-  }, [aiBusy, openSearch]);
+  }, [aiBusy, modal?.kind, openSearch]);
   useEffect(() => {
     const cleanup = window.canvas?.onClose(async () => {
       try {

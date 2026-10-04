@@ -1,5 +1,59 @@
 import type { Camera, Edit, CanvasObject } from '../model';
 export type SaveState = 'saved' | 'pending' | 'saving' | 'error';
+// View state has no content revision or save indicator. Keep one snapshot,
+// including during long animated zoom gestures, and persist after idle.
+export class CameraSaveQueue {
+  private saved: Camera;
+  private pending: Camera | null = null;
+  private timer: ReturnType<typeof setTimeout> | undefined;
+  private running: Promise<void> | null = null;
+  private send: (camera: Camera) => Promise<unknown>;
+  private onError: (error: unknown) => void;
+  constructor(
+    camera: Camera,
+    send: (camera: Camera) => Promise<unknown>,
+    onError: (error: unknown) => void,
+  ) {
+    this.saved = { ...camera };
+    this.send = send;
+    this.onError = onError;
+  }
+  enqueue(camera: Camera) {
+    const previous = this.pending || (!this.running ? this.saved : null);
+    if (
+      previous &&
+      previous.x === camera.x &&
+      previous.y === camera.y &&
+      previous.zoom === camera.zoom
+    )
+      return;
+    this.pending = { ...camera };
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => this.flush().catch(this.onError), 1200);
+  }
+  flush(): Promise<void> {
+    clearTimeout(this.timer);
+    if (this.running) return this.running.then(() => this.flush());
+    if (!this.pending) return Promise.resolve();
+    this.running = this.run().finally(() => {
+      this.running = null;
+    });
+    return this.running;
+  }
+  private async run() {
+    while (this.pending) {
+      const camera = this.pending;
+      this.pending = null;
+      try {
+        await this.send(camera);
+        this.saved = camera;
+      } catch (error) {
+        this.pending ||= camera;
+        throw error;
+      }
+    }
+  }
+}
 interface Request extends Edit {
   id: string;
   revision: number;

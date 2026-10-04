@@ -59,6 +59,110 @@ test('a stale revision is rejected without overwriting saved work', () =>
     );
     assert.equal(s.loadBoard({ id: b.id }).objects[0].text, 'new');
   }));
+
+test('independent stale edits merge but changed and deleted objects stay protected', () =>
+  withStore((s) => {
+    const b = s.createBoard({ name: 'Concurrent' });
+    s.patchBoard({ id: b.id, revision: 0, upserts: [note(), { ...note(), id: 'other' }] });
+    s.patchBoard({ id: b.id, revision: 1, upserts: [note('human')] });
+    const ai = {
+      id: b.id,
+      revision: 1,
+      upserts: [{ ...note('AI'), id: 'other' }],
+      operationId: 'ai',
+    };
+    assert.equal(s.patchBoard(ai).revision, 3);
+    assert.equal(s.patchBoard(ai).revision, 3);
+    assert.deepEqual(
+      s
+        .loadBoard({ id: b.id })
+        .objects.map((o) => o.text)
+        .sort(),
+      ['AI', 'human'],
+    );
+    assert.throws(
+      () => s.patchBoard({ id: b.id, revision: 1, deleted: ['note-1'] }),
+      /changed|conflict/i,
+    );
+    s.patchBoard({ id: b.id, revision: 3, deleted: ['other'] });
+    assert.throws(
+      () => s.patchBoard({ id: b.id, revision: 3, upserts: [{ ...note(), id: 'other' }] }),
+      /changed|conflict/i,
+    );
+    assert.throws(() => s.patchBoard({ id: b.id, revision: 99, upserts: [] }), /revision/i);
+  }));
+
+test('camera-only saves leave content revision, object rows and modified time unchanged', () =>
+  withStore((s) => {
+    const b = s.createBoard({ name: 'View' });
+    s.patchBoard({ id: b.id, revision: 0, upserts: [note()] });
+    const before = s.loadBoard({ id: b.id });
+    s.patchBoard({ id: b.id, revision: 0, camera: { x: 80, y: -40, zoom: 2 } });
+    const after = s.loadBoard({ id: b.id });
+    assert.equal(after.revision, before.revision);
+    assert.equal(after.board.updated, before.board.updated);
+    assert.deepEqual(after.objects, before.objects);
+    assert.deepEqual(after.camera, { x: 80, y: -40, zoom: 2 });
+  }));
+
+test('concurrent edits are atomic, retain conflict history across reopen and bound old history', () =>
+  withStore((s, root) => {
+    const b = s.createBoard({ name: 'History' });
+    s.patchBoard({ id: b.id, revision: 0, upserts: [note()] });
+    s.patchBoard({ id: b.id, revision: 1, upserts: [note('new')] });
+    const second = new Store(root);
+    try {
+      assert.throws(
+        () =>
+          second.patchBoard({
+            id: b.id,
+            revision: 1,
+            upserts: [{ ...note(), id: 'must-not-appear' }],
+            deleted: ['note-1'],
+          }),
+        /changed/i,
+      );
+      assert.equal(second.loadBoard({ id: b.id }).objects.length, 1);
+      assert.equal(
+        second.patchBoard({ id: b.id, revision: 1, upserts: [{ ...note(), id: 'independent' }] })
+          .revision,
+        3,
+      );
+      for (let revision = 3; revision < 505; revision++)
+        second.patchBoard({ id: b.id, revision, deleted: ['deleted-' + revision] });
+      assert.throws(
+        () => second.patchBoard({ id: b.id, revision: 1, upserts: [{ ...note(), id: 'too-old' }] }),
+        /too old/i,
+      );
+      assert.ok(
+        second.db.prepare('SELECT count(*) AS n FROM object_revisions WHERE boardId=?').get(b.id)
+          .n <= 500,
+      );
+      assert.equal(
+        second.patchBoard({
+          id: b.id,
+          revision: 504,
+          upserts: [{ ...note(), id: 'recent-independent' }],
+        }).revision,
+        506,
+      );
+    } finally {
+      second.close();
+    }
+  }));
+
+test('libraries without conflict history require a fresh read before merging', () =>
+  withStore((s) => {
+    const b = s.createBoard({ name: 'Existing library' });
+    s.patchBoard({ id: b.id, revision: 0, upserts: [note()] });
+    s.db.exec('DELETE FROM object_revisions; DELETE FROM merge_floors;');
+    assert.throws(
+      () => s.patchBoard({ id: b.id, revision: 0, upserts: [{ ...note(), id: 'new' }] }),
+      /too old/i,
+    );
+    s.patchBoard({ id: b.id, revision: 1, upserts: [{ ...note(), id: 'new' }] });
+    assert.equal(s.patchBoard({ id: b.id, revision: 1, upserts: [note('safe')] }).revision, 3);
+  }));
 test('duplicates have independent documents and keep folder placement', () =>
   withStore((s) => {
     const f = s.createFolder({ name: 'Study' }),

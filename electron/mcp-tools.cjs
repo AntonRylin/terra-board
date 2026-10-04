@@ -9,7 +9,9 @@ const revision = z
   .number()
   .int()
   .nonnegative()
-  .describe('Revision from read_board. Stale edits are rejected; read again before retrying.');
+  .describe(
+    'Revision from read_board. Independent edits merge automatically; if a target object changed, read again before retrying.',
+  );
 const point = z.object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1) });
 const head = z.enum(['none', 'arrow', 'triangle', 'open', 'diamond', 'circle']);
 const object = z
@@ -173,7 +175,7 @@ function tools(call) {
   );
   add(
     'edit_board',
-    'Atomically create, replace or delete objects. Upserts are COMPLETE objects, not partial patches; preserve fields read earlier, including gallery layout and image membership. Coordinates are board units; z controls stacking. Images/videos require imported assetId; arrows require normalized points; links require http(s) URL. Galleries are frames with gallery settings; member images use galleryId, galleryIndex, galleryRow and galleryColumn. This is undoable on the open board. Stale revisions never overwrite changes.',
+    'Atomically create, replace or delete objects. Upserts are COMPLETE objects, not partial patches; preserve fields read earlier, including gallery layout and image membership. Coordinates are board units; z controls stacking. Images/videos require imported assetId; arrows require normalized points; links require http(s) URL. Galleries are frames with gallery settings; member images use galleryId, galleryIndex, galleryRow and galleryColumn. This is undoable on the open board. Edits to separate objects merge automatically. If a target object changed or was deleted since your read, the whole edit is rejected with conflicting IDs; read again and preserve those changes.',
     {
       id,
       revision,

@@ -145,6 +145,7 @@ const commands = new Set([
   'loadBoard',
   'searchContent',
   'patchBoard',
+  'saveCamera',
   'setLastBoard',
   'importAsset',
   'removeBackground',
@@ -486,7 +487,7 @@ app
     ipcMain.handle('canvas:invoke', (e, command, args) => {
       trusted(e);
       if (!commands.has(command)) throw Error('Unknown command');
-      if (externalPhase === 'apply' && !['library', 'loadBoard'].includes(command))
+      if (externalPhase === 'apply' && !['library', 'loadBoard', 'saveCamera'].includes(command))
         throw Error('AI edit in progress. Retry after it completes.');
       return call(command, args);
     });

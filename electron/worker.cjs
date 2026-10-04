@@ -16,6 +16,7 @@ const allowed = new Set([
   'loadBoard',
   'searchContent',
   'patchBoard',
+  'saveCamera',
   'setLastBoard',
   'importAsset',
   'asset',

@@ -32,6 +32,7 @@ export default defineConfig({
           'restoreBoard',
           'duplicateBoard',
           'patchBoard',
+          'saveCamera',
           'setLastBoard',
           'importAsset',
           'removeBackground',

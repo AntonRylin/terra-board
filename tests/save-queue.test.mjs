@@ -1,7 +1,53 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { SaveQueue } from '../src/canvas/save-queue.ts';
+import { SaveQueue, CameraSaveQueue } from '../src/canvas/save-queue.ts';
 const o = { id: 'a', type: 'text', x: 0, y: 0, width: 200, height: 80, z: 0, text: 'First' };
+test('camera queue coalesces a long gesture and skips unchanged views', async () => {
+  const calls = [];
+  const q = new CameraSaveQueue(
+    { x: 0, y: 0, zoom: 1 },
+    async (c) => {
+      calls.push(c);
+    },
+    () => {},
+  );
+  for (let i = 1; i <= 10000; i++) q.enqueue({ x: i, y: 0, zoom: 1 });
+  await q.flush();
+  assert.deepEqual(calls, [{ x: 10000, y: 0, zoom: 1 }]);
+  q.enqueue({ x: 10000, y: 0, zoom: 1 });
+  await q.flush();
+  assert.equal(calls.length, 1);
+});
+test('camera queue flush drains in-flight changes and preserves failed writes for retry', async () => {
+  let release;
+  const gate = new Promise((r) => {
+    release = r;
+  });
+  const calls = [];
+  let fail = true;
+  const q = new CameraSaveQueue(
+    { x: 0, y: 0, zoom: 1 },
+    async (c) => {
+      calls.push(c);
+      if (calls.length === 1) await gate;
+      if (c.x === 2 && fail) {
+        fail = false;
+        throw Error('disk');
+      }
+    },
+    () => {},
+  );
+  q.enqueue({ x: 1, y: 0, zoom: 1 });
+  const flushing = q.flush();
+  q.enqueue({ x: 2, y: 0, zoom: 1 });
+  release();
+  await assert.rejects(flushing, /disk/);
+  await q.flush();
+  assert.deepEqual(
+    calls.map((c) => c.x),
+    [1, 2, 2],
+  );
+});
 test('save queue combines pending edits and uses increasing revisions', async () => {
   const calls = [],
     states = [];

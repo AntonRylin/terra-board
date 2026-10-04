@@ -238,7 +238,7 @@ class Store {
     this.db.function('search_contains', { deterministic: true }, (value, query) =>
       Number(searchText(value).toLowerCase().includes(query)),
     );
-    if (this.db.prepare('PRAGMA user_version').get().user_version > 1) {
+    if (this.db.prepare('PRAGMA user_version').get().user_version > 2) {
       this.db.close();
       throw Error(
         'This library was created by a newer version of Terra Board. Update the app to open it.',
@@ -251,7 +251,10 @@ class Store {
    CREATE TABLE IF NOT EXISTS objects(boardId TEXT NOT NULL REFERENCES boards(id) ON DELETE CASCADE,id TEXT NOT NULL,json TEXT NOT NULL,PRIMARY KEY(boardId,id));
    CREATE TABLE IF NOT EXISTS assets(id TEXT PRIMARY KEY,name TEXT NOT NULL,mime TEXT NOT NULL,width INTEGER NOT NULL,height INTEGER NOT NULL,bytes INTEGER NOT NULL);
    CREATE TABLE IF NOT EXISTS operations(boardId TEXT NOT NULL REFERENCES boards(id),id TEXT NOT NULL,revision INTEGER NOT NULL,signature TEXT NOT NULL,PRIMARY KEY(boardId,id));
-   CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL); PRAGMA user_version=1;`);
+   CREATE TABLE IF NOT EXISTS object_revisions(boardId TEXT NOT NULL REFERENCES boards(id) ON DELETE CASCADE,id TEXT NOT NULL,revision INTEGER NOT NULL,PRIMARY KEY(boardId,id));
+   CREATE INDEX IF NOT EXISTS object_revisions_age ON object_revisions(boardId,revision);
+   CREATE TABLE IF NOT EXISTS merge_floors(boardId TEXT PRIMARY KEY REFERENCES boards(id) ON DELETE CASCADE,revision INTEGER NOT NULL);
+   CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL); PRAGMA user_version=2;`);
     if (
       !this.db
         .prepare('PRAGMA table_info(boards)')
@@ -476,6 +479,7 @@ class Store {
     };
   }
   patchBoard({ id, revision, upserts = [], deleted = [], camera, operationId }) {
+    if (!Number.isSafeInteger(revision) || revision < 0) throw Error('Invalid revision');
     if (
       !Array.isArray(upserts) ||
       !Array.isArray(deleted) ||
@@ -506,26 +510,69 @@ class Store {
         }
       }
       const b = this.board(id);
-      if (b.revision !== revision) throw Error('Board revision changed; reload before editing');
+      if (revision > b.revision) throw Error('Invalid future board revision');
+      if (!objects.length && !deleted.length) {
+        if (camera) this.saveCamera({ id, camera });
+        return { revision: b.revision };
+      }
+      // Existing libraries have no object history. Start at their current revision;
+      // retain deletion tombstones so stale writes cannot resurrect removed objects.
+      this.db.prepare('INSERT OR IGNORE INTO merge_floors VALUES(?,?)').run(id, b.revision);
+      const floor = this.db
+        .prepare('SELECT revision FROM merge_floors WHERE boardId=?')
+        .get(id).revision;
+      const touched = new Set([...objects.map((o) => o.id), ...deleted]);
+      if (revision < floor)
+        throw Error('Board revision is too old; read_board again before editing');
+      if (revision < b.revision) {
+        const changed = this.db.prepare(
+          'SELECT revision FROM object_revisions WHERE boardId=? AND id=?',
+        );
+        const conflicts = [...touched].filter(
+          (oid) => (changed.get(id, oid)?.revision ?? 0) > revision,
+        );
+        if (conflicts.length)
+          throw Error(
+            'Objects changed since this revision: ' +
+              conflicts.slice(0, 20).join(', ') +
+              '. Read_board again before editing these objects.',
+          );
+      }
+      const nextRevision = b.revision + 1;
       const write = this.db.prepare(
         'INSERT INTO objects VALUES(?,?,?) ON CONFLICT(boardId,id) DO UPDATE SET json=excluded.json',
       );
       const del = this.db.prepare('DELETE FROM objects WHERE boardId=? AND id=?');
       for (const o of objects) write.run(id, o.id, JSON.stringify(o));
       for (const oid of deleted) del.run(id, oid);
+      const track = this.db.prepare(
+        'INSERT INTO object_revisions VALUES(?,?,?) ON CONFLICT(boardId,id) DO UPDATE SET revision=excluded.revision',
+      );
+      for (const oid of touched) track.run(id, oid, nextRevision);
+      const keepFrom = Math.max(floor, nextRevision - 500);
+      this.db.prepare('UPDATE merge_floors SET revision=? WHERE boardId=?').run(keepFrom, id);
+      this.db
+        .prepare('DELETE FROM object_revisions WHERE boardId=? AND revision<=?')
+        .run(id, keepFrom);
       this.db
         .prepare('UPDATE boards SET revision=revision+1,camera=?,updated=? WHERE id=?')
         .run(camera ? JSON.stringify(camera) : b.camera, Date.now(), id);
       if (operationId) {
         this.db
           .prepare('INSERT INTO operations VALUES(?,?,?,?)')
-          .run(id, operationId, revision + 1, signature);
+          .run(id, operationId, nextRevision, signature);
         this.db
           .prepare('DELETE FROM operations WHERE boardId=? AND revision<?')
-          .run(id, revision - 500);
+          .run(id, nextRevision - 500);
       }
-      return { revision: revision + 1 };
+      return { revision: nextRevision };
     });
+  }
+  saveCamera({ id, camera }) {
+    this.board(id);
+    const value = JSON.stringify(cameraValue(camera));
+    this.db.prepare('UPDATE boards SET camera=? WHERE id=? AND camera<>?').run(value, id, value);
+    return true;
   }
   duplicateBoard({ id }) {
     return this.transaction(() => {
