@@ -256,7 +256,9 @@ try {
   };
   const theme = () => read('document.documentElement.dataset.theme');
   const openSettings = async () => {
-    await clickSelector('[aria-label="Library options"]');
+    const panel = await rect('.launcher');
+    assert.ok(panel, 'board panel');
+    await click(panel.x + panel.width - 8, panel.y + panel.height / 2, 'right');
     await until(() => read('!!document.querySelector(".context-menu")'), 'library menu');
     await read(
       'Array.from(document.querySelectorAll(".context-menu button")).find(b=>b.textContent==="Settings").click()',

@@ -1138,14 +1138,14 @@ export class Engine {
         o.crop,
         o.arrow,
         key,
-        !!texture,
+        texture?.uid,
         iconKey,
-        !!iconTexture,
+        iconTexture?.uid,
         detail,
         hasLabel ? resolution : 0,
         hasLabel ? region : null,
         this.editingId === o.id,
-        detailTiles.map((tile) => [tile.key, !!tile.texture]),
+        detailTiles.map((tile) => [tile.key, tile.texture?.uid]),
       ]);
       let view = this.views.get(o.id);
       if (!view || view.signature !== signature) {
