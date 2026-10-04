@@ -79,14 +79,14 @@ const rect = (selector) =>
   read(
     `(()=>{const e=document.querySelector(${JSON.stringify(selector)});if(!e)return null;const r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}})()`,
   );
-async function mouse(type, x, y, buttons = 0) {
+async function mouse(type, x, y, buttons = 0, clickCount = 1) {
   await send('Input.dispatchMouseEvent', {
     type,
     x,
     y,
     button: type === 'mouseMoved' && !buttons ? 'none' : 'left',
     buttons,
-    clickCount: 1,
+    clickCount,
   });
 }
 async function click(selector) {
@@ -96,6 +96,16 @@ async function click(selector) {
   await mouse('mouseMoved', x, y);
   await mouse('mousePressed', x, y, 1);
   await mouse('mouseReleased', x, y);
+}
+async function doubleClick(selector) {
+  const r = await until(() => rect(selector), selector);
+  const x = r.x + r.width / 2,
+    y = r.y + r.height / 2;
+  await mouse('mouseMoved', x, y);
+  for (const count of [1, 2]) {
+    await mouse('mousePressed', x, y, 1, count);
+    await mouse('mouseReleased', x, y, 0, count);
+  }
 }
 const key = async (key, code = key, modifiers = 0) => {
   await send('Input.dispatchKeyEvent', { type: 'keyDown', key, code, modifiers });
@@ -191,11 +201,60 @@ try {
       'checkbox does not start editing',
     );
   }
-  await click('[aria-label="Edit list"]');
+  await doubleClick('.canvas-list-circle');
+  assert.equal(
+    await read(`document.querySelector('.canvas-list').dataset.editing`),
+    'false',
+    'checkbox double click does not edit the card',
+  );
+  await doubleClick('.canvas-list-header');
+  await until(
+    () => read(`document.querySelector('.canvas-list').dataset.editing === 'true'`),
+    'double click edits list',
+  );
+  const outline = () =>
+    read(`document.querySelector('.canvas-list-edit-outline path')?.getAttribute('d')`);
+  const firstOutline = await outline();
+  const stableCard = await rect('.canvas-list');
+  const stableTitle = await rect('[aria-label="List name"]');
+  await sleep(250);
+  assert.notEqual(await outline(), firstOutline, 'the border shape itself ripples');
+  assert.deepEqual(await rect('.canvas-list'), stableCard, 'ripple does not move the card');
+  assert.deepEqual(
+    await rect('[aria-label="List name"]'),
+    stableTitle,
+    'ripple does not move text',
+  );
+  await screenshot('lists-editing-wave.png');
+  await send('Emulation.setEmulatedMedia', {
+    features: [
+      { name: 'prefers-reduced-motion', value: 'reduce' },
+      { name: 'prefers-color-scheme', value: 'light' },
+    ],
+  });
+  await sleep(80);
+  const stillOutline = await outline();
+  await sleep(150);
+  assert.equal(await outline(), stillOutline, 'reduced motion stops ripple');
+  await send('Emulation.setEmulatedMedia', {
+    features: [
+      { name: 'prefers-reduced-motion', value: 'no-preference' },
+      { name: 'prefers-color-scheme', value: 'light' },
+    ],
+  });
+  await mouse('mousePressed', 500, 160, 1);
+  await mouse('mouseReleased', 500, 160);
+  assert.equal(
+    await read(`document.querySelector('.canvas-list').dataset.editing`),
+    'false',
+    'outside click exits edit mode',
+  );
+  assert.equal(await outline(), undefined, 'outline removed outside editing');
+  await doubleClick('.canvas-list-header');
   assert.equal(
     await read(`document.querySelectorAll('.canvas-list-header button').length`),
-    1,
-    'only edit control belongs inside the list',
+    0,
+    'edit buttons are removed from the list',
   );
   await click('[aria-label="List name"]');
   await read(`document.querySelector('[aria-label="List name"]').select()`);
@@ -300,7 +359,8 @@ try {
       o
     );
   }, 'durable list');
-  await click('[aria-label="Finish editing list"]');
+  await click('[aria-label="List name"]');
+  await key('Escape');
   assert.equal(await read(`!!document.querySelector('[aria-label="Add list item"]')`), false);
   assert.equal(
     await read(
@@ -404,7 +464,7 @@ try {
     false,
     'reopen starts in read mode',
   );
-  await click('[aria-label="Edit list"]');
+  await doubleClick('.canvas-list-header');
   await click('[aria-label="Add list item"]');
   await until(
     () => read(`document.activeElement?.getAttribute('aria-label')==='List item 3'`),
@@ -420,7 +480,7 @@ try {
   await click('[aria-label="Insert"]');
   await click('.insert-menu [aria-label="Add list"]');
   await until(() => read(`document.querySelectorAll('.canvas-list').length===2`), 'second list');
-  await click('.canvas-list:last-child [aria-label="Edit list"]');
+  await doubleClick('.canvas-list:last-child .canvas-list-header');
   await click('.canvas-list:last-child [aria-label="Remove item 2"]');
   await click('.canvas-list:last-child [aria-label="Remove item 1"]');
   await click('.canvas-list:last-child [aria-label="Add list item"]');
@@ -446,6 +506,10 @@ try {
       root,
       style,
       checks: [
+        'double-click editing',
+        'wavy border with stable content',
+        'reduced motion',
+        'outside click and Escape',
         'icon-only',
         'add',
         'inline typing',

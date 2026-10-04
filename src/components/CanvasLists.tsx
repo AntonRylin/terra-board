@@ -1,8 +1,9 @@
-import { useLayoutEffect, useRef, useState, type PointerEvent } from 'react';
-import { Check, Pencil, Plus, X } from 'lucide-react';
+import { useEffect, useLayoutEffect, useRef, type PointerEvent } from 'react';
+import { Check, Plus, X } from 'lucide-react';
 import type { Camera, CanvasObject, ListItem } from '../model';
 import { uid } from '../model';
 import { localToWorld } from '../canvas/transform';
+import ListEditOutline from './ListEditOutline';
 import './canvas-lists.css';
 
 export interface ListView {
@@ -18,6 +19,8 @@ function ListCard({
   select,
   forward,
   active,
+  editing,
+  setEditing,
 }: {
   object: CanvasObject;
   camera: Camera;
@@ -25,18 +28,24 @@ function ListCard({
   select: (id: string) => void;
   forward: (event: PointerEvent) => void;
   active: boolean;
+  editing: boolean;
+  setEditing: (editing: boolean) => void;
 }) {
-  const [editing, setEditing] = useState(false);
   const inputs = useRef(new Map<string, HTMLInputElement>());
   const name = useRef<HTMLInputElement>(null);
   const pendingFocus = useRef<string | null>(null);
   const items = o.items || [];
   useLayoutEffect(() => {
-    if (!active) {
+    if (!active && editing) {
       setEditing(false);
+    }
+    if (!editing) {
       pendingFocus.current = null;
     }
-  }, [active]);
+  }, [active, editing]);
+  useLayoutEffect(() => {
+    if (editing) name.current?.focus({ preventScroll: true });
+  }, [editing]);
   useLayoutEffect(() => {
     if (!pendingFocus.current) return;
     const input = inputs.current.get(pendingFocus.current);
@@ -79,7 +88,7 @@ function ListCard({
         top: origin.y * camera.zoom + camera.y,
         width: o.width,
         height: o.height,
-        borderColor: active ? '#4486d9' : undefined,
+        borderColor: editing ? 'transparent' : active ? '#4486d9' : undefined,
         transform: `scale(${camera.zoom}) rotate(${o.rotation || 0}deg)`,
       }}
       onPointerDown={(event) => {
@@ -87,7 +96,18 @@ function ListCard({
           forward(event);
         else select(o.id);
       }}
+      onDoubleClick={(event) => {
+        if (editing || (event.target as HTMLElement).closest('button')) return;
+        event.stopPropagation();
+        select(o.id);
+        setEditing(true);
+      }}
       onKeyDown={(event) => {
+        if (event.key === 'Escape' && editing) {
+          event.stopPropagation();
+          setEditing(false);
+          (event.target as HTMLElement).blur();
+        }
         if (
           (event.target as HTMLElement).closest('input') ||
           event.key === ' ' ||
@@ -96,6 +116,7 @@ function ListCard({
           event.stopPropagation();
       }}
     >
+      {editing && <ListEditOutline width={o.width} height={o.height} />}
       <header className="canvas-list-header">
         {o.text || editing ? (
           <input
@@ -121,17 +142,6 @@ function ListCard({
         ) : (
           <span className="canvas-list-name-space" />
         )}
-        <button
-          className="canvas-list-action"
-          aria-label={editing ? 'Finish editing list' : 'Edit list'}
-          aria-pressed={editing}
-          onClick={() => {
-            setEditing(!editing);
-            pendingFocus.current = null;
-          }}
-        >
-          {editing ? <Check size={16} /> : <Pencil size={15} />}
-        </button>
       </header>
       <div className="canvas-list-items">
         {items.map((item, index) => (
@@ -231,6 +241,8 @@ export default function CanvasLists({
   host,
   interactive,
   beginPointer,
+  editingId,
+  onEdit,
 }: {
   view: ListView;
   update: (o: CanvasObject) => void;
@@ -239,7 +251,26 @@ export default function CanvasLists({
   host: HTMLDivElement | null;
   interactive: boolean;
   beginPointer: (event: globalThis.PointerEvent) => void;
+  editingId: string | null;
+  onEdit: (id: string | null) => void;
 }) {
+  useEffect(() => {
+    if (!editingId) return;
+    const outside = (event: globalThis.PointerEvent) => {
+      const target = event.target as HTMLElement;
+      if (target.closest('.selection-tools')) return;
+      if (target.closest<HTMLElement>('.canvas-list')?.dataset.listId !== editingId) onEdit(null);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onEdit(null);
+    };
+    document.addEventListener('pointerdown', outside, true);
+    document.addEventListener('keydown', escape);
+    return () => {
+      document.removeEventListener('pointerdown', outside, true);
+      document.removeEventListener('keydown', escape);
+    };
+  }, [editingId, onEdit]);
   return (
     <div
       className="canvas-lists"
@@ -279,6 +310,8 @@ export default function CanvasLists({
           update={update}
           select={select}
           active={selected.includes(o.id)}
+          editing={editingId === o.id}
+          setEditing={(editing) => onEdit(editing ? o.id : null)}
           forward={(event) => {
             event.preventDefault();
             beginPointer(event.nativeEvent);

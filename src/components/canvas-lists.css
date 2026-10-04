@@ -20,6 +20,24 @@
 .canvas-lists[data-interactive='false'] .canvas-list {
   pointer-events: none;
 }
+.canvas-list[data-editing='true'] {
+  overflow: visible;
+}
+.canvas-list-edit-outline {
+  position: absolute;
+  inset: -1px;
+  width: calc(100% + 2px);
+  height: calc(100% + 2px);
+  overflow: visible;
+  pointer-events: none;
+  fill: none;
+  stroke: #4486d9;
+  stroke-width: 1.5px;
+  stroke-linejoin: round;
+}
+[data-theme='dark'] .canvas-list-edit-outline {
+  stroke: #91b9ee;
+}
 .canvas-list-header {
   display: flex;
   align-items: center;

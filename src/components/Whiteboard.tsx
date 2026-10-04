@@ -285,6 +285,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     [copying, setCopying] = useState(false),
     [count, setCount] = useState(doc.objects.length);
   const activeGallery = selected.length === 1 && selected[0].gallery ? selected[0] : null;
+  const [editingListId, setEditingListId] = useState<string | null>(null);
   const [listView, setListView] = useState<ListView>({ objects: [], camera: doc.camera });
   const listViewKey = useRef('');
   const createList = () => {
@@ -475,7 +476,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     }
   };
   const activate = (o: CanvasObject) => {
-    if (o.type === 'link' && o.linkCompact) openLink(o.url!).catch(error);
+    if (o.type === 'list') setEditingListId(o.id);
+    else if (o.type === 'link' && o.linkCompact) openLink(o.url!).catch(error);
     else if (o.type === 'link') openObject(o);
     else if (o.type !== 'image' || o.imageTitle?.trim()) startEdit(o);
   };
@@ -1318,6 +1320,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       {!ready && <div className="canvas-loading">Opening canvas…</div>}
       <CanvasLists
         view={listView}
+        editingId={editingListId}
+        onEdit={setEditingListId}
         host={host.current}
         interactive={tool === 'select'}
         beginPointer={(event) => engine.current?.beginOverlayPointer(event)}
