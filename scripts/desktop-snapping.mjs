@@ -243,10 +243,15 @@ try {
       );
   });
   await send('Runtime.enable');
+  await send('Emulation.setEmulatedMedia', {
+    features: [{ name: 'prefers-color-scheme', value: 'light' }],
+  });
   await until(
     () => read(`!!document.querySelector('canvas')&&!document.querySelector('.canvas-loading')`),
     'canvas ready',
   );
+  await until(() => read(`!document.querySelector('#startup-screen')`), 'startup overlay removed');
+  await sleep(600);
   await read(
     `window.inputLog=[];document.addEventListener('dblclick',e=>inputLog.push({target:e.target.className||e.target.tagName,trusted:e.isTrusted}),true);`,
   );
@@ -277,7 +282,7 @@ try {
     writeFileSync(join(root, name + '.png'), bytes);
     return bytes;
   };
-  const guidePixels = async (bytes) => {
+  const guidePixels = async (bytes, worldY = 150) => {
     const { data, info } = await sharp(bytes)
       .ensureAlpha()
       .raw()
@@ -285,7 +290,11 @@ try {
     const scale = info.width / (await read('window.innerWidth'));
     let blue = 0;
     for (let x = Math.ceil((host.x + 380) * scale); x < (host.x + 480) * scale; x++)
-      for (let y = Math.floor((host.y + 149) * scale); y <= (host.y + 151) * scale; y++) {
+      for (
+        let y = Math.floor((host.y + worldY - 1) * scale);
+        y <= (host.y + worldY + 1) * scale;
+        y++
+      ) {
         const i = (y * info.width + x) * 4;
         if (data[i] < 210 && data[i + 2] - data[i] > 40 && data[i + 2] - data[i + 1] > 20) blue++;
       }
@@ -320,6 +329,39 @@ try {
     async () => Math.abs((await object('right')).y - 153) < 0.001,
     'Alt allows unsnapped position',
   );
+  await dragTo(point(630, 153), point(630, 148));
+  assert.ok(
+    (await guidePixels(await capture('resize-edge-guide'))) > 10,
+    'resizing edge displays a spanning guide',
+  );
+  await mouse('mouseReleased', host.x + 630, host.y + 148);
+  await until(async () => Math.abs((await object('right')).y - 150) < 0.001, 'resized top snaps');
+  assert.ok(
+    Math.abs((await object('right')).height - 243) < 0.001,
+    'opposite resize edge stays anchored',
+  );
+  await key('z', 'KeyZ', 2);
+  await until(async () => Math.abs((await object('right')).y - 153) < 0.001, 'resize undo');
+  await dragTo(point(760, 393), point(757, 391));
+  assert.ok(
+    (await guidePixels(await capture('resize-corner-guide'), 390)) > 10,
+    'proportional corner resize displays a guide',
+  );
+  await mouse('mouseReleased', host.x + 757, host.y + 391);
+  await until(async () => {
+    const o = await object('right');
+    return Math.abs(o.y + o.height - 390) < 0.001;
+  }, 'resized image bottom snaps');
+  const resizedImage = await object('right');
+  assert.ok(
+    Math.abs(resizedImage.width / resizedImage.height - 260 / 240) < 1e-6,
+    'snapping preserves image proportions',
+  );
+  await key('z', 'KeyZ', 2);
+  await until(
+    async () => Math.abs((await object('right')).height - 240) < 0.001,
+    'corner resize undo',
+  );
   await dragTo(point(660, 640), point(562, 442));
   await capture('text-alignment-during-drag');
   await mouse('mouseReleased', host.x + 562, host.y + 442);
@@ -343,6 +385,7 @@ try {
     JSON.stringify({
       library: root,
       guides: true,
+      resizeGuides: true,
       images: true,
       text: true,
       altBypass: true,

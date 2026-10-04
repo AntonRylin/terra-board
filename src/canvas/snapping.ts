@@ -38,6 +38,128 @@ function lowerBound(entries: Anchor[], at: number) {
   }
   return lo;
 }
+
+// Solve against the resulting geometry, not the mouse position: corner resizing
+// may preserve proportions, and rotated handles move along a different axis.
+export function snapResize(
+  raw: Point,
+  targets: SnapTargets,
+  zoom: number,
+  resize: (delta: Point) => Bounds,
+  previous: SnapState = {},
+  bypass = false,
+): { delta: Point; state: SnapState; guides: SnapGuide[] } {
+  const state: SnapState = {},
+    guides: SnapGuide[] = [];
+  if (bypass) return { delta: raw, state, guides };
+  const box = resize(raw),
+    step = 1 / zoom;
+  const alongX = resize({ x: raw.x + step, y: raw.y });
+  const alongY = resize({ x: raw.x, y: raw.y + step });
+  type Candidate = {
+    axis: Axis;
+    source: number;
+    target: number;
+    gx: number;
+    gy: number;
+    error: number;
+    cost: number;
+    held: boolean;
+  };
+  const candidates: Candidate[] = [];
+  for (const axis of ['x', 'y'] as const) {
+    let best: Candidate | undefined;
+    const values = anchors(box, axis),
+      xValues = anchors(alongX, axis),
+      yValues = anchors(alongY, axis);
+    for (const source of [0, 2, 1]) {
+      const gx = (xValues[source] - values[source]) / step;
+      const gy = (yValues[source] - values[source]) / step;
+      const norm = gx * gx + gy * gy;
+      if (norm < 1e-10) continue; // Fixed edges and size limits cannot snap.
+      const entries = targets[axis],
+        i = lowerBound(entries, values[source]);
+      const held = previous[axis];
+      const choices = [
+        entries[i]?.at,
+        entries[i - 1]?.at,
+        held?.source === source ? held.target : undefined,
+      ];
+      for (const target of choices) {
+        if (target === undefined) continue;
+        const isHeld = held?.source === source && held.target === target;
+        const error = target - values[source];
+        if (Math.abs(error) > (isHeld ? 10 : 6) / zoom) continue;
+        const candidate = {
+          axis,
+          source,
+          target,
+          gx,
+          gy,
+          error,
+          cost: Math.abs(error) / Math.sqrt(norm),
+          held: isHeld,
+        };
+        if (
+          !best ||
+          (candidate.held && !best.held) ||
+          (candidate.held === best.held && candidate.cost < best.cost - 1e-8)
+        )
+          best = candidate;
+      }
+    }
+    if (best) candidates.push(best);
+  }
+  if (!candidates.length) return { delta: raw, state, guides };
+  candidates.sort((a, b) => Number(b.held) - Number(a.held) || a.cost - b.cost);
+  const matches = (b: Bounds, c: Candidate) =>
+    Math.abs(anchors(b, c.axis)[c.source] - c.target) < 1e-5 / zoom;
+  let delta = { ...raw };
+  const [first, second] = candidates;
+  let both = false;
+  if (second) {
+    const det = first.gx * second.gy - first.gy * second.gx;
+    if (Math.abs(det) > 1e-8) {
+      const dx = (first.error * second.gy - first.gy * second.error) / det;
+      const dy = (first.gx * second.error - first.error * second.gx) / det;
+      const trial = { x: raw.x + dx, y: raw.y + dy };
+      if (Math.hypot(dx, dy) <= 20 / zoom) {
+        const b = resize(trial);
+        if (candidates.every((c) => matches(b, c))) {
+          delta = trial;
+          both = true;
+        }
+      }
+    }
+  }
+  if (!both) {
+    for (const c of candidates) {
+      const norm = c.gx * c.gx + c.gy * c.gy;
+      const trial = { x: raw.x + (c.gx * c.error) / norm, y: raw.y + (c.gy * c.error) / norm };
+      if (Math.hypot(trial.x - raw.x, trial.y - raw.y) <= 20 / zoom && matches(resize(trial), c)) {
+        delta = trial;
+        break;
+      }
+    }
+  }
+  const resized = resize(delta);
+  for (const c of candidates) {
+    if (!matches(resized, c)) continue;
+    state[c.axis] = { source: c.source, target: c.target };
+    const entry = targets[c.axis][lowerBound(targets[c.axis], c.target)];
+    if (!entry || entry.at !== c.target) continue;
+    const from = c.axis === 'x' ? resized.y : resized.x;
+    const to = from + (c.axis === 'x' ? resized.height : resized.width);
+    guides.push({
+      axis: c.axis,
+      at: c.target,
+      from: Math.min(from, entry.from),
+      to: Math.max(to, entry.to),
+    });
+  }
+  return { delta, state, guides };
+}
+
 export function snapMove(
   box: Bounds,
   raw: Point,

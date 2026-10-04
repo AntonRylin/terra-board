@@ -9,6 +9,7 @@ import {
 import { drawArrow } from './arrow-rendering';
 import {
   snapMove,
+  snapResize,
   snapTargets,
   type SnapTargets,
   type SnapState,
@@ -428,7 +429,7 @@ export class Engine {
         }
       }
     }
-    if (this.gesture?.mode === 'move') {
+    if (this.gesture?.mode === 'move' || this.gesture?.mode === 'resize') {
       const original = this.gesture.original,
         moving = new Set(original.map((o) => o.id));
       const c = this.camera,
@@ -514,23 +515,46 @@ export class Engine {
       });
       this.invalidate();
     } else if (g.mode === 'resize') {
+      let delta = { x: dx / g.camera.zoom, y: dy / g.camera.zoom };
+      if (g.snap) {
+        const result = snapResize(
+          delta,
+          g.snap.targets,
+          this.camera.zoom,
+          (d) => {
+            if (g.scaleBounds)
+              return boundsOf(
+                resizeSelection(g.original, g.scaleBounds, g.corner as Corner, d.x, d.y),
+              )!;
+            let resized: CanvasObject = resizeObject(g.original[0], g.corner!, d.x, d.y, e.shiftKey);
+            if (resized.gallery) {
+              // Galleries reflow to their contents; align the actual final frame.
+              const before = new Map(g.original.map((o) => [o.id, o]));
+              resized =
+                galleryEdit(before, { upserts: [resized], deleted: [] }, visualBounds).upserts.find(
+                  (o) => o.id === resized.id,
+                ) || resized;
+            }
+            return objectBounds(resized);
+          },
+          g.snap.state,
+          e.altKey || !moved,
+        );
+        delta = result.delta;
+        g.snap.state = result.state;
+        this.snapGuides = result.guides;
+      }
       if (g.scaleBounds) {
         for (const o of resizeSelection(
           g.original,
           g.scaleBounds,
           g.corner as Corner,
-          dx / g.camera.zoom,
-          dy / g.camera.zoom,
+          delta.x,
+          delta.y,
         ))
           this.preview(o);
       } else {
-        const resized = resizeObject(
-          g.original[0],
-          g.corner!,
-          dx / g.camera.zoom,
-          dy / g.camera.zoom,
-          e.shiftKey,
-        );
+        const resized = resizeObject(g.original[0], g.corner!, delta.x, delta.y, e.shiftKey);
         if (resized.gallery) {
           const before = new Map(this.objects);
           for (const o of g.original) {

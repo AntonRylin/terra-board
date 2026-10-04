@@ -81,6 +81,38 @@ test('snap bypass and cancel restore free motion and clear guides', () => {
   assert.equal(f.engine.objects.get('moving').x, 20);
   assert.equal(f.engine.snapGuides.length, 0);
 });
+
+test('resizing shows alignment guides, supports Alt and cancel, and undoes in one step', () => {
+  const f = fixture();
+  f.engine.camera = { x: 0, y: 0, zoom: 1 };
+  const original = { id: 'resized', type: 'rect', x: 20, y: 20, width: 100, height: 80, z: 1 };
+  f.engine.apply({
+    upserts: [original, { ...original, id: 'target', x: 300, y: 300 }],
+    deleted: [],
+  });
+  f.engine.setSelection(['resized']);
+  f.engine.down(f.event(120, 60, 0));
+  assert.equal(f.engine.gesture.mode, 'resize');
+  f.engine.move(f.event(298, 60, 0));
+  assert.equal(f.engine.objects.get('resized').width, 280);
+  assert.ok(f.engine.snapGuides.some((g) => g.axis === 'x' && g.at === 300));
+  f.engine.move({ ...f.event(298, 60, 0), altKey: true });
+  assert.equal(f.engine.objects.get('resized').width, 278);
+  assert.equal(f.engine.snapGuides.length, 0);
+  f.engine.move(f.event(298, 60, 0));
+  f.engine.up(f.event(298, 60, 0));
+  assert.equal(f.engine.snapGuides.length, 0);
+  f.engine.undo();
+  assert.equal(f.engine.objects.get('resized').width, 100);
+  f.engine.redo();
+  assert.equal(f.engine.objects.get('resized').width, 280);
+  f.engine.down(f.event(300, 60, 0));
+  f.engine.move(f.event(347, 60, 0));
+  assert.ok(f.engine.snapGuides.length);
+  f.engine.cancel();
+  assert.equal(f.engine.objects.get('resized').width, 280);
+  assert.equal(f.engine.snapGuides.length, 0);
+});
 test('moving frames snap as a whole and never snap against their carried children', () => {
   const f = fixture();
   f.engine.camera = { x: 0, y: 0, zoom: 1 };
