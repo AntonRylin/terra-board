@@ -1,5 +1,16 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { Check, ChevronLeft, ChevronRight, Download, FileText, Minus, Plus, X } from 'lucide-react';
+import {
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  FileText,
+  Maximize2,
+  Pencil,
+  Minus,
+  Plus,
+  X,
+} from 'lucide-react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import type { Camera, CanvasObject } from '../model';
 import { localToWorld } from '../canvas/transform';
@@ -22,11 +33,12 @@ interface Props {
   onSave: (object: CanvasObject, bytes: Uint8Array<ArrayBuffer>, excerpt: string) => Promise<void>;
   onClose: () => void;
   onDownload: () => Promise<void>;
+  onExpandPdf: (edit: boolean) => void;
   onError: (error: unknown) => void;
 }
 
 const DocumentReader = forwardRef<DocumentReaderHandle, Props>(function DocumentReader(
-  { object: o, camera, onSave, onClose, onDownload, onError },
+  { object: o, camera, onSave, onClose, onDownload, onExpandPdf, onError },
   ref,
 ) {
   const kind = documentKind(o.text || '', o.documentMime);
@@ -185,6 +197,20 @@ const DocumentReader = forwardRef<DocumentReaderHandle, Props>(function Document
       <header className="document-reader-toolbar">
         <FileText size={16} aria-hidden="true" />
         <span className="document-reader-name">{o.text || 'Document'}</span>
+        {kind === 'pdf' && (
+          <>
+            <button
+              aria-label="Full PDF preview"
+              data-tooltip="Full preview"
+              onClick={() => onExpandPdf(false)}
+            >
+              <Maximize2 size={15} />
+            </button>
+            <button aria-label="Edit PDF" data-tooltip="Edit PDF" onClick={() => onExpandPdf(true)}>
+              <Pencil size={15} />
+            </button>
+          </>
+        )}
         {kind === 'text' && format.current && (
           <>
             <button

@@ -87,6 +87,41 @@ test('document single clicks select and move while double click opens the reader
   assert.deepEqual(f.activations, ['document']);
 });
 
+test('image body double clicks open the viewer while title clicks retain their editing intent', () => {
+  const f = fixture();
+  const image = {
+    id: 'image',
+    type: 'image',
+    x: 100,
+    y: 100,
+    width: 320,
+    height: 240,
+    z: 1,
+    assetId: 'a'.repeat(64),
+    text: 'original.png',
+    imageTitle: 'Board title',
+  };
+  f.engine.apply({ upserts: [image], deleted: [] });
+  for (let i = 0; i < 2; i++) {
+    f.engine.down(f.event(180, 180));
+    f.engine.up(f.event(180, 180));
+  }
+  assert.deepEqual([...f.engine.selection], ['image']);
+  assert.equal(f.activations.length, 0);
+  f.engine.doubleClick(f.event(180, 180));
+  assert.deepEqual(f.activationIntents, [undefined]);
+  f.engine.down(f.event(160, 85));
+  f.engine.up(f.event(160, 85));
+  assert.deepEqual(f.activations, ['image', 'image']);
+  assert.deepEqual(f.activationIntents, [undefined, 'title']);
+  f.engine.doubleClick(f.event(160, 85));
+  assert.deepEqual(f.activationIntents, [undefined, 'title', 'title']);
+  f.engine.down(f.event(160, 85));
+  f.engine.move({ ...f.event(220, 125), altKey: true });
+  f.engine.up(f.event(220, 125));
+  assert.equal(f.activations.length, 3, 'dragging the title moves the image without activation');
+});
+
 test('document hydration preserves live gestures, persists committed geometry, and survives undo and redo without an extra history step', () => {
   const f = fixture();
   assert.equal(typeof f.engine.hydrateDocument, 'function');
@@ -278,6 +313,7 @@ function fixture({ unavailableImages = false } = {}) {
   const modules = new Map(),
     edits = [],
     activations = [],
+    activationIntents = [],
     raster = [],
     requested = [];
   const position = () => ({
@@ -527,7 +563,10 @@ function fixture({ unavailableImages = false } = {}) {
       edit: (edit) => edits.push(edit),
       camera() {},
       selection() {},
-      activate: (object) => activations.push(object.id),
+      activate: (object, intent) => {
+        activations.push(object.id);
+        activationIntents.push(intent);
+      },
       create() {},
       context() {},
       ready() {},
@@ -544,5 +583,5 @@ function fixture({ unavailableImages = false } = {}) {
     pointerId: 1,
     preventDefault() {},
   });
-  return { engine, load, event, edits, activations, raster, requested };
+  return { engine, load, event, edits, activations, activationIntents, raster, requested };
 }

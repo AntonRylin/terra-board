@@ -7,7 +7,7 @@ import {
   MAX_TEXT_BYTES,
 } from './document-files';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
+import type { PDFDocumentProxy, PDFPageProxy, PDFWorker } from 'pdfjs-dist';
 
 export type DocumentPreview = Pick<
   CanvasObject,
@@ -55,9 +55,17 @@ export async function documentBytes(
   return bytes;
 }
 
+export async function createPdfPreviewWorker(signal?: AbortSignal): Promise<PDFWorker> {
+  const pdfjs = await import('pdfjs-dist');
+  signal?.throwIfAborted();
+  pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
+  return new pdfjs.PDFWorker();
+}
+
 export async function loadPdf(
   bytes: Uint8Array<ArrayBuffer>,
   signal?: AbortSignal,
+  worker?: PDFWorker,
 ): Promise<PDFDocumentProxy> {
   const pdfjs = await import('pdfjs-dist');
   signal?.throwIfAborted();
@@ -65,6 +73,7 @@ export async function loadPdf(
   const base = new URL('pdfjs/', window.location.href).href;
   const task = pdfjs.getDocument({
     data: bytes,
+    worker,
     cMapUrl: base + 'cmaps/',
     cMapPacked: true,
     standardFontDataUrl: base + 'standard_fonts/',

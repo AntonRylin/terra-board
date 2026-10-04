@@ -5,6 +5,49 @@ import vm from 'node:vm';
 import ts from 'typescript';
 import * as files from '../src/canvas/document-files.ts';
 
+test('a PDF workspace reuses its explicit preview worker for merged sources', async () => {
+  let created = 0;
+  const inputs = [];
+  const f = previewFixture({
+    pdfjs: {
+      PDFWorker: class {
+        constructor() {
+          created++;
+        }
+      },
+      getDocument: (input) => {
+        inputs.push(input);
+        return { promise: Promise.resolve({ numPages: 2 }), destroy: async () => {} };
+      },
+    },
+  });
+  const worker = await f.createPdfPreviewWorker();
+  await f.loadPdf(new Uint8Array([1]), undefined, worker);
+  await f.loadPdf(new Uint8Array([2]), undefined, worker);
+  assert.equal(created, 1);
+  assert.equal(inputs.length, 2);
+  assert.equal(inputs[0].worker, worker);
+  assert.equal(inputs[1].worker, worker);
+});
+
+test('closing a workspace during PDF.js import does not create an orphan preview worker', async () => {
+  let created = 0;
+  const f = previewFixture({
+    pdfjs: {
+      PDFWorker: class {
+        constructor() {
+          created++;
+        }
+      },
+    },
+  });
+  const controller = new AbortController();
+  const pending = f.createPdfPreviewWorker(controller.signal);
+  controller.abort();
+  await assert.rejects(pending, { name: 'AbortError' });
+  assert.equal(created, 0);
+});
+
 function previewFixture(overrides = {}) {
   const exports = {};
   const pdfjs = { GlobalWorkerOptions: {}, ...overrides.pdfjs };

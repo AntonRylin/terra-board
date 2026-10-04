@@ -32,6 +32,8 @@ import {
   Minus,
   Plus,
   Maximize2,
+  Pencil,
+  Files,
   Undo2,
   Redo2,
   Trash2,
@@ -83,6 +85,8 @@ import {
 import { ContextMenu, Modal, type MenuItem } from './Dialogs';
 import ImageCrop from './ImageCrop';
 import DocumentReader, { type DocumentReaderHandle } from './DocumentReader';
+import PdfWorkspace, { type PdfWorkspaceHandle } from './PdfWorkspace';
+import ImageViewer from './ImageViewer';
 import { documentKind, withDocumentTitle } from '../canvas/document-files';
 import { prepareDocumentPreview, type DocumentPreview } from '../canvas/document-preview';
 import { downloadAsset } from '../bridge';
@@ -298,6 +302,14 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   const readingDocumentSession = useRef(0);
   const savingDocumentId = useRef<string | null>(null);
   const documentReader = useRef<DocumentReaderHandle>(null);
+  const pdfReader = useRef<PdfWorkspaceHandle>(null);
+  const pdfSession = useRef(0);
+  const [pdfWorkspace, setPdfWorkspace] = useState<{
+    objects: CanvasObject[];
+    mode: 'preview' | 'edit';
+    session: number;
+  } | null>(null);
+  const [previewingImage, setPreviewingImage] = useState<CanvasObject | null>(null);
   const documentRequests = useRef(new Map<string, string>());
   const documentAbort = useRef(new AbortController());
   const deferredDocumentPreviews = useRef(
@@ -393,6 +405,72 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     if (readingDocumentId.current === o.id) await documentReader.current?.flush();
     const current = engine.current?.objects.get(o.id);
     if (current?.assetId) await downloadAsset(current.assetId, current.text || 'Document');
+  };
+  const openPdfWorkspace = async (objects: CanvasObject[], mode: 'preview' | 'edit') => {
+    await documentReader.current?.flush();
+    if (!alive.current || !engine.current) return;
+    if (editingSession.current) finishEdit();
+    const current = objects
+      .map((o) => engine.current!.objects.get(o.id))
+      .filter((o): o is CanvasObject => !!o);
+    if (!current.length) return;
+    closeDocument();
+    engine.current.setSelection(current.map((o) => o.id));
+    setPdfWorkspace({
+      objects: current.map((o) => ({ ...o })),
+      mode,
+      session: ++pdfSession.current,
+    });
+  };
+  const openImageViewer = async (o: CanvasObject) => {
+    await documentReader.current?.flush();
+    if (!alive.current || !engine.current) return;
+    if (editingSession.current) finishEdit();
+    const current = engine.current.objects.get(o.id);
+    if (!current?.assetId || current.type !== 'image') return;
+    closeDocument();
+    engine.current.setSelection([current.id]);
+    setPreviewingImage({ ...current });
+  };
+  const savePdfCopy = async (
+    source: CanvasObject,
+    bytes: Uint8Array<ArrayBuffer>,
+    name: string,
+    id: string,
+    pageCount: number,
+  ) => {
+    const e = engine.current;
+    if (!e || !alive.current) throw Error('This board is no longer open.');
+    const asset = await invoke<Asset>('importAsset', { name, bytes });
+    if (!alive.current || engine.current !== e) throw Error('This board is no longer open.');
+    const anchor = e.objects.get(source.id) || source;
+    const existing = e.objects.get(id);
+    const copy: CanvasObject = {
+      id,
+      type: 'document',
+      text: name,
+      assetId: asset.id,
+      x: anchor.x + anchor.width + 32,
+      y: anchor.y,
+      width: source.type === 'document' ? anchor.width : 320,
+      height: source.type === 'document' ? anchor.height : 400,
+      z: e.topZ() + 1,
+      documentTitle:
+        anchor.documentTitle || anchor.imageTitle
+          ? `${anchor.documentTitle || anchor.imageTitle} — edited`
+          : undefined,
+      ...existing,
+      documentMime: 'application/pdf',
+      documentBytes: asset.bytes,
+      documentPreviewId: undefined,
+      documentExcerpt: undefined,
+      documentPageCount: pageCount,
+    };
+    // A failed persistence retry reuses the same copy, rather than adding another attachment.
+    if (!existing || existing.assetId !== asset.id)
+      e.apply({ upserts: [{ ...copy, assetId: asset.id }], deleted: [] });
+    await queue.current?.flush();
+    refreshDocument(e.objects.get(id) || copy, e);
   };
   const listViewKey = useRef('');
   const createList = () => {
@@ -584,12 +662,14 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       } else openLink(o.url!).catch(error);
     }
   };
-  const activate = (o: CanvasObject) => {
-    if (o.type === 'document') void openDocument(o).catch(error);
+  const activate = (o: CanvasObject, intent?: 'title') => {
+    if (intent === 'title') startEdit(o);
+    else if (o.type === 'document') void openDocument(o).catch(error);
+    else if (o.type === 'image') void openImageViewer(o).catch(error);
     else if (o.type === 'list') setEditingListId(o.id);
     else if (o.type === 'link' && o.linkCompact) openLink(o.url!).catch(error);
     else if (o.type === 'link') openObject(o);
-    else if (o.type !== 'image' || o.imageTitle?.trim()) startEdit(o);
+    else startEdit(o);
   };
   const previewRequests = useRef(new Map<string, Engine>());
   const refreshLink = (o: CanvasObject, e: Engine, autoplay = false) => {
@@ -969,6 +1049,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     backgroundJob.current = task;
   }
   const flush = async (waitForExport = true) => {
+    await pdfReader.current?.flush();
     await documentReader.current?.flush();
     arrowDraft.current?.flush();
     engine.current?.stopCameraAnimation();
@@ -1082,6 +1163,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     };
     const typing = () =>
       !!editingSession.current ||
+      !!document.querySelector('.pdf-workspace, .image-viewer') ||
       !!(document.activeElement as HTMLElement)?.closest(
         'input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role=dialog]',
       );
@@ -1376,6 +1458,24 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
               void openDocument(selected[0]).catch(error);
             },
           },
+          ...(documentKind(selected[0].text || '', selected[0].documentMime) === 'pdf'
+            ? [
+                {
+                  label: 'Full PDF preview',
+                  icon: <Maximize2 />,
+                  action: () => {
+                    void openPdfWorkspace(selected, 'preview').catch(error);
+                  },
+                },
+                {
+                  label: 'Edit PDF',
+                  icon: <Pencil />,
+                  action: () => {
+                    void openPdfWorkspace(selected, 'edit').catch(error);
+                  },
+                },
+              ]
+            : []),
           {
             label: 'Download',
             icon: <Download />,
@@ -1395,6 +1495,20 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           },
           { label: 'Crop image', icon: <Crop />, action: () => startCrop(selected[0]) },
           {
+            label: 'Full image preview',
+            icon: <Maximize2 />,
+            action: () => {
+              void openImageViewer(selected[0]).catch(error);
+            },
+          },
+          {
+            label: 'Convert to PDF',
+            icon: <FileText />,
+            action: () => {
+              void openPdfWorkspace(selected, 'edit').catch(error);
+            },
+          },
+          {
             label: removingBackground ? 'Removing background…' : 'Remove background',
             icon: <Eraser />,
             action: () => removeImageBackground(selected[0]),
@@ -1411,6 +1525,23 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
                 },
               ]
             : []),
+          null,
+        ]
+      : []),
+    ...(selected.length > 1 &&
+    selected.every(
+      (o) =>
+        o.type === 'image' ||
+        (o.type === 'document' && documentKind(o.text || '', o.documentMime) === 'pdf'),
+    )
+      ? [
+          {
+            label: selected.every((o) => o.type === 'image') ? 'Convert to PDF' : 'Combine PDFs',
+            icon: <Files />,
+            action: () => {
+              void openPdfWorkspace(selected, 'edit').catch(error);
+            },
+          },
           null,
         ]
       : []),
@@ -1519,7 +1650,40 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           onSave={saveDocument}
           onClose={() => closeDocument(documentSession)}
           onDownload={() => downloadDocument(readingDocument)}
+          onExpandPdf={(edit) => {
+            void openPdfWorkspace([readingDocument], edit ? 'edit' : 'preview').catch(error);
+          }}
           onError={error}
+        />
+      )}
+      {pdfWorkspace && (
+        <PdfWorkspace
+          key={pdfWorkspace.session}
+          ref={pdfReader}
+          objects={pdfWorkspace.objects}
+          mode={pdfWorkspace.mode}
+          onSave={(bytes, name, id, count) =>
+            savePdfCopy(pdfWorkspace.objects[0], bytes, name, id, count)
+          }
+          onClose={() => {
+            if (pdfSession.current !== pdfWorkspace.session) return;
+            pdfSession.current++;
+            setPdfWorkspace(null);
+            host.current?.focus();
+          }}
+        />
+      )}
+      {previewingImage && (
+        <ImageViewer
+          key={`${previewingImage.id}:${previewingImage.assetId}`}
+          object={previewingImage}
+          onClose={() => {
+            setPreviewingImage(null);
+            host.current?.focus();
+          }}
+          onDownload={async () => {
+            await downloadAsset(previewingImage.assetId!, previewingImage.text || 'Image');
+          }}
         />
       )}
       {ready && !count && (
@@ -1858,6 +2022,26 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
               >
                 <FileText size={16} />
               </button>
+              {documentKind(selected[0].text || '', selected[0].documentMime) === 'pdf' && (
+                <>
+                  <button
+                    className="icon-button"
+                    aria-label="Full PDF preview"
+                    title="Full PDF preview"
+                    onClick={() => void openPdfWorkspace(selected, 'preview').catch(error)}
+                  >
+                    <Maximize2 size={16} />
+                  </button>
+                  <button
+                    className="icon-button"
+                    aria-label="Edit PDF"
+                    title="Edit PDF"
+                    onClick={() => void openPdfWorkspace(selected, 'edit').catch(error)}
+                  >
+                    <Pencil size={16} />
+                  </button>
+                </>
+              )}
               <button
                 className="icon-button"
                 aria-label="Download document"

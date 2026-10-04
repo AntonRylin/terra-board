@@ -275,6 +275,7 @@ export default function App() {
   }, []);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
+      if (document.querySelector('.pdf-workspace, .image-viewer')) return;
       if (aiBusy || modal?.kind === 'settings' || e.isComposing || e.repeat) return;
       if (
         (e.ctrlKey || e.metaKey) &&
@@ -309,7 +310,11 @@ export default function App() {
     };
     const events = ['keydown', 'pointerdown', 'pointermove', 'pointerup', 'wheel', 'paste', 'drop'];
     const unlock = () => {
-      window.document.getElementById('root')?.removeAttribute('inert');
+      const root = window.document.getElementById('root');
+      if (root) {
+        delete root.dataset.mcpInert;
+        root.inert = !!window.document.querySelector('.pdf-workspace, .image-viewer');
+      }
       for (const event of events) window.removeEventListener(event, block, true);
       setAiBusy(false);
     };
@@ -318,7 +323,11 @@ export default function App() {
         if (message.phase === 'prepare') {
           ++request.current;
           setAiBusy(true);
-          window.document.getElementById('root')?.setAttribute('inert', '');
+          const root = window.document.getElementById('root');
+          if (root) {
+            root.dataset.mcpInert = 'true';
+            root.inert = true;
+          }
           for (const event of events)
             window.addEventListener(event, block, { capture: true, passive: false });
           await flushInlineNames();

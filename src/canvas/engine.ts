@@ -66,7 +66,7 @@ interface Callbacks {
   hover?: (imageId: string | null) => void;
   selectionView?: (bounds: Bounds | null, viewport: { width: number; height: number }) => void;
   rotation?: (value: { angle: number; x: number; y: number } | null) => void;
-  activate: (o: CanvasObject) => void;
+  activate: (o: CanvasObject, intent?: 'title') => void;
   create: (tool: Tool, p: Point) => void;
   context: (p: Point) => void;
   ready: () => void;
@@ -677,7 +677,7 @@ export class Engine {
       for (const o of g.original) this.preview(o);
       if (g.editOnClick && !g.dragged) {
         const object = this.objects.get(g.editOnClick);
-        if (object) this.callbacks.activate(object);
+        if (object) this.callbacks.activate(object, object.type === 'image' ? 'title' : undefined);
       }
     }
     this.invalidate();
@@ -785,9 +785,14 @@ export class Engine {
       this.apply({ upserts: [arrowFromPoints(o, points)], deleted: [] });
       return;
     }
-    const o = this.hit(this.screenPoint(this.point(e)));
-    if (o) this.callbacks.activate(o);
-    else this.callbacks.create('text', this.screenPoint(this.point(e)));
+    const world = this.screenPoint(this.point(e));
+    const o = this.hit(world);
+    if (o)
+      this.callbacks.activate(
+        o,
+        o.type === 'image' && hitsFrameLabel(o, worldToLocal(o, world)) ? 'title' : undefined,
+      );
+    else this.callbacks.create('text', world);
   };
   private context = (e: MouseEvent) => {
     if (e.target !== this.app.canvas && e.target !== this.host) return;
