@@ -1,4 +1,5 @@
 import SettingsPage from './components/SettingsPage';
+import { finishStartup } from './startup';
 import { useGlassAppearance } from './components/useGlassAppearance';
 import { useAppearance } from './components/useAppearance';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -63,6 +64,7 @@ export default function App() {
   const glass = useGlassAppearance();
   const appearance = useAppearance();
   const [aiBusy, setAiBusy] = useState(false);
+  const [canvasReady, setCanvasReady] = useState(false);
   const activeDocument = useRef<Document | null>(null);
   const [dockEdge, setDockEdge] = useState(readDockEdge);
   const [searchTarget, setSearchTarget] = useState<{ boardId: string; objectId: string } | null>(
@@ -130,6 +132,10 @@ export default function App() {
     [busy, setBusy] = useState(false),
     [loading, setLoading] = useState(true);
   activeDocument.current = doc;
+  useEffect(() => {
+    if (error || (!loading && (!doc || canvasReady))) finishStartup();
+    if (!loading && !doc && !error) window.canvas?.rendererReady();
+  }, [loading, doc, canvasReady, error]);
   const boardHeader = useBoardHeaderSpace(
     (dockEdge === 'top' || dockEdge === 'left') && launcherMinimal && !launcherHidden,
     launcherCentered,
@@ -349,7 +355,6 @@ export default function App() {
         window.canvas!.mcpReady(message.id, String(e));
       }
     });
-    window.canvas?.rendererReady();
     return () => {
       cleanup?.();
       unlock();
@@ -788,6 +793,7 @@ export default function App() {
               document={doc}
               searchTarget={searchTarget?.boardId === doc.board.id ? searchTarget : null}
               onError={report}
+              onReady={() => setCanvasReady(true)}
               onSave={(state, message) => {
                 setSaveState(state);
                 if (message) report(message);

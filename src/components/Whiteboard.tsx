@@ -96,6 +96,7 @@ export interface WhiteboardHandle {
   fit: () => void;
 }
 interface Props {
+  onReady: () => void;
   searchTarget: { objectId: string } | null;
   theme: ResolvedTheme;
   document: Document;
@@ -114,10 +115,27 @@ const tools: { id: Tool & ToolbarId; label: string; icon: typeof Type; key: stri
 ];
 const colors = ['#f8efd4', '#e4eee8', '#e4ecfa', '#efe5f1', '#f4e4e5', '#ffffff', '#000000'];
 const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
-  { document: doc, onSave, onError, theme, searchTarget },
+  { document: doc, onSave, onError, onReady, theme, searchTarget },
   ref,
 ) {
   const external = useRef(false);
+  const lastTextSize = useRef<number | null>(null);
+  if (lastTextSize.current === null) {
+    let saved = 0;
+    try {
+      saved = Number(localStorage.getItem('terra-board.text-size'));
+    } catch {}
+    lastTextSize.current = Number.isFinite(saved) && saved >= 8 && saved <= 300 ? saved : 24;
+  }
+  const rememberTextSize = (o: CanvasObject) => {
+    if (o.type !== 'text') return;
+    const size = textAppearance(o).fontSize;
+    if (size === lastTextSize.current) return;
+    lastTextSize.current = size;
+    try {
+      localStorage.setItem('terra-board.text-size', String(size));
+    } catch {}
+  };
   const backgroundJob = useRef<Promise<void> | null>(null);
   const [removingBackground, setRemovingBackground] = useState(false);
   const exportTask = useRef<Promise<void> | null>(null);
@@ -532,7 +550,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       z: type === 'frame' ? -1 : e.topZ() + 1,
       text: type === 'frame' ? 'Untitled frame' : '',
       color: type === 'note' ? '#f8efd4' : type === 'text' ? '#29313b' : '#e4ecfa',
-      fontSize: type === 'frame' ? 14 : type === 'note' ? 21 : 24,
+      fontSize:
+        type === 'frame' ? 14 : type === 'note' ? 21 : type === 'text' ? lastTextSize.current! : 24,
     };
     e.apply({ upserts: [o], deleted: [] });
     e.setSelection([o.id]);
@@ -616,7 +635,10 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         setCamera(c);
         cameraQueue.current!.enqueue(c);
       },
-      selection: setSelected,
+      selection: (objects) => {
+        if (objects.length === 1) rememberTextSize(objects[0]);
+        setSelected(objects);
+      },
       hover: hoverImage,
       tool: setTool,
       rotation: (value) => {
@@ -639,6 +661,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       context: (p) => setMenu(p),
       ready: () => {
         setReady(true);
+        onReady();
         window.canvas?.rendererReady();
       },
       error: onError,
@@ -970,7 +993,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         z: e.topZ() + 1,
         text: url ? new URL(url).hostname : text,
         color: url ? '#ffffff' : '#29313b',
-        fontSize: 22,
+        fontSize: url ? 22 : lastTextSize.current!,
         ...(url ? { url } : {}),
       };
       e.apply({ upserts: [fitTextObject(o)], deleted: [] });

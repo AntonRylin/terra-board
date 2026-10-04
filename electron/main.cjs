@@ -242,6 +242,7 @@ app
       return;
     }
     startWorker();
+    const storageReady = seed();
     protocol.handle('canvas-app', (request) => {
       const url = new URL(request.url);
       let relative = decodeURIComponent(url.pathname).replace(/^\/+/, '') || 'index.html';
@@ -320,6 +321,12 @@ app
       },
     });
     Menu.setApplicationMenu(null);
+    if (!smoke) {
+      win.once('ready-to-show', () => {
+        attachWindowShadow(win, { BrowserWindow });
+        win.show();
+      });
+    }
     const boardClipboard = createImageClipboard({
       clipboard,
       ClipboardItem,
@@ -484,9 +491,10 @@ app
       externalWaiters.delete(id);
       error ? waiting.reject(Error(error)) : waiting.resolve();
     });
-    ipcMain.handle('canvas:invoke', (e, command, args) => {
+    ipcMain.handle('canvas:invoke', async (e, command, args) => {
       trusted(e);
       if (!commands.has(command)) throw Error('Unknown command');
+      await storageReady;
       if (externalPhase === 'apply' && !['library', 'loadBoard', 'saveCamera'].includes(command))
         throw Error('AI edit in progress. Retry after it completes.');
       return call(command, args);
@@ -567,9 +575,7 @@ app
       win.show();
       win.focus();
     });
-    await seed();
-    if (dev) await win.loadURL(dev);
-    else await win.loadURL('canvas-app://app/index.html');
+    await Promise.all([storageReady, win.loadURL(dev || 'canvas-app://app/index.html')]);
     await mcp.start();
     if (smoke) {
       await Promise.race([
@@ -601,9 +607,6 @@ app
         closed = true;
         app.quit();
       }, 1800);
-    } else {
-      attachWindowShadow(win, { BrowserWindow });
-      win.show();
     }
   })
   .catch((e) => {

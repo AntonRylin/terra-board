@@ -8,9 +8,18 @@
       content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' canvas-media: data: blob:; media-src 'self' canvas-media: blob:; connect-src 'self' canvas-media: ws://127.0.0.1:5173; frame-src https://www.youtube-nocookie.com; worker-src 'self' blob:; object-src 'none'; base-uri 'none'"
     />
     <title>Terra Board</title>
+    <link rel="stylesheet" href="/src/startup.css" />
   </head>
   <body>
-    <div id="root"></div>
+    <div id="startup-screen" role="status" aria-live="polite">
+      <div class="startup-content">
+        <img class="startup-mark" src="/assets/icon.png" width="64" height="64" alt="" />
+        <h1>Terra Board</h1>
+        <p>Opening your workspace<span class="startup-dots" aria-hidden="true">…</span></p>
+        <div class="startup-track" aria-hidden="true"><span></span></div>
+      </div>
+    </div>
+    <div id="root" aria-busy="true" inert></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

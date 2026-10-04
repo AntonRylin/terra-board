@@ -13,6 +13,7 @@
     "build": "node scripts/prepare-background-model.mjs && tsc --noEmit && vite build",
     "start": "electron .",
     "test": "node scripts/prepare-background-model.mjs && node --test tests/*.test.mjs",
+    "prepackage": "node scripts/check-package-idle.mjs",
     "package": "npm run build && electron-builder --win dir",
     "test:desktop": "node scripts/desktop-check.mjs"
   },
