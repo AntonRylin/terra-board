@@ -16,6 +16,9 @@ interface DesktopBridge {
     bytes: Uint8Array;
   }): Promise<{ id: string; name: string } | null>;
   downloadAsset(args: { id: string; name: string }): Promise<boolean>;
+  printDocument(args: { html: string; name: string }): Promise<Asset>;
+  convertOffice(args: { id: string; name: string }): Promise<Asset>;
+  onOfficeProgress(callback: (message: string) => void): () => void;
   openExport(id: string, folder: boolean): Promise<void>;
   copyObjects(objects: CanvasObject[]): Promise<boolean>;
   copyText(text: string): Promise<void>;

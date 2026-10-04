@@ -17,6 +17,13 @@ contextBridge.exposeInMainWorld('canvas', {
   exportPortable: (id) => ipcRenderer.invoke('canvas:export-board', id),
   exportImage: (args) => ipcRenderer.invoke('canvas:export-image', args),
   downloadAsset: (args) => ipcRenderer.invoke('canvas:download-asset', args),
+  printDocument: (args) => ipcRenderer.invoke('canvas:print-document', args),
+  convertOffice: (args) => ipcRenderer.invoke('canvas:convert-office', args),
+  onOfficeProgress: (callback) => {
+    const handler = (_event, message) => callback(message);
+    ipcRenderer.on('canvas:office-progress', handler);
+    return () => ipcRenderer.removeListener('canvas:office-progress', handler);
+  },
   assetDimensions: (id) => ipcRenderer.invoke('canvas:asset-dimensions', id),
   openExport: (id, folder) => ipcRenderer.invoke('canvas:open-export', id, folder),
   openExternal: (url) => ipcRenderer.invoke('canvas:open-link', url),

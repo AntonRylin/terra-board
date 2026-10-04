@@ -122,6 +122,62 @@ test('image body double clicks open the viewer while title clicks retain their e
   assert.equal(f.activations.length, 3, 'dragging the title moves the image without activation');
 });
 
+test('consumed document drops restore original geometry without a movement history entry', () => {
+  const drops = [],
+    drags = [];
+  const f = fixture({
+    objectDrop: (objects, point) => {
+      drops.push({ objects, point });
+      return true;
+    },
+    objectDrag: (objects, point) => drags.push({ objects, point }),
+  });
+  f.engine.apply({ upserts: [documentObject], deleted: [] });
+  const edits = f.edits.length;
+  f.engine.down(f.event(180, 180));
+  f.engine.move({ ...f.event(300, 250), altKey: true });
+  f.engine.hydrateDocument('document', documentObject.assetId, { documentPageCount: 4 });
+  f.engine.up(f.event(300, 250));
+  assert.equal(drops.length, 1);
+  assert.equal(drops[0].objects[0].x, 100);
+  assert.equal(drops[0].point.x, 300);
+  assert.equal(f.engine.objects.get('document').x, 100);
+  assert.equal(f.engine.objects.get('document').documentPageCount, 4);
+  assert.equal(f.edits.length, edits + 1, 'only document hydration adds an edit');
+  assert.equal(drags.at(-1).point, null);
+  f.engine.undo();
+  assert.equal(f.engine.objects.has('document'), false);
+});
+
+test('declined drops retain ordinary movement and PDF workspace frames leave underlying cards in place', () => {
+  const f = fixture({ objectDrop: () => false });
+  const frame = {
+    id: 'composer',
+    type: 'frame',
+    x: 50,
+    y: 50,
+    width: 500,
+    height: 600,
+    z: 2,
+    text: 'PDF workspace',
+    pdfComposer: { sources: [], columns: [] },
+  };
+  f.engine.apply({ upserts: [documentObject, frame], deleted: [] });
+  f.engine.setSelection(['composer']);
+  assert.equal(
+    f.engine.hit({ x: 180, y: 180 }).id,
+    'composer',
+    'composer body must not hit the underlying PDF',
+  );
+  f.engine.down(f.event(70, 70));
+  f.engine.move({ ...f.event(150, 130), altKey: true });
+  f.engine.up(f.event(150, 130));
+  assert.equal(f.engine.objects.get('composer').x, 130);
+  assert.equal(f.engine.objects.get('document').x, 100);
+  f.engine.undo();
+  assert.equal(f.engine.objects.get('composer').x, 50);
+});
+
 test('document hydration preserves live gestures, persists committed geometry, and survives undo and redo without an extra history step', () => {
   const f = fixture();
   assert.equal(typeof f.engine.hydrateDocument, 'function');
@@ -309,7 +365,7 @@ test('unavailable document preview pixels fall back to an exportable file card',
 
 // Real canvas state, transforms, layout, history and render orchestration run in
 // this fixture. Only browser font/raster and GPU boundaries are deterministic.
-function fixture({ unavailableImages = false } = {}) {
+function fixture({ unavailableImages = false, objectDrop, objectDrag } = {}) {
   const modules = new Map(),
     edits = [],
     activations = [],
@@ -560,6 +616,8 @@ function fixture({ unavailableImages = false } = {}) {
     [],
     { x: 0, y: 0, zoom: 1 },
     {
+      objectDrop,
+      objectDrag,
       edit: (edit) => edits.push(edit),
       camera() {},
       selection() {},

@@ -14,6 +14,45 @@ const revision = z
   );
 const point = z.object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1) });
 const head = z.enum(['none', 'arrow', 'triangle', 'open', 'diamond', 'circle']);
+const pdfComposer = z
+  .object({
+    sources: z
+      .array(
+        z
+          .object({
+            id,
+            assetId: z.string().regex(/^[a-f0-9]{64}$/),
+            name: z.string().max(100000),
+            kind: z.enum(['pdf', 'image']),
+            pageCount: z.number().int().min(1).max(500),
+          })
+          .strict(),
+      )
+      .max(500),
+    columns: z
+      .array(
+        z
+          .object({
+            id,
+            name: z.string().max(100000),
+            pages: z
+              .array(
+                z
+                  .object({
+                    id,
+                    sourceId: id,
+                    pageIndex: z.number().int().min(0).max(499),
+                    rotation: z.number().int().multipleOf(90),
+                  })
+                  .strict(),
+              )
+              .max(500),
+          })
+          .strict(),
+      )
+      .max(500),
+  })
+  .strict();
 const object = z
   .object({
     id,
@@ -75,6 +114,7 @@ const object = z
       })
       .optional(),
     galleryId: id.optional(),
+    pdfComposer: pdfComposer.optional(),
     galleryIndex: z.number().min(0).max(1e7).optional(),
     galleryRow: z.number().int().min(0).max(10000).optional(),
     galleryColumn: z.number().int().min(0).max(10000).optional(),
@@ -205,7 +245,7 @@ function tools(call) {
   );
   add(
     'edit_board',
-    'Atomically create, replace or delete objects. Upserts are COMPLETE objects, not partial patches; preserve fields read earlier, including gallery layout, image membership and document metadata. Coordinates are board units; z controls stacking. Images/videos/documents require imported assetId; document text retains its filename and documentTitle is an independent board title; arrows require normalized points; links require http(s) URL. Galleries are frames with gallery settings; member images use galleryId, galleryIndex, galleryRow and galleryColumn. This is undoable on the open board. Edits to separate objects merge automatically. If a target object changed or was deleted since your read, the whole edit is rejected with conflicting IDs; read again and preserve those changes.',
+    'Atomically create, replace or delete objects. Upserts are COMPLETE objects, not partial patches; preserve fields read earlier, including gallery layout, image membership, document metadata and pdfComposer. Coordinates are board units; z controls stacking. Images/videos/documents require imported assetId; document text retains its filename and documentTitle is an independent board title; arrows require normalized points; links require http(s) URL. Galleries are frames with gallery settings; member images use galleryId, galleryIndex, galleryRow and galleryColumn. PDF composers are non-gallery frames with sources and columns; page references use source IDs, zero-based pageIndex and 90-degree rotation deltas. Preserve original source asset IDs. This is undoable on the open board. Edits to separate objects merge automatically. If a target object changed or was deleted since your read, the whole edit is rejected with conflicting IDs; read again and preserve those changes.',
     {
       id,
       revision,

@@ -1,6 +1,7 @@
 const {
   app,
   BrowserWindow,
+  session,
   ipcMain,
   protocol,
   net,
@@ -13,6 +14,8 @@ const {
 const { createImageClipboard } = require('./image-clipboard.cjs');
 const { createVisualExport } = require('./visual-export.cjs');
 const { createAssetDownload, assetResponse } = require('./document-assets.cjs');
+const { createDocumentPrint } = require('./document-print.cjs');
+const { createOfficeConverter } = require('./office-converter.cjs');
 const { attachWindowShadow } = require('./window-shadow.cjs');
 const { fetchPreview } = require('./link-preview.cjs');
 const { Worker } = require('node:worker_threads');
@@ -98,6 +101,8 @@ for (const [name, directory] of Object.entries({
 }
 app.setAppLogsPath(path.join(root, 'logs'));
 let win,
+  documentPrint,
+  officeConverter,
   worker,
   closed = false,
   quitting = false,
@@ -529,6 +534,31 @@ app
       return r.canceled ? false : call('exportFile', { id, file: r.filePath });
     });
     const visualExport = createVisualExport({ dialog, shell, getWindow: () => win });
+    documentPrint = createDocumentPrint({
+      BrowserWindow,
+      session,
+      importAsset: (args) => call('importAsset', args),
+    });
+    officeConverter = createOfficeConverter({
+      root,
+      readAsset: (args) => call('asset', args),
+      importAsset: (args) => call('importAsset', args),
+      onProgress: (message) => {
+        if (win && !win.isDestroyed()) win.webContents.send('canvas:office-progress', message);
+      },
+    });
+    ipcMain.handle('canvas:print-document', async (event, args) => {
+      trusted(event);
+      await storageReady;
+      if (externalPhase === 'apply') throw Error('AI edit in progress. Retry after it completes.');
+      return documentPrint.print(args);
+    });
+    ipcMain.handle('canvas:convert-office', async (event, args) => {
+      trusted(event);
+      await storageReady;
+      if (externalPhase === 'apply') throw Error('AI edit in progress. Retry after it completes.');
+      return officeConverter.convert(args);
+    });
     const assetDownload = createAssetDownload({
       dialog,
       getWindow: () => win,
@@ -576,6 +606,10 @@ app
         win.webContents.send('canvas:close-request');
       }
     });
+    win.on('closed', () => {
+      documentPrint?.dispose();
+      officeConverter?.dispose();
+    });
     app.on('second-instance', () => {
       if (win.isMinimized()) win.restore();
       win.show();
@@ -616,6 +650,8 @@ app
     }
   })
   .catch((e) => {
+    documentPrint?.dispose();
+    officeConverter?.dispose();
     console.error(e);
     if (!smoke) dialog.showErrorBox('Terra Board could not open', e.message);
     app.exit(1);
@@ -630,6 +666,8 @@ app.on('before-quit', (event) => {
   }
   event.preventDefault();
   quitting = true;
+  documentPrint?.dispose();
+  officeConverter?.dispose();
   void mcp?.stop();
   if (workerFailed) {
     worker.terminate();

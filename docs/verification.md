@@ -1,5 +1,19 @@
 # Verification — Terra Board
 
+## On-board PDF composer and document conversion — 2026-10-04
+
+Dropping convertible documents onto another document creates a persistent frame with one column per source and overlapping page previews. Pages move within and across columns, column grips reorder files, and each hovered or focused column exports an independent PDF copy. Originals remain unchanged. Creation, conversion, previews and export have loading states; page/column moves use interruptible animations and honor reduced motion.
+
+- `npm test`: **321 passed, 0 failed**. Coverage includes metadata validation, nested portable assets, clipboard, immutable page/column edits, source limits, drop targeting, frame hit testing, document conversion, sandboxed printing and UI motion contracts.
+- `npm run package`: passed. `node scripts/package-content-check.mjs` verified **11,694** ASAR integrity hashes, current Electron/renderer bytes, valid manifest and exclusion of the personal Library. Source files were frozen during packaging.
+- `node scripts/desktop-pdf-composer.mjs`: passed in `.local-test/desktop-pdf-composer-jHzGea`, with **zero renderer exceptions**. Native pointer input covered PDF-on-PDF creation, independent frame movement, PDF/image drops, invalid-batch atomicity, page/column sorting, cross-column moves, empty columns and undo/redo. The check verified active layout animations and their reduced-motion suppression, creation/conversion progress, preview rendering, native downloads and cancellation, exact exported page content/order/rotation, reload and composer-only portable roundtrip. Light/dark and conversion-progress screenshots were inspected.
+- Native DOCX/TXT/HTML and legacy DOC/XLS/PPT drops converted and exported successfully in the same packaged run, retaining original bytes, expected Unicode/text and page counts. The built-in printer also passed an actual Electron check with scripts disabled and zero external requests.
+- The Office engine download, pinned SHA-256 verification and administrative extraction succeeded in a disposable library. `scripts/office-converter-check.mjs` subsequently passed using that runtime in `.local-test/office-check-vvULiw`: real DOC/XLS/PPT conversion, original-byte preservation, job cleanup and **zero linked-image HTTP requests**.
+- The existing full PDF editor/image viewer regression passed in `.local-test/desktop-pdf-workspace-j9sMoI`, with zero renderer exceptions, including original-resolution PNG/TIFF, exported bytes and native-close saving.
+- `npm run installer`: passed. The refreshed 0.1.24 x64 installer is **363,039,796 bytes**; its unpacked payload independently passed the same 11,694-entry integrity/source check and excludes the personal Library. Office runtime files remain outside the distribution. The installer configuration is unchanged from the installation/reinstallation/uninstallation audit below.
+
+The Windows x64 Office engine downloads once into the local library (or reuses installed LibreOffice); it is not bundled in the installer and documents are not uploaded. DOCX pagination can differ from Word. Google Workspace shortcut files require an exported document. Native save-dialog choices are stubbed only in the isolated harness; production IPC writes the actual PDFs. All automated mutations used disposable libraries.
+
 ## Shareable Windows installer — 2026-10-04
 
 `npm run installer` builds the current app into a standalone Windows x64 NSIS installer in `release/installer`, separate from the repository-local executable. Only this distribution has `terraDistribution: installed` in its packaged metadata. It uses `%LOCALAPPDATA%\Terra Board\Library` for each user's data; the ordinary development/repository package retains its existing library path. Explicit `CANVAS_DATA_DIR` overrides both. The installer offers a destination folder and shortcuts, and does not remove saved boards on uninstall.

@@ -59,6 +59,9 @@ import {
 } from './link-preview';
 interface Callbacks {
   lists?: (objects: CanvasObject[], camera: Camera) => void;
+  composers?: (objects: CanvasObject[], camera: Camera) => void;
+  objectDrag?: (objects: CanvasObject[], point: Point | null) => void;
+  objectDrop?: (objects: CanvasObject[], point: Point) => boolean;
   tool?: (tool: Tool) => void;
   edit: (e: Edit) => void;
   camera: (c: Camera) => void;
@@ -325,6 +328,7 @@ export class Engine {
           return false;
         return (
           o.type !== 'frame' ||
+          !!o.pdfComposer ||
           q.x < 10 ||
           q.x > o.width - 10 ||
           q.y < 32 ||
@@ -557,6 +561,7 @@ export class Engine {
         this.snapGuides = result.guides;
       }
       for (const o of g.original) this.preview({ ...o, x: o.x + delta.x, y: o.y + delta.y });
+      this.callbacks.objectDrag?.(g.original, moved ? this.screenPoint(p) : null);
       this.invalidate();
     } else if (g.mode === 'rotate') {
       const o = g.original[0];
@@ -641,6 +646,17 @@ export class Engine {
     this.snapGuides = [];
     this.gesture = null;
     this.updateCursor();
+    this.callbacks.objectDrag?.([], null);
+    if (
+      g.mode === 'move' &&
+      g.changed &&
+      this.callbacks.objectDrop?.(g.original, this.screenPoint(this.point(e)))
+    ) {
+      for (const o of g.original) this.preview(o);
+      this.callbacks.selection(this.selected);
+      this.invalidate();
+      return;
+    }
     if (g.mode === 'drawArrow') {
       const o = this.objects.get(g.arrowDraft!.id)!;
       this.history.push({ upserts: [o], deleted: [] }, { upserts: [], deleted: [o.id] });
@@ -683,6 +699,7 @@ export class Engine {
     this.invalidate();
   };
   private cancel = () => {
+    this.callbacks.objectDrag?.([], null);
     const g = this.gesture;
     this.snapGuides = [];
     this.gesture = null;
@@ -936,7 +953,7 @@ export class Engine {
     // collect them mid-gesture. Geometry also releases items moved out of a frame.
     const moving = new Map(this.clipboardSelection.map((o) => [o.id, o]));
     for (const frame of this.selected.filter((o) => o.type === 'frame')) {
-      if (frame.gallery) continue;
+      if (frame.gallery || frame.pdfComposer) continue;
       for (const o of this.index.search(boundsOf([frame])!)) {
         if (moving.has(o.id)) continue;
         if (containsObject(frame, o)) moving.set(o.id, o);
@@ -1117,6 +1134,10 @@ export class Engine {
     }
     this.callbacks.lists?.(
       visible.filter((o) => o.type === 'list'),
+      c,
+    );
+    this.callbacks.composers?.(
+      visible.filter((o) => !!o.pdfComposer),
       c,
     );
     const lightMargin = 600;
@@ -1324,6 +1345,15 @@ export class Engine {
       color = o.color || '#e8edf5';
     const dark = this.dark && !exporting;
     container.eventMode = 'none';
+    if (o.pdfComposer) {
+      if (exporting && texture) {
+        const sprite = new Sprite(texture);
+        sprite.width = o.width;
+        sprite.height = o.height;
+        container.addChild(sprite);
+      }
+      return container;
+    }
     if (o.type === 'document') {
       container.addChild(renderDocumentCard(o, texture, resolution, region, dark));
       if ((exporting || this.editingId !== o.id) && o.documentTitle?.trim()) {
@@ -1850,6 +1880,7 @@ export class Engine {
       const o = plan.objects[i];
       const textures: Texture[] = [];
       const bitmaps: ImageBitmap[] = [];
+      let composerCanvas: HTMLCanvasElement | undefined;
       let container: Container | undefined;
       const load = async (id: string, icon = false) => {
         const img = new Image();
@@ -1913,6 +1944,12 @@ export class Engine {
                 ? o.linkIconId
                 : undefined;
         let texture: Texture | null = null;
+        if (o.pdfComposer) {
+          const { composerSnapshot } = await import('./pdf-composer-snapshot');
+          composerCanvas = await composerSnapshot(o, plan.scale);
+          texture = Texture.from(composerCanvas);
+          textures.push(texture);
+        }
         if (imageId) {
           try {
             texture = await load(imageId, o.type === 'link' && !hasLinkImage(o));
@@ -1964,6 +2001,7 @@ export class Engine {
       } finally {
         container?.destroy({ children: true });
         for (const texture of textures) texture.destroy(true);
+        if (composerCanvas) composerCanvas.width = composerCanvas.height = 1;
         for (const bitmap of bitmaps) bitmap.close();
       }
     }

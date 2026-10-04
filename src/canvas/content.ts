@@ -1,4 +1,5 @@
 import type { CanvasObject } from '../model';
+import { pdfComposerValue } from './pdf-composer.ts';
 export function pastedUrl(text: string): string | null {
   const value = text.trim();
   if (value.length > 8192 || !/^https?:\/\/\S+$/i.test(value)) return null;
@@ -31,6 +32,12 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
       ].includes(o.type)
     )
       throw Error('Invalid clipboard object');
+    let pdfComposer;
+    if (o.pdfComposer !== undefined) {
+      if (o.type !== 'frame' || o.gallery !== undefined)
+        throw Error('PDF composers must be non-gallery frames');
+      pdfComposer = pdfComposerValue(o.pdfComposer);
+    }
     if (
       o.type === 'list' &&
       (!Array.isArray(o.items) ||
@@ -223,6 +230,7 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
         throw Error('Invalid arrow');
     }
     return {
+      ...(pdfComposer === undefined ? {} : { pdfComposer }),
       ...(o.type === 'list'
         ? { items: o.items.map(({ id, text, checked }: any) => ({ id, text, checked })) }
         : {}),

@@ -400,7 +400,8 @@ body.reordering * {
   flex-shrink: 0;
 }
 .app-shell:is([data-dock='top'], [data-dock='bottom'])
-  .launcher[data-centered='true'] .launcher-scroll {
+  .launcher[data-centered='true']
+  .launcher-scroll {
   flex-direction: row;
   padding: 0 5px;
 }
@@ -1380,12 +1381,66 @@ kbd {
   left: 50%;
   transform: translateX(-50%);
   padding: 9px 14px;
-  background: white;
+  background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 10px;
   color: var(--muted);
   font-size: 12px;
   pointer-events: none;
+  min-width: 170px;
+  max-width: min(420px, calc(100% - 32px));
+  animation: file-status-enter 160ms ease-out;
+}
+.import-status > span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.import-progress-track {
+  margin-top: 7px;
+  height: 3px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: rgb(134 169 213 / 0.18);
+}
+.import-progress-track > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #86a9d5;
+  transition: width 180ms ease-out;
+}
+.import-progress-track[data-indeterminate='true'] > span {
+  width: 42%;
+  animation: file-progress 1.5s ease-in-out infinite;
+}
+@keyframes file-progress {
+  from {
+    transform: translateX(-110%);
+  }
+  to {
+    transform: translateX(340%);
+  }
+}
+@keyframes file-status-enter {
+  from {
+    opacity: 0;
+    margin-top: -4px;
+  }
+  to {
+    opacity: 1;
+    margin-top: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .import-status,
+  .import-progress-track[data-indeterminate='true'] > span {
+    animation: none;
+  }
+  .import-progress-track > span {
+    transition: none;
+  }
 }
 .selection-tools {
   position: absolute;
@@ -2012,11 +2067,17 @@ kbd {
   animation: icon-image-reveal 180ms ease-out;
 }
 @keyframes icon-image-reveal {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
-  .board-icon-crop img { animation: none; }
+  .board-icon-crop img {
+    animation: none;
+  }
 }
 .board-icon-upload .button.icon-background-action {
   min-height: 28px;

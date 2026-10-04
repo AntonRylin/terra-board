@@ -1,5 +1,12 @@
 import ArrowControls from './ArrowControls';
 import CanvasLists, { listHeight, type ListView } from './CanvasLists';
+import CanvasPdfComposers from './CanvasPdfComposers';
+import { createPdfComposer, appendPdfComposer } from '../canvas/pdf-composer';
+import { prepareComposerSources, exportComposerColumn } from '../canvas/pdf-composer-files';
+import { isPdfComposerInput, pdfComposerTargetAt } from '../canvas/pdf-drop';
+import { convertibleFile, needsOfficeConversion } from '../canvas/pdf-conversion-formats';
+import { convertComposerInputs } from '../canvas/document-convert';
+import ListEditOutline from './ListEditOutline';
 import CanvasToolbar from './CanvasToolbar';
 import type { ToolbarId } from './toolbar-layout';
 import { useZoomControlSpace } from './useZoomControlSpace';
@@ -296,6 +303,14 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   const activeGallery = selected.length === 1 && selected[0].gallery ? selected[0] : null;
   const [editingListId, setEditingListId] = useState<string | null>(null);
   const [listView, setListView] = useState<ListView>({ objects: [], camera: doc.camera });
+  const [composerView, setComposerView] = useState<ListView>({ objects: [], camera: doc.camera });
+  const [editingComposerId, setEditingComposerId] = useState<string | null>(null);
+  const [pdfDropTarget, setPdfDropTarget] = useState<CanvasObject | null>(null);
+  const [officeProgress, setOfficeProgress] = useState('');
+  const [composerProgress, setComposerProgress] = useState('');
+  useEffect(() => window.canvas?.onOfficeProgress(setOfficeProgress), []);
+  const composerViewKey = useRef('');
+  const composerTail = useRef<Promise<void>>(Promise.resolve());
   const [readingDocument, setReadingDocument] = useState<CanvasObject | null>(null);
   const [documentSession, setDocumentSession] = useState(0);
   const readingDocumentId = useRef<string | null>(null);
@@ -664,6 +679,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   };
   const activate = (o: CanvasObject, intent?: 'title') => {
     if (intent === 'title') startEdit(o);
+    else if (o.pdfComposer) setEditingComposerId(o.id);
     else if (o.type === 'document') void openDocument(o).catch(error);
     else if (o.type === 'image') void openImageViewer(o).catch(error);
     else if (o.type === 'list') setEditingListId(o.id);
@@ -817,6 +833,27 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     );
     if (resized.length) queue.current.enqueue({ upserts: resized, deleted: [] });
     const e = new Engine(host.current!, fitted, doc.camera, {
+      composers: (objects, camera) => {
+        const key = JSON.stringify([objects, camera]);
+        if (key !== composerViewKey.current) {
+          composerViewKey.current = key;
+          setComposerView({ objects, camera: { ...camera } });
+        }
+      },
+      objectDrag: (objects, point) => {
+        const target =
+          point && objects.length && objects.every(isPdfComposerInput)
+            ? pdfComposerTargetAt(e.all, point, new Set(objects.map((o) => o.id)))
+            : null;
+        setPdfDropTarget((previous) => (previous?.id === target?.id ? previous : target));
+      },
+      objectDrop: (objects, point) => {
+        if (external.current || !objects.length || !objects.every(isPdfComposerInput)) return false;
+        const target = pdfComposerTargetAt(e.all, point, new Set(objects.map((o) => o.id)));
+        if (!target) return false;
+        void addToComposer(target.id, () => Promise.resolve(objects)).catch(error);
+        return true;
+      },
       lists: (objects, camera) => {
         const key = JSON.stringify([objects, camera]);
         if (key !== listViewKey.current) {
@@ -1009,6 +1046,152 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   async function importMedia() {
     await performImport(pickMedia);
   }
+  function composerTask(action: (e: Engine, signal: AbortSignal) => Promise<void>) {
+    const e = engine.current,
+      signal = documentAbort.current.signal;
+    if (!e || external.current)
+      return Promise.reject(Error('The board is busy. Please try again.'));
+    setBusy((n) => n + 1);
+    const task = composerTail.current
+      .then(async () => {
+        signal.throwIfAborted();
+        if (!alive.current || engine.current !== e) throw Error('This board is no longer open.');
+        await action(e, signal);
+      })
+      .finally(() => {
+        if (alive.current) {
+          setBusy((n) => n - 1);
+          setComposerProgress('');
+        }
+      });
+    composerTail.current = task.catch(() => {});
+    return task;
+  }
+  function addToComposer(targetId: string | null, load: () => Promise<CanvasObject[]>) {
+    return composerTask(async (e, signal) => {
+      setComposerProgress('Preparing PDF workspace…');
+      await documentReader.current?.flush();
+      if (editingSession.current) finishEdit();
+      const incoming = await load();
+      signal.throwIfAborted();
+      if (!incoming.length || !incoming.every(isPdfComposerInput))
+        throw Error('Drop convertible documents or images into this workspace.');
+      const target = targetId ? e.objects.get(targetId) : undefined;
+      if (targetId && !target) throw Error('The PDF workspace was removed.');
+      const existing = target?.pdfComposer;
+      const sources: CanvasObject[] = existing
+        ? existing.sources.map((source) => ({
+            id: source.id,
+            assetId: source.assetId,
+            type: source.kind === 'pdf' ? 'document' : 'image',
+            text: source.name,
+            documentMime: source.kind === 'pdf' ? 'application/pdf' : undefined,
+            x: 0,
+            y: 0,
+            width: 1,
+            height: 1,
+            z: 0,
+          }))
+        : target
+          ? [target]
+          : [];
+      const converted: CanvasObject[] = [];
+      for (const object of [...sources, ...incoming]) {
+        signal.throwIfAborted();
+        if (
+          object.type === 'document' &&
+          documentKind(object.text || '', object.documentMime) !== 'pdf'
+        )
+          setComposerProgress(`Converting ${object.text || 'document'}…`);
+        if (needsOfficeConversion(object)) {
+          if (!window.canvas) throw Error('Office conversion is available in the desktop app.');
+          const asset = await window.canvas.convertOffice({
+            id: object.assetId!,
+            name: object.text || 'Document',
+          });
+          signal.throwIfAborted();
+          converted.push({
+            ...object,
+            assetId: asset.id,
+            documentMime: 'application/pdf',
+            documentBytes: asset.bytes,
+            documentPreviewId: undefined,
+            documentPageCount: undefined,
+            documentExcerpt: undefined,
+          });
+        } else converted.push(...(await convertComposerInputs([object], signal)));
+      }
+      setComposerProgress('Preparing page previews…');
+      const prepared = await prepareComposerSources(converted, signal);
+      signal.throwIfAborted();
+      if (!alive.current || engine.current !== e) return;
+      const current = targetId ? e.objects.get(targetId) : undefined;
+      if (
+        targetId &&
+        (!current || current.assetId !== target?.assetId || !!current.pdfComposer !== !!existing)
+      )
+        throw Error('The PDF target changed. Please drop the files again.');
+      let frame: CanvasObject;
+      if (current?.pdfComposer) {
+        frame = {
+          ...current,
+          pdfComposer: appendPdfComposer(current.pdfComposer, prepared.slice(sources.length)),
+        };
+      } else {
+        const anchor = current || incoming[0];
+        frame = {
+          id: uid(),
+          type: 'frame',
+          x: anchor.x,
+          y: anchor.y,
+          width: Math.max(480, Math.min(880, prepared.length * 216 + 32)),
+          height: 520,
+          z: e.topZ() + 1,
+          text: 'PDF workspace',
+          pdfComposer: createPdfComposer(prepared),
+        };
+      }
+      e.apply({ upserts: [frame], deleted: [] });
+      e.setSelection([frame.id]);
+      setEditingComposerId(frame.id);
+    });
+  }
+  function composerFiles(id: string, files: File[]) {
+    return addToComposer(id, async () => {
+      if (!files.every(convertibleFile))
+        throw Error('Drop convertible documents or images into this workspace.');
+      const assets = await importFiles(files);
+      return assets.map(
+        (asset) =>
+          ({
+            id: uid(),
+            type: asset.mime.startsWith('image/') ? 'image' : 'document',
+            assetId: asset.id,
+            text: asset.name,
+            documentMime: asset.mime,
+            documentBytes: asset.bytes,
+            x: 0,
+            y: 0,
+            width: 320,
+            height: 400,
+            z: 0,
+          }) as CanvasObject,
+      );
+    });
+  }
+  function exportComposer(id: string, columnId: string) {
+    return composerTask(async (e, signal) => {
+      setComposerProgress('Creating PDF…');
+      const composer = e.objects.get(id)?.pdfComposer;
+      if (!composer) throw Error('The PDF workspace was removed.');
+      const result = await exportComposerColumn(composer, columnId, signal);
+      signal.throwIfAborted();
+      const asset = await invoke<Asset>('importAsset', { name: result.name, bytes: result.bytes });
+      signal.throwIfAborted();
+      setComposerProgress('Choose where to save your PDF…');
+      await downloadAsset(asset.id, result.name);
+    });
+  }
   function removeImageBackground(object: CanvasObject) {
     const currentEngine = engine.current;
     if (!currentEngine || !object.assetId || backgroundJob.current || external.current) return;
@@ -1056,6 +1239,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     if (editingSession.current) finishEdit();
     if (cropSession.current) finishCrop();
     await Promise.all([...imports.current]);
+    await composerTail.current;
     await backgroundJob.current;
     // A cut commits its deletion only after the clipboard write succeeds.
     // Finish that mutation before board switching or close flushes saved edits.
@@ -1335,10 +1519,16 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   }, []);
   async function drop(e: React.DragEvent) {
     e.preventDefault();
+    setPdfDropTarget(null);
     const files = [...e.dataTransfer.files];
     if (!files.length) return;
     const r = host.current!.getBoundingClientRect(),
       point = engine.current!.screenPoint({ x: e.clientX - r.left, y: e.clientY - r.top });
+    const target = pdfComposerTargetAt(engine.current!.all, point);
+    if (target && files.every(convertibleFile)) {
+      await composerFiles(target.id, files).catch(error);
+      return;
+    }
     await performImport(() => importFiles(files), point);
   }
   function startExport(format: ExportFormat, quality: ExportQuality) {
@@ -1475,7 +1665,17 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
                   },
                 },
               ]
-            : []),
+            : isPdfComposerInput(selected[0])
+              ? [
+                  {
+                    label: 'Convert to PDF',
+                    icon: <FileText />,
+                    action: () => {
+                      void addToComposer(null, () => Promise.resolve(selected)).catch(error);
+                    },
+                  },
+                ]
+              : []),
           {
             label: 'Download',
             icon: <Download />,
@@ -1528,18 +1728,13 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           null,
         ]
       : []),
-    ...(selected.length > 1 &&
-    selected.every(
-      (o) =>
-        o.type === 'image' ||
-        (o.type === 'document' && documentKind(o.text || '', o.documentMime) === 'pdf'),
-    )
+    ...(selected.length > 1 && selected.every(isPdfComposerInput)
       ? [
           {
             label: selected.every((o) => o.type === 'image') ? 'Convert to PDF' : 'Combine PDFs',
             icon: <Files />,
             action: () => {
-              void openPdfWorkspace(selected, 'edit').catch(error);
+              void addToComposer(null, () => Promise.resolve(selected)).catch(error);
             },
           },
           null,
@@ -1612,6 +1807,14 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           if (e.dataTransfer.types.includes('Files')) {
             e.preventDefault();
             const r = e.currentTarget.getBoundingClientRect();
+            const canvas = engine.current;
+            if (canvas)
+              setPdfDropTarget(
+                pdfComposerTargetAt(
+                  canvas.all,
+                  canvas.screenPoint({ x: e.clientX - r.left, y: e.clientY - r.top }),
+                ),
+              );
             hoverImage(
               engine.current?.galleryImageAt({ x: e.clientX - r.left, y: e.clientY - r.top }) ||
                 null,
@@ -1619,8 +1822,54 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           }
         }}
         onDrop={drop}
+        onDragLeave={() => setPdfDropTarget(null)}
       />
       {!ready && <div className="canvas-loading">Opening canvas…</div>}
+      {pdfDropTarget &&
+        (() => {
+          const origin = localToWorld(pdfDropTarget, { x: 0, y: 0 });
+          return (
+            <div
+              className="pdf-composer-drop-target"
+              style={{
+                position: 'absolute',
+                pointerEvents: 'none',
+                left: origin.x * camera.zoom + camera.x,
+                top: origin.y * camera.zoom + camera.y,
+                width: pdfDropTarget.width,
+                height: pdfDropTarget.height,
+                transformOrigin: '0 0',
+                transform: `scale(${camera.zoom}) rotate(${pdfDropTarget.rotation || 0}deg)`,
+              }}
+            >
+              <ListEditOutline width={pdfDropTarget.width} height={pdfDropTarget.height} />
+            </div>
+          );
+        })()}
+      <CanvasPdfComposers
+        objects={composerView.objects}
+        camera={composerView.camera}
+        selectedIds={selected.map((o) => o.id)}
+        editingId={editingComposerId}
+        onEdit={setEditingComposerId}
+        interactive={tool === 'select'}
+        onSelect={(id) => {
+          finishEdit();
+          engine.current?.setSelection([id]);
+        }}
+        onUpdate={(object) => {
+          const e = engine.current,
+            current = e?.objects.get(object.id);
+          if (e && current?.pdfComposer && !external.current)
+            e.apply({ upserts: [{ ...current, pdfComposer: object.pdfComposer }], deleted: [] });
+        }}
+        onPointerDown={(event) => engine.current?.beginOverlayPointer(event.nativeEvent)}
+        onFiles={composerFiles}
+        onExport={exportComposer}
+        onUndo={() => engine.current?.undo()}
+        onRedo={() => engine.current?.redo()}
+        onError={error}
+      />
       <CanvasLists
         view={listView}
         editingId={editingListId}
@@ -1698,11 +1947,34 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       )}
       {(busy > 0 || copying || removingBackground) && (
         <div className="import-status" role="status">
-          {removingBackground
-            ? 'Removing background…'
-            : copying
-              ? 'Copying to clipboard…'
-              : 'Importing files…'}
+          <span>
+            {removingBackground
+              ? 'Removing background…'
+              : copying
+                ? 'Copying to clipboard…'
+                : officeProgress || composerProgress || 'Importing files…'}
+          </span>
+          <div
+            className="import-progress-track"
+            role="progressbar"
+            aria-label="File operation progress"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={
+              officeProgress.match(/(\d+)%/)
+                ? Number(officeProgress.match(/(\d+)%/)![1])
+                : undefined
+            }
+            data-indeterminate={!officeProgress.match(/(\d+)%/) || undefined}
+          >
+            <span
+              style={
+                officeProgress.match(/(\d+)%/)
+                  ? { width: `${officeProgress.match(/(\d+)%/)![1]}%` }
+                  : undefined
+              }
+            />
+          </div>
         </div>
       )}
       {hoverImageId &&

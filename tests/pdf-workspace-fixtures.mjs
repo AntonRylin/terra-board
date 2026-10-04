@@ -6,9 +6,11 @@ import {
   PDFRawStream,
   StandardFonts,
   decodePDFRawStream,
+  degrees,
   rgb,
 } from 'pdf-lib';
 import sharp from 'sharp';
+import { simpleDocx } from './document-fixtures.mjs';
 
 const sourcePages = [
   { marker: 'WORKSPACE SOURCE ALPHA', width: 600, height: 800, color: [0.88, 0.16, 0.22] },
@@ -17,6 +19,13 @@ const sourcePages = [
 const mergePages = [
   { marker: 'WORKSPACE MERGE GAMMA', width: 700, height: 500, color: [0.13, 0.65, 0.27] },
   { marker: 'WORKSPACE MERGE DELTA', width: 420, height: 660, color: [0.1, 0.67, 0.74] },
+];
+const composerPages = [
+  { marker: 'COMPOSER EPSILON', width: 500, height: 700, rotation: 90, color: [0.73, 0.21, 0.61] },
+  { marker: 'COMPOSER ZETA', width: 360, height: 540, rotation: 180, color: [0.76, 0.49, 0.12] },
+];
+const externalPages = [
+  { marker: 'COMPOSER ETA', width: 300, height: 600, rotation: 270, color: [0.31, 0.26, 0.65] },
 ];
 
 async function vectorPdf(pages) {
@@ -27,6 +36,7 @@ async function vectorPdf(pages) {
   const font = await document.embedFont(StandardFonts.Helvetica);
   for (const [index, fixture] of pages.entries()) {
     const page = document.addPage([fixture.width, fixture.height]);
+    if (fixture.rotation) page.setRotation(degrees(fixture.rotation));
     page.drawRectangle({
       x: 32,
       y: fixture.height * 0.54,
@@ -149,7 +159,7 @@ export async function inspectPdfPages(bytes) {
       .map((stream) => Buffer.from(decodePDFRawStream(stream).decode()).toString('latin1'))
       .join('\n');
     const marker =
-      [...sourcePages, ...mergePages].find(
+      [...sourcePages, ...mergePages, ...composerPages, ...externalPages].find(
         (fixture) =>
           decoded
             .toUpperCase()
@@ -158,4 +168,58 @@ export async function inspectPdfPages(bytes) {
       )?.marker || null;
     return { ...page.getSize(), rotation: ((page.getRotation().angle % 360) + 360) % 360, marker };
   });
+}
+
+export async function pdfComposerFixtures(officeFixtures = []) {
+  const { source, merge, png, jpg, malformed } = await pdfWorkspaceFixtures();
+  return {
+    source,
+    merge,
+    png,
+    jpg,
+    malformed,
+    rotated: {
+      name: 'Rotated reference.pdf',
+      bytes: await vectorPdf(composerPages),
+      pages: composerPages,
+    },
+    external: {
+      name: 'External reference.pdf',
+      bytes: await vectorPdf(externalPages),
+      pages: externalPages,
+    },
+    unsupported: {
+      name: 'Unsupported attachment.bin',
+      bytes: Buffer.from([0, 255, 12, 31, 128, 0, 42]),
+    },
+    docx: {
+      name: 'Composer notes.v2.docx',
+      bytes: simpleDocx(),
+      textMarkers: ['Terra DOCX fixture', 'Original formatting and downloadable bytes.'],
+    },
+    text: {
+      name: 'Composer long notes.txt',
+      bytes: Buffer.from(
+        [
+          'COMPOSER TEXT FIRST — café, 日本語, Україна',
+          ...Array.from(
+            { length: 180 },
+            (_, index) =>
+              `COMPOSER LINE ${String(index + 1).padStart(3, '0')} — Local documents keep their complete text.`,
+          ),
+          'COMPOSER TEXT LAST — all 180 lines are preserved.',
+        ].join('\n'),
+      ),
+      textMarkers: ['COMPOSER TEXT FIRST', 'COMPOSER LINE 090', 'COMPOSER TEXT LAST'],
+      multipage: true,
+    },
+    html: {
+      name: 'Composer outline.html',
+      bytes: Buffer.from(
+        '<!doctype html><html><head><meta charset="utf-8"><title>Composer HTML</title></head><body><h1>COMPOSER HTML FIRST</h1><p>Offline formatted content — café.</p><p>COMPOSER HTML LAST</p></body></html>',
+      ),
+      textMarkers: ['COMPOSER HTML FIRST', 'COMPOSER HTML LAST'],
+    },
+    ...Object.fromEntries(officeFixtures.map((fixture, index) => [`office${index}`, fixture])),
+  };
 }

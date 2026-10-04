@@ -56,6 +56,73 @@ function cameraValue(c) {
     throw Error('Invalid camera');
   return { x: c.x, y: c.y, zoom: c.zoom };
 }
+function pdfComposerValue(value) {
+  if (!value || !Array.isArray(value.sources) || !Array.isArray(value.columns))
+    throw Error('Invalid PDF composer sources or columns');
+  if (value.sources.length > 500 || value.columns.length > 500)
+    throw Error('PDF composers are limited to 500 sources and 500 columns');
+  const ids = new Set();
+  const claim = (value) => {
+    const id = idValue(value);
+    if (ids.has(id)) throw Error('PDF composer identifiers must be unique');
+    ids.add(id);
+    return id;
+  };
+  const validName = (name) => typeof name === 'string' && name.length <= 100000;
+  const sources = value.sources.map((source) => {
+    if (
+      !source ||
+      typeof source.assetId !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(source.assetId) ||
+      !validName(source.name) ||
+      !['pdf', 'image'].includes(source.kind) ||
+      !Number.isInteger(source.pageCount) ||
+      source.pageCount < 1 ||
+      source.pageCount > 500
+    )
+      throw Error('Invalid PDF composer source');
+    return {
+      id: claim(source.id),
+      assetId: source.assetId,
+      name: source.name,
+      kind: source.kind,
+      pageCount: source.pageCount,
+    };
+  });
+  const byId = new Map(sources.map((source) => [source.id, source]));
+  let count = 0;
+  const columns = value.columns.map((column) => {
+    if (!column || !validName(column.name) || !Array.isArray(column.pages))
+      throw Error('Invalid PDF composer column');
+    const id = claim(column.id);
+    count += column.pages.length;
+    if (count > 500) throw Error('PDF composers are limited to 500 page references');
+    const pages = column.pages.map((page) => {
+      if (!page) throw Error('Invalid PDF composer page');
+      const id = claim(page.id),
+        source = byId.get(page.sourceId);
+      if (
+        !source ||
+        !Number.isInteger(page.pageIndex) ||
+        page.pageIndex < 0 ||
+        page.pageIndex >= source.pageCount
+      )
+        throw Error('PDF composer page must reference an existing source page');
+      if (!Number.isSafeInteger(page.rotation) || page.rotation % 90 !== 0)
+        throw Error('Invalid PDF composer page rotation');
+      return { id, sourceId: source.id, pageIndex: page.pageIndex, rotation: page.rotation };
+    });
+    return { id, name: column.name, pages };
+  });
+  return { sources, columns };
+}
+const objectAssetIds = (object) =>
+  [
+    object.assetId,
+    object.linkIconId,
+    object.documentPreviewId,
+    ...(object.pdfComposer?.sources.map((source) => source.assetId) || []),
+  ].filter(Boolean);
 function objectValue(o) {
   if (
     !o ||
@@ -76,6 +143,11 @@ function objectValue(o) {
     height: o.height,
     z: o.z,
   };
+  if (o.pdfComposer !== undefined) {
+    if (o.type !== 'frame' || o.gallery !== undefined)
+      throw Error('PDF composers must be non-gallery frames');
+    result.pdfComposer = pdfComposerValue(o.pdfComposer);
+  }
   if (o.type === 'arrow') {
     const a = o.arrow;
     if (
@@ -493,7 +565,9 @@ class Store {
         json_extract(o.json, '$.documentExcerpt') AS documentExcerpt,
         json_extract(o.json, '$.url') AS url,
         json_extract(o.json, '$.linkDescription') AS linkDescription,
-        (SELECT group_concat(json_extract(value, '$.text'), ' ') FROM json_each(o.json, '$.items')) AS listText
+        (SELECT group_concat(json_extract(value, '$.text'), ' ') FROM json_each(o.json, '$.items')) AS listText,
+        (SELECT group_concat(json_extract(value, '$.name'), ' ') FROM json_each(o.json, '$.pdfComposer.columns')) AS composerColumns,
+        (SELECT group_concat(json_extract(value, '$.name'), ' ') FROM json_each(o.json, '$.pdfComposer.sources')) AS composerSources
       FROM boards b JOIN objects o ON o.boardId = b.id
       WHERE b.trashed = 0 AND (
         search_contains(json_extract(o.json, '$.text'), ?) OR
@@ -502,11 +576,13 @@ class Store {
         search_contains(json_extract(o.json, '$.documentExcerpt'), ?) OR
         search_contains(json_extract(o.json, '$.url'), ?) OR
         search_contains(json_extract(o.json, '$.linkDescription'), ?) OR
-        EXISTS (SELECT 1 FROM json_each(o.json, '$.items') WHERE search_contains(json_extract(value, '$.text'), ?)))
+        EXISTS (SELECT 1 FROM json_each(o.json, '$.items') WHERE search_contains(json_extract(value, '$.text'), ?)) OR
+        EXISTS (SELECT 1 FROM json_each(o.json, '$.pdfComposer.columns') WHERE search_contains(json_extract(value, '$.name'), ?)) OR
+        EXISTS (SELECT 1 FROM json_each(o.json, '$.pdfComposer.sources') WHERE search_contains(json_extract(value, '$.name'), ?)))
       ORDER BY b.position, b.id, o.id LIMIT 61
     `,
       )
-      .all(needle, needle, needle, needle, needle, needle, needle);
+      .all(needle, needle, needle, needle, needle, needle, needle, needle, needle);
     return {
       results: rows.slice(0, 60).map((row) => {
         const text = [
@@ -517,6 +593,8 @@ class Store {
           row.url,
           row.linkDescription,
           row.listText,
+          row.composerColumns,
+          row.composerSources,
         ]
           .map(searchText)
           .find((value) => value.toLowerCase().includes(needle));
@@ -567,6 +645,8 @@ class Store {
       if (o.linkIconId && !findAsset.get(o.linkIconId)) throw Error('Missing site icon');
       if (o.documentPreviewId && !findAsset.get(o.documentPreviewId)?.mime.startsWith('image/'))
         throw Error('Missing document preview image asset');
+      for (const source of o.pdfComposer?.sources || [])
+        if (!findAsset.get(source.assetId)) throw Error('Missing PDF composer source asset');
     }
     return this.transaction(() => {
       if (operationId) {
@@ -843,13 +923,11 @@ class Store {
     const d = this.loadBoard({ id }),
       ids = [
         ...new Set(
-          [
-            iconAssetId(d.board.icon),
-            ...d.objects.flatMap((o) => [o.assetId, o.linkIconId, o.documentPreviewId]),
-          ].filter(Boolean),
+          [iconAssetId(d.board.icon), ...d.objects.flatMap(objectAssetIds)].filter(Boolean),
         ),
       ],
       assets = ids.map((id) => this.db.prepare('SELECT * FROM assets WHERE id=?').get(id));
+    if (assets.some((asset) => !asset)) throw Error('Missing media asset in board export');
     if (assets.reduce((n, a) => n + a.bytes, 0) > MAX_PACKAGE)
       throw Error('Portable exports are limited to 512 MB in this version');
     const files = {
@@ -927,12 +1005,7 @@ class Store {
     }
     if (
       (iconAssetId(m.icon) && !assetIds.has(iconAssetId(m.icon))) ||
-      objects.some(
-        (o) =>
-          (o.assetId && !assetIds.has(o.assetId)) ||
-          (o.linkIconId && !assetIds.has(o.linkIconId)) ||
-          (o.documentPreviewId && !assetIds.has(o.documentPreviewId)),
-      )
+      objects.some((o) => objectAssetIds(o).some((id) => !assetIds.has(id)))
     )
       throw Error('Missing media in portable board');
     if (new Set(objects.map((o) => o.id)).size !== objects.length)

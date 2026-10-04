@@ -1,0 +1,457 @@
+.canvas-pdf-composers {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.canvas-pdf-composer {
+  position: absolute;
+  transform-origin: 0 0;
+  pointer-events: auto;
+  border: 1px solid rgb(255 255 255 / 0.6);
+  border-radius: 20px;
+  box-sizing: border-box;
+  color: var(--text, #29313b);
+  outline: none;
+}
+.canvas-pdf-composers[data-interactive='false'] .canvas-pdf-composer {
+  pointer-events: none;
+}
+.canvas-pdf-composer[data-selected='true'] {
+  border-color: #4486d9;
+}
+.canvas-pdf-composer[data-editing='true'] {
+  border-color: transparent;
+}
+.pdf-composer-content {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  border-radius: inherit;
+  animation: pdf-composer-enter 180ms ease-out;
+}
+.canvas-pdf-composer[data-drag-files='true'] .pdf-composer-content {
+  background: rgb(68 134 217 / 0.1);
+}
+.pdf-composer-header {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 47px;
+  padding: 8px 12px;
+  flex-shrink: 0;
+  cursor: grab;
+}
+.pdf-composer-progress {
+  position: absolute;
+  z-index: 7;
+  top: 45px;
+  left: 14px;
+  right: 14px;
+  height: 2px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: rgb(110 143 171 / 0.15);
+  pointer-events: none;
+}
+.pdf-composer-progress span {
+  display: block;
+  width: 36%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent, #779bba);
+  animation: pdf-composer-progress 1400ms cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+.pdf-composer-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 500;
+  user-select: none;
+}
+.pdf-composer-action,
+.pdf-composer-column-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 0;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+.pdf-composer-action:hover,
+.pdf-composer-column-handle:hover {
+  background: rgb(130 150 170 / 0.14);
+}
+.pdf-composer-action:focus-visible,
+.pdf-composer-column-handle:focus-visible,
+.pdf-composer-page:focus-visible {
+  outline: 2px solid #4486d9;
+  outline-offset: 2px;
+}
+.pdf-composer-action:disabled,
+.pdf-composer-column-handle:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+.pdf-composer-action[data-tooltip] {
+  position: relative;
+}
+.pdf-composer-action[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 6px);
+  right: 0;
+  white-space: nowrap;
+  background: #273647;
+  color: #fff;
+  padding: 5px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.4;
+  pointer-events: none;
+  visibility: hidden;
+}
+.pdf-composer-action[data-tooltip]:hover::after {
+  visibility: visible;
+  transition: visibility 0s 400ms;
+}
+.pdf-composer-columns {
+  display: flex;
+  align-items: stretch;
+  flex: 1;
+  min-height: 0;
+  gap: 14px;
+  padding: 3px 14px 14px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.pdf-composer-column {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 192px;
+  min-width: 0;
+  border-radius: 13px;
+  background: rgb(255 255 255 / 0.35);
+  border: 1px solid rgb(120 144 167 / 0.13);
+  transition:
+    background 140ms,
+    opacity 140ms;
+}
+.pdf-composer-column-header {
+  display: flex;
+  align-items: center;
+  height: 37px;
+  padding: 5px 5px 0 3px;
+  gap: 1px;
+  flex-shrink: 0;
+}
+.pdf-composer-column-handle {
+  width: 21px;
+  cursor: grab;
+  opacity: 0.5;
+  touch-action: none;
+}
+.pdf-composer-column-header input {
+  flex: 1;
+  min-width: 0;
+  width: 0;
+  padding: 4px 1px;
+  background: transparent;
+  color: inherit;
+  border: 0;
+  box-shadow: none;
+  font: inherit;
+  font-size: 12px;
+  text-overflow: ellipsis;
+}
+.pdf-composer-column-header input:focus {
+  outline: none;
+  box-shadow: inset 0 -1px #4486d9;
+}
+.pdf-composer-export {
+  width: 24px;
+  height: 26px;
+  opacity: 0;
+}
+.pdf-composer-column:hover .pdf-composer-export,
+.pdf-composer-column:focus-within .pdf-composer-export {
+  opacity: 0.8;
+}
+.pdf-composer-column-meta {
+  padding: 0 12px 7px 25px;
+  font-size: 10px;
+  color: var(--muted);
+  flex-shrink: 0;
+  user-select: none;
+}
+.pdf-composer-pages {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  min-height: 0;
+  padding: 7px 9px 15px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  overscroll-behavior: contain;
+}
+.pdf-composer-page,
+.pdf-composer-motion-page {
+  position: relative;
+  flex-shrink: 0;
+  width: 162px;
+  height: 202px;
+  padding: 18px 6px 6px;
+  border: 1px solid rgb(124 140 158 / 0.25);
+  border-radius: 5px;
+  background: #fff;
+  box-shadow: 0 2px 9px rgb(24 39 58 / 0.12);
+  color: #607084;
+  cursor: grab;
+  touch-action: none;
+  text-align: center;
+  transition:
+    box-shadow 140ms,
+    opacity 140ms;
+}
+.pdf-composer-motion-page {
+  position: absolute;
+  z-index: 8;
+  margin: 0;
+  pointer-events: none;
+  transition: none;
+}
+.pdf-composer-page[data-motion-hidden='true'] {
+  opacity: 0 !important;
+  transition: none;
+}
+[data-layout-motion] {
+  will-change: transform;
+}
+.pdf-composer-page + .pdf-composer-page {
+  margin-top: -126px;
+}
+.pdf-composer-page[data-selected='true'] {
+  border-color: #4486d9;
+  box-shadow:
+    0 0 0 1px rgb(68 134 217 / 0.3),
+    0 2px 9px rgb(24 39 58 / 0.12);
+}
+.pdf-composer-page:hover,
+.pdf-composer-page:focus-visible {
+  box-shadow:
+    0 0 0 1px rgb(68 134 217 / 0.5),
+    0 3px 14px rgb(24 39 58 / 0.16);
+}
+.pdf-composer-page-number {
+  position: absolute;
+  left: 8px;
+  top: 5px;
+  font-size: 9px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.pdf-composer-preview,
+.pdf-composer-paper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.pdf-composer-paper canvas {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+}
+.pdf-composer-preview-error {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: #84909c;
+}
+.pdf-composer-preview-loading {
+  position: absolute;
+  inset: 14px 10px;
+  overflow: hidden;
+  border-radius: 2px;
+  background:
+    linear-gradient(#edf0f3, #edf0f3) 0 0 / 67% 8px no-repeat,
+    repeating-linear-gradient(to bottom, #f0f2f5 0 4px, transparent 4px 13px) 0 24px / 100% 65px
+      no-repeat;
+}
+.pdf-composer-preview-loading::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 15%, #ffffffbb 48%, transparent 80%);
+  transform: translateX(-100%);
+}
+.pdf-composer-preview[data-loading='true'] .pdf-composer-preview-loading::after {
+  animation: pdf-composer-shimmer 1600ms ease-in-out infinite;
+}
+.pdf-composer-empty {
+  display: flex;
+  flex: 1;
+  width: 100%;
+  min-height: 130px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 8px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 11px;
+  padding: 12px;
+}
+.pdf-composer-column[data-drop-target='true'] {
+  background: rgb(68 134 217 / 0.1);
+  border-color: rgb(68 134 217 / 0.45);
+}
+.pdf-composer-page[data-drop-target='true'] {
+  outline: 2px solid #4486d9;
+  outline-offset: 2px;
+}
+.pdf-composer-new-column[data-drop-target='true'] {
+  background: rgb(68 134 217 / 0.2);
+  outline: 2px solid #4486d9;
+}
+.pdf-composer-page[data-dragging='true'],
+.pdf-composer-column[data-dragging='true'] {
+  opacity: 0.4;
+}
+.pdf-composer-drag-preview {
+  position: fixed;
+  z-index: 1500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 14px;
+  max-width: 230px;
+  border-radius: 10px;
+  background: var(--paper);
+  color: var(--text);
+  box-shadow: 0 6px 28px #142c4433;
+  border: 1px solid var(--line);
+  pointer-events: none;
+  font-size: 12px;
+}
+.pdf-composer-drag-preview span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.pdf-composer-status {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  z-index: 5;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--paper);
+  color: #ba4141;
+  font-size: 12px;
+  box-shadow: 0 3px 15px #0001;
+}
+.pdf-composer-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.pdf-composer-spinner {
+  animation: pdf-composer-spin 900ms linear infinite;
+}
+[data-theme='dark'] .canvas-pdf-composer {
+  color: #e4ebf2;
+  border-color: rgb(210 228 245 / 0.18);
+}
+[data-theme='dark'] .canvas-pdf-composer[data-editing='true'] {
+  border-color: transparent;
+}
+[data-theme='dark'] .pdf-composer-column {
+  background: rgb(20 29 40 / 0.28);
+  border-color: rgb(210 228 245 / 0.1);
+}
+[data-theme='dark'] .pdf-composer-column[data-drop-target='true'] {
+  background: rgb(100 151 218 / 0.18);
+  border-color: #91b9ee;
+}
+[data-theme='dark'] .pdf-composer-status {
+  color: #f3a3a3;
+}
+@keyframes pdf-composer-enter {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes pdf-composer-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes pdf-composer-progress {
+  from {
+    transform: translateX(-105%);
+  }
+  to {
+    transform: translateX(285%);
+  }
+}
+@keyframes pdf-composer-shimmer {
+  to {
+    transform: translateX(100%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pdf-composer-content,
+  .pdf-composer-spinner,
+  .pdf-composer-progress span,
+  .pdf-composer-preview[data-loading='true'] .pdf-composer-preview-loading::after {
+    animation: none;
+  }
+  .pdf-composer-progress span {
+    width: 100%;
+    opacity: 0.55;
+  }
+  .pdf-composer-preview-loading::after {
+    display: none;
+  }
+  .pdf-composer-column,
+  .pdf-composer-page {
+    transition: none;
+  }
+}

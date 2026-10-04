@@ -21,6 +21,28 @@ export interface ImageCrop {
   width: number;
   height: number;
 }
+export interface PdfComposerSource {
+  id: string;
+  assetId: string;
+  name: string;
+  kind: 'pdf' | 'image';
+  pageCount: number;
+}
+export interface PdfComposerPage {
+  id: string;
+  sourceId: string;
+  pageIndex: number;
+  rotation: number;
+}
+export interface PdfComposerColumn {
+  id: string;
+  name: string;
+  pages: PdfComposerPage[];
+}
+export interface PdfComposer {
+  sources: PdfComposerSource[];
+  columns: PdfComposerColumn[];
+}
 export type ArrowHead = 'none' | 'arrow' | 'triangle' | 'open' | 'diamond' | 'circle';
 export interface ArrowStyle {
   points: { x: number; y: number }[];
@@ -33,6 +55,7 @@ export interface ArrowStyle {
 export interface CanvasObject {
   items?: ListItem[];
   gallery?: { direction: 'right' | 'below'; size: number; gap: number };
+  pdfComposer?: PdfComposer;
   galleryId?: string;
   galleryIndex?: number;
   galleryRow?: number;
