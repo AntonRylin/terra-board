@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState, type PointerEvent } from 'react';
-import { Bold, Check, Pencil, Plus, Strikethrough, X } from 'lucide-react';
+import { Check, Pencil, Plus, X } from 'lucide-react';
 import type { Camera, CanvasObject, ListItem } from '../model';
 import { uid } from '../model';
 import { localToWorld } from '../canvas/transform';
@@ -120,26 +120,6 @@ function ListCard({
           />
         ) : (
           <span className="canvas-list-name-space" />
-        )}
-        {editing && (
-          <>
-            <button
-              className="canvas-list-action"
-              aria-label="Bold list title"
-              aria-pressed={!!o.bold}
-              onClick={() => update({ ...o, bold: !o.bold })}
-            >
-              <Bold size={15} />
-            </button>
-            <button
-              className="canvas-list-action"
-              aria-label="Strikethrough list title"
-              aria-pressed={!!o.strikethrough}
-              onClick={() => update({ ...o, strikethrough: !o.strikethrough })}
-            >
-              <Strikethrough size={15} />
-            </button>
-          </>
         )}
         <button
           className="canvas-list-action"

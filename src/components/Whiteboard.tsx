@@ -353,7 +353,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         )
       : null;
   const canFormat = (o: CanvasObject) =>
-    ['text', 'note', 'rect', 'ellipse', 'frame', 'arrow'].includes(o.type) ||
+    ['text', 'note', 'rect', 'ellipse', 'frame', 'arrow', 'list'].includes(o.type) ||
     (o.type === 'image' && (!!o.imageTitle || editingSession.current?.object.id === o.id));
   const formattingSelection = (editingObject ? [editingObject] : selected).filter(canFormat);
   const toggleFormatting = (field: 'bold' | 'strikethrough') => {

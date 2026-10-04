@@ -55,6 +55,7 @@
   pointer-events: none;
 }
 .canvas-list input.canvas-list-name {
+  font-family: 'Segoe UI', sans-serif;
   font-size: 15px;
   font-weight: 600;
 }

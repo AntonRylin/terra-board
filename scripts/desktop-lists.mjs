@@ -192,8 +192,35 @@ try {
     );
   }
   await click('[aria-label="Edit list"]');
-  await click('[aria-label="Bold list title"]');
-  await click('[aria-label="Strikethrough list title"]');
+  assert.equal(
+    await read(`document.querySelectorAll('.canvas-list-header button').length`),
+    1,
+    'only edit control belongs inside the list',
+  );
+  await click('[aria-label="List name"]');
+  await read(`document.querySelector('[aria-label="List name"]').select()`);
+  await send('Input.insertText', { text: 'Formatting while typing' });
+  for (const [label, property, enabled, disabled] of [
+    ['Bold', 'fontWeight', '700', '400'],
+    ['Strikethrough', 'textDecorationLine', 'line-through', 'none'],
+  ]) {
+    for (const expected of [enabled, disabled, enabled]) {
+      await click('[aria-label="List name"]');
+      await read(`document.querySelector('[aria-label="List name"]').select()`);
+      await click(`.selection-tools [aria-label="${label}"]`);
+      await until(
+        () =>
+          read(
+            `getComputedStyle(document.querySelector('[aria-label="List name"]')).${property} === '${expected}'`,
+          ),
+        label + ' applies while title focused',
+      );
+      assert.equal(
+        await read(`document.querySelector('[aria-label="List name"]').value`),
+        'Formatting while typing',
+      );
+    }
+  }
   assert.equal(
     await read(`getComputedStyle(document.querySelector('[aria-label="List name"]')).fontWeight`),
     '700',
@@ -210,6 +237,23 @@ try {
     ),
     'none',
     'title format does not affect items',
+  );
+  assert.ok(
+    await read(`(() => {
+    const input = document.querySelector('[aria-label="List name"]');
+    const probe = document.createElement('span');
+    const style = getComputedStyle(input);
+    probe.textContent = 'Weekend away';
+    probe.style.cssText = 'position:absolute;white-space:pre;font-family:' + style.fontFamily + ';font-size:30px';
+    document.body.append(probe);
+    probe.style.fontWeight = '400';
+    const normal = probe.getBoundingClientRect().width;
+    probe.style.fontWeight = '700';
+    const bold = probe.getBoundingClientRect().width;
+    probe.remove();
+    return Math.abs(bold - normal) > 1;
+  })()`),
+    'bold title uses distinct bold glyphs, not only a computed weight',
   );
   await click('[aria-label="Remove item 2"]');
   await click('[aria-label="Remove item 1"]');
