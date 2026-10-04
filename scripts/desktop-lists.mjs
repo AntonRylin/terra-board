@@ -173,7 +173,44 @@ try {
     'plus is hidden outside edit mode',
   );
   assert.equal(await read(`!!document.querySelector('.canvas-list-grip')`), false, 'no drag dots');
+  await key('Escape');
+  for (const expected of ['true', 'false']) {
+    await click('.canvas-list-circle');
+    assert.equal(
+      await read(`document.querySelector('.canvas-list-circle').getAttribute('aria-checked')`),
+      expected,
+    );
+    assert.equal(
+      await read(`document.querySelector('.canvas-list').dataset.selected`),
+      'false',
+      'checkbox does not select list',
+    );
+    assert.equal(
+      await read(`document.querySelector('.canvas-list').dataset.editing`),
+      'false',
+      'checkbox does not start editing',
+    );
+  }
   await click('[aria-label="Edit list"]');
+  await click('[aria-label="Bold list title"]');
+  await click('[aria-label="Strikethrough list title"]');
+  assert.equal(
+    await read(`getComputedStyle(document.querySelector('[aria-label="List name"]')).fontWeight`),
+    '700',
+  );
+  assert.equal(
+    await read(
+      `getComputedStyle(document.querySelector('[aria-label="List name"]')).textDecorationLine`,
+    ),
+    'line-through',
+  );
+  assert.equal(
+    await read(
+      `getComputedStyle(document.querySelector('.canvas-list-row input')).textDecorationLine`,
+    ),
+    'none',
+    'title format does not affect items',
+  );
   await click('[aria-label="Remove item 2"]');
   await click('[aria-label="Remove item 1"]');
   await click('[aria-label="Add list item"]');
@@ -211,6 +248,8 @@ try {
     const o = (await state()).objects[0];
     return (
       o?.text === 'Weekend away' &&
+      o.bold &&
+      o.strikethrough &&
       o.items?.length === 2 &&
       o.items[1].text === 'Book the train' &&
       o.items[0].checked &&
@@ -299,6 +338,18 @@ try {
     'reload saved list',
   );
   assert.equal(await read(`document.querySelectorAll('.canvas-list-row').length`), 2);
+  assert.equal(
+    await read(`getComputedStyle(document.querySelector('[aria-label="List name"]')).fontWeight`),
+    '700',
+    'title bold survives reload',
+  );
+  assert.equal(
+    await read(
+      `getComputedStyle(document.querySelector('[aria-label="List name"]')).textDecorationLine`,
+    ),
+    'line-through',
+    'title strike survives reload',
+  );
   assert.equal(
     await read(`document.querySelector('.canvas-list-circle').getAttribute('aria-checked')`),
     'true',

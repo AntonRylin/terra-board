@@ -1235,8 +1235,16 @@ export class Engine {
         .stroke({ color: '#d7e0e7', width: 1 });
       container.addChild(g);
       const measure = document.createElement('canvas').getContext('2d')!;
-      const label = (value: string, x: number, y: number, size: number, checked = false) => {
-        measure.font = `${size}px Arial`;
+      const label = (
+        value: string,
+        x: number,
+        y: number,
+        size: number,
+        checked = false,
+        bold = false,
+        strike = checked,
+      ) => {
+        measure.font = `${bold ? 'bold' : 'normal'} ${size}px Arial`;
         const available = Math.max(1, Math.min(2048, o.width - x - 22));
         value = value.replace(/\s+/g, ' ');
         if (measure.measureText(value).width > available) {
@@ -1252,18 +1260,23 @@ export class Engine {
         const text = new Text({
           text: value,
           resolution,
-          style: { fontFamily: 'Arial', fontSize: size, fill: checked ? '#87928e' : '#29313b' },
+          style: {
+            fontFamily: 'Arial',
+            fontSize: size,
+            fontWeight: bold ? 'bold' : 'normal',
+            fill: checked ? '#87928e' : '#29313b',
+          },
         });
         text.position.set(x, y);
         const mask = new Graphics().rect(x, y, Math.max(1, o.width - x - 22), 32).fill('#ffffff');
         container.addChild(mask, text);
         text.mask = mask;
-        if (checked)
+        if (strike)
           g.moveTo(x, y + 10)
             .lineTo(Math.min(o.width - 22, x + text.width), y + 10)
             .stroke({ color: '#87928e', width: 1 });
       };
-      if (o.text) label(o.text, 51, 20, 15);
+      if (o.text) label(o.text, 51, 20, 15, false, o.bold, o.strikethrough);
       (o.items || []).forEach((item, i) => {
         const y = 72 + i * 44;
         if (y + 14 > o.height) return;

@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState, type PointerEvent } from 'react';
-import { Check, Pencil, Plus, X } from 'lucide-react';
+import { Bold, Check, Pencil, Plus, Strikethrough, X } from 'lucide-react';
 import type { Camera, CanvasObject, ListItem } from '../model';
 import { uid } from '../model';
 import { localToWorld } from '../canvas/transform';
@@ -106,6 +106,10 @@ function ListCard({
             maxLength={120}
             readOnly={!editing}
             tabIndex={editing ? 0 : -1}
+            style={{
+              fontWeight: o.bold ? 700 : 400,
+              textDecoration: o.strikethrough ? 'line-through' : 'none',
+            }}
             onChange={(event) => update({ ...o, text: event.target.value })}
             onKeyDown={(event) => {
               if (event.key === 'Enter' || event.key === 'Escape') {
@@ -116,6 +120,26 @@ function ListCard({
           />
         ) : (
           <span className="canvas-list-name-space" />
+        )}
+        {editing && (
+          <>
+            <button
+              className="canvas-list-action"
+              aria-label="Bold list title"
+              aria-pressed={!!o.bold}
+              onClick={() => update({ ...o, bold: !o.bold })}
+            >
+              <Bold size={15} />
+            </button>
+            <button
+              className="canvas-list-action"
+              aria-label="Strikethrough list title"
+              aria-pressed={!!o.strikethrough}
+              onClick={() => update({ ...o, strikethrough: !o.strikethrough })}
+            >
+              <Strikethrough size={15} />
+            </button>
+          </>
         )}
         <button
           className="canvas-list-action"
@@ -137,12 +161,16 @@ function ListCard({
               role="checkbox"
               aria-checked={item.checked}
               aria-label={item.text || `Item ${index + 1}`}
+              onPointerDown={(event) => {
+                if (event.button === 0) event.stopPropagation();
+              }}
               onClick={() =>
-                changeItems(
-                  items.map((row) =>
+                update({
+                  ...o,
+                  items: items.map((row) =>
                     row.id === item.id ? { ...row, checked: !row.checked } : row,
                   ),
-                )
+                })
               }
             >
               {item.checked && <Check size={13} strokeWidth={2.3} />}

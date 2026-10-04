@@ -92,6 +92,11 @@
   opacity: 1;
   background: rgb(130 150 170 / 0.12);
 }
+.canvas-list-action[aria-pressed='true'] {
+  opacity: 1;
+  color: var(--accent);
+  background: rgb(110 143 171 / 0.18);
+}
 .canvas-list-action:focus-visible,
 .canvas-list-circle:focus-visible {
   outline: 2px solid #779bba;
