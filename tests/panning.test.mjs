@@ -8,6 +8,32 @@ import ts from 'typescript';
 const require = createRequire(import.meta.url);
 import { localToWorld } from '../src/canvas/transform.ts';
 
+test('search focuses and selects an offscreen rotated item without changing its content', () => {
+  const f = fixture('frame');
+  const target = {
+    id: 'found',
+    type: 'note',
+    x: 12000,
+    y: -7000,
+    width: 260,
+    height: 180,
+    rotation: 40,
+    z: 1,
+    text: 'Found text',
+  };
+  f.engine.apply({ upserts: [target], deleted: [] });
+  const edits = f.edits.length;
+  assert.equal(f.engine.focusObject(target.id), true);
+  const c = f.engine.camera;
+  assert.ok(Math.abs((target.x + target.width / 2) * c.zoom + c.x - 500) < 1);
+  assert.ok(Math.abs((target.y + target.height / 2) * c.zoom + c.y - 350) < 1);
+  assert.deepEqual([...f.engine.selection], [target.id]);
+  assert.equal(f.engine.tool, 'select');
+  assert.equal(f.edits.length, edits, 'navigation creates no object edit');
+  assert.equal(f.engine.focusObject('removed'), false);
+  assert.deepEqual({ ...f.engine.camera }, { ...c }, 'missing results leave the camera alone');
+});
+
 test('all canvas object types snap during moves, clear guides on release, and undo once', () => {
   for (const type of [
     'image',
@@ -225,6 +251,14 @@ function fixture(tool = 'select') {
     if (id === 'pixi.js/unsafe-eval') return {};
     if (id === 'pixi.js') return { Application, Container: Empty, Graphics: Empty };
     if (id === './text-rendering') return {};
+    if (id === './night-lighting')
+      return {
+        NightLighting: class {
+          canvas = { after() {} };
+          draw() {}
+          destroy() {}
+        },
+      };
     if (id === './text-layout')
       return {
         // Pointer tests use a deterministic font measurement; packaged checks
@@ -282,6 +316,7 @@ function fixture(tool = 'select') {
       disconnect() {}
     },
     window: { addEventListener() {}, removeEventListener() {}, matchMedia: () => motion },
+    document: { documentElement: { dataset: { theme: 'light' } } },
     devicePixelRatio: 1,
     requestAnimationFrame: (cb) => {
       frames.set(++frameId, cb);

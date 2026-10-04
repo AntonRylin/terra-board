@@ -5,12 +5,14 @@ import { textPlacement } from './text-alignment';
 import { localViewport } from './transform';
 import { frameLabel, hasExternalLabel } from './frame-label';
 import { linkLayout, hasLinkImage } from './link-preview';
+import { nightInk } from '../appearance';
 
 export function renderLinkCaption(
   o: CanvasObject,
   resolution: number,
   region: { x: number; y: number; width: number; height: number },
   loading = false,
+  dark = false,
 ) {
   const compact = !hasLinkImage(o);
   const summary = compact && !!o.linkDescription?.trim();
@@ -52,14 +54,14 @@ export function renderLinkCaption(
     o.text || o.url || domain,
     summary ? 28 : compact ? o.height / scale / 2 - 5 : 22,
     14,
-    '#253040',
+    dark ? '#e4eaf2' : '#253040',
     600,
   );
   line(
     compact && loading ? 'Loading preview…' : domain,
     summary ? 46 : compact ? o.height / scale / 2 + 15 : 41,
     11,
-    '#8893a2',
+    dark ? '#a6b3c5' : '#8893a2',
   );
   if (summary) {
     ctx.font = `${13 * scale}px "Segoe UI", sans-serif`;
@@ -74,7 +76,12 @@ export function renderLinkCaption(
     }
     if (row) lines.push(row);
     for (let i = 0; i < Math.min(2, lines.length); i++)
-      line(lines[i] + (i === 1 && lines.length > 2 ? ' …' : ''), 72 + i * 18, 13, '#697586');
+      line(
+        lines[i] + (i === 1 && lines.length > 2 ? ' …' : ''),
+        72 + i * 18,
+        13,
+        dark ? '#a6b3c5' : '#697586',
+      );
   }
   const texture = new Texture({ source: new CanvasSource({ resource: canvas, resolution }) });
   const sprite = new Sprite(texture);
@@ -110,6 +117,7 @@ export function renderText(
   text: string,
   resolution: number,
   region: ReturnType<typeof textRegion>,
+  dark = false,
 ) {
   const { appearance: a, metrics } = textLayout(o, text);
   const placement = textPlacement(o, a, metrics.lines.length);
@@ -131,7 +139,7 @@ export function renderText(
   ctx.scale(resolution, resolution);
   ctx.translate(-left, -top);
   ctx.font = `${a.fontWeight} ${a.fontSize}px ${a.fontFamily}`;
-  ctx.fillStyle = a.color;
+  ctx.fillStyle = dark ? nightInk(o, a.color) : a.color;
   ctx.textAlign = centered ? 'center' : 'left';
   const font = ctx.measureText('Mg');
   const baseline =

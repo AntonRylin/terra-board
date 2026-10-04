@@ -108,14 +108,6 @@ p {
   user-select: none;
   overflow: hidden;
 }
-.launcher-top {
-  height: 62px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  flex-shrink: 0;
-}
 .launcher-scroll {
   position: relative;
   width: 100%;
@@ -161,6 +153,27 @@ p {
   justify-content: center;
   background: transparent;
   position: relative;
+  pointer-events: none;
+}
+/* Keep the spacious layout slots, but only the icon and a 4px surround
+   capture board gestures. The remaining glass belongs to panel dragging. */
+.launch-item::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  pointer-events: auto;
+}
+.launch-item:focus-visible {
+  outline: none;
+}
+.launch-item:focus-visible::after {
+  outline: 2px solid #619ee8;
+  outline-offset: 2px;
 }
 .folder-grid {
   position: relative;
@@ -293,18 +306,6 @@ body.reordering * {
 .mini.gray {
   background: #a4afba;
 }
-.launcher-footer {
-  width: 100%;
-  padding: 13px 0 14px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-.launcher-footer > button {
-  flex-shrink: 0;
-}
 .launcher-create {
   width: 100%;
   height: 66px;
@@ -363,10 +364,6 @@ body.reordering * {
 .app-shell[data-dock='bottom'] .workspace {
   inset: 0 0 72px;
 }
-.app-shell:is([data-dock='top'], [data-dock='bottom']) .launcher-top {
-  width: 62px;
-  height: 100%;
-}
 .app-shell:is([data-dock='top'], [data-dock='bottom']) .launcher-scroll {
   display: flex;
   width: auto;
@@ -381,13 +378,6 @@ body.reordering * {
   height: 100%;
   flex-shrink: 0;
 }
-.app-shell:is([data-dock='top'], [data-dock='bottom']) .launcher-footer {
-  flex-direction: row;
-  width: auto;
-  height: 100%;
-  align-items: center;
-  padding: 0 14px 0 13px;
-}
 .app-shell:is([data-dock='top'], [data-dock='bottom']) .launch-item::before {
   width: 14px;
   height: 3px;
@@ -399,12 +389,6 @@ body.reordering * {
   top: auto;
   bottom: 0;
   border-radius: 3px 3px 0 0;
-}
-/* Equal end controls keep the centered group aligned with the workspace. */
-.launcher[data-centered='true'] .launcher-top,
-.launcher[data-centered='true'] .launcher-footer {
-  flex-basis: 62px;
-  padding: 0;
 }
 .launcher[data-centered='true'] .launcher-scroll {
   display: flex;
@@ -499,6 +483,35 @@ body.reordering * {
 .board-header > .board-identity,
 .board-header > button {
   pointer-events: auto;
+}
+.fullscreen-toggle {
+  position: absolute;
+  top: 13px;
+  right: 16px;
+  z-index: 6;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  opacity: 0.65;
+}
+.fullscreen-toggle:hover,
+.fullscreen-toggle:focus-visible {
+  opacity: 1;
+}
+.app-shell[data-dock='right']:not([data-panel-hidden]) .fullscreen-toggle {
+  right: 86px;
+}
+.app-shell[data-dock='top']:not([data-panel-hidden]) .fullscreen-toggle {
+  top: 85px;
+}
+.app-shell[data-dock]:not([data-panel-hidden]) .fullscreen-toggle[data-fits-beside-panel='true'] {
+  top: 13px;
+  right: 16px;
 }
 .board-identity {
   display: flex;
@@ -1048,6 +1061,61 @@ body.reordering * {
   color: var(--muted);
   margin-top: 4px;
   font-size: 11px;
+}
+.search-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 7px 7px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.modal:has(.library-search) {
+  width: 560px;
+}
+.library-search .search-results {
+  max-height: min(460px, 60vh);
+}
+.search-section-title:first-child {
+  margin-top: 6px;
+}
+.search-section-title span {
+  font-weight: 400;
+  opacity: 0.75;
+}
+.search-result-copy {
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.search-content-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 34px;
+  height: 34px;
+  color: var(--muted);
+}
+.search-results > .content-search-result {
+  align-items: flex-start;
+  padding-block: 11px;
+}
+.search-excerpt {
+  display: block;
+  font-size: 13px;
+  line-height: 1.55;
+}
+.search-excerpt mark {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: inherit;
+  border-radius: 3px;
+  font-weight: 600;
+}
+.search-status {
+  color: var(--muted);
+  margin: 12px 7px;
+  font-size: 12px;
+  line-height: 1.6;
 }
 .trash-list > div {
   display: flex;
@@ -2268,11 +2336,10 @@ kbd {
   color: #377bc5;
 }
 .mcp-heading h3 {
-  margin: 0 0 4px;
+  margin: 0;
   font-size: 18px;
   font-weight: 600;
 }
-.mcp-heading p,
 .mcp-access p {
   margin: 0;
   color: var(--muted);
@@ -2369,35 +2436,25 @@ kbd {
   display: grid;
   gap: 10px;
 }
-.mcp-clients details {
+.mcp-client {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
   border: 1px solid var(--line);
   border-radius: 14px;
-  padding: 14px;
+  padding: 12px 14px;
 }
-.mcp-clients summary {
-  cursor: pointer;
+.mcp-client strong {
   font-weight: 600;
 }
-.mcp-clients p {
+.mcp-client p {
+  margin: 2px 0 0;
   font-size: 12px;
-  line-height: 1.5;
   color: var(--muted);
 }
-.mcp-clients textarea {
-  display: block;
-  resize: vertical;
-  box-sizing: border-box;
-  width: 100%;
-  max-height: 220px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 10px;
-  background: #f8fafc;
-  font:
-    11px/1.6 Consolas,
-    monospace;
-  color: #4a5667;
-  margin-bottom: 10px;
+.mcp-client .button {
+  flex: none;
 }
 
 .settings-page {

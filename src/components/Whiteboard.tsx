@@ -1,4 +1,5 @@
 import ArrowControls from './ArrowControls';
+import { useZoomControlSpace } from './useZoomControlSpace';
 import {
   forwardRef,
   useEffect,
@@ -82,6 +83,7 @@ import { boundsOf, type Bounds } from '../canvas/geometry';
 import { encodeExport, type ExportFormat } from '../canvas/export-format';
 import type { ExportScope, ExportQuality } from '../canvas/export-plan';
 import ExportControls, { type ExportProgress, type ExportResult } from './ExportControls';
+import { nightInk, type ResolvedTheme } from '../appearance';
 export interface WhiteboardHandle {
   prepareExternal: () => Promise<void>;
   finishExternal: (doc?: Document) => void;
@@ -90,6 +92,8 @@ export interface WhiteboardHandle {
   fit: () => void;
 }
 interface Props {
+  searchTarget: { objectId: string } | null;
+  theme: ResolvedTheme;
   document: Document;
   onSave: (state: SaveState, message?: string) => void;
   onError: (message: string) => void;
@@ -106,7 +110,7 @@ const tools: { id: Tool; label: string; icon: typeof Type; key: string }[] = [
 ];
 const colors = ['#f8efd4', '#e4eee8', '#e4ecfa', '#efe5f1', '#f4e4e5', '#ffffff', '#000000'];
 const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
-  { document: doc, onSave, onError },
+  { document: doc, onSave, onError, theme, searchTarget },
   ref,
 ) {
   const external = useRef(false);
@@ -134,6 +138,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     imports = useRef(new Set<Promise<void>>());
   const cropSession = useRef<{ object: CanvasObject; crop: CropBounds } | null>(null);
   const toolsRef = useRef<HTMLDivElement>(null);
+  const zoomControls = useZoomControlSpace();
   const galleryHintRef = useRef<HTMLDivElement>(null);
   const galleryTargetsRef = useRef<HTMLDivElement>(null);
   const galleryTarget = useRef<GalleryTarget | null>(null);
@@ -606,6 +611,11 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   useLayoutEffect(() => {
     engine.current?.setEditingPreview(editingObject);
   }, [editingObject]);
+  useEffect(() => {
+    if (!ready || !searchTarget) return;
+    if (!engine.current?.focusObject(searchTarget.objectId))
+      onError('This item is no longer on the board.');
+  }, [ready, searchTarget]);
   useLayoutEffect(() => {
     const el = toolsRef.current;
     if (!el) return;
@@ -1623,7 +1633,10 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             fontFamily: editingAppearance.fontFamily,
             fontWeight: editingAppearance.fontWeight,
             textDecoration: editing.strikethrough ? 'line-through' : 'none',
-            color: editingAppearance.color,
+            color:
+              theme === 'dark'
+                ? nightInk(editing, editingAppearance.color)
+                : editingAppearance.color,
           }}
         />
       )}
@@ -1679,7 +1692,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           <Plus size={19} />
         </button>
       </div>
-      <div className="canvas-zoom">
+      <div ref={zoomControls} className="canvas-zoom">
         <button
           className="icon-button"
           aria-label="Zoom out"

@@ -14,6 +14,7 @@ const allowed = new Set([
   'restoreBoard',
   'duplicateBoard',
   'loadBoard',
+  'searchContent',
   'patchBoard',
   'setLastBoard',
   'importAsset',

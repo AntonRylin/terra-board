@@ -34,6 +34,12 @@
 .app-shell[data-dock='top']:not([data-panel-hidden]) .board-header {
   top: 72px;
 }
+.app-shell[data-dock='top']:not([data-panel-hidden]) .board-header[data-fits-beside-panel='true'] {
+  top: 0;
+}
+.app-shell[data-dock='left']:not([data-panel-hidden]) .board-header[data-fits-beside-panel='true'] {
+  left: 0;
+}
 .app-shell[data-dock='bottom']:not([data-panel-hidden]) .canvas-toolbar {
   bottom: 94px;
 }
@@ -74,8 +80,57 @@
     --glass-fill 180ms ease,
     --glass-shine 180ms ease;
 }
-.app-shell[data-dock] .launcher:not(.is-dragging) {
+.app-shell[data-dock] .launcher:not(.is-dragging):not([data-minimal]) {
   border-radius: 0;
+}
+/* Minimal glass follows the icon group; the unused edge stays part of the canvas. */
+.app-shell[data-dock] .launcher[data-minimal] {
+  height: max-content;
+  max-height: 100%;
+  max-width: 100%;
+  margin: 0;
+}
+.app-shell[data-dock='left'] .launcher[data-minimal] {
+  border-radius: 0 14px 14px 0;
+}
+.app-shell[data-dock='right'] .launcher[data-minimal] {
+  border-radius: 14px 0 0 14px;
+}
+.app-shell:is([data-dock='left'], [data-dock='right'])
+  .launcher[data-minimal][data-centered='true'] {
+  margin-block: auto;
+}
+.app-shell:is([data-dock='top'], [data-dock='bottom']) .launcher[data-minimal] {
+  width: max-content;
+  height: 72px;
+}
+.app-shell[data-dock='top'] .launcher[data-minimal] {
+  border-radius: 0 0 14px 14px;
+}
+.app-shell[data-dock='bottom'] .launcher[data-minimal] {
+  border-radius: 14px 14px 0 0;
+}
+.app-shell:is([data-dock='top'], [data-dock='bottom'])
+  .launcher[data-minimal][data-centered='true'] {
+  margin-inline: auto;
+}
+.app-shell[data-dock] .launcher[data-minimal] .launcher-scroll {
+  flex: 0 1 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  padding: 5px 0;
+}
+.app-shell[data-dock] .launcher[data-minimal] .launch-item {
+  flex-shrink: 0;
+}
+.app-shell:is([data-dock='top'], [data-dock='bottom']) .launcher[data-minimal] .launcher-scroll {
+  flex-direction: row;
+  padding: 0 5px;
+}
+.app-shell[data-dock] .launcher[data-minimal].is-dragging {
+  margin: 0;
+  border-radius: 14px;
 }
 .app-shell[data-dock] .launcher {
   opacity: 1;
@@ -335,6 +390,10 @@
   .appearance-heading {
     align-items: flex-start;
   }
+}
+.app-shell[data-dock] .canvas-zoom[data-corner-clear='true'] {
+  bottom: 25px;
+  right: 14px;
 }
 @media (prefers-reduced-motion: reduce) {
   :is(.app-shell[data-dock] .launcher, .canvas-toolbar, .selection-tools, .glass-surface) {

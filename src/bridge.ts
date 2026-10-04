@@ -17,6 +17,7 @@ interface DesktopBridge {
   }): Promise<{ id: string; name: string } | null>;
   openExport(id: string, folder: boolean): Promise<void>;
   copyObjects(objects: CanvasObject[]): Promise<boolean>;
+  copyText(text: string): Promise<void>;
   cancelCopy(): void;
   clipboardObjects(): Promise<CanvasObject[] | null>;
   fullscreenState(): Promise<boolean>;

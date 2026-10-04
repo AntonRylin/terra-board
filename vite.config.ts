@@ -23,6 +23,7 @@ export default defineConfig({
         const commands = new Set([
           'library',
           'loadBoard',
+          'searchContent',
           'createBoard',
           'createFolder',
           'updateBoard',

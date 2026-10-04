@@ -143,6 +143,7 @@ const commands = new Set([
   'restoreBoard',
   'duplicateBoard',
   'loadBoard',
+  'searchContent',
   'patchBoard',
   'setLastBoard',
   'importAsset',
@@ -464,6 +465,12 @@ app
     ipcMain.handle('canvas:mcp-status', (e) => {
       trusted(e);
       return mcp.status();
+    });
+    // The renderer is denied every web permission, including clipboard writes.
+    ipcMain.handle('canvas:copy-text', (e, text) => {
+      trusted(e);
+      if (typeof text !== 'string' || text.length > 100000) throw Error('Invalid text');
+      return clipboard.writeText(text);
     });
     ipcMain.handle('canvas:mcp-update', (e, patch) => {
       trusted(e);

@@ -166,8 +166,8 @@ try {
   const begin = async () => {
     const r = await rect('.launcher');
     // Stay inside the rounded glass surface, beyond its transparent corner.
-    const x = r.x + (r.width > r.height ? 32 : 3);
-    const y = r.y + (r.width > r.height ? 3 : 32);
+    const x = r.x + (r.width > r.height ? 3 : 32);
+    const y = r.y + (r.width > r.height ? 32 : 3);
     await mouse('mousePressed', x, y);
     return { x, y };
   };
@@ -223,8 +223,8 @@ try {
     const gap = isHorizontal ? create.x - last.x - last.width : create.y - last.y - last.height;
     assert.ok(gap >= 0 && gap < 45, `Create follows last item at ${side}`);
     await send('Emulation.setDeviceMetricsOverride', {
-      width: 220,
-      height: 220,
+      width: 190,
+      height: 190,
       deviceScaleFactor: 1,
       mobile: false,
     });
@@ -235,7 +235,11 @@ try {
       ),
       'small strip overflows',
     );
-    const options = await rect('[aria-label="Library options"]');
+    assert.equal(
+      await rect('[aria-label="Library options"]'),
+      null,
+      'no duplicate panel menu button',
+    );
     await read(
       `(()=>{const e=document.querySelector('.launcher-scroll');e.scrollTop=e.scrollHeight;e.scrollLeft=e.scrollWidth})()`,
     );
@@ -244,8 +248,8 @@ try {
     assert.ok(
       scrolledCreate.x >= 0 &&
         scrolledCreate.y >= 0 &&
-        scrolledCreate.x + scrolledCreate.width <= 220 &&
-        scrolledCreate.y + scrolledCreate.height <= 220,
+        scrolledCreate.x + scrolledCreate.width <= 190 &&
+        scrolledCreate.y + scrolledCreate.height <= 190,
       'Create visible at end of scroll',
     );
     assert.ok(
@@ -254,7 +258,6 @@ try {
       ),
       'Create remains last scrolling item',
     );
-    assert.deepEqual(await rect('[aria-label="Library options"]'), options, 'options stay pinned');
     await read(
       `(()=>{const e=document.querySelector('.launcher-scroll');e.scrollTop=0;e.scrollLeft=0})()`,
     );
@@ -292,7 +295,11 @@ try {
 
     // Hiding the strip must leave the current canvas alive and offer a way back
     // at every dock edge, including when a folder is open.
-    assert.equal(await rect('[aria-label="Show board panel"]'), null, 'no extra control while visible');
+    assert.equal(
+      await rect('[aria-label="Show board panel"]'),
+      null,
+      'no extra control while visible',
+    );
     await read(`window.panelTestCanvas = document.querySelector('canvas')`);
     await clickSelector('[aria-label="Open folder Docking folder"]');
     await sleep(180);
@@ -301,9 +308,16 @@ try {
         ? `[data-item="${board.id}"]`
         : side === 'bottom'
           ? `[data-item="${folder.id}"]`
-          : '.launcher-top',
+          : '.launcher',
     );
     await click(hideTarget.x + hideTarget.width / 2, hideTarget.y + hideTarget.height / 2, 'right');
+    await until(
+      () =>
+        read(
+          `(() => { const menu = document.querySelector('.context-menu'); return menu && menu.getAnimations().every(a => a.playState === 'finished'); })()`,
+        ),
+      'panel menu settles before choosing Hide panel',
+    );
     const hide = await read(`(() => {
       const item = [...document.querySelectorAll('[role="menuitem"]')].find(e => e.textContent.trim() === 'Hide panel');
       if (!item) return null;
@@ -335,7 +349,9 @@ try {
       'board header stays on screen',
     );
     assert.equal(
-      await read(`document.querySelector('[aria-label="Show board panel"] .board-title').textContent.trim()`),
+      await read(
+        `document.querySelector('[aria-label="Show board panel"] .board-title').textContent.trim()`,
+      ),
       'Docking test',
       'board header restores the panel',
     );
@@ -354,7 +370,11 @@ try {
           ),
         'hidden state survives reload',
       );
-      assert.equal(await read(`getComputedStyle(document.querySelector('.launcher')).visibility`), 'hidden', 'panel stays hidden after reload');
+      assert.equal(
+        await read(`getComputedStyle(document.querySelector('.launcher')).visibility`),
+        'hidden',
+        'panel stays hidden after reload',
+      );
     }
     await clickSelector('[aria-label="Show board panel"]');
     await until(
@@ -364,7 +384,13 @@ try {
         ),
       'panel restored',
     );
-    await until(() => read(`!document.querySelector('.launcher').getAnimations().some(a => a.playState === 'running')`), 'panel motion settles');
+    await until(
+      () =>
+        read(
+          `!document.querySelector('.launcher').getAnimations().some(a => a.playState === 'running')`,
+        ),
+      'panel motion settles',
+    );
     assert.deepEqual(await rect('.launcher'), rail, `restores the same dock position at ${side}`);
   }
   const from = await begin();

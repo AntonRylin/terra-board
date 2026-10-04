@@ -17,6 +17,7 @@ const validIcon = (icon) =>
       /[\p{Extended_Pictographic}\p{Regional_Indicator}\u20e3]/u.test(icon.slice(6))));
 
 const MAX_PACKAGE = 512 * 1024 * 1024;
+const searchText = (value) => (typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '');
 const graphemes = (value) =>
   [...new Intl.Segmenter('und', { granularity: 'grapheme' }).segment(value)].map((s) => s.segment);
 const types = new Set([
@@ -233,6 +234,10 @@ class Store {
     fs.mkdirSync(path.join(root, 'assets'), { recursive: true });
     fs.mkdirSync(path.join(root, 'backups'), { recursive: true });
     this.db = new DatabaseSync(path.join(root, 'library.sqlite'));
+    // SQLite's built-in lower() only folds ASCII; board content can be multilingual.
+    this.db.function('search_contains', { deterministic: true }, (value, query) =>
+      Number(searchText(value).toLowerCase().includes(query)),
+    );
     if (this.db.prepare('PRAGMA user_version').get().user_version > 1) {
       this.db.close();
       throw Error(
@@ -416,6 +421,47 @@ class Store {
   }
   restoreBoard({ id }) {
     return this.updateBoard({ id, patch: { trashed: false } });
+  }
+  searchContent({ query }) {
+    if (typeof query !== 'string' || query.length > 200) throw Error('Invalid search query');
+    const needle = searchText(query).toLowerCase();
+    if (!needle) return { results: [], hasMore: false };
+    const rows = this.db
+      .prepare(
+        `
+      SELECT o.boardId, o.id AS objectId,
+        json_extract(o.json, '$.type') AS type,
+        json_extract(o.json, '$.text') AS text,
+        json_extract(o.json, '$.imageTitle') AS imageTitle,
+        json_extract(o.json, '$.url') AS url,
+        json_extract(o.json, '$.linkDescription') AS linkDescription
+      FROM boards b JOIN objects o ON o.boardId = b.id
+      WHERE b.trashed = 0 AND (
+        search_contains(json_extract(o.json, '$.text'), ?) OR
+        search_contains(json_extract(o.json, '$.imageTitle'), ?) OR
+        search_contains(json_extract(o.json, '$.url'), ?) OR
+        search_contains(json_extract(o.json, '$.linkDescription'), ?))
+      ORDER BY b.position, b.id, o.id LIMIT 61
+    `,
+      )
+      .all(needle, needle, needle, needle);
+    return {
+      results: rows.slice(0, 60).map((row) => {
+        const text = [row.imageTitle, row.text, row.url, row.linkDescription]
+          .map(searchText)
+          .find((value) => value.toLowerCase().includes(needle));
+        const index = text.toLowerCase().indexOf(needle);
+        const start = Math.max(0, index - 55);
+        const end = Math.min(text.length, Math.max(start + 260, index + needle.length));
+        return {
+          boardId: row.boardId,
+          objectId: row.objectId,
+          type: row.type,
+          excerpt: (start ? '…' : '') + text.slice(start, end) + (end < text.length ? '…' : ''),
+        };
+      }),
+      hasMore: rows.length > 60,
+    };
   }
   loadBoard({ id }) {
     const b = this.board(id);

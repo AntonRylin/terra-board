@@ -4,11 +4,11 @@ Open **Library options (the three dots on the board strip) → Settings → AI a
 
 ## Connect Codex
 
-Copy **Codex configuration** from Settings into your user Codex `config.toml`, alongside your existing MCP entries, then restart Codex. The generated entry uses a loopback Streamable HTTP URL and a private Authorization header. If you change the port, copy the updated configuration. Do not share the access token.
+In Settings, press **Copy setup** next to Codex and paste it into your user Codex `config.toml`, alongside your existing MCP entries, then restart Codex. The generated entry uses a loopback Streamable HTTP URL and a private Authorization header. If you change the port, copy the updated configuration. Do not share the access token.
 
 ## Connect Claude
 
-Copy **Claude setup prompt** from Settings and paste it into Claude Code or the Code tab of Claude Desktop on the same computer. The prompt carries the `terra_board` entry generated for that installation and tells Claude to back up and merge it into `claude_desktop_config.json`, register it with Claude Code, and verify the paths. Restart Claude afterwards. Copy the prompt on each computer; its paths are not portable.
+In Settings, press **Copy setup** next to Claude and paste the prompt into Claude Code or the Code tab of Claude Desktop on the same computer. The prompt carries the `terra_board` entry generated for that installation and tells Claude to back up and merge it into `claude_desktop_config.json`, register it with Claude Code, and verify the paths. Restart Claude afterwards. Copy the prompt on each computer; its paths are not portable.
 
 To do it by hand, merge the `terra_board` entry from the prompt into the existing `mcpServers` object in Claude Desktop's Developer → Edit Config file, preserving other servers and preferences. On Windows the config normally lives at `%APPDATA%/Claude/claude_desktop_config.json`; Store installs can keep it inside the Claude package's `LocalCache/Roaming/Claude` directory.
 

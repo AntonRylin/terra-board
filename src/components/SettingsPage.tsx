@@ -2,15 +2,18 @@ import { useEffect, useRef } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import McpSettings from './McpSettings';
 import AppearanceSettings from './AppearanceSettings';
+import type { Appearance } from './useAppearance';
 
 export default function SettingsPage({
   onClose,
   transparency,
   onTransparency,
+  appearance,
 }: {
   onClose: () => void;
   transparency: number;
   onTransparency: (value: number) => void;
+  appearance: Appearance;
 }) {
   const page = useRef<HTMLElement>(null);
   const back = useRef<HTMLButtonElement>(null);
@@ -63,7 +66,11 @@ export default function SettingsPage({
         <div className="settings-page-content">
           <h1>Settings</h1>
           <p className="settings-intro">Make this space work for you.</p>
-          <AppearanceSettings transparency={transparency} onTransparency={onTransparency} />
+          <AppearanceSettings
+            transparency={transparency}
+            onTransparency={onTransparency}
+            appearance={appearance}
+          />
           <section className="settings-section" aria-label="AI connections">
             <McpSettings />
           </section>

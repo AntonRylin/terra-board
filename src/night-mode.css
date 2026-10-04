@@ -1,0 +1,496 @@
+/* Charcoal, silver, sea glass and candlelight. All content colors stay on disk. */
+:root {
+  --ink: #27303d;
+  --surface: #fff;
+  --surface-raised: #f5f7fa;
+  --hover: #e9edf3;
+  --selected: #e6effc;
+  --glass-rgb: 247 250 255;
+  --glass-edge: rgb(255 255 255 / 0.74);
+  --glass-highlight: rgb(255 255 255 / 0.95);
+  --glass-side: rgb(255 255 255 / 0.55);
+  --glass-shadow: rgb(37 59 90 / 0.12);
+  --control-rgb: 255 255 255;
+  --grid: #dae1e9;
+  color-scheme: light;
+}
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  color: #e4eaf2;
+  background: #10151c;
+  --ink: #e4eaf2;
+  --paper: #10151c;
+  --panel: #1c242e;
+  --surface: #1c242e;
+  --surface-raised: #232e3b;
+  --line: #344153;
+  --muted: #9baabd;
+  --accent: #9ac5fa;
+  --hover: #2c3a4b;
+  --selected: #294563;
+  --blue: #29405a;
+  --green: #2a453e;
+  --purple: #43354f;
+  --orange: #51412f;
+  --rose: #503541;
+  --gray: #35404d;
+  --glass-rgb: 24 33 45;
+  --glass-edge: rgb(194 220 250 / 0.18);
+  --glass-highlight: rgb(218 235 255 / 0.24);
+  --glass-side: rgb(208 229 252 / 0.08);
+  --glass-shadow: rgb(0 0 0 / 0.34);
+  --control-rgb: 121 148 181;
+  --grid: #283341;
+}
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 420ms;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+/* The actual moving control stays live above the theme crossfade. */
+.theme-switch {
+  view-transition-name: theme-switch;
+}
+::view-transition-group(theme-switch) {
+  animation-duration: 360ms;
+}
+
+.theme-setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin: 0 0 26px;
+}
+.theme-setting-row strong,
+.night-glow-setting strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+.theme-setting-row p {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.theme-switch {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2px;
+  flex: none;
+  width: 294px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface-raised);
+  box-shadow: inset 0 1px 3px #00000006;
+  isolation: isolate;
+}
+.theme-switch-thumb {
+  view-transition-name: theme-thumb;
+  position: absolute;
+  z-index: -1;
+  inset: 4px auto 4px 4px;
+  width: calc((100% - 12px) / 3);
+  translate: calc(var(--theme-index) * (100% + 2px)) 0;
+  border: 1px solid var(--glass-edge);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow:
+    0 2px 7px #00000012,
+    inset 0 1px 0 var(--glass-highlight);
+  transition:
+    translate 380ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    background 300ms;
+}
+:root:active-view-transition .theme-switch-thumb {
+  transition: none;
+}
+::view-transition-group(theme-thumb) {
+  animation-duration: 380ms;
+  animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+::view-transition-old(theme-thumb),
+::view-transition-new(theme-thumb) {
+  animation: none;
+}
+.theme-switch button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 38px;
+  background: none;
+  border-radius: 11px;
+  color: var(--muted);
+  font-size: 12px;
+  transition: color 250ms;
+}
+.theme-switch button[aria-checked='true'] {
+  color: var(--ink);
+}
+.theme-switch button[aria-checked='true'] svg {
+  filter: drop-shadow(0 0 5px #aacaff45);
+}
+.night-glow-setting {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  padding-top: 25px;
+  margin-top: 25px;
+  border-top: 1px solid var(--line);
+}
+.night-glow-setting > div {
+  flex: 1;
+}
+.night-glow-setting p {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.7;
+  margin: 7px 0 0;
+  max-width: 480px;
+}
+.night-glow-symbol {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  color: #ab8446;
+  background: #caa56b12;
+  flex: none;
+}
+.experimental-label {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 400;
+  margin-left: 8px;
+  padding: 3px 7px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.night-glow-switch {
+  width: 42px;
+  height: 25px;
+  padding: 3px;
+  border-radius: 20px;
+  background: #8996a7;
+  flex: none;
+  transition: background 230ms;
+}
+.night-glow-switch span {
+  display: block;
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 4px #0003;
+  transition: translate 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.night-glow-switch[aria-checked='true'] {
+  background: #578eaf;
+}
+.night-glow-switch[aria-checked='true'] span {
+  translate: 17px 0;
+}
+
+.canvas-surface {
+  isolation: isolate;
+  background-image: radial-gradient(var(--grid) 0.65px, transparent 0.65px);
+}
+.canvas-surface > .night-lighting {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.canvas-surface > .night-lighting[hidden] {
+  display: none;
+}
+.canvas-surface > canvas:not(.night-lighting) {
+  position: relative;
+  z-index: 1;
+}
+
+/* Retain true backdrop blur and the user's exact transparency in both themes. */
+:is(.app-shell[data-dock] .launcher, .canvas-toolbar, .selection-tools, .glass-surface) {
+  background-color: rgb(var(--glass-rgb) / var(--glass-fill));
+  border-color: var(--glass-edge);
+  box-shadow:
+    0 0 0 1px rgb(79 103 137 / 0.1),
+    0 8px 28px var(--glass-shadow),
+    inset 0 1px 1px var(--glass-highlight),
+    inset 1px 0 1px var(--glass-side),
+    inset 0 -1px 1px rgb(134 161 195 / 0.15);
+}
+:root[data-theme='dark']
+  :is(.app-shell[data-dock] .launcher, .canvas-toolbar, .selection-tools, .glass-surface) {
+  background-image: linear-gradient(
+    145deg,
+    rgb(177 208 244 / calc(var(--glass-shine) * 0.25)),
+    transparent 44%,
+    rgb(111 146 190 / calc(var(--glass-shine) * 0.2))
+  );
+  backdrop-filter: blur(24px) saturate(1.55);
+}
+:is(.launcher, .canvas-toolbar, .selection-tools) .icon-button,
+.preview-tool {
+  background-color: rgb(var(--control-rgb) / var(--glass-control));
+}
+:root[data-theme='dark'] :is(.launcher, .canvas-toolbar, .selection-tools) .icon-button:hover {
+  background: rgb(151 183 223 / 0.24);
+  box-shadow:
+    inset 0 1px 0 #d3e6ff1f,
+    0 2px 8px #0002;
+}
+:root[data-theme='dark'] :is(.canvas-toolbar, .selection-tools) .icon-button[aria-pressed='true'],
+:root[data-theme='dark'] .preview-tool.selected {
+  color: #b4d5ff;
+  background: #729cc744;
+  box-shadow:
+    inset 0 1px 0 #c0ddff26,
+    0 0 16px #77b8ff12;
+}
+:root[data-theme='dark'] .launcher .app-icon {
+  color: #d2deed;
+  box-shadow:
+    inset 0 1px 0 #e0efff24,
+    0 2px 6px #0002;
+}
+:root[data-theme='dark'] .launcher .app-icon:has(> .board-image-icon) {
+  box-shadow: none;
+}
+:root[data-theme='dark'] .app-icon.yellow {
+  background: #50462e;
+}
+:root[data-theme='dark'] .folder-mosaic {
+  background: #344151;
+}
+:root[data-theme='dark'] .app-icon {
+  color: #d2deed;
+}
+:root[data-theme='dark'] .toast {
+  background: var(--surface);
+  color: var(--ink);
+}
+:root[data-theme='dark'] .error-banner {
+  background: #402c2d;
+  color: #ffc1b8;
+  border-color: #805457;
+}
+:root[data-theme='dark'] .gallery-controls button {
+  color: var(--muted);
+}
+:root[data-theme='dark'] .gallery-controls button:hover {
+  background: var(--hover);
+}
+:root[data-theme='dark'] .gallery-controls button[aria-pressed='true'] {
+  background: var(--selected);
+  color: var(--accent);
+}
+:root[data-theme='dark'] .launcher .create-button {
+  border-color: var(--glass-edge);
+}
+:root[data-theme='dark'] .canvas-toolbar .divider {
+  background: #c0d7f02b;
+}
+:root[data-theme='dark'] .glass-preview {
+  border-color: #344153;
+  background:
+    radial-gradient(#50607180 0.65px, transparent 0.65px) 0 0 / 18px 18px,
+    #10151c;
+}
+:root[data-theme='dark'] .glass-preview-note {
+  background: #edc98721;
+  color: #e8d2ad;
+  border: 1px solid #efd29b45;
+  box-shadow:
+    0 12px 22px #0005,
+    inset 0 1px 0 #ffe6be36;
+}
+:root[data-theme='dark'][data-night-glow='true'] .glass-preview-note {
+  box-shadow:
+    0 0 85px 28px #e4b56325,
+    0 12px 22px #0005,
+    inset 0 1px 0 #ffe6be36;
+}
+:root[data-theme='dark'] .glass-preview-landscape {
+  border-color: #d4e3ed26;
+  filter: brightness(0.78);
+}
+:root[data-theme='dark'] .preview-tool,
+:root[data-theme='dark'] .preview-board {
+  color: #d4dfed;
+}
+:root[data-theme='dark'] .glass-slider-label output {
+  color: #b5c9e2;
+}
+:root[data-theme='dark'] .night-glow-symbol {
+  color: #e2c38d;
+  background: #d4ad6a12;
+  box-shadow: inset 0 1px 0 #fff1;
+}
+
+/* Every overlay belongs to the same material palette as the canvas chrome. */
+:root[data-theme='dark'] :is(.settings-page, .board-icon-upload) {
+  background: var(--paper);
+}
+:root[data-theme='dark']
+  :is(
+    .settings-page-header,
+    .settings-section,
+    .modal,
+    .emoji-panel,
+    .arrow-style-popover,
+    .arrow-head-popover,
+    .arrow-label-popover,
+    .crop-toolbar,
+    .export-toast
+  ) {
+  background: var(--surface);
+  color: var(--ink);
+  border-color: var(--line);
+}
+:root[data-theme='dark']
+  :is(.folder-sheet, .context-menu, .canvas-zoom, .gallery-paste-hint, .dock-hint) {
+  background: linear-gradient(145deg, #253142e8, #19232fef);
+  color: var(--ink);
+  border-color: var(--glass-edge);
+  backdrop-filter: blur(24px) saturate(1.5);
+  box-shadow:
+    0 12px 36px #0004,
+    inset 0 1px 0 #d0e5ff19;
+}
+:root[data-theme='dark']
+  :is(
+    .button:not(.primary),
+    .create-button,
+    .board-player-controls button,
+    .modal input,
+    .modal select,
+    .emoji-custom,
+    .emoji-custom input,
+    .mcp-access,
+    .mcp-port input,
+    .arrow-label-popover input:not([type='range']),
+    .arrow-options button,
+    .arrow-head-popover button,
+    .export-quality button,
+    .export-formats button,
+    .icon-shape-picker,
+    .selection-tools input:not([type='color']),
+    .selection-tools select
+  ) {
+  background: var(--surface-raised);
+  color: var(--ink);
+  border-color: var(--line);
+}
+:root[data-theme='dark']
+  :is(
+    .button:not(.primary):hover,
+    .icon-button:hover,
+    .context-menu button:hover,
+    .arrow-head-trigger:hover,
+    .arrow-options button:hover,
+    .arrow-head-popover button:hover,
+    .export-quality button:hover,
+    .export-formats button:hover
+  ) {
+  background: var(--hover);
+}
+:root[data-theme='dark']
+  :is(
+    .icon-button[aria-pressed='true'],
+    .arrow-options button[aria-pressed='true'],
+    .arrow-head-popover button[aria-pressed='true'],
+    .export-quality button[aria-pressed='true'],
+    .icon-shape-picker button[aria-pressed='true']
+  ) {
+  color: var(--accent);
+  background: var(--selected);
+  border-color: #709cca66;
+}
+:root[data-theme='dark']
+  :is(
+    .empty-canvas h1,
+    .welcome-empty h1,
+    .arrow-head-trigger,
+    .arrow-controls select,
+    .arrow-thickness-heading output,
+    .icon-shape-picker button
+  ) {
+  color: var(--ink);
+}
+:root[data-theme='dark']
+  :is(
+    .quiet,
+    .modal label,
+    .export-description,
+    .export-quality-note,
+    .export-detail,
+    .arrow-style-popover small,
+    .context-menu svg,
+    .insert-menu svg,
+    .board-glyph,
+    .restore-panel
+  ) {
+  color: var(--muted);
+}
+:root[data-theme='dark'] :is(.modal-backdrop, .emoji-overlay) {
+  background: #050a1366;
+}
+:root[data-theme='dark'] .modal {
+  box-shadow: 0 24px 90px #0007;
+}
+:root[data-theme='dark'] .gallery-insert-target {
+  background: #263c52eb;
+  border-color: #86acd0;
+  color: #c2ddfa;
+}
+:root[data-theme='dark'] kbd {
+  background: #283444;
+  color: #bed0e7;
+}
+:root[data-theme='dark'] .mcp-symbol {
+  background: #263e58;
+  color: #a0c9fa;
+}
+:root[data-theme='dark']
+  :is(.context-menu .danger, .mcp-error, .board-icon-upload .icon-upload-error) {
+  color: #f49e98;
+}
+:root[data-theme='dark'] .search-input input {
+  background: transparent;
+}
+
+@media (max-width: 650px) {
+  .theme-setting-row {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .theme-switch {
+    width: 100%;
+  }
+  .night-glow-symbol {
+    display: none;
+  }
+  .experimental-label {
+    display: inline-block;
+    margin: 5px 0 0 6px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root),
+  ::view-transition-group(theme-switch) {
+    animation: none;
+  }
+  .theme-switch-thumb,
+  .theme-switch button,
+  .night-glow-switch,
+  .night-glow-switch span {
+    transition: none;
+  }
+}

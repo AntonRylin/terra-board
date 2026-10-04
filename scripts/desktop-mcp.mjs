@@ -315,6 +315,15 @@ try {
       ),
     'enabled switch',
   );
+  await clickSelector('[aria-label="Copy Claude setup"]');
+  await until(
+    () =>
+      read(
+        `document.querySelector('.settings-page .toast')?.textContent === 'Claude setup prompt copied'`,
+      ),
+    'copy toast',
+  );
+  assert.equal(await read('!!document.querySelector(".mcp-settings textarea")'), false);
   await sleep(300);
   writeFileSync(
     join(root, 'mcp-settings.png'),

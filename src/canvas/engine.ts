@@ -23,6 +23,8 @@ import { SpatialIndex, screenToWorld, zoomAt, boundsOf, type Point, type Bounds 
 import { History } from './history';
 import { renderText, renderLinkCaption, textRegion } from './text-rendering';
 import { TextureCache } from './textures';
+import { appearanceEvent, nightInk } from '../appearance';
+import { NightLighting } from './night-lighting';
 import { exportPlan, exportResolution, type ExportScope, type ExportQuality } from './export-plan';
 import { imageTiles } from './image-detail';
 import {
@@ -143,6 +145,12 @@ export class Engine {
   private initialized: Promise<void>;
   private groupMembers = new Map<string, Set<string>>();
   private editingId: string | null = null;
+  private dark = document.documentElement.dataset.theme === 'dark';
+  private lighting: NightLighting;
+  private appearanceChanged = () => {
+    this.dark = document.documentElement.dataset.theme === 'dark';
+    this.invalidate();
+  };
   private editingPreview: CanvasObject | null = null;
   private cropPreview: CanvasObject | null = null;
   constructor(
@@ -152,6 +160,8 @@ export class Engine {
     private callbacks: Callbacks,
   ) {
     this.camera = { ...camera };
+    this.lighting = new NightLighting(host);
+    window.addEventListener(appearanceEvent, this.appearanceChanged);
     for (const o of objects) this.objects.set(o.id, o);
     this.index.reset(objects);
     this.rebuildGroups();
@@ -938,9 +948,18 @@ export class Engine {
     this.callbacks.camera({ ...this.camera });
     this.invalidate();
   }
-  fit() {
+  focusObject(id: string) {
+    const object = this.objects.get(id);
+    if (!object) return false;
+    this.setTool('select');
+    this.callbacks.tool?.('select');
+    this.setSelection([id]);
+    this.fit([object]);
+    return true;
+  }
+  fit(objects = this.all) {
     this.stopCameraAnimation();
-    const b = boundsOf(this.all);
+    const b = boundsOf(objects);
     if (!b) {
       this.camera = { x: 0, y: 0, zoom: 1 };
     } else {
@@ -1003,6 +1022,23 @@ export class Engine {
       if (index !== -1) visible.splice(index, 1);
       visible.push(this.cropPreview);
     }
+    const lightMargin = 600;
+    const lightingObjects =
+      this.dark && document.documentElement.dataset.nightGlow === 'true'
+        ? this.index.search({
+            x: (-c.x - lightMargin) / c.zoom,
+            y: (-c.y - lightMargin) / c.zoom,
+            width: (w + lightMargin * 2) / c.zoom,
+            height: (h + lightMargin * 2) / c.zoom,
+          })
+        : [];
+    this.lighting.draw(
+      lightingObjects,
+      c,
+      w,
+      h,
+      this.dark && document.documentElement.dataset.nightGlow === 'true',
+    );
     const visibleIds = new Set(visible.map((o) => o.id));
     for (const [id, v] of this.views)
       if (!visibleIds.has(id)) {
@@ -1081,6 +1117,7 @@ export class Engine {
       const resolution = 2 ** Math.ceil(Math.log2(c.zoom * devicePixelRatio));
       const region = textRegion(o, c, w, h);
       const signature = JSON.stringify([
+        this.dark,
         !!o.gallery,
         o.width,
         o.height,
@@ -1180,19 +1217,26 @@ export class Engine {
     const container = new Container(),
       g = new Graphics(),
       color = o.color || '#e8edf5';
+    const dark = this.dark && !exporting;
     container.eventMode = 'none';
     if (o.type === 'arrow') {
-      drawArrow(g, o);
+      drawArrow(g, dark ? { ...o, color: nightInk(o, o.color || '#66758a') } : o);
       container.addChild(g);
       if (o.text) {
         const p = arrowLabelPoint(o),
           labelObject = arrowLabelObject(o);
-        const label = renderText(labelObject, o.text, resolution, {
-          x: 0,
-          y: 0,
-          width: labelObject.width,
-          height: labelObject.height,
-        });
+        const label = renderText(
+          labelObject,
+          o.text,
+          resolution,
+          {
+            x: 0,
+            y: 0,
+            width: labelObject.width,
+            height: labelObject.height,
+          },
+          dark,
+        );
         if (label) {
           label.x += p.x - labelObject.width / 2;
           label.y += p.y - labelObject.height / 2;
@@ -1206,11 +1250,12 @@ export class Engine {
       const iconY = compact && o.linkDescription ? 36 : o.height / 2;
       const box = linkLayout(o.width, o.height);
       g.roundRect(0, 0, o.width, o.height, linkCornerRadius)
-        .fill('#ffffff')
-        .stroke({ color: '#dce2eb', width: 1 });
-      if (!compact) g.roundRect(box.x, box.y, box.width, box.height, 8).fill('#eef1f5');
+        .fill(dark ? '#1c2632' : '#ffffff')
+        .stroke({ color: dark ? '#3a485b' : '#dce2eb', width: 1 });
+      if (!compact)
+        g.roundRect(box.x, box.y, box.width, box.height, 8).fill(dark ? '#151d27' : '#eef1f5');
       if (compact) {
-        g.roundRect(o.width - 48, iconY - 18, 36, 36, 11).fill('#f0f3f7');
+        g.roundRect(o.width - 48, iconY - 18, 36, 36, 11).fill(dark ? '#2c394b' : '#f0f3f7');
         const x = o.width - 37,
           y = iconY;
         g.moveTo(x + 9, y - 7)
@@ -1223,7 +1268,7 @@ export class Engine {
           .lineTo(x, y + 7)
           .lineTo(x + 12, y + 7)
           .lineTo(x + 12, y + 4)
-          .stroke({ color: '#536172', width: 1.6 });
+          .stroke({ color: dark ? '#a7b9ce' : '#536172', width: 1.6 });
         if (!loading && !texture)
           g.circle(29, iconY, 10)
             .stroke({ color: '#8290a3', width: 1.5 })
@@ -1282,7 +1327,7 @@ export class Engine {
         container.addChild(spinner);
       }
       {
-        const label = renderLinkCaption(o, resolution, region, loading);
+        const label = renderLinkCaption(o, resolution, region, loading, dark);
         if (label) container.addChild(label);
       }
       return container;
@@ -1293,12 +1338,23 @@ export class Engine {
       sprite.height = o.height;
       container.addChild(sprite);
       if ((exporting || this.editingId !== o.id) && o.imageTitle?.trim()) {
-        const label = renderText(o, o.imageTitle, resolution, region);
+        const label = renderText(o, o.imageTitle, resolution, region, dark);
         if (label) container.addChild(label);
       }
       return container;
     }
-    if (o.type === 'ellipse')
+    if (dark && ['note', 'rect', 'ellipse', 'frame'].includes(o.type)) {
+      if (o.type === 'ellipse') g.ellipse(o.width / 2, o.height / 2, o.width / 2, o.height / 2);
+      else g.roundRect(0, 0, o.width, o.height, o.type === 'note' ? 4 : 8);
+      g.fill({
+        color: o.type === 'frame' ? '#202b38' : color,
+        alpha: o.type === 'frame' ? 0.5 : 0.13,
+      }).stroke({ color: o.type === 'frame' ? '#6b8098' : color, alpha: 0.28, width: 1 });
+      if (o.type !== 'ellipse')
+        g.moveTo(5, 0.5)
+          .lineTo(o.width - 5, 0.5)
+          .stroke({ color: '#ffffff', alpha: 0.22, width: 0.8 });
+    } else if (o.type === 'ellipse')
       g.ellipse(o.width / 2, o.height / 2, o.width / 2, o.height / 2).fill(color);
     else if (o.type === 'frame')
       o.gallery
@@ -1343,7 +1399,7 @@ export class Engine {
         }
       } else
         g.roundRect(0, 0, o.width, o.height, 7).fill(
-          o.type === 'image' || o.type === 'video' ? '#e8ecf2' : color,
+          o.type === 'image' || o.type === 'video' ? (dark ? '#253143' : '#e8ecf2') : color,
         );
     }
     container.addChild(g);
@@ -1358,6 +1414,7 @@ export class Engine {
           text,
           resolution,
           region,
+          dark,
         );
         if (label) container.addChild(label);
       }
@@ -1717,6 +1774,8 @@ export class Engine {
     this.disposed = true;
     cancelAnimationFrame(this.frame);
     this.observer.disconnect();
+    window.removeEventListener(appearanceEvent, this.appearanceChanged);
+    this.lighting.destroy();
     this.textures.destroy();
     this.host.removeEventListener('pointerdown', this.down);
     this.host.removeEventListener('pointermove', this.move);

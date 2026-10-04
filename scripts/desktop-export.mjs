@@ -231,6 +231,21 @@ try {
     );
   };
   await ready();
+  if (process.env.CANVAS_TEST_THEME) {
+    await read(
+      `localStorage.setItem('terra-board.theme',${JSON.stringify(process.env.CANVAS_TEST_THEME)})`,
+    );
+    await send('Page.reload');
+    await sleep(400);
+    await ready();
+    await until(
+      () =>
+        read(
+          `document.documentElement.dataset.theme===${JSON.stringify(process.env.CANVAS_TEST_THEME)}`,
+        ),
+      'export theme',
+    );
+  }
   const hostRect = await rect('.canvas-surface');
   const point = { x: hostRect.x + 220, y: hostRect.y + 220 };
   await click(point.x, point.y);
@@ -377,10 +392,13 @@ try {
     if (allPixels.data[i] < 80 && allPixels.data[i + 2] > 180) blue++;
   assert.ok(blue > 10000, 'offscreen blue object rendered');
   assert.equal(allMeta.width, 4096, '4K preset uses the requested long edge');
-  await click(hostRect.x + 50, hostRect.y + 400);
+  await clickSelector('.export-toast .icon-button');
+  // The edge-to-edge launcher covers x=50; clear selection without clicking it.
+  await key('Escape', 'Escape');
   const imagePoint = { x: hostRect.x + 590, y: hostRect.y + 270 };
   await click(imagePoint.x, imagePoint.y);
   await click(imagePoint.x, imagePoint.y, 'right');
+  await sleep(180);
   await choose('Export selected…');
   await clickSelector('[data-quality="full"]');
   await clickSelector('.export-formats button');
@@ -398,10 +416,12 @@ try {
     'Full quality retains original image density despite small on-board size',
   );
   console.log('FULL_QUALITY', fullMeta.width, fullMeta.height);
+  await clickSelector('.export-toast .icon-button');
   // Selecting only a normal frame must export the objects inside it as well.
   await click(hostRect.x + 102, hostRect.y + 120);
   for (const format of ['PNG', 'JPG', 'PDF']) {
     await clickSelector('.selection-tools button[aria-label="Export selected"]');
+    await until(() => read(`!!document.querySelector('.export-formats')`), 'frame export dialog');
     assert.equal(
       await read(`document.querySelector('.modal h2')?.textContent`),
       'Export selected items',
@@ -445,6 +465,7 @@ try {
     assert.ok(red > 4000 && green > 4000 && purple > 4000, `${format}: frame contents rendered`);
     assert.equal(blue, 0, `${format}: outside object excluded`);
     console.log('FRAME_EXPORTED', file);
+    await clickSelector('.export-toast .icon-button');
   }
   assert.deepEqual(errors, []);
   console.log('EXPORT_DESKTOP_OK', root);

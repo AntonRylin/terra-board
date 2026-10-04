@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
-import { Search, Plus, MoreHorizontal, X, Folder as FolderIcon } from 'lucide-react';
+import { Plus, MoreHorizontal, X, Folder as FolderIcon } from 'lucide-react';
 import type { Board, Folder, Library } from '../model';
 import { Presence } from './Presence';
 import { BoardGlyph } from './Icon';
@@ -22,6 +22,7 @@ export function AppIcon({ board }: { board: Board }) {
 }
 interface Props {
   hidden: boolean;
+  minimal: boolean;
   dockEdge: DockEdge;
   centered: boolean;
   onDock: (edge: DockEdge) => void;
@@ -31,8 +32,6 @@ interface Props {
   onOpen: (id: string) => void;
   onFolder: (id: string | null) => void;
   onCreate: (x: number, y: number) => void;
-  onSearch: () => void;
-  onOptions: (x: number, y: number) => void;
   onPanelMenu: (x: number, y: number, placement: MenuPlacement) => void;
   onBoardMenu: (b: Board, x: number, y: number) => void;
   onIconDrop: (b: Board, file: File) => void;
@@ -123,6 +122,7 @@ export default function Launcher(p: Props) {
     frame = requestAnimationFrame(followAlignment);
     const observer = new ResizeObserver(place);
     observer.observe(panel);
+    observer.observe(strip);
     window.addEventListener('resize', place);
     strip.addEventListener('scroll', place, true);
     return () => {
@@ -131,7 +131,7 @@ export default function Launcher(p: Props) {
       window.removeEventListener('resize', place);
       strip.removeEventListener('scroll', place, true);
     };
-  }, [folder?.id, p.dockEdge, horizontal, p.centered]);
+  }, [folder?.id, p.dockEdge, horizontal, p.centered, p.minimal]);
   // Boards and folders sort by pointer; HTML drops here are only image files.
   const dropIcon = (e: React.DragEvent, board: Board) => {
     e.currentTarget.classList.remove('drop-target');
@@ -167,6 +167,7 @@ export default function Launcher(p: Props) {
       <aside
         ref={rail}
         className={'launcher' + (dock.floating ? ' is-dragging' : '')}
+        data-minimal={p.minimal || undefined}
         style={dock.floating || undefined}
         aria-label="Boards and folders"
         aria-hidden={p.hidden || undefined}
@@ -179,16 +180,6 @@ export default function Launcher(p: Props) {
           p.onPanelMenu(e.clientX, e.clientY, 'pointer');
         }}
       >
-        <div className="launcher-top">
-          <button
-            className="icon-button"
-            aria-label="Search boards"
-            title="Search boards · Ctrl+K"
-            onClick={p.onSearch}
-          >
-            <Search size={19} />
-          </button>
-        </div>
         <div
           className="launcher-scroll"
           data-reorder-group="root"
@@ -291,22 +282,6 @@ export default function Launcher(p: Props) {
               <Plus size={20} />
             </button>
           </div>
-        </div>
-        <div className="launcher-footer">
-          <button
-            className="icon-button"
-            aria-label="Library options"
-            title="Library options"
-            onClick={(e) => {
-              const r = e.currentTarget.getBoundingClientRect();
-              p.onOptions(
-                p.dockEdge === 'right' ? r.left - 232 : r.right + 12,
-                p.dockEdge === 'top' ? r.bottom + 12 : r.top,
-              );
-            }}
-          >
-            <MoreHorizontal size={20} />
-          </button>
         </div>
       </aside>
       <Presence show={!!folder}>

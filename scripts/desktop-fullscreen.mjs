@@ -145,32 +145,53 @@ try {
     () => read(`!!document.querySelector('canvas')&&!document.querySelector('.canvas-loading')`),
     'canvas ready',
   );
-  const menuAction = async (label) => {
-    await clickSelector('[aria-label="Library options"]');
-    const point = await until(
-      () =>
-        read(
-          `(() => { const e = [...document.querySelectorAll('[role="menuitem"]')].find(e => e.textContent.trim() === ${JSON.stringify(label)}); if (!e) return null; const r = e.getBoundingClientRect(); return {x:r.x+r.width/2,y:r.y+r.height/2}; })()`,
-        ),
-      label + ' menu rendered',
-    );
-    assert.ok(point, label + ' menu item');
-    await click(point.x, point.y);
-  };
+  const panel = await rect('.launcher');
+  await click(panel.x + 32, panel.y + 3, 'right');
+  await until(() => read(`!!document.querySelector('[role="menuitem"]')`), 'panel menu');
+  assert.equal(
+    await read(
+      `[...document.querySelectorAll('[role="menuitem"]')].some(e => /full screen/i.test(e.textContent))`,
+    ),
+    false,
+    'panel menu has no duplicate fullscreen action',
+  );
+  await key('Escape', 'Escape');
   const state = () => read('window.canvas.fullscreenState()');
   const bounds = () =>
     read(
       '({width:innerWidth,height:innerHeight,screenWidth:screen.width,screenHeight:screen.height})',
     );
   const original = await bounds();
-  await menuAction('Full screen');
-  await until(state, 'menu entered fullscreen');
-  await until(async () => {
-    const b = await bounds();
-    return b.width === b.screenWidth && b.height === b.screenHeight;
-  }, 'display filled');
-  await menuAction('Exit full screen');
-  await until(async () => !(await state()), 'menu exited fullscreen');
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await until(() => rect('.fullscreen-toggle'), 'corner icon restored');
+    const icon = await rect('.fullscreen-toggle');
+    const x = icon.x + icon.width / 2,
+      y = icon.y + icon.height / 2;
+    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y, buttons: 0 });
+    await sleep(400);
+    assert.equal(
+      await read(`!!document.elementFromPoint(${x}, ${y})?.closest('.fullscreen-toggle')`),
+      true,
+      'hover leaves icon clickable',
+    );
+    assert.equal(
+      await read(`!!document.querySelector('.launcher-tooltip:popover-open')`),
+      false,
+      'no hover label blocks icon',
+    );
+    await click(x, y);
+    await until(state, 'corner icon entered fullscreen');
+    await until(
+      () => read(`!document.querySelector('.fullscreen-toggle')`),
+      'icon hidden in fullscreen',
+    );
+    await key('Escape', 'Escape');
+    await until(async () => !(await state()), 'Escape exits fullscreen');
+    await until(async () => {
+      const b = await bounds();
+      return b.width === original.width && b.height === original.height;
+    }, 'window restored after icon click');
+  }
   await key('F11', 'F11');
   await until(state, 'F11 entered fullscreen');
   await send('Input.dispatchKeyEvent', {
@@ -231,7 +252,7 @@ try {
     JSON.stringify({
       passed: true,
       checks:
-        'Menu enter/exit, F11 enter/exit, held F11, Escape exit, restored window bounds, normal Escape, renderer errors',
+        'Unobstructed corner icon, hidden icon in fullscreen, no duplicate menu action, F11 enter/exit, held F11, Escape exit, restored window bounds, normal Escape, renderer errors',
       artifacts: root,
     }),
   );

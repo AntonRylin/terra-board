@@ -82,6 +82,16 @@ export interface Document {
   camera: Camera;
   revision: number;
 }
+export interface ContentSearchResult {
+  boardId: string;
+  objectId: string;
+  type: ObjectType;
+  excerpt: string;
+}
+export interface ContentSearchResponse {
+  results: ContentSearchResult[];
+  hasMore: boolean;
+}
 export interface Asset {
   id: string;
   name: string;

@@ -45,29 +45,44 @@ export default function McpSettings() {
       setBusy(false);
     }
   };
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(''), 2500);
+    return () => clearTimeout(timer);
+  }, [copied]);
   const copy = async (name: string, value: string) => {
+    setError('');
     try {
-      await navigator.clipboard.writeText(value);
+      await (window.canvas ? window.canvas.copyText(value) : navigator.clipboard.writeText(value));
       setCopied(name);
     } catch {
-      setError('Could not copy. Select and copy the configuration below.');
+      setError('Could not copy the setup.');
     }
   };
+  const clients = status && [
+    {
+      name: 'Codex',
+      hint: 'Paste into config.toml, then restart Codex.',
+      value: status.codexConfig,
+    },
+    {
+      name: 'Claude',
+      hint: 'Paste into Claude Code, then restart Claude.',
+      value: claudePrompt(status.claudeConfig),
+    },
+  ];
   return (
     <div className="mcp-settings">
       <div className="mcp-heading">
         <span className="mcp-symbol">
           <Cable size={24} />
         </span>
-        <div>
-          <h3>Connect your AI</h3>
-          <p>Let Codex or Claude work with your boards.</p>
-        </div>
+        <h3>Connect your AI</h3>
       </div>
       <div className="mcp-access">
         <div>
-          <strong>AI access via MCP</strong>
-          <p>Read and edit all boards, organize folders, and import photos.</p>
+          <strong>AI access</strong>
+          <p>Let Codex or Claude read and edit your boards.</p>
         </div>
         <button
           role="switch"
@@ -83,23 +98,38 @@ export default function McpSettings() {
       <div className="mcp-state">
         <span className={'mcp-dot ' + (status?.running ? 'running' : '')} />
         {status?.running
-          ? 'Running on this computer'
+          ? 'On. Keep Terra Board open.'
           : status?.enabled
-            ? 'Server could not start'
-            : 'Disabled'}
-        {status?.running && <code>{status.url}</code>}
+            ? 'Could not start'
+            : 'Off'}
       </div>
       {(error || status?.error) && (
         <p className="mcp-error" role="alert">
           {error || status?.error}
         </p>
       )}
-      <p className="quiet">
-        Keep Terra Board open while connected. Turning access off blocks new AI requests. Changes
-        already saved remain on your boards.
-      </p>
+      {clients && (
+        <div className="mcp-clients">
+          {clients.map((client) => (
+            <div className="mcp-client" key={client.name}>
+              <div>
+                <strong>{client.name}</strong>
+                <p>{client.hint}</p>
+              </div>
+              <button
+                className="button"
+                aria-label={`Copy ${client.name} setup`}
+                onClick={() => copy(client.name, client.value)}
+              >
+                <Copy size={15} />
+                Copy setup
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
       <label className="mcp-port">
-        Local port{' '}
+        Port{' '}
         <input
           aria-label="MCP port"
           type="number"
@@ -116,45 +146,10 @@ export default function McpSettings() {
           Apply
         </button>
       </label>
-      {status && (
-        <div className="mcp-clients">
-          <details open>
-            <summary>Codex</summary>
-            <p>
-              Add this entry to your Codex MCP configuration. It contains your private access token.
-            </p>
-            <textarea
-              aria-label="Codex MCP configuration"
-              readOnly
-              value={status.codexConfig}
-              rows={3}
-            />
-            <button className="button" onClick={() => copy('Codex', status.codexConfig)}>
-              {copied === 'Codex' ? <Check size={15} /> : <Copy size={15} />}Copy Codex
-              configuration
-            </button>
-          </details>
-          <details>
-            <summary>Claude</summary>
-            <p>
-              Paste this prompt into Claude Code or the Code tab of Claude Desktop on this computer
-              and it will connect itself, then restart Claude. The bundled connector needs no
-              separate Node installation.
-            </p>
-            <textarea
-              aria-label="Claude setup prompt"
-              readOnly
-              value={claudePrompt(status.claudeConfig)}
-              rows={9}
-            />
-            <button
-              className="button"
-              onClick={() => copy('Claude', claudePrompt(status.claudeConfig))}
-            >
-              {copied === 'Claude' ? <Check size={15} /> : <Copy size={15} />}Copy Claude setup
-              prompt
-            </button>
-          </details>
+      {copied && (
+        <div className="toast" role="status">
+          <Check size={15} />
+          {copied} setup prompt copied
         </div>
       )}
     </div>

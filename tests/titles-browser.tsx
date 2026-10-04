@@ -111,9 +111,10 @@ const type = (el: HTMLElement, value: string) => {
   document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   await tick();
   document.body.dispatchEvent(
-    new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true }),
+    new KeyboardEvent('keydown', { key: 'f', ctrlKey: true, bubbles: true }),
   );
   await tick();
+  await waitFor(() => document.querySelector('.library-search'));
   const searchName = document.querySelector<HTMLElement>(
     `.search-results [data-item="${board.id}"] .inline-name`,
   )!;
@@ -122,7 +123,7 @@ const type = (el: HTMLElement, value: string) => {
   searchName.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   await tick();
   check(
-    document.querySelector('[role="dialog"][aria-label="Search boards"]'),
+    document.querySelector('[role="dialog"][aria-label="Search"]'),
     'Escape closed Search instead of cancelling its name draft',
   );
   check(searchName.textContent === 'Renamed in folder', 'Escape lost the original search name');
@@ -146,7 +147,9 @@ const type = (el: HTMLElement, value: string) => {
     'close flush lost an active title draft',
   );
   // Open Trash through the same application menu used by the user.
-  document.querySelector<HTMLButtonElement>('[aria-label="Library options"]')!.click();
+  document
+    .querySelector('.launcher')!
+    .dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }));
   await tick();
   [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
     .find((el) => el.textContent?.includes('Trash'))!

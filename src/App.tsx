@@ -1,5 +1,6 @@
 import SettingsPage from './components/SettingsPage';
 import { useGlassAppearance } from './components/useGlassAppearance';
+import { useAppearance } from './components/useAppearance';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Settings,
@@ -30,6 +31,7 @@ import type { Board, Document, Folder, Library } from './model';
 import { desktop, exportPortable, importPortable, invoke } from './bridge';
 import type { SaveState } from './canvas/save-queue';
 import Launcher, { AppIcon } from './components/Launcher';
+import LibrarySearch from './components/LibrarySearch';
 import InlineName, { flushInlineNames } from './components/InlineName';
 import Whiteboard, { type WhiteboardHandle } from './components/Whiteboard';
 import BoardIconImage, { type BoardIconImageHandle } from './components/BoardIconImage';
@@ -39,6 +41,8 @@ import BoardSymbolPicker from './components/BoardSymbolPicker';
 import { Presence } from './components/Presence';
 import { ContextMenu, Modal, type MenuItem, type MenuPlacement } from './components/Dialogs';
 import { readDockEdge } from './components/useLauncherDock';
+import { useBoardHeaderSpace } from './components/useBoardHeaderSpace';
+import { useFullscreenSpace } from './components/useFullscreenSpace';
 type ModalState = {
   kind:
     | 'new-board'
@@ -57,9 +61,13 @@ type ModalState = {
 };
 export default function App() {
   const glass = useGlassAppearance();
+  const appearance = useAppearance();
   const [aiBusy, setAiBusy] = useState(false);
   const activeDocument = useRef<Document | null>(null);
   const [dockEdge, setDockEdge] = useState(readDockEdge);
+  const [searchTarget, setSearchTarget] = useState<{ boardId: string; objectId: string } | null>(
+    null,
+  );
   const [launcherCentered, setLauncherCentered] = useState(() => {
     try {
       return localStorage.getItem('terra-board.launcher-centered') === 'true';
@@ -79,7 +87,24 @@ export default function App() {
       localStorage.setItem('terra-board.launcher-hidden', String(launcherHidden));
     } catch {}
   }, [launcherHidden]);
+  const [launcherMinimal, setLauncherMinimal] = useState(() => {
+    try {
+      return localStorage.getItem('terra-board.launcher-minimal') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem('terra-board.launcher-minimal', String(launcherMinimal));
+    } catch {}
+  }, [launcherMinimal]);
   const [fullscreen, setFullscreen] = useState(false);
+  const fullscreenButton = useFullscreenSpace(
+    launcherMinimal && !launcherHidden && !fullscreen,
+    launcherCentered,
+    dockEdge,
+  );
   const fullscreenNow = useRef(false);
   const fullscreenEscapeHeld = useRef(false);
   const [library, setLibrary] = useState<Library>({ boards: [], folders: [], lastBoard: null }),
@@ -105,6 +130,11 @@ export default function App() {
     [busy, setBusy] = useState(false),
     [loading, setLoading] = useState(true);
   activeDocument.current = doc;
+  const boardHeader = useBoardHeaderSpace(
+    (dockEdge === 'top' || dockEdge === 'left') && launcherMinimal && !launcherHidden,
+    launcherCentered,
+    doc?.board.id,
+  );
   const [renameRequest, setRenameRequest] = useState<{
     kind: 'board' | 'folder';
     id: string;
@@ -196,7 +226,20 @@ export default function App() {
       window.removeEventListener('blur', blur);
     };
   }, [report]);
-  const openBoard = async (id: string) => {
+  const prepareSearch = useCallback(async () => {
+    await flushInlineNames();
+    await whiteboard.current?.flush();
+  }, []);
+  const openSearch = useCallback(() => {
+    setMenu(null);
+    void prepareSearch()
+      .then(() => {
+        setSearch('');
+        setModal({ kind: 'search' });
+      })
+      .catch((error) => report(String(error)));
+  }, [prepareSearch, report]);
+  const openBoard = async (id: string, objectId?: string) => {
     const n = ++request.current;
     try {
       await flushInlineNames();
@@ -205,6 +248,7 @@ export default function App() {
       const d = await invoke<Document>('loadBoard', { id });
       if (n !== request.current) return;
       setDoc(d);
+      setSearchTarget(objectId ? { boardId: id, objectId } : null);
       setOpened(null);
       setSaveState('saved');
       await invoke('setLastBoard', { id });
@@ -225,15 +269,21 @@ export default function App() {
   }, []);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+      if (aiBusy || e.isComposing || e.repeat) return;
+      if (
+        (e.ctrlKey || e.metaKey) &&
+        !e.altKey &&
+        !e.shiftKey &&
+        ['f', 'k'].includes(e.key.toLowerCase())
+      ) {
         e.preventDefault();
-        setSearch('');
-        setModal({ kind: 'search' });
+        e.stopPropagation();
+        openSearch();
       }
     };
-    window.addEventListener('keydown', key);
-    return () => window.removeEventListener('keydown', key);
-  }, []);
+    window.addEventListener('keydown', key, true);
+    return () => window.removeEventListener('keydown', key, true);
+  }, [aiBusy, openSearch]);
   useEffect(() => {
     const cleanup = window.canvas?.onClose(async () => {
       try {
@@ -391,6 +441,11 @@ export default function App() {
       } catch {}
     },
   };
+  const launcherModeItem: MenuItem = {
+    label: launcherMinimal ? 'Full panel' : 'Minimal mode',
+    icon: launcherMinimal ? <Maximize /> : <Minimize />,
+    action: () => setLauncherMinimal((minimal) => !minimal),
+  };
   const hideLauncherItem: MenuItem = {
     label: 'Hide panel',
     icon: <PanelLeftClose />,
@@ -443,6 +498,7 @@ export default function App() {
         { label: 'Export / share a copy…', icon: <Download />, action: () => exportBoard(b.id) },
         null,
         launcherAlignmentItem,
+        launcherModeItem,
         hideLauncherItem,
         null,
         { label: 'Move to Trash', icon: <Trash2 />, danger: true, action: () => trash(b.id) },
@@ -465,6 +521,7 @@ export default function App() {
         },
         null,
         launcherAlignmentItem,
+        launcherModeItem,
         hideLauncherItem,
         null,
         {
@@ -499,15 +556,12 @@ export default function App() {
         { label: 'Import board…', icon: <Upload />, action: importBoard },
       ],
     });
-  const panelMenu = (x: number, y: number, placement: MenuPlacement) =>
+  const libraryMenu = (x: number, y: number, placement: MenuPlacement = 'below') =>
     setMenu({
       x,
       y,
       placement,
       items: [
-        launcherAlignmentItem,
-        hideLauncherItem,
-        null,
         {
           label: 'New board',
           icon: <Plus />,
@@ -518,35 +572,18 @@ export default function App() {
           icon: <FolderPlus />,
           action: () => ask({ kind: 'new-folder' }, 'Untitled folder'),
         },
-      ],
-    });
-  const libraryMenu = (x: number, y: number) =>
-    setMenu({
-      x,
-      y,
-      items: [
+        null,
         {
-          label: 'Search boards',
+          label: 'Search',
           icon: <Search />,
-          action: () => {
-            setSearch('');
-            ask({ kind: 'search' });
-          },
+          action: openSearch,
         },
         { label: 'Import board…', icon: <Upload />, action: importBoard },
         null,
         { label: 'Trash', icon: <Trash2 />, action: () => ask({ kind: 'trash' }) },
         launcherAlignmentItem,
+        launcherModeItem,
         hideLauncherItem,
-        ...(desktop || document.fullscreenEnabled
-          ? [
-              {
-                label: fullscreen ? 'Exit full screen' : 'Full screen',
-                icon: fullscreen ? <Minimize /> : <Maximize />,
-                action: () => void run(toggleFullscreen),
-              },
-            ]
-          : []),
         ...(desktop
           ? [{ label: 'Settings', icon: <Settings />, action: () => ask({ kind: 'settings' }) }]
           : []),
@@ -593,7 +630,7 @@ export default function App() {
     'rename-folder': 'Rename folder',
     icon: 'Board icon',
     move: 'Move board',
-    search: 'Search boards',
+    search: 'Search',
     trash: 'Trash',
     help: 'Make yourself at home',
     settings: 'Settings',
@@ -608,6 +645,7 @@ export default function App() {
       >
         <Launcher
           hidden={launcherHidden}
+          minimal={launcherMinimal}
           dockEdge={dockEdge}
           centered={launcherCentered}
           onDock={setDockEdge}
@@ -617,12 +655,7 @@ export default function App() {
           onOpen={openBoard}
           onFolder={setOpened}
           onCreate={newMenu}
-          onSearch={() => {
-            setSearch('');
-            ask({ kind: 'search' });
-          }}
-          onOptions={libraryMenu}
-          onPanelMenu={panelMenu}
+          onPanelMenu={libraryMenu}
           onBoardMenu={boardMenu}
           onIconDrop={(board, file) => {
             if (busy) return;
@@ -650,7 +683,7 @@ export default function App() {
           onNewBoard={(folderId) => ask({ kind: 'new-board', folderId }, 'Untitled')}
         />
         <main className="workspace">
-          <header className="board-header">
+          <header ref={boardHeader} className="board-header">
             {doc && (
               <>
                 <div
@@ -750,11 +783,23 @@ export default function App() {
               </button>
             )}
           </header>
+          {!fullscreen && (desktop || document.fullscreenEnabled) && (
+            <button
+              className="fullscreen-toggle"
+              ref={fullscreenButton}
+              aria-label="Full screen"
+              onClick={() => void run(toggleFullscreen)}
+            >
+              <Maximize size={16} />
+            </button>
+          )}
           {doc ? (
             <Whiteboard
+              theme={appearance.theme}
               key={doc.board.id}
               ref={whiteboard}
               document={doc}
+              searchTarget={searchTarget?.boardId === doc.board.id ? searchTarget : null}
               onError={report}
               onSave={(state, message) => {
                 setSaveState(state);
@@ -960,60 +1005,18 @@ export default function App() {
                   </div>
                 </form>
               ) : modal.kind === 'search' ? (
-                <>
-                  <div className="search-input">
-                    <Search size={18} />
-                    <input
-                      aria-label="Search boards"
-                      placeholder="Find a board…"
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                      autoFocus
-                    />
-                  </div>
-                  <div className="search-results">
-                    {library.boards
-                      .filter(
-                        (b) => !b.trashed && b.name.toLowerCase().includes(search.toLowerCase()),
-                      )
-                      .map((b) => (
-                        <div
-                          key={b.id}
-                          className="search-result"
-                          data-item={b.id}
-                          onClick={() => {
-                            setModal(null);
-                            openBoard(b.id);
-                          }}
-                        >
-                          <button
-                            className="search-result-open"
-                            aria-label={'Open board ' + b.name}
-                          >
-                            <AppIcon board={b} />
-                          </button>
-                          <span>
-                            <InlineName
-                              value={b.name}
-                              label={'Board name in search: ' + b.name}
-                              onCommit={(name) => change(b.id, { name })}
-                            />
-                            <small>
-                              {b.folderId && library.folders.find((f) => f.id === b.folderId) ? (
-                                <InlineName
-                                  value={library.folders.find((f) => f.id === b.folderId)!.name}
-                                  label="Folder name in search"
-                                  onCommit={(name) => renameFolder(b.folderId!, name)}
-                                />
-                              ) : (
-                                'Icon strip'
-                              )}
-                            </small>
-                          </span>
-                        </div>
-                      ))}
-                  </div>
-                </>
+                <LibrarySearch
+                  library={library}
+                  query={search}
+                  onQuery={setSearch}
+                  prepare={prepareSearch}
+                  onOpen={(id, objectId) => {
+                    setModal(null);
+                    void openBoard(id, objectId);
+                  }}
+                  onRenameBoard={(id, name) => change(id, { name })}
+                  onRenameFolder={renameFolder}
+                />
               ) : modal.kind === 'trash' ? (
                 <div className="trash-list">
                   {library.boards.filter((b) => b.trashed).length ? (
@@ -1058,7 +1061,7 @@ export default function App() {
                       ['Duplicate selection', 'Ctrl D'],
                       ['Undo / redo', 'Ctrl Z / Ctrl Shift Z'],
                       ['Group / ungroup', 'Ctrl G / Ctrl Shift G'],
-                      ['Search your boards', 'Ctrl K'],
+                      ['Search boards and content', 'Ctrl F'],
                       ['Toggle full screen', 'F11'],
                       ['Exit full screen', 'Esc'],
                       ['Pan around', 'Right-drag · Space + drag'],
@@ -1090,6 +1093,7 @@ export default function App() {
       </div>
       {modal?.kind === 'settings' && (
         <SettingsPage
+          appearance={appearance}
           onClose={() => setModal(null)}
           transparency={glass.transparency}
           onTransparency={glass.setTransparency}

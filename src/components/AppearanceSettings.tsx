@@ -1,19 +1,23 @@
-import { Folder, Hand, MousePointer2, Plus, Square, Type } from 'lucide-react';
+import { Folder, Hand, MousePointer2, Plus, Square, Type, Sparkles } from 'lucide-react';
 import { defaultPanelTransparency } from './useGlassAppearance';
+import type { Appearance } from './useAppearance';
+import ThemeSwitch from './ThemeSwitch';
 
 export default function AppearanceSettings({
   transparency,
   onTransparency,
+  appearance,
 }: {
   transparency: number;
   onTransparency: (value: number) => void;
+  appearance: Appearance;
 }) {
   return (
     <section className="settings-section appearance-settings" aria-label="Appearance">
       <div className="appearance-heading">
         <div>
-          <h2>Liquid glass</h2>
-          <p>A lighter layer for your boards and tools.</p>
+          <h2>Appearance</h2>
+          <p>A different light. The same space.</p>
         </div>
         <button
           className="button glass-reset"
@@ -21,6 +25,19 @@ export default function AppearanceSettings({
         >
           Reset
         </button>
+      </div>
+      <div className="theme-setting-row">
+        <div>
+          <strong>Color theme</strong>
+          <p>
+            {appearance.preference === 'system'
+              ? 'Follows your device’s appearance.'
+              : appearance.theme === 'dark'
+                ? 'A quiet canvas after dark.'
+                : 'A little room for daylight.'}
+          </p>
+        </div>
+        <ThemeSwitch value={appearance.preference} onChange={appearance.setPreference} />
       </div>
       <div className="glass-preview" aria-hidden="true">
         <div className="glass-preview-landscape" />
@@ -75,6 +92,30 @@ export default function AppearanceSettings({
       <p id="panel-transparency-help" className="glass-setting-hint">
         Applies to the boards panel and tool panels. Icons stay crisp.
       </p>
+      <div className="night-glow-setting">
+        <span className="night-glow-symbol">
+          <Sparkles size={20} strokeWidth={1.5} />
+        </span>
+        <div>
+          <strong>
+            Night glow <span className="experimental-label">Experimental</span>
+          </strong>
+          <p id="night-glow-help">
+            Colored notes and shapes cast soft light and shadows across your board in dark mode.
+          </p>
+        </div>
+        <button
+          type="button"
+          className="night-glow-switch"
+          role="switch"
+          aria-label="Night glow"
+          aria-describedby="night-glow-help"
+          aria-checked={appearance.nightGlow}
+          onClick={() => appearance.setNightGlow(!appearance.nightGlow)}
+        >
+          <span />
+        </button>
+      </div>
     </section>
   );
 }
