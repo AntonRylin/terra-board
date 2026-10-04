@@ -66,8 +66,10 @@
   border-radius: 0;
   text-overflow: ellipsis;
 }
-.canvas-list input:focus {
-  box-shadow: 0 1px 0 rgb(110 143 171 / 0.28);
+.canvas-list input:focus,
+.canvas-list input:focus-visible {
+  outline: none;
+  box-shadow: none;
 }
 .canvas-list input[readonly] {
   pointer-events: none;

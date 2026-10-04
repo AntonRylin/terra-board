@@ -11,7 +11,7 @@ function outlinePoints(width: number, height: number) {
   const lengths = [horizontal, arc, vertical, arc, horizontal, arc, vertical, arc];
   const perimeter = lengths.reduce((a, b) => a + b, 0);
   const count = Math.min(1200, Math.max(80, Math.ceil(perimeter / 3)));
-  const waves = Math.max(4, Math.round(perimeter / 30));
+  const waves = Math.max(4, Math.round(perimeter / 22));
   return Array.from({ length: count }, (_, i) => {
     let distance = (i / count) * perimeter,
       segment = 0;
@@ -59,7 +59,7 @@ export default function ListEditOutline({ width, height }: { width: number; heig
     const draw = (now: number) => {
       const phase = ((now - started) / 2400) * Math.PI * 2;
       // Ease the ripple in without moving the card or its contents.
-      const amplitude = reduced.matches ? 0 : 0.8 * Math.min(1, (now - started) / 200);
+      const amplitude = reduced.matches ? 0 : 1.2 * Math.min(1, (now - started) / 200);
       path.current?.setAttribute(
         'd',
         points

@@ -217,6 +217,17 @@ try {
   const firstOutline = await outline();
   const stableCard = await rect('.canvas-list');
   const stableTitle = await rect('[aria-label="List name"]');
+  for (const selector of ['[aria-label="List name"]', '[aria-label="List item 1"]']) {
+    await click(selector);
+    assert.deepEqual(
+      await read(
+        `(() => { const s = getComputedStyle(document.querySelector('${selector}')); return [s.outlineStyle, s.boxShadow]; })()`,
+      ),
+      ['none', 'none'],
+      'editing text has no row outline or underline',
+    );
+  }
+  await click('[aria-label="List name"]');
   await sleep(250);
   assert.notEqual(await outline(), firstOutline, 'the border shape itself ripples');
   assert.deepEqual(await rect('.canvas-list'), stableCard, 'ripple does not move the card');
