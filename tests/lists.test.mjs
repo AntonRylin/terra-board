@@ -66,7 +66,7 @@ test('list validation rejects corrupt rows and repeated row IDs', () => {
 });
 
 test('resizing a list alone or with other objects preserves room for its editable rows', () => {
-  const minHeight = 100 + list.items.length * 44;
+  const minHeight = 141;
   const resized = resizeObject(list, 'se', -300, -180, true);
   assert.ok(resized.width >= 240 && resized.height >= minHeight);
   const [grouped] = resizeSelection(

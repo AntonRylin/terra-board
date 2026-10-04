@@ -24,6 +24,7 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
         'frame',
         'image',
         'video',
+        'document',
         'link',
         'arrow',
         'list',
@@ -120,7 +121,33 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
       (o.type !== 'image' || typeof o.imageTitle !== 'string' || o.imageTitle.length > 100000)
     )
       throw Error('Invalid image title');
-    if (['image', 'video'].includes(o.type) && !/^[a-f0-9]{64}$/.test(o.assetId))
+    for (const [key, limit] of [
+      ['documentTitle', 100000],
+      ['documentMime', 200],
+      ['documentExcerpt', 10000],
+    ] as const)
+      if (
+        o[key] !== undefined &&
+        (o.type !== 'document' || typeof o[key] !== 'string' || o[key].length > limit)
+      )
+        throw Error('Invalid document metadata');
+    for (const [key, min, max] of [
+      ['documentBytes', 0, 256 * 1024 * 1024],
+      ['documentPageCount', 1, 100000],
+    ] as const)
+      if (
+        o[key] !== undefined &&
+        (o.type !== 'document' || !Number.isInteger(o[key]) || o[key] < min || o[key] > max)
+      )
+        throw Error('Invalid document metadata');
+    if (
+      o.documentPreviewId !== undefined &&
+      (o.type !== 'document' ||
+        typeof o.documentPreviewId !== 'string' ||
+        !/^[a-f0-9]{64}$/.test(o.documentPreviewId))
+    )
+      throw Error('Invalid document preview');
+    if (['image', 'video', 'document'].includes(o.type) && !/^[a-f0-9]{64}$/.test(o.assetId))
       throw Error('Invalid media identifier');
     if (o.crop !== undefined) {
       const c = o.crop;
@@ -211,6 +238,12 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
       z: o.z,
       ...(o.text === undefined ? {} : { text: o.text }),
       ...(o.imageTitle === undefined ? {} : { imageTitle: o.imageTitle }),
+      ...(o.documentTitle === undefined ? {} : { documentTitle: o.documentTitle }),
+      ...(o.documentMime === undefined ? {} : { documentMime: o.documentMime }),
+      ...(o.documentBytes === undefined ? {} : { documentBytes: o.documentBytes }),
+      ...(o.documentPreviewId === undefined ? {} : { documentPreviewId: o.documentPreviewId }),
+      ...(o.documentExcerpt === undefined ? {} : { documentExcerpt: o.documentExcerpt }),
+      ...(o.documentPageCount === undefined ? {} : { documentPageCount: o.documentPageCount }),
       ...(o.color === undefined ? {} : { color: o.color }),
       ...(o.fontSize === undefined ? {} : { fontSize: o.fontSize }),
       ...(o.bold === undefined ? {} : { bold: o.bold }),

@@ -46,15 +46,17 @@ parentPort.on('message', (message) => {
         result = true;
       } else if (message.command === 'importFile') {
         const file = message.args.file;
-        const size = fs.statSync(file).size;
-        const portable = path.extname(file).toLowerCase() === '.canvas';
+        const stat = fs.statSync(file);
+        if (!stat.isFile()) throw Error('Choose a regular file');
+        const size = stat.size;
+        const portable =
+          message.args.attachment !== true && path.extname(file).toLowerCase() === '.canvas';
         if (size > (portable ? 544 : 256) * 1024 * 1024)
-          throw Error(portable ? 'Portable board exceeds 544 MB' : 'Media file exceeds 256 MB');
+          throw Error(portable ? 'Portable board exceeds 544 MB' : 'File exceeds 256 MB');
         const bytes = fs.readFileSync(file);
-        result =
-          path.extname(file).toLowerCase() === '.canvas'
-            ? await store.importBoard({ bytes })
-            : await store.importAsset({ bytes, name: path.basename(file) });
+        result = portable
+          ? await store.importBoard({ bytes })
+          : await store.importAsset({ bytes, name: path.basename(file) });
       } else if (message.command === 'exportFile') {
         const bytes = await store.exportBoard({ id: message.args.id });
         const file = message.args.file,

@@ -12,13 +12,13 @@ const {
 } = require('electron');
 const { createImageClipboard } = require('./image-clipboard.cjs');
 const { createVisualExport } = require('./visual-export.cjs');
+const { createAssetDownload, assetResponse } = require('./document-assets.cjs');
 const { attachWindowShadow } = require('./window-shadow.cjs');
 const { fetchPreview } = require('./link-preview.cjs');
 const { Worker } = require('node:worker_threads');
 const path = require('node:path');
 const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
-const { Readable } = require('node:stream');
 const { createHash, randomUUID } = require('node:crypto');
 const { libraryRoot } = require('./storage-paths.cjs');
 protocol.registerSchemesAsPrivileged([
@@ -255,6 +255,8 @@ app
           {
             '.html': 'text/html',
             '.js': 'text/javascript',
+            '.mjs': 'text/javascript',
+            '.wasm': 'application/wasm',
             '.css': 'text/css',
             '.json': 'application/json',
             '.svg': 'image/svg+xml',
@@ -269,36 +271,8 @@ app
         const u = new URL(request.url),
           [, id, variant] = u.pathname.split('/');
         if (u.hostname !== 'asset') throw Error('Invalid media');
-        const a = await call('asset', { id, variant: variant || 'preview' }),
-          size = fs.statSync(a.file).size;
-        let start = 0,
-          end = size - 1,
-          status = 200;
-        const headers = {
-          'Content-Type': a.contentType,
-          'Accept-Ranges': 'bytes',
-          'Access-Control-Allow-Origin': '*',
-          'Cache-Control': 'public, max-age=31536000, immutable',
-        };
-        const range = request.headers.get('range');
-        if (range) {
-          const match = /^bytes=(\d+)-(\d*)$/.exec(range);
-          if (!match) return new Response(null, { status: 416 });
-          start = Number(match[1]);
-          end = match[2] ? Math.min(Number(match[2]), end) : end;
-          if (start > end || start >= size)
-            return new Response(null, {
-              status: 416,
-              headers: { 'Content-Range': `bytes */${size}` },
-            });
-          status = 206;
-          headers['Content-Range'] = `bytes ${start}-${end}/${size}`;
-        }
-        headers['Content-Length'] = String(end - start + 1);
-        return new Response(Readable.toWeb(fs.createReadStream(a.file, { start, end })), {
-          status,
-          headers,
-        });
+        const a = await call('asset', { id, variant: variant || 'preview' });
+        return assetResponse(a, request.headers.get('range'));
       } catch {
         return new Response('Media not found', { status: 404 });
       }
@@ -504,6 +478,26 @@ app
       const r = await dialog.showOpenDialog(win, {
         properties: ['openFile', 'multiSelections'],
         filters: [
+          { name: 'All files', extensions: ['*'] },
+          {
+            name: 'Documents',
+            extensions: [
+              'pdf',
+              'doc',
+              'docx',
+              'rtf',
+              'odt',
+              'xls',
+              'xlsx',
+              'ods',
+              'csv',
+              'tsv',
+              'txt',
+              'md',
+              'gdoc',
+              'gsheet',
+            ],
+          },
           {
             name: 'Images and videos',
             extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'avif', 'tiff', 'mp4', 'webm'],
@@ -512,7 +506,8 @@ app
       });
       if (r.canceled) return [];
       const result = [];
-      for (const file of r.filePaths) result.push(await call('importFile', { file }));
+      for (const file of r.filePaths)
+        result.push(await call('importFile', { file, attachment: true }));
       return result;
     });
     ipcMain.handle('canvas:import-board', async (e) => {
@@ -532,6 +527,15 @@ app
       return r.canceled ? false : call('exportFile', { id, file: r.filePath });
     });
     const visualExport = createVisualExport({ dialog, shell, getWindow: () => win });
+    const assetDownload = createAssetDownload({
+      dialog,
+      getWindow: () => win,
+      readAsset: (args) => call('asset', args),
+    });
+    ipcMain.handle('canvas:download-asset', (e, args) => {
+      trusted(e);
+      return assetDownload.save(args);
+    });
     ipcMain.handle('canvas:asset-dimensions', async (e, id) => {
       trusted(e);
       const { width, height } = await call('asset', { id, variant: 'original' });

@@ -31,6 +31,7 @@ const kinds: Record<ObjectType, { label: string; icon: typeof Search }> = {
   note: { label: 'Note', icon: StickyNote },
   frame: { label: 'Frame', icon: Frame },
   image: { label: 'Image', icon: Image },
+  document: { label: 'Document', icon: FileText },
   video: { label: 'Video', icon: Video },
   link: { label: 'Link', icon: Link2 },
   rect: { label: 'Shape', icon: Shapes },

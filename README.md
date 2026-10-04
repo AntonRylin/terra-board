@@ -16,6 +16,7 @@ The application stores boards, original media, settings, browser caches, logs an
 - Create, search, rename, duplicate, move, export, import, trash and restore boards. Rename or dissolve folders while keeping their boards.
 - An infinite GPU canvas with pan, cursor-anchored zoom, fit, selection, moving, resizing, grouping, undo/redo, copy/paste, text, sticky notes, shapes, frames and links.
 - Paste or drop images; import local images and MP4/WebM videos. Videos play on demand in a local player.
+- Upload documents and other files with **Add files**, drag/drop, or paste. PDF, Word, Excel, PowerPoint, Google Workspace exports, TXT, and arbitrary attachments remain local and downloadable. Document cards use the usual selection, movement, resize, rotation, duplicate, and undo controls.
 - Portable editable `.canvas` files containing original media. Right-click the canvas to export selected items or the visible area as PNG, JPG, or a lossless single-page PDF. Choose Full quality (original image detail, up to 8K / 32 megapixels), 2K, or 4K; presets set the longest edge and preserve proportions. Progress and Open file / Open folder actions appear after saving. Sharing means giving someone the exported file, with no online service.
 - Frosted floating controls, animated folders/dialogs, keyboard focus handling and reduced-motion support.
 - A soft, wider Windows window shadow, with native title bar and resizing. The extra shadow hides when maximized, snapped or fullscreen.
@@ -23,6 +24,12 @@ The application stores boards, original media, settings, browser caches, logs an
 Pasted web links start as compact title/website cards with an open-link button. A spinner and loading label appear while fetching. Cards expand if a preview image arrives; without an image, available descriptions appear in a short text card and title-only links stay compact. Site icons are cached locally. Reduced-motion settings disable spinner rotation. Missing thumbnails retry automatically when opening a board or reconnecting. YouTube links briefly autoplay muted on the board (the first eight seconds); click **Play with sound**, the central play button or the selection play action for full inline playback. Close the player to return to its cached thumbnail. The external-link action opens YouTube in your browser. Private, offline or metadata-blocking pages retain a basic link card. Preview metadata, site icons and images travel with editable exports.
 
 ## Useful controls
+
+Select a document to show **Download** beside Duplicate, or right-click it and choose **Download**. The **T** title action adds a board label above the card without changing the imported filename. Double-click a document or choose **Preview document** to read it on the board. PDFs have a first-page card preview, page navigation, and reader zoom. DOCX previews show the document's text and layout; pagination may differ from Word. TXT and other supported text files can be edited in place: the checkmark or **Ctrl+Enter** saves, **Escape** cancels. Edits replace only that board item's copy and can be undone; source files on disk and duplicates stay unchanged.
+
+PDF and DOCX previews use bundled [PDF.js](https://mozilla.github.io/pdf.js/) and [docx-preview](https://github.com/VolodymyrBaydalka/docxjs), with no online conversion service. PDF/DOCX preview is limited to 32 MiB and text editing to 2 MiB (UTF-8 or UTF-16, preserving BOM and newline format). Larger, protected, damaged, or unsupported files remain downloadable. Excel, old `.doc`, and other formats currently show attachment cards. Google Docs/Sheets/Slides exports work in their exported format; `.gdoc`, `.gsheet`, and `.gslides` shortcuts contain a cloud reference rather than an offline document.
+
+Resize a list from a corner to scale its text, checkboxes, and spacing together. List editing and new rows keep the chosen scale.
 
 Press **F11** to toggle full screen, or choose **Full screen** from the library's three-dot menu. Press **Escape** or choose **Exit full screen** to return to the previous window size. Leaving full screen with Escape keeps an active text edit open.
 

@@ -1,0 +1,183 @@
+.document-reader {
+  position: absolute;
+  z-index: 5;
+  transform-origin: 0 0;
+  border-radius: 10px;
+  border: 1px solid #4486d9;
+  box-shadow: 0 5px 22px #1729441c;
+  background: #fff;
+  color: #29313b;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  outline: none;
+  font:
+    12px 'Segoe UI',
+    sans-serif;
+}
+.document-reader-toolbar,
+.document-page-controls {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 4px;
+  padding: 7px 8px;
+  border-bottom: 1px solid #e8ebef;
+  min-width: 0;
+  background: #f8fafc;
+}
+.document-reader-name {
+  flex: 1;
+  padding-left: 2px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: 500;
+}
+.document-reader button {
+  position: relative;
+  color: inherit;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  min-width: 26px;
+  height: 26px;
+  padding: 4px;
+  cursor: pointer;
+}
+.document-reader button:hover {
+  background: #e9eff7;
+}
+.document-reader button:focus-visible {
+  outline: 2px solid #4486d9;
+  outline-offset: -2px;
+}
+.document-reader button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.document-reader button[data-tooltip]::after {
+  content: attr(data-tooltip);
+  display: none;
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 10;
+  background: #263445;
+  color: white;
+  border-radius: 5px;
+  padding: 4px 6px;
+  font-size: 11px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.document-reader button[data-tooltip]:hover::after {
+  display: block;
+}
+.document-page-controls {
+  padding: 3px 8px;
+  font-variant-numeric: tabular-nums;
+}
+.document-controls-spacer {
+  flex: 1;
+}
+.document-page-number {
+  min-width: 38px;
+  text-align: center;
+}
+.document-text-editor {
+  min-height: 0;
+  flex: 1;
+  width: 100%;
+  resize: none;
+  border: 0;
+  border-radius: 0;
+  background: #fff;
+  color: #263445;
+  padding: 18px;
+  font:
+    13px/1.6 Consolas,
+    monospace;
+  box-shadow: none;
+  outline: none;
+  tab-size: 4;
+}
+.document-text-editor:focus {
+  box-shadow: none;
+  outline: none;
+}
+.document-reader-footer {
+  padding: 7px 12px;
+  font-size: 10px;
+  color: #778394;
+  border-top: 1px solid #edf0f4;
+}
+.document-pdf-page {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-gutter: stable;
+  padding: 12px;
+  background: #edf0f4;
+}
+.document-pdf-page canvas {
+  display: block;
+  height: auto;
+  margin: 0 auto;
+  box-shadow: 0 1px 5px #17294422;
+}
+.document-word-preview {
+  border: 0;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  background: #fff;
+}
+.document-reader-message {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 10px;
+  color: #718094;
+  line-height: 1.6;
+}
+.document-reader-message p {
+  margin: 0;
+}
+.document-reader-message .button {
+  gap: 7px;
+  background: #eaf1fb;
+  color: #34699e;
+  padding: 8px 12px;
+  height: auto;
+  margin-top: 6px;
+}
+[data-theme='dark'] .document-reader {
+  background: #202936;
+  color: #d5e0ed;
+}
+[data-theme='dark'] .document-reader-toolbar,
+[data-theme='dark'] .document-page-controls {
+  background: #253143;
+  border-color: #344156;
+}
+[data-theme='dark'] .document-reader button:hover {
+  background: #344459;
+}
+[data-theme='dark'] .document-text-editor {
+  background: #202936;
+  color: #d5e0ed;
+}
+[data-theme='dark'] .document-reader-footer {
+  border-color: #344156;
+  color: #9eaec1;
+}

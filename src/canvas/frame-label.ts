@@ -6,7 +6,11 @@ import { localToWorld, objectBounds } from './transform';
 export function frameLabel(o: CanvasObject) {
   const { appearance, metrics } = textLayout(
     o,
-    o.type === 'image' ? o.imageTitle || '' : o.text || 'Untitled frame',
+    o.type === 'image'
+      ? o.imageTitle || ''
+      : o.type === 'document'
+        ? o.documentTitle || ''
+        : o.text || 'Untitled frame',
   );
   return {
     ...textPlacement(o, appearance, metrics.lines.length),
@@ -15,7 +19,11 @@ export function frameLabel(o: CanvasObject) {
 }
 
 export function hasExternalLabel(o: CanvasObject) {
-  return o.type === 'frame' || (o.type === 'image' && !!o.imageTitle?.trim());
+  return (
+    o.type === 'frame' ||
+    (o.type === 'image' && !!o.imageTitle?.trim()) ||
+    (o.type === 'document' && !!o.documentTitle?.trim())
+  );
 }
 
 export function arrowLabelObject(o: CanvasObject): CanvasObject {
@@ -48,7 +56,8 @@ export function visualBounds(o: CanvasObject, editingTitle = false) {
       );
     return { x: b.x - pad, y: b.y - pad, width: b.width + pad * 2, height: b.height + pad * 2 };
   }
-  if (!hasExternalLabel(o) && !(editingTitle && o.type === 'image')) return objectBounds(o);
+  if (!hasExternalLabel(o) && !(editingTitle && (o.type === 'image' || o.type === 'document')))
+    return objectBounds(o);
   const top = frameLabel(o).top;
   const points = [
     { x: 0, y: top },

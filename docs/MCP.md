@@ -20,11 +20,13 @@ The generated command uses Terra Board's packaged Electron executable with `ELEC
 - `read_board`: text, geometry, formatting, object IDs, image IDs, revision and camera. Read subsequent pages until `nextOffset` is null. Supply the same revision across pages to detect intervening changes.
 - `create_board`, `update_board`, `duplicate_board`: create, rename, organize, set icons/colors, duplicate, trash and restore boards.
 - `create_folder`, `update_folder`, `remove_folder`: organize folders. Removing a folder preserves its boards.
-- `edit_board`: atomic object creation/replacement/deletion. Supports text, notes, shapes, frames, links, images, video and editable arrows, including all stored formatting/crop/group properties.
-- `import_media`: local absolute file path (up to 256 MB) or base64 bytes plus filename (up to 24 MB). Returns an asset ID. It validates media through the normal import pipeline and never fetches remote URLs.
-- `read_asset`: returns an image preview as an MCP image block or video metadata.
+- `edit_board`: atomic object creation/replacement/deletion. Supports text, notes, shapes, frames, links, images, video, documents, lists, and editable arrows, including all stored formatting/crop/group properties.
+- `import_media`: local absolute file path (up to 256 MB) or base64 bytes plus filename (up to 24 MB). Returns an asset ID. Images use the normal media validation pipeline; document and generic attachment bytes are retained exactly. It never fetches remote URLs.
+- `read_asset`: returns an image preview as an MCP image block, or video/document metadata.
 
 Typical photo workflow: `import_media` → `read_board` → `edit_board` with an image object containing the returned `assetId` and its desired position/size.
+
+For attachments, create a `document` object with `assetId`, `text` (the original filename), `documentMime`, `documentBytes`, and position/size. An initial 320×400 card is suitable. `documentTitle` is an independent board label. Optional `documentPreviewId`, `documentExcerpt`, and `documentPageCount` retain previews through copying and portable exports; preserve them when replacing whole objects. Documents visible in the app receive supported previews automatically.
 
 Edits require the latest board revision. Upserts replace **whole objects**; preserve fields from `read_board`. Use unique IDs for new objects and an `operationId` for retryable edits. On a revision conflict, reread and reconcile instead of blindly retrying old content. These tools do not execute code from board content.
 

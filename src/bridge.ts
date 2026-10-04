@@ -15,6 +15,7 @@ interface DesktopBridge {
     name: string;
     bytes: Uint8Array;
   }): Promise<{ id: string; name: string } | null>;
+  downloadAsset(args: { id: string; name: string }): Promise<boolean>;
   openExport(id: string, folder: boolean): Promise<void>;
   copyObjects(objects: CanvasObject[]): Promise<boolean>;
   copyText(text: string): Promise<void>;
@@ -109,9 +110,7 @@ export function chooseFiles(accept: string, multiple = false): Promise<File[]> {
   });
 }
 export async function pickMedia() {
-  return window.canvas
-    ? window.canvas.pickMedia()
-    : importFiles(await chooseFiles('image/*,video/mp4,video/webm', true));
+  return window.canvas ? window.canvas.pickMedia() : importFiles(await chooseFiles('', true));
 }
 export async function importPortable() {
   if (window.canvas) return window.canvas.importPortable();
@@ -131,6 +130,13 @@ export function download(blob: Blob, name: string) {
   a.download = name;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 30000);
+}
+export async function downloadAsset(id: string, name: string): Promise<boolean> {
+  if (window.canvas) return window.canvas.downloadAsset({ id, name });
+  const response = await fetch(mediaUrl(id, 'original'));
+  if (!response.ok) throw Error('Could not download this file');
+  download(await response.blob(), name);
+  return true;
 }
 export async function openLink(url: string) {
   if (!/^https?:\/\//i.test(url)) throw Error('Only web links can be opened');

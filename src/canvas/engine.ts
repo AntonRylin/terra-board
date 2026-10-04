@@ -23,6 +23,8 @@ import { uid } from '../model';
 import { SpatialIndex, screenToWorld, zoomAt, boundsOf, type Point, type Bounds } from './geometry';
 import { History } from './history';
 import { renderText, renderLinkCaption, textRegion } from './text-rendering';
+import { documentPreviewBox, renderDocumentCard } from './document-card';
+import { listLayout } from './list-layout';
 import { TextureCache } from './textures';
 import { appearanceEvent, nightInk } from '../appearance';
 import { NightLighting } from './night-lighting';
@@ -90,6 +92,54 @@ type Gesture = {
   snap?: { bounds: Bounds; targets: SnapTargets; state: SnapState };
 };
 export class Engine {
+  private documentPreviews = new Map<
+    string,
+    {
+      assetId: string;
+      metadata: Pick<CanvasObject, 'documentPreviewId' | 'documentExcerpt' | 'documentPageCount'>;
+    }
+  >();
+  hydrateDocument(
+    id: string,
+    assetId: string,
+    metadata: Pick<CanvasObject, 'documentPreviewId' | 'documentExcerpt' | 'documentPageCount'>,
+  ): void {
+    const object = this.objects.get(id);
+    if (this.disposed || object?.type !== 'document' || object.assetId !== assetId) return;
+    const previous = this.documentPreviews.get(id);
+    this.documentPreviews.set(id, {
+      assetId,
+      metadata: {
+        ...(previous?.assetId === assetId ? previous.metadata : {}),
+        ...(metadata.documentPreviewId !== undefined
+          ? { documentPreviewId: metadata.documentPreviewId }
+          : {}),
+        ...(metadata.documentExcerpt !== undefined
+          ? { documentExcerpt: metadata.documentExcerpt }
+          : {}),
+        ...(metadata.documentPageCount !== undefined
+          ? { documentPageCount: metadata.documentPageCount }
+          : {}),
+      },
+    });
+    if (this.editingPreview?.id === id)
+      this.editingPreview = this.withDocumentPreview(this.editingPreview);
+    const original = this.gesture?.original.find((o) => o.id === id);
+    if (original) {
+      // Preview work can complete during a transform. Persist its committed
+      // geometry while merging the metadata into every subsequent live preview.
+      this.preview(object);
+      this.callbacks.edit({ upserts: [this.withDocumentPreview(original)], deleted: [] });
+      this.callbacks.selection(this.selected);
+      this.invalidate();
+    } else this.apply({ upserts: [object], deleted: [] }, false);
+  }
+  private withDocumentPreview(o: CanvasObject): CanvasObject {
+    const preview = this.documentPreviews.get(o.id);
+    return o.type === 'document' && preview && preview.assetId === o.assetId
+      ? { ...o, ...preview.metadata }
+      : o;
+  }
   private loadingLinks = new Set<string>();
   setLinkLoading(id: string, loading: boolean) {
     if (loading) this.loadingLinks.add(id);
@@ -378,6 +428,7 @@ export class Engine {
           const ids = this.members(hit);
           const editOnClick =
             !additive &&
+            hit.type !== 'document' &&
             (hit.type !== 'image' || hitsFrameLabel(hit, worldToLocal(hit, w))) &&
             ((!hit.groupId &&
               (hitsFrameLabel(hit, worldToLocal(hit, w)) ||
@@ -526,7 +577,13 @@ export class Engine {
               return boundsOf(
                 resizeSelection(g.original, g.scaleBounds, g.corner as Corner, d.x, d.y),
               )!;
-            let resized: CanvasObject = resizeObject(g.original[0], g.corner!, d.x, d.y, e.shiftKey);
+            let resized: CanvasObject = resizeObject(
+              g.original[0],
+              g.corner!,
+              d.x,
+              d.y,
+              e.shiftKey,
+            );
             if (resized.gallery) {
               // Galleries reflow to their contents; align the actual final frame.
               const before = new Map(g.original.map((o) => [o.id, o]));
@@ -757,7 +814,7 @@ export class Engine {
     this.invalidate();
   }
   setEditingPreview(object: CanvasObject | null) {
-    this.editingPreview = object;
+    this.editingPreview = object ? this.withDocumentPreview(object) : null;
     this.invalidate();
   }
   setCropPreview(image: CanvasObject | null) {
@@ -863,6 +920,7 @@ export class Engine {
               : 'crosshair';
   }
   private preview(o: CanvasObject) {
+    o = this.withDocumentPreview(o);
     const meta = this.linkPreviews.get(o.id);
     if (o.type === 'link' && meta && meta.url === o.url) o = withLinkPreview(o, meta);
     this.objects.set(o.id, o);
@@ -889,8 +947,10 @@ export class Engine {
     return this.gesture !== null;
   }
   acceptExternalEdit(edit: Edit) {
-    for (const o of edit.upserts) this.linkPreviews.delete(o.id);
-    for (const id of edit.deleted) this.linkPreviews.delete(id);
+    for (const id of [...edit.upserts.map((o) => o.id), ...edit.deleted]) {
+      this.linkPreviews.delete(id);
+      this.documentPreviews.delete(id);
+    }
     this.apply(edit);
   }
   apply(edit: Edit, record = true) {
@@ -1084,9 +1144,10 @@ export class Engine {
     const icons = new Map<string, string>();
     const tiles = new Map<string, ReturnType<typeof imageTiles>>();
     for (const o of [...visible].reverse()) {
-      if (!['image', 'link'].includes(o.type)) continue;
-      const showImage = o.type === 'image' || hasLinkImage(o);
-      const mediaId = showImage ? o.assetId : o.linkIconId;
+      if (!['image', 'link', 'document'].includes(o.type)) continue;
+      const showImage = o.type === 'image' || o.type === 'document' || hasLinkImage(o);
+      const mediaId =
+        o.type === 'document' ? o.documentPreviewId : showImage ? o.assetId : o.linkIconId;
       if (!mediaId) continue;
       const fullWidth = o.width / (o.crop?.width || 1),
         fullHeight = o.height / (o.crop?.height || 1);
@@ -1142,10 +1203,11 @@ export class Engine {
         (this.loadingLinks.has(o.id) || (!!key && !texture && !this.textures.failed(key)));
       // Text scales with zoom; only decorative controls use the detail cutoff.
       const hasLabel =
-        this.editingId !== o.id &&
-        (o.type === 'image'
-          ? !!o.imageTitle?.trim() || !texture
-          : o.type === 'frame' || o.type === 'video' || o.type === 'link' || !!o.text);
+        o.type === 'document' ||
+        (this.editingId !== o.id &&
+          (o.type === 'image'
+            ? !!o.imageTitle?.trim() || !texture
+            : o.type === 'frame' || o.type === 'video' || o.type === 'link' || !!o.text));
       const resolution = 2 ** Math.ceil(Math.log2(c.zoom * devicePixelRatio));
       const region = textRegion(o, c, w, h);
       const signature = JSON.stringify([
@@ -1155,6 +1217,12 @@ export class Engine {
         o.height,
         o.text,
         o.imageTitle,
+        o.documentTitle,
+        o.documentMime,
+        o.documentBytes,
+        o.documentPreviewId,
+        o.documentExcerpt,
+        o.documentPageCount,
         o.url,
         o.linkDescription,
         o.linkCompact,
@@ -1251,13 +1319,27 @@ export class Engine {
       color = o.color || '#e8edf5';
     const dark = this.dark && !exporting;
     container.eventMode = 'none';
+    if (o.type === 'document') {
+      container.addChild(renderDocumentCard(o, texture, resolution, region, dark));
+      if ((exporting || this.editingId !== o.id) && o.documentTitle?.trim()) {
+        const label = renderText(o, o.documentTitle, resolution, region, dark);
+        if (label) container.addChild(label);
+      }
+      return container;
+    }
     if (o.type === 'list') {
       // Interactive glass is rendered in the DOM; exports use the same card geometry.
       if (!exporting) return container;
+      const layout = listLayout(o);
+      const card = new Container();
+      card.scale.set(layout.scale);
+      container.addChild(card);
+      o = { ...o, width: layout.width, height: layout.height };
+      resolution *= layout.scale;
       g.roundRect(0, 0, o.width, o.height, 20)
         .fill('#f4f7fa')
         .stroke({ color: '#d7e0e7', width: 1 });
-      container.addChild(g);
+      card.addChild(g);
       const measure = document.createElement('canvas').getContext('2d')!;
       const label = (
         value: string,
@@ -1293,7 +1375,7 @@ export class Engine {
         });
         text.position.set(x, y);
         const mask = new Graphics().rect(x, y, Math.max(1, o.width - x - 22), 32).fill('#ffffff');
-        container.addChild(mask, text);
+        card.addChild(mask, text);
         text.mask = mask;
         if (strike)
           g.moveTo(x, y + 10)
@@ -1567,7 +1649,10 @@ export class Engine {
       : null;
     if (toolbarBounds && this.selection.size === 1 && this.selected[0].type !== 'arrow') {
       const o = this.editingPreview || this.selected[0];
-      if (hasExternalLabel(o) || (o.type === 'image' && this.editingId === o.id)) {
+      if (
+        hasExternalLabel(o) ||
+        ((o.type === 'image' || o.type === 'document') && this.editingId === o.id)
+      ) {
         const visual = visualBounds(o, this.editingId === o.id);
         toolbarBounds = {
           x: visual.x * c.zoom + c.x,
@@ -1698,17 +1783,37 @@ export class Engine {
       getBounds,
     );
     let sourceScale = 1;
-    const images = plan.objects.filter(
-      (o) => o.assetId && (o.type === 'image' || (o.type === 'link' && hasLinkImage(o))),
-    );
+    const images = plan.objects.flatMap((object) => {
+      const id =
+        object.type === 'document'
+          ? object.documentPreviewId
+          : object.type === 'image' || (object.type === 'link' && hasLinkImage(object))
+            ? object.assetId
+            : undefined;
+      return id ? [{ object, id }] : [];
+    });
     if (quality === 'full') {
       const sizes = new Map<string, { width: number; height: number }>();
       for (let i = 0; i < images.length; i++) {
-        const o = images[i];
+        const { object: o, id } = images[i];
         progress(Math.round((4 * i) / images.length), `Reading original image sizes…`);
-        if (!sizes.has(o.assetId!)) sizes.set(o.assetId!, await dimensions(o.assetId!));
-        const size = sizes.get(o.assetId!)!;
-        const box = o.type === 'link' ? linkLayout(o.width, o.height) : o;
+        if (!sizes.has(id)) {
+          try {
+            sizes.set(id, await dimensions(id));
+          } catch (error) {
+            if (o.type !== 'document') throw error;
+            // A derived document thumbnail is optional. Its file card still
+            // exports when the thumbnail is missing or cannot be decoded.
+            continue;
+          }
+        }
+        const size = sizes.get(id)!;
+        const box =
+          o.type === 'document'
+            ? documentPreviewBox(o)
+            : o.type === 'link'
+              ? linkLayout(o.width, o.height)
+              : o;
         sourceScale = Math.max(
           sourceScale,
           (size.width * (o.crop?.width || 1)) / box.width,
@@ -1795,12 +1900,21 @@ export class Engine {
       await new Promise((resolve) => setTimeout(resolve, 0));
       try {
         const imageId =
-          o.type === 'image' || (o.type === 'link' && hasLinkImage(o))
-            ? o.assetId
-            : o.type === 'link'
-              ? o.linkIconId
-              : undefined;
-        const texture = imageId ? await load(imageId, o.type === 'link' && !hasLinkImage(o)) : null;
+          o.type === 'document'
+            ? o.documentPreviewId
+            : o.type === 'image' || (o.type === 'link' && hasLinkImage(o))
+              ? o.assetId
+              : o.type === 'link'
+                ? o.linkIconId
+                : undefined;
+        let texture: Texture | null = null;
+        if (imageId) {
+          try {
+            texture = await load(imageId, o.type === 'link' && !hasLinkImage(o));
+          } catch (error) {
+            if (o.type !== 'document') throw error;
+          }
+        }
         const icon =
           o.type === 'link' && hasLinkImage(o) && o.linkIconId
             ? await load(o.linkIconId, true)

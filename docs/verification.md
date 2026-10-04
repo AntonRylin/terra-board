@@ -1,5 +1,17 @@
 # Verification — Terra Board
 
+## Documents and proportional lists — 2026-10-04
+
+Document cards preserve their original filename separately from the board title. PDF, DOCX, editable UTF-8/UTF-16 text, and generic attachments use the local immutable asset store; PDF.js and docx-preview are bundled for local previews. Excel, legacy Word and Google Workspace shortcut files remain downloadable attachments. Text edits replace only the edited object's asset reference and support undo. List resizing scales text, checkboxes and spacing, while preserving previously stretched lists.
+
+- `npm test`: **247 passed, 0 failed**. Covers byte fidelity, empty files, document/media hash collisions, portable transfer, search/MCP/clipboard fields, safe downloads, bounded/cancellable previews, Unicode encoding, title/body concurrency, preview hydration through gestures/history, proportional lists and legacy list layout/export.
+- `npm run package`: passed, including TypeScript and production build. PDF worker, CMaps, fonts and codecs ship inside the package.
+- `node scripts/desktop-documents.mjs`: passed in `.local-test/desktop-documents-3saYCw`, with **zero renderer exceptions**. Real Chromium file drops and pointer/keyboard input exercised selection, separate titles, four resize corners, zoomed resizing, native clipboard, duplicate, undo/redo, TXT edits, simultaneous title/body saves, and a deliberately delayed save followed by another reader request.
+- The packaged check navigated a two-page PDF and verified page pixels, checked DOCX iframe content, empty TXT, damaged PDF fallback, and generic Excel/Google shortcut/binary attachments. Ribbon and context downloads produced exact bytes and original filenames. The native save-dialog choice was stubbed only in the disposable test process; the production IPC handler performed the filesystem writes.
+- Scaled lists retained interactive checkboxes, editable text and proportional new-row height. A legacy 640×188 list kept both rows visible without geometry changes; both rows were verified in a real 4096×1221 PNG export. Renderer reload, board reopening and portable originals/preview assets passed. PDF, DOCX and scaled-list screenshots were inspected.
+
+The document check waits for the intended board and visible, stable controls. Its non-unit-zoom resize check uses the actual zoom buttons; it does not claim to re-audit wheel animation. All mutations used disposable repository-local libraries.
+
 ## MCP concurrency and quiet view persistence — 2026-10-04
 
 Camera movement previously entered the content save queue, changed the board revision and updated the modified timestamp. It now uses a separate queue retaining one latest view, debounced for 1.2 seconds and flushed on board switch/close. Its SQLite update touches only the camera column; it does not change object rows, revision, modified time, or the content save indicator.

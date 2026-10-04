@@ -34,7 +34,8 @@ function editorHeight(text: string, a: Layout['appearance']) {
 // editing so fitting does not run again for each GPU frame or change the note size.
 export function textLayout(
   o: CanvasObject,
-  text = (o.type === 'image' ? o.imageTitle : o.text) || '',
+  text = (o.type === 'image' ? o.imageTitle : o.type === 'document' ? o.documentTitle : o.text) ||
+    '',
 ): Layout {
   const key = JSON.stringify([
     o.type,
@@ -115,9 +116,11 @@ export function textLayout(
 // creation rectangle. Keep a little room for ink overhang and the editor caret.
 export function fitTextObject(
   o: CanvasObject,
-  text = (o.type === 'image' ? o.imageTitle : o.text) || '',
+  text = (o.type === 'image' ? o.imageTitle : o.type === 'document' ? o.documentTitle : o.text) ||
+    '',
 ): CanvasObject {
   if (o.type === 'image') return { ...o, imageTitle: text };
+  if (o.type === 'document') return { ...o, documentTitle: text };
   if (o.type !== 'text' || o.textBox) return { ...o, text };
   const { appearance: a, metrics } = textLayout(o, text);
   const fitted = {

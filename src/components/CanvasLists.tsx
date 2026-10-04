@@ -3,6 +3,7 @@ import { Check, Plus, X } from 'lucide-react';
 import type { Camera, CanvasObject, ListItem } from '../model';
 import { uid } from '../model';
 import { localToWorld } from '../canvas/transform';
+import { listLayout, withListItems } from '../canvas/list-layout';
 import ListEditOutline from './ListEditOutline';
 import './canvas-lists.css';
 
@@ -10,7 +11,7 @@ export interface ListView {
   objects: CanvasObject[];
   camera: Camera;
 }
-export const listHeight = (count: number) => 100 + count * 44;
+export { listHeight } from '../canvas/list-layout';
 
 function ListCard({
   object: o,
@@ -35,6 +36,7 @@ function ListCard({
   const name = useRef<HTMLInputElement>(null);
   const pendingFocus = useRef<string | null>(null);
   const items = o.items || [];
+  const layout = listLayout(o);
   useLayoutEffect(() => {
     if (!active && editing) {
       setEditing(false);
@@ -54,8 +56,7 @@ function ListCard({
       pendingFocus.current = null;
     }
   });
-  const changeItems = (next: ListItem[]) =>
-    update({ ...o, items: next, height: listHeight(next.length) });
+  const changeItems = (next: ListItem[]) => update(withListItems(o, next));
   const focus = (id: string) => {
     const input = inputs.current.get(id);
     if (input) input.focus();
@@ -80,16 +81,17 @@ function ListCard({
     <section
       className="canvas-list glass-surface"
       data-list-id={o.id}
+      data-list-scale={layout.scale}
       data-selected={active}
       data-editing={editing}
       aria-label={o.text || 'List'}
       style={{
         left: origin.x * camera.zoom + camera.x,
         top: origin.y * camera.zoom + camera.y,
-        width: o.width,
-        height: o.height,
+        width: layout.width,
+        height: layout.height,
         borderColor: editing ? 'transparent' : active ? '#4486d9' : undefined,
-        transform: `scale(${camera.zoom}) rotate(${o.rotation || 0}deg)`,
+        transform: `scale(${camera.zoom * layout.scale}) rotate(${o.rotation || 0}deg)`,
       }}
       onPointerDown={(event) => {
         if (event.button !== 0 || !(event.target as HTMLElement).closest('button,input'))
@@ -116,7 +118,7 @@ function ListCard({
           event.stopPropagation();
       }}
     >
-      {editing && <ListEditOutline width={o.width} height={o.height} />}
+      {editing && <ListEditOutline width={layout.width} height={layout.height} />}
       <header className="canvas-list-header">
         {o.text || editing ? (
           <input

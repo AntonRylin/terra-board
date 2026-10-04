@@ -1,6 +1,7 @@
 import type { Bounds } from './geometry';
 import type { CanvasObject } from '../model';
 import { rotatePoint } from './transform.ts';
+import { listLayout } from './list-layout.ts';
 
 export type Corner = 'nw' | 'ne' | 'sw' | 'se';
 export const corners: Corner[] = ['nw', 'ne', 'sw', 'se'];
@@ -31,18 +32,24 @@ export function resizeObject(
   let width: number,
     height: number,
     fontSize = o.fontSize;
-  if (!edge && (o.type === 'text' || (['image', 'video'].includes(o.type) && !free))) {
+  if (
+    !edge &&
+    (o.type === 'text' || (['image', 'video', 'document', 'list'].includes(o.type) && !free))
+  ) {
     // Project the pointer onto the original diagonal, so either axis scales naturally.
     const requested = 1 + (dw * o.width + dh * o.height) / (o.width ** 2 + o.height ** 2);
     const font = o.fontSize || 18;
     const minimum =
       o.type === 'text'
         ? Math.max(8 / font, 1 / o.width, 1 / o.height)
-        : Math.min(1, Math.max(20 / o.width, 20 / o.height));
+        : o.type === 'list'
+          ? 240 / o.width
+          : Math.min(1, Math.max(20 / o.width, 20 / o.height));
     const maximum = Math.min(
       1e6 / o.width,
       1e6 / o.height,
       o.type === 'text' ? 300 / font : Infinity,
+      o.type === 'list' ? listLayout(o).maximumWidth / o.width : Infinity,
     );
     const scale = Math.max(minimum, Math.min(maximum, requested));
     width = Math.max(1, Math.min(1e6, o.width * scale));
@@ -53,8 +60,9 @@ export function resizeObject(
     height = edge && !/[ns]/.test(corner) ? o.height : Math.max(20, Math.min(1e6, o.height + dh));
   }
   if (o.type === 'list') {
-    width = Math.max(240, width);
-    height = Math.max(100 + (o.items?.length || 0) * 44, height);
+    const layout = listLayout(o);
+    width = Math.min(layout.maximumWidth, Math.max(240, width));
+    height = Math.max(layout.minimumHeight * (width / o.width), height);
   }
   const shift = rotatePoint(
     { x: (width - o.width) * (west ? -0.5 : 0.5), y: (height - o.height) * (north ? -0.5 : 0.5) },
@@ -102,11 +110,15 @@ export function resizeSelection(
       o.type === 'arrow' ? 0 : 1 / o.width,
       o.type === 'arrow' ? 0 : 1 / o.height,
       size ? 8 / size : 0,
-      o.type === 'list'
-        ? Math.max(240 / o.width, (100 + (o.items?.length || 0) * 44) / o.height)
-        : 0,
+      o.type === 'list' ? 240 / o.width : 0,
     );
-    maximum = Math.min(maximum, 1e6 / o.width, 1e6 / o.height, size ? 300 / size : Infinity);
+    maximum = Math.min(
+      maximum,
+      1e6 / o.width,
+      1e6 / o.height,
+      size ? 300 / size : Infinity,
+      o.type === 'list' ? listLayout(o).maximumWidth / o.width : Infinity,
+    );
   }
   const scale = Math.max(minimum, Math.min(maximum, requested));
   return objects.map((o) => ({

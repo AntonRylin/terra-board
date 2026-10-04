@@ -46,6 +46,7 @@ export default defineConfig({
               const [, , id, variant] = url.pathname.split('/');
               const a = await store.readAsset({ id, variant });
               res.setHeader('Content-Type', a.contentType);
+              res.setHeader('X-Content-Type-Options', 'nosniff');
               fs.createReadStream(a.file).pipe(res);
               return;
             }
@@ -60,7 +61,7 @@ export default defineConfig({
             }
             const { command, args } = JSON.parse(Buffer.concat(chunks).toString());
             if (!commands.has(command)) throw Error('Unknown command');
-            if (args?.bytes) args.bytes = Buffer.from(args.bytes, 'base64');
+            if (typeof args?.bytes === 'string') args.bytes = Buffer.from(args.bytes, 'base64');
             const value = await store[command](args);
             res.setHeader('Content-Type', 'application/json');
             res.end(

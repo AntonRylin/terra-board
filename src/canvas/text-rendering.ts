@@ -121,7 +121,7 @@ export function renderText(
 ) {
   const { appearance: a, metrics } = textLayout(o, text);
   const placement = textPlacement(o, a, metrics.lines.length);
-  const centered = o.type !== 'frame' && o.type !== 'image' && o.centerX;
+  const centered = o.type !== 'frame' && o.type !== 'image' && o.type !== 'document' && o.centerX;
   const anchor = centered ? o.width / 2 : a.padding;
   const overhang = a.fontSize * 0.25 + 2;
   const left = Math.max(region.x, anchor - (centered ? metrics.maxLineWidth / 2 : 0) - overhang);

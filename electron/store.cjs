@@ -4,6 +4,7 @@ const path = require('node:path');
 const { randomUUID, createHash } = require('node:crypto');
 const sharp = require('sharp');
 const { zipSync, unzipSync, strToU8, strFromU8 } = require('fflate');
+const { attachmentMime } = require('./document-assets.cjs');
 
 const iconAssetId = (icon) =>
   typeof icon === 'string' && /^asset-[a-f0-9]{64}$/.test(icon) ? icon.slice(6) : null;
@@ -28,6 +29,7 @@ const types = new Set([
   'frame',
   'image',
   'video',
+  'document',
   'link',
   'arrow',
   'list',
@@ -136,6 +138,36 @@ function objectValue(o) {
       throw Error('Invalid image title');
     result.imageTitle = o.imageTitle;
   }
+  for (const [key, limit] of [
+    ['documentTitle', 100000],
+    ['documentMime', 200],
+    ['documentExcerpt', 10000],
+  ]) {
+    if (o[key] !== undefined) {
+      if (o.type !== 'document' || typeof o[key] !== 'string' || o[key].length > limit)
+        throw Error('Invalid document metadata');
+      result[key] = o[key];
+    }
+  }
+  for (const [key, min, max] of [
+    ['documentBytes', 0, 256 * 1024 * 1024],
+    ['documentPageCount', 1, 100000],
+  ]) {
+    if (o[key] !== undefined) {
+      if (o.type !== 'document' || !Number.isInteger(o[key]) || !number(o[key], min, max))
+        throw Error('Invalid document metadata');
+      result[key] = o[key];
+    }
+  }
+  if (o.documentPreviewId !== undefined) {
+    if (
+      o.type !== 'document' ||
+      typeof o.documentPreviewId !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(o.documentPreviewId)
+    )
+      throw Error('Invalid document preview');
+    result.documentPreviewId = o.documentPreviewId;
+  }
   if (o.color !== undefined) {
     if (!/^#[a-fA-F0-9]{6}$/.test(o.color)) throw Error('Invalid color');
     result.color = o.color;
@@ -209,8 +241,10 @@ function objectValue(o) {
       throw Error('Invalid image crop');
     result.crop = { x: c.x, y: c.y, width: c.width, height: c.height };
   }
-  if (o.type === 'image' || o.type === 'video') {
+  if (o.type === 'image' || o.type === 'video' || o.type === 'document') {
     if (!o.assetId) throw Error('Missing asset');
+    if (o.type === 'document' && !/^[a-f0-9]{64}$/.test(o.assetId))
+      throw Error('Invalid document asset');
   }
   if (o.type === 'link') {
     if (typeof o.url !== 'string' || o.url.length > 8192) throw Error('Invalid URL');
@@ -455,6 +489,8 @@ class Store {
         json_extract(o.json, '$.type') AS type,
         json_extract(o.json, '$.text') AS text,
         json_extract(o.json, '$.imageTitle') AS imageTitle,
+        json_extract(o.json, '$.documentTitle') AS documentTitle,
+        json_extract(o.json, '$.documentExcerpt') AS documentExcerpt,
         json_extract(o.json, '$.url') AS url,
         json_extract(o.json, '$.linkDescription') AS linkDescription,
         (SELECT group_concat(json_extract(value, '$.text'), ' ') FROM json_each(o.json, '$.items')) AS listText
@@ -462,16 +498,26 @@ class Store {
       WHERE b.trashed = 0 AND (
         search_contains(json_extract(o.json, '$.text'), ?) OR
         search_contains(json_extract(o.json, '$.imageTitle'), ?) OR
+        search_contains(json_extract(o.json, '$.documentTitle'), ?) OR
+        search_contains(json_extract(o.json, '$.documentExcerpt'), ?) OR
         search_contains(json_extract(o.json, '$.url'), ?) OR
         search_contains(json_extract(o.json, '$.linkDescription'), ?) OR
         EXISTS (SELECT 1 FROM json_each(o.json, '$.items') WHERE search_contains(json_extract(value, '$.text'), ?)))
       ORDER BY b.position, b.id, o.id LIMIT 61
     `,
       )
-      .all(needle, needle, needle, needle, needle);
+      .all(needle, needle, needle, needle, needle, needle, needle);
     return {
       results: rows.slice(0, 60).map((row) => {
-        const text = [row.imageTitle, row.text, row.url, row.linkDescription, row.listText]
+        const text = [
+          row.imageTitle,
+          row.documentTitle,
+          row.text,
+          row.documentExcerpt,
+          row.url,
+          row.linkDescription,
+          row.listText,
+        ]
           .map(searchText)
           .find((value) => value.toLowerCase().includes(needle));
         const index = text.toLowerCase().indexOf(needle);
@@ -515,10 +561,12 @@ class Store {
     const signature = createHash('sha256')
       .update(JSON.stringify({ revision, objects, deleted, camera }))
       .digest('hex');
-    const findAsset = this.db.prepare('SELECT id FROM assets WHERE id=?');
+    const findAsset = this.db.prepare('SELECT id,mime FROM assets WHERE id=?');
     for (const o of objects) {
       if (o.assetId && !findAsset.get(o.assetId)) throw Error('Missing media asset');
       if (o.linkIconId && !findAsset.get(o.linkIconId)) throw Error('Missing site icon');
+      if (o.documentPreviewId && !findAsset.get(o.documentPreviewId)?.mime.startsWith('image/'))
+        throw Error('Missing document preview image asset');
     }
     return this.transaction(() => {
       if (operationId) {
@@ -647,22 +695,34 @@ class Store {
   async importAsset({ bytes, name }, prepareOnly = false) {
     name = String(name || 'image.png').slice(0, 240);
     let data = Buffer.from(bytes);
-    if (!data.length || data.length > 256 * 1024 * 1024)
-      throw Error('Files must be between 1 byte and 256 MB in this version');
-    if (data.length >= 4 && data.readUInt32LE(0) === 0x00010000) {
+    if (data.length > 256 * 1024 * 1024)
+      throw Error('Files must be no larger than 256 MB in this version');
+    const documentMime = attachmentMime(name, data);
+    if (!documentMime && data.length >= 4 && data.readUInt32LE(0) === 0x00010000) {
       data = await require('./icon-image.cjs').iconPng(data);
       name = name.replace(/\.[^.]+$/, '') + '.png';
     }
     const id = createHash('sha256').update(data).digest('hex');
     const existing = this.db.prepare('SELECT * FROM assets WHERE id=?').get(id);
-    if (existing) return existing;
+    // A file may first arrive as an opaque document and later as an image or
+    // video. Validate and prepare that media before promoting its shared row.
+    if (existing && (documentMime || /^(image|video)\//.test(existing.mime)))
+      return {
+        ...existing,
+        name,
+        ...(documentMime ? { mime: documentMime, width: 0, height: 0 } : {}),
+      };
     let mime, width, height, preview, thumbnail;
     const ext = path.extname(name).toLowerCase();
-    if (['.mp4', '.webm'].includes(ext)) {
+    if (documentMime) {
+      mime = documentMime;
+      width = 0;
+      height = 0;
+    } else if (['.mp4', '.webm'].includes(ext)) {
       const valid =
         ext === '.mp4'
           ? data.subarray(4, 8).toString() === 'ftyp'
-          : data.readUInt32BE(0) === 0x1a45dfa3;
+          : data.length >= 4 && data.readUInt32BE(0) === 0x1a45dfa3;
       if (!valid) throw Error('Unsupported video file');
       mime = ext === '.mp4' ? 'video/mp4' : 'video/webm';
       width = 1280;
@@ -707,7 +767,13 @@ class Store {
       durableWrite(file + '.thumb', a.thumbnail);
     }
     this.db
-      .prepare('INSERT OR IGNORE INTO assets VALUES(?,?,?,?,?,?)')
+      .prepare(
+        `INSERT INTO assets VALUES(?,?,?,?,?,?)
+        ON CONFLICT(id) DO UPDATE SET name=excluded.name,mime=excluded.mime,
+          width=excluded.width,height=excluded.height
+        WHERE (excluded.mime LIKE 'image/%' OR excluded.mime LIKE 'video/%')
+          AND assets.mime NOT LIKE 'image/%' AND assets.mime NOT LIKE 'video/%'`,
+      )
       .run(a.id, a.name, a.mime, a.width, a.height, a.bytes);
     return {
       id: a.id,
@@ -723,7 +789,7 @@ class Store {
       throw Error('Invalid asset');
     const a = this.db.prepare('SELECT * FROM assets WHERE id=?').get(id);
     if (!a) throw Error('Asset not found');
-    const suffix = a.mime.startsWith('video/') ? 'original' : variant;
+    const suffix = a.mime.startsWith('image/') ? variant : 'original';
     return {
       ...a,
       file: path.join(this.root, 'assets', id + '.' + suffix),
@@ -779,7 +845,7 @@ class Store {
         ...new Set(
           [
             iconAssetId(d.board.icon),
-            ...d.objects.flatMap((o) => [o.assetId, o.linkIconId]),
+            ...d.objects.flatMap((o) => [o.assetId, o.linkIconId, o.documentPreviewId]),
           ].filter(Boolean),
         ),
       ],
@@ -863,7 +929,9 @@ class Store {
       (iconAssetId(m.icon) && !assetIds.has(iconAssetId(m.icon))) ||
       objects.some(
         (o) =>
-          (o.assetId && !assetIds.has(o.assetId)) || (o.linkIconId && !assetIds.has(o.linkIconId)),
+          (o.assetId && !assetIds.has(o.assetId)) ||
+          (o.linkIconId && !assetIds.has(o.linkIconId)) ||
+          (o.documentPreviewId && !assetIds.has(o.documentPreviewId)),
       )
     )
       throw Error('Missing media in portable board');
@@ -874,6 +942,10 @@ class Store {
       prepared.push(
         await this.importAsset({ bytes: entries['assets/' + a.id], name: a.name }, true),
       );
+    const preparedById = new Map(prepared.map((a) => [a.id, a]));
+    for (const o of objects)
+      if (o.documentPreviewId && !preparedById.get(o.documentPreviewId)?.mime.startsWith('image/'))
+        throw Error('Missing document preview image asset');
     return this.transaction(() => {
       for (const a of prepared) if (a.data) this.commitAsset(a);
       const b = this.createBoard({ name: m.name });

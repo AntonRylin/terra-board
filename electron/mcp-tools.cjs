@@ -25,6 +25,7 @@ const object = z
       'frame',
       'image',
       'video',
+      'document',
       'link',
       'arrow',
       'list',
@@ -40,6 +41,20 @@ const object = z
     z: z.number().min(-1e7).max(1e7),
     text: z.string().max(100000).optional(),
     imageTitle: z.string().max(100000).optional(),
+    documentTitle: z.string().max(100000).optional(),
+    documentMime: z.string().max(200).optional(),
+    documentBytes: z
+      .number()
+      .int()
+      .min(0)
+      .max(256 * 1024 * 1024)
+      .optional(),
+    documentPreviewId: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .optional(),
+    documentExcerpt: z.string().max(10000).optional(),
+    documentPageCount: z.number().int().min(1).max(100000).optional(),
     fontSize: z.number().min(8).max(300).optional(),
     color: z
       .string()
@@ -190,7 +205,7 @@ function tools(call) {
   );
   add(
     'edit_board',
-    'Atomically create, replace or delete objects. Upserts are COMPLETE objects, not partial patches; preserve fields read earlier, including gallery layout and image membership. Coordinates are board units; z controls stacking. Images/videos require imported assetId; arrows require normalized points; links require http(s) URL. Galleries are frames with gallery settings; member images use galleryId, galleryIndex, galleryRow and galleryColumn. This is undoable on the open board. Edits to separate objects merge automatically. If a target object changed or was deleted since your read, the whole edit is rejected with conflicting IDs; read again and preserve those changes.',
+    'Atomically create, replace or delete objects. Upserts are COMPLETE objects, not partial patches; preserve fields read earlier, including gallery layout, image membership and document metadata. Coordinates are board units; z controls stacking. Images/videos/documents require imported assetId; document text retains its filename and documentTitle is an independent board title; arrows require normalized points; links require http(s) URL. Galleries are frames with gallery settings; member images use galleryId, galleryIndex, galleryRow and galleryColumn. This is undoable on the open board. Edits to separate objects merge automatically. If a target object changed or was deleted since your read, the whole edit is rejected with conflicting IDs; read again and preserve those changes.',
     {
       id,
       revision,
@@ -204,7 +219,7 @@ function tools(call) {
   );
   add(
     'import_media',
-    'Upload an image or video from an absolute local file path, or base64 bytes with a filename. Returns asset metadata; place it with edit_board using type image/video and assetId. Local files up to 256 MB; base64 uploads up to 24 MB. No remote URL fetching.',
+    'Upload an image, video, document or other attachment from an absolute local file path, or base64 bytes with a filename. Returns asset metadata; place it with edit_board using type image/video/document and assetId. Documents retain original bytes and filename (text), with an independent optional documentTitle. Local files up to 256 MB; base64 uploads up to 24 MB, including empty text files. No remote URL fetching.',
     {
       file: z.string().max(32768).optional(),
       base64: z
@@ -215,7 +230,8 @@ function tools(call) {
     },
     'none',
     async (a) => {
-      if (!!a.file === !!a.base64) throw Error('Provide exactly one of file or base64.');
+      if ((a.file !== undefined) === (a.base64 !== undefined))
+        throw Error('Provide exactly one of file or base64.');
       let bytes,
         name = a.name;
       if (a.file) {
@@ -241,7 +257,7 @@ function tools(call) {
   );
   add(
     'read_asset',
-    'View an imported image as an MCP image block. Preview is at most 1600 pixels, thumbnail 256. Video returns metadata. Original file remains untouched.',
+    'View an imported image as an MCP image block. Preview is at most 1600 pixels, thumbnail 256. Videos and documents return metadata. Original file remains untouched.',
     { id, variant: z.enum(['preview', 'thumb']).default('preview') },
     'none',
     async (a) => {

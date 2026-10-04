@@ -1,5 +1,15 @@
 export type ObjectType =
-  'text' | 'note' | 'rect' | 'ellipse' | 'frame' | 'image' | 'video' | 'link' | 'arrow' | 'list';
+  | 'text'
+  | 'note'
+  | 'rect'
+  | 'ellipse'
+  | 'frame'
+  | 'image'
+  | 'video'
+  | 'document'
+  | 'link'
+  | 'arrow'
+  | 'list';
 export interface ListItem {
   id: string;
   text: string;
@@ -37,6 +47,12 @@ export interface CanvasObject {
   z: number;
   text?: string;
   imageTitle?: string;
+  documentTitle?: string;
+  documentMime?: string;
+  documentBytes?: number;
+  documentPreviewId?: string;
+  documentExcerpt?: string;
+  documentPageCount?: number;
   color?: string;
   fontSize?: number;
   bold?: boolean;

@@ -24,6 +24,7 @@ import {
   Frame,
   Link2,
   ImagePlus,
+  FileText,
   ListTodo,
   Images,
   ArrowRight,
@@ -81,6 +82,10 @@ import {
 } from '../bridge';
 import { ContextMenu, Modal, type MenuItem } from './Dialogs';
 import ImageCrop from './ImageCrop';
+import DocumentReader, { type DocumentReaderHandle } from './DocumentReader';
+import { documentKind, withDocumentTitle } from '../canvas/document-files';
+import { prepareDocumentPreview, type DocumentPreview } from '../canvas/document-preview';
+import { downloadAsset } from '../bridge';
 import { cropImage, uncroppedImage, fullCrop } from '../canvas/crop';
 import { selectionToolsPosition } from '../canvas/selection-tools';
 import { boundsOf, type Bounds } from '../canvas/geometry';
@@ -287,6 +292,108 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   const activeGallery = selected.length === 1 && selected[0].gallery ? selected[0] : null;
   const [editingListId, setEditingListId] = useState<string | null>(null);
   const [listView, setListView] = useState<ListView>({ objects: [], camera: doc.camera });
+  const [readingDocument, setReadingDocument] = useState<CanvasObject | null>(null);
+  const [documentSession, setDocumentSession] = useState(0);
+  const readingDocumentId = useRef<string | null>(null);
+  const readingDocumentSession = useRef(0);
+  const savingDocumentId = useRef<string | null>(null);
+  const documentReader = useRef<DocumentReaderHandle>(null);
+  const documentRequests = useRef(new Map<string, string>());
+  const documentAbort = useRef(new AbortController());
+  const deferredDocumentPreviews = useRef(
+    new Map<string, { assetId: string; metadata: DocumentPreview }>(),
+  );
+  const documentViewKey = useRef('');
+  const closeDocument = (session = readingDocumentSession.current) => {
+    if (session !== readingDocumentSession.current) return;
+    readingDocumentSession.current++;
+    readingDocumentId.current = null;
+    setReadingDocument(null);
+    host.current?.focus();
+  };
+  const syncDocumentView = () => {
+    const id = readingDocumentId.current,
+      current = id && engine.current?.objects.get(id);
+    // Keep the saving reader mounted and disabled until persistence completes.
+    // Replacing its asset key earlier would expose a fresh, editable reader.
+    if (id && savingDocumentId.current === id) return;
+    if (!current) {
+      if (id) closeDocument();
+      return;
+    }
+    const key = JSON.stringify(current);
+    if (key !== documentViewKey.current) {
+      documentViewKey.current = key;
+      setReadingDocument({ ...current });
+    }
+  };
+  const refreshDocument = (o: CanvasObject, e: Engine) => {
+    if (external.current || o.type !== 'document' || !o.assetId) return;
+    const kind = documentKind(o.text || '', o.documentMime);
+    if (
+      kind === 'file' ||
+      (kind === 'pdf' ? !!o.documentPreviewId : o.documentExcerpt !== undefined)
+    )
+      return;
+    if (documentRequests.current.get(o.id) === o.assetId) return;
+    documentRequests.current.set(o.id, o.assetId);
+    void prepareDocumentPreview(o, documentAbort.current.signal)
+      .then((metadata) => {
+        if (!alive.current || engine.current !== e) return;
+        if (external.current)
+          deferredDocumentPreviews.current.set(o.id, { assetId: o.assetId!, metadata });
+        else e.hydrateDocument(o.id, o.assetId!, metadata);
+      })
+      .catch(() => {
+        /* Keep the attachment; the reader explains unsupported previews. */
+      });
+  };
+  const openDocument = async (o: CanvasObject) => {
+    if (readingDocumentId.current === o.id) return;
+    await documentReader.current?.flush();
+    if (editingSession.current) finishEdit();
+    const current = engine.current?.objects.get(o.id);
+    if (!current) return;
+    engine.current?.setSelection([o.id]);
+    setDocumentSession(++readingDocumentSession.current);
+    readingDocumentId.current = o.id;
+    documentViewKey.current = JSON.stringify(current);
+    setReadingDocument({ ...current });
+  };
+  const saveDocument = async (o: CanvasObject, bytes: Uint8Array<ArrayBuffer>, excerpt: string) => {
+    const e = engine.current;
+    if (!e || !alive.current) throw Error('This board is no longer open.');
+    const asset = await invoke<Asset>('importAsset', { name: o.text || 'Document.txt', bytes });
+    const current = e.objects.get(o.id);
+    if (!alive.current || engine.current !== e || !current || current.assetId !== o.assetId)
+      throw Error('This document changed while it was being edited. Reopen it before saving.');
+    savingDocumentId.current = o.id;
+    try {
+      e.apply({
+        upserts: [
+          {
+            ...current,
+            assetId: asset.id,
+            documentBytes: asset.bytes,
+            documentExcerpt: excerpt,
+            documentPreviewId: undefined,
+            documentPageCount: undefined,
+          },
+        ],
+        deleted: [],
+      });
+      await queue.current?.flush();
+    } finally {
+      savingDocumentId.current = null;
+      syncDocumentView();
+    }
+  };
+  const downloadDocument = async (o: CanvasObject) => {
+    if (editingSession.current) finishEdit();
+    if (readingDocumentId.current === o.id) await documentReader.current?.flush();
+    const current = engine.current?.objects.get(o.id);
+    if (current?.assetId) await downloadAsset(current.assetId, current.text || 'Document');
+  };
   const listViewKey = useRef('');
   const createList = () => {
     finishEdit();
@@ -373,7 +480,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       : null;
   const canFormat = (o: CanvasObject) =>
     ['text', 'note', 'rect', 'ellipse', 'frame', 'arrow', 'list'].includes(o.type) ||
-    (o.type === 'image' && (!!o.imageTitle || editingSession.current?.object.id === o.id));
+    (o.type === 'image' && (!!o.imageTitle || editingSession.current?.object.id === o.id)) ||
+    (o.type === 'document' && (!!o.documentTitle || editingSession.current?.object.id === o.id));
   const formattingSelection = (editingObject ? [editingObject] : selected).filter(canFormat);
   const toggleFormatting = (field: 'bold' | 'strikethrough') => {
     const session = editingSession.current;
@@ -392,7 +500,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     }
   };
   const alignmentSelection = (editingObject ? [editingObject] : selected).filter(
-    (o) => !['image', 'frame', 'link', 'arrow', 'list'].includes(o.type),
+    (o) => !['image', 'document', 'frame', 'link', 'arrow', 'list'].includes(o.type),
   );
   const editorOrigin =
     editingObject && editingPlacement
@@ -450,7 +558,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     }
     if (editingSession.current) finishEdit();
     engine.current?.setSelection([o.id]);
-    const value = (o.type === 'image' ? o.imageTitle : o.text) || '';
+    const value =
+      (o.type === 'image' ? o.imageTitle : o.type === 'document' ? o.documentTitle : o.text) || '';
     editingSession.current = { object: { ...o }, draft: value };
     engine.current?.setEditing(o.id);
     setEditing({ ...o });
@@ -476,7 +585,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     }
   };
   const activate = (o: CanvasObject) => {
-    if (o.type === 'list') setEditingListId(o.id);
+    if (o.type === 'document') void openDocument(o).catch(error);
+    else if (o.type === 'list') setEditingListId(o.id);
     else if (o.type === 'link' && o.linkCompact) openLink(o.url!).catch(error);
     else if (o.type === 'link') openObject(o);
     else if (o.type !== 'image' || o.imageTitle?.trim()) startEdit(o);
@@ -575,9 +685,13 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           if (JSON.stringify(next) !== JSON.stringify(engine.current.objects.get(editing.id)))
             engine.current.apply({ upserts: [next], deleted: [] });
         }
-      } else if (editing.type === 'image') {
-        const next = { ...editing, imageTitle: draft.trim() };
-        if (JSON.stringify(next) !== JSON.stringify(engine.current.objects.get(editing.id)))
+      } else if (editing.type === 'image' || editing.type === 'document') {
+        const current = engine.current.objects.get(editing.id);
+        const next =
+          editing.type === 'document' && current
+            ? withDocumentTitle(current, editing, draft)
+            : { ...editing, imageTitle: draft.trim() };
+        if (current && JSON.stringify(next) !== JSON.stringify(current))
           engine.current.apply({ upserts: [next], deleted: [] });
       } else {
         const { padding, lineHeight } = textAppearance(editing);
@@ -602,6 +716,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   };
   useEffect(() => {
     alive.current = true;
+    documentAbort.current = new AbortController();
     queue.current = new SaveQueue(doc.board.id, doc.revision, onSave, (args) =>
       invoke('patchBoard', { ...args }),
     );
@@ -632,6 +747,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       edit: (edit) => {
         if (!syncingExternal.current) queue.current!.enqueue(edit);
         setCount(e.objects.size);
+        syncDocumentView();
       },
       camera: (c) => {
         setCamera(c);
@@ -640,6 +756,16 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       selection: (objects) => {
         if (objects.length === 1) rememberTextSize(objects[0]);
         setSelected(objects);
+        const id = readingDocumentId.current,
+          session = readingDocumentSession.current;
+        if (id && !objects.some((o) => o.id === id)) {
+          void documentReader.current
+            ?.flush()
+            .then(() => {
+              if (readingDocumentId.current === id) closeDocument(session);
+            })
+            .catch(error);
+        }
       },
       hover: hoverImage,
       tool: setTool,
@@ -657,6 +783,19 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         selectionView.current = { bounds, viewport };
         positionTools();
         positionPlayer();
+        syncDocumentView();
+        for (const o of e.all) {
+          if (o.type !== 'document') continue;
+          const b = objectBounds(o),
+            c = e.camera;
+          if (
+            (b.x + b.width) * c.zoom + c.x >= 0 &&
+            b.x * c.zoom + c.x <= viewport.width &&
+            (b.y + b.height) * c.zoom + c.y >= 0 &&
+            b.y * c.zoom + c.y <= viewport.height
+          )
+            refreshDocument(o, e);
+        }
       },
       activate,
       create,
@@ -677,6 +816,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     return () => {
       window.removeEventListener('online', recoverPreviews);
       alive.current = false;
+      documentAbort.current.abort();
       e.destroy();
       engine.current = null;
       queue.current?.flush().catch(error);
@@ -714,7 +854,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     const el = editorRef.current;
     if (!editing || !el || !editingAppearance) return;
     if (
-      (editing.centerY || editing.type === 'frame' || editing.type === 'image') &&
+      (editing.centerY || ['frame', 'image', 'document'].includes(editing.type)) &&
       editingPlacement
     ) {
       const available =
@@ -739,11 +879,12 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     const p = point || e.center();
     const top = e.topZ();
     const objects = assets.map((a, i) => {
-      const width = Math.min(a.width, 480),
-        height = (width * a.height) / a.width;
+      const isDocument = !a.mime.startsWith('image/') && !a.mime.startsWith('video/');
+      const width = isDocument ? 320 : Math.min(a.width, 480),
+        height = isDocument ? 400 : (width * a.height) / a.width;
       return {
         id: uid(),
-        type: a.mime.startsWith('video/') ? 'video' : 'image',
+        type: isDocument ? 'document' : a.mime.startsWith('video/') ? 'video' : 'image',
         assetId: a.id,
         x: p.x + i * 36 - width / 2,
         y: p.y + i * 36 - height / 2,
@@ -751,6 +892,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         height,
         z: top + i + 1,
         text: a.name,
+        ...(isDocument ? { documentMime: a.mime, documentBytes: a.bytes } : {}),
       } as CanvasObject;
     });
     const edit = insertGalleryImages(e.objects, objects, target);
@@ -760,6 +902,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         ? target.galleryId
         : null;
     e.setSelection(gallery ? [gallery] : objects.map((o) => o.id));
+    for (const o of objects) refreshDocument(o, e);
   }
   async function performImport(
     load: () => Promise<Asset[]>,
@@ -826,6 +969,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     backgroundJob.current = task;
   }
   const flush = async (waitForExport = true) => {
+    await documentReader.current?.flush();
     arrowDraft.current?.flush();
     engine.current?.stopCameraAnimation();
     if (editingSession.current) finishEdit();
@@ -866,6 +1010,10 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         }
       }
       external.current = false;
+      if (e)
+        for (const [id, preview] of deferredDocumentPreviews.current)
+          e.hydrateDocument(id, preview.assetId, preview.metadata);
+      deferredDocumentPreviews.current.clear();
     },
     flush,
     importMedia,
@@ -1214,6 +1362,30 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           null,
         ]
       : []),
+    ...(selected.length === 1 && selected[0].type === 'document'
+      ? [
+          {
+            label: selected[0].documentTitle?.trim() ? 'Edit title' : 'Add title',
+            icon: <Type />,
+            action: () => startEdit(selected[0]),
+          },
+          {
+            label: 'Preview document',
+            icon: <FileText />,
+            action: () => {
+              void openDocument(selected[0]).catch(error);
+            },
+          },
+          {
+            label: 'Download',
+            icon: <Download />,
+            action: () => {
+              void downloadDocument(selected[0]).catch(error);
+            },
+          },
+          null,
+        ]
+      : []),
     ...(selected.length === 1 && selected[0].type === 'image'
       ? [
           {
@@ -1338,13 +1510,25 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           }));
         }}
       />
+      {readingDocument && (
+        <DocumentReader
+          key={`${readingDocument.id}:${readingDocument.assetId}`}
+          ref={documentReader}
+          object={readingDocument}
+          camera={camera}
+          onSave={saveDocument}
+          onClose={() => closeDocument(documentSession)}
+          onDownload={() => downloadDocument(readingDocument)}
+          onError={error}
+        />
+      )}
       {ready && !count && (
         <div className="empty-canvas">
           <h1>Room for your next idea.</h1>
           <p>Paste an image, drop a file, or add a note.</p>
           <button className="button" onClick={importMedia}>
             <ImagePlus size={16} />
-            Add images or video
+            Add files
           </button>
         </div>
       )}
@@ -1354,7 +1538,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             ? 'Removing background…'
             : copying
               ? 'Copying to clipboard…'
-              : 'Importing media…'}
+              : 'Importing files…'}
         </div>
       )}
       {hoverImageId &&
@@ -1639,17 +1823,51 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
               </button>
             </>
           )}
-          {selected.length === 1 && selected[0].type === 'image' && (
+          {selected.length === 1 && ['image', 'document'].includes(selected[0].type) && (
             <button
               className="icon-button"
-              aria-label={selected[0].imageTitle?.trim() ? 'Edit title' : 'Add title'}
-              title={selected[0].imageTitle?.trim() ? 'Edit title' : 'Add title'}
+              aria-label={
+                (selected[0].type === 'document'
+                  ? selected[0].documentTitle
+                  : selected[0].imageTitle
+                )?.trim()
+                  ? 'Edit title'
+                  : 'Add title'
+              }
+              title={
+                (selected[0].type === 'document'
+                  ? selected[0].documentTitle
+                  : selected[0].imageTitle
+                )?.trim()
+                  ? 'Edit title'
+                  : 'Add title'
+              }
               onClick={() => startEdit(selected[0])}
             >
               <Type size={17} />
             </button>
           )}
           {canExportFromSelectionBar && exportSelectionButton}
+          {selected.length === 1 && selected[0].type === 'document' && (
+            <>
+              <button
+                className="icon-button"
+                aria-label="Preview document"
+                title="Preview document"
+                onClick={() => void openDocument(selected[0]).catch(error)}
+              >
+                <FileText size={16} />
+              </button>
+              <button
+                className="icon-button"
+                aria-label="Download document"
+                title="Download document"
+                onClick={() => void downloadDocument(selected[0]).catch(error)}
+              >
+                <Download size={16} />
+              </button>
+            </>
+          )}
           <button
             className="icon-button"
             aria-label="Duplicate selection"
@@ -1677,15 +1895,23 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           ref={editorRef}
           className={'text-editor ' + (editing.type === 'note' ? 'note-editor' : '')}
           aria-label={
-            editing.type === 'image'
-              ? 'Edit image title'
-              : editing.gallery
-                ? 'Edit gallery name'
-                : editing.type === 'frame'
-                  ? 'Edit frame name'
-                  : 'Edit canvas text'
+            editing.type === 'document'
+              ? 'Edit document title'
+              : editing.type === 'image'
+                ? 'Edit image title'
+                : editing.gallery
+                  ? 'Edit gallery name'
+                  : editing.type === 'frame'
+                    ? 'Edit frame name'
+                    : 'Edit canvas text'
           }
-          placeholder={editing.type === 'image' ? 'Image title' : undefined}
+          placeholder={
+            editing.type === 'document'
+              ? 'Document title'
+              : editing.type === 'image'
+                ? 'Image title'
+                : undefined
+          }
           maxLength={100000}
           value={draft}
           onChange={(e) => {
@@ -1707,7 +1933,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             } else if (
               (e.ctrlKey ||
                 e.metaKey ||
-                (['frame', 'image'].includes(editing.type) && !e.shiftKey)) &&
+                (['frame', 'image', 'document'].includes(editing.type) && !e.shiftKey)) &&
               e.key === 'Enter'
             ) {
               e.preventDefault();
@@ -1722,7 +1948,9 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             transform: `rotate(${editing.rotation || 0}deg)`,
             transformOrigin: '0 0',
             textAlign:
-              !['frame', 'image'].includes(editing.type) && editing.centerX ? 'center' : 'left',
+              !['frame', 'image', 'document'].includes(editing.type) && editing.centerX
+                ? 'center'
+                : 'left',
             width: editingAppearance.wrapWidth * camera.zoom,
             fontSize: editingAppearance.fontSize * camera.zoom,
             lineHeight: `${editingAppearance.lineHeight * camera.zoom}px`,
@@ -1761,7 +1989,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             action: () => selectTool(id),
           })),
           { id: 'list', label: 'Add list', icon: ListTodo, action: createList },
-          { id: 'media', label: 'Add images or video', icon: ImagePlus, action: importMedia },
+          { id: 'media', label: 'Add files', icon: ImagePlus, action: importMedia },
           { id: 'gallery', label: 'Gallery', icon: Images, action: createGallery },
         ]}
       />
