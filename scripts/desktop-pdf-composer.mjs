@@ -5,6 +5,7 @@
 // libreoffice-<version> folder; CANVAS_OFFICE_FIXTURES is a JSON manifest containing
 // {files:[{file:"relative/source.doc",textMarkers:["Expected text"],multipage:false}]}.
 import assert from 'node:assert/strict';
+import { movePdfComposerPage } from '../src/canvas/pdf-composer.ts';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
@@ -610,7 +611,7 @@ async function pageDrop(pageId, destinationColumnId, targetPageId, after = false
   const end = targetPageId
     ? {
         x: target.x + target.width / 2,
-        y: target.y + (after ? target.height * 0.8 : Math.min(5, target.height / 5)),
+        y: target.y + Math.min(10, target.height / 5),
       }
     : { x: target.x + target.width / 2, y: target.y + Math.min(50, target.height / 2) };
   await nativeDrag(start, end);
@@ -997,6 +998,171 @@ async function portableRoundtrip(expected) {
   }
 }
 
+async function tableFeatures() {
+  assert.equal(
+    await read(
+      `!!document.querySelector('.selection-tools [aria-label="Bold"],.selection-tools [aria-label="Strikethrough"]')`,
+    ),
+    false,
+  );
+  // Enlarge the real frame so three files can sit side by side.
+  const frame = await rect(composerSelector());
+  await nativeDrag(
+    { x: frame.x + frame.width, y: frame.y + frame.height },
+    { x: frame.x + frame.width + 520, y: frame.y + frame.height },
+  );
+  await saved(
+    (doc) => doc.objects.find((o) => o.id === composerId).width > 800,
+    'native composer resize',
+  );
+  await click(`${composerSelector()} [aria-label="Show whole pages"]`);
+  await saved(
+    (doc) => doc.objects.find((o) => o.id === composerId).pdfComposer.view === 'full',
+    'whole page mode persists',
+  );
+  const initial = snapshot(await graph()),
+    first = initial.columns[0],
+    second = initial.columns[1];
+  const a = await rect(pageSelector(first.pages[0].id)),
+    b = await rect(pageSelector(first.pages[1].id));
+  assert.ok(b.y >= a.y + a.height, 'whole sheets do not overlap');
+  await shot('table-whole-pages');
+  await click(`${composerSelector()} [aria-label="Stack pages"]`);
+  await saved(
+    (doc) => doc.objects.find((o) => o.id === composerId).pdfComposer.view === 'stacked',
+    'stacked view persists',
+  );
+  const beforeWidth = await read(
+    `document.querySelector(${JSON.stringify(pageSelector(first.pages[0].id) + ' canvas')}).width`,
+  );
+  for (let i = 0; i < 5; i++) await click(`${composerSelector()} [aria-label="Zoom pages in"]`);
+  await saved(
+    (doc) => doc.objects.find((o) => o.id === composerId).pdfComposer.zoom === 2.25,
+    'page zoom persists',
+  );
+  await until(
+    () =>
+      read(
+        `document.querySelector(${JSON.stringify(pageSelector(first.pages[0].id) + ' canvas')})?.width > ${beforeWidth}`,
+      ),
+    'zoom renders higher resolution page pixels',
+  );
+  await shot('table-sharp-zoom');
+  for (let i = 0; i < 5; i++) await click(`${composerSelector()} [aria-label="Zoom pages out"]`);
+  await click(`${composerSelector()} [aria-label="New PDF column"]`);
+  await saved(
+    (doc) => doc.objects.find((o) => o.id === composerId).pdfComposer.columns.length === 3,
+    'empty output column',
+  );
+  const empty = (await graph()).columns.at(-1);
+  const modifiedClick = async (id, modifiers) => {
+    const r = await bringIntoView(pageSelector(id)),
+      point = { x: r.x + r.width / 2, y: r.y + 9 };
+    for (const type of ['mouseMoved', 'mousePressed', 'mouseReleased'])
+      await renderer.send('Input.dispatchMouseEvent', {
+        type,
+        ...point,
+        button: 'left',
+        buttons: type === 'mousePressed' ? 1 : 0,
+        clickCount: 1,
+        modifiers,
+      });
+  };
+  await modifiedClick(first.pages[0].id, 0);
+  await modifiedClick(first.pages[1].id, 2);
+  assert.equal(
+    await read(`document.querySelectorAll('.pdf-composer-page[data-selected="true"]').length`),
+    2,
+  );
+  const before = snapshot(await graph());
+  await watchMotion();
+  await pageDrop(first.pages[0].id, empty.id);
+  await assertMotion('page');
+  await saved(
+    (doc) => doc.objects.find((o) => o.id === composerId).pdfComposer.columns[2].pages.length === 2,
+    'selected pages move together',
+  );
+  const moved = snapshot(await graph());
+  assert.deepEqual(moved.columns[0].pages, []);
+  assert.equal(moved.columns[0].slotCount, 2);
+  assert.deepEqual(
+    moved.columns[2].pages.map((p) => p.id),
+    first.pages.map((p) => p.id),
+  );
+  assert.deepEqual(
+    moved.columns[1].pages.map((p) => [p.id, p.row]),
+    second.pages.map((p, i) => [p.id, i]),
+  );
+  assert.equal(
+    await read(
+      `document.querySelectorAll(${JSON.stringify(columnSelector(first.id) + ' .pdf-composer-slot')}).length`,
+    ),
+    2,
+  );
+  await undoRedo(before, moved, 'group move');
+  await modifiedClick(empty.pages?.[0]?.id || first.pages[0].id, 0);
+  await modifiedClick(first.pages[1].id, 8);
+  assert.equal(
+    await read(`document.querySelectorAll('.pdf-composer-page[data-selected="true"]').length`),
+    2,
+    'Shift range selects both sheets',
+  );
+  await modifiedClick(first.pages[0].id, 0);
+  assert.equal(
+    await read(`document.querySelectorAll('.pdf-composer-page[data-selected="true"]').length`),
+    1,
+    'plain click narrows the selection without dragging',
+  );
+  await key('Delete', 'Delete');
+  await saved(
+    (doc) => doc.objects.find((o) => o.id === composerId).pdfComposer.columns[2].pages.length === 1,
+    'delete selected sheet',
+  );
+  const removed = snapshot(await graph());
+  assert.deepEqual(
+    removed.columns[2].pages.map((p) => [p.id, p.row]),
+    [[first.pages[1].id, 1]],
+  );
+  assert.equal(removed.columns[2].slotCount, 2);
+  await undoRedo(moved, removed, 'delete leaves slot');
+  await pageDrop(first.pages[1].id, first.id);
+  // Dropping on the column's existing empty row fills it; untouched slots remain.
+  await saved(
+    (doc) => doc.objects.find((o) => o.id === composerId).pdfComposer.columns[0].pages.length === 1,
+    'empty source slot accepts page',
+  );
+  const final = snapshot(await graph());
+  assert.equal(final.columns[0].pages[0].row, 0);
+  assert.equal(final.columns[2].slotCount, 2);
+  await exportColumn(final, final.columns[0]);
+  await exportColumn(final, final.columns[1], true);
+  await click(`${composerSelector()} [aria-label="Show whole pages"]`);
+  await setAppearance('dark');
+  await until(
+    () =>
+      read(`(() => {
+    const page=document.querySelector(${JSON.stringify(pageSelector(second.pages[0].id))});
+    const canvas=page?.querySelector('canvas');
+    if(!canvas || page.querySelector('[data-loading="true"]'))return false;
+    const pixels=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data;
+    let colored=0;for(let i=0;i<pixels.length;i+=16)if(pixels[i+3] && Math.max(pixels[i],pixels[i+1],pixels[i+2])-Math.min(pixels[i],pixels[i+1],pixels[i+2])>35)colored++;
+    return colored>50;
+  })()`),
+    'unchanged source preview keeps pixels after zoom and layout changes',
+  );
+  await shot('table-gaps-dark');
+  const persisted = snapshot(await composer());
+  await reloadBoard();
+  assert.deepEqual(await composer(), persisted);
+  await assertOriginals();
+  assert.deepEqual(errors, []);
+  await closeChild();
+  await portableRoundtrip(persisted);
+  checkpoint(
+    'whole/stacked sheets, sharp zoom, Ctrl/Shift multi-selection, group motion, persistent holes, delete/undo, export and portable reload',
+  );
+}
+
 try {
   const mainTarget = await targetAt(inspectorPort, (target) => !!target.webSocketDebuggerUrl);
   main = await connect(mainTarget.webSocketDebuggerUrl, true);
@@ -1136,182 +1302,201 @@ try {
     'native PDF-on-PDF creates animated persistent frame; creation undo/redo and independent frame movement preserve originals',
   );
 
-  await appendBoardCard(
-    originalObjects.find((object) => object.id === sourceCards[2].id),
-    3,
-  );
-  await appendBoardCard(
-    originalObjects.find((object) => object.id === sourceCards[3].id),
-    4,
-  );
-  const beforeExternal = snapshot(await graph());
-  await nativeDrop([fixtures.external, fixtures.jpg], composerSelector());
-  await saved(
-    (document) =>
-      document.objects.find((object) => object.id === composerId)?.pdfComposer.columns.length === 6,
-    'native external PDF and image batch appends two columns',
-  );
-  const afterExternal = snapshot(await graph());
-  assert.deepEqual(
-    afterExternal.columns.slice(-2).map((column) => column.name),
-    [fixtures.external.name, fixtures.jpg.name],
-    'external file order becomes column order',
-  );
-  assert.deepEqual(
-    afterExternal.columns.map((column) => column.pages.length),
-    [2, 2, 2, 1, 1, 1],
-  );
-  await undoRedo(beforeExternal, afterExternal, 'external batch append');
-  await assertOriginals();
-  await rejectedDrop([fixtures.png, fixtures.malformed], 'malformed PDF batch');
-  await rejectedDrop([fixtures.unsupported], 'unsupported attachment');
-  checkpoint(
-    'native board PDF/image and external file drops preserve originals; failed batches are atomic',
-  );
-
-  // Swap two pages within the first source column using the real pointer path.
-  let before = snapshot(await graph()),
-    expected = snapshot(before);
-  const first = before.columns[0],
-    second = before.columns[1];
-  await watchMotion();
-  await pageDrop(first.pages[0].id, first.id, first.pages[1].id, true);
-  await assertMotion('page');
-  expected.columns[0].pages.reverse();
-  await expectGraph(expected, 'native within-column page reorder persists');
-  await undoRedo(before, expected, 'within-column page move');
-  await setAppearance('light', true);
-  await watchMotion();
-  await pageDrop(expected.columns[0].pages[0].id, first.id, expected.columns[0].pages[1].id, true);
-  await expectGraph(before, 'reduced-motion pointer reorder still updates page order');
-  await assertMotion('page', true);
-  await key('z', 'KeyZ', 2);
-  await expectGraph(expected, 'reduced-motion reorder undo restores edited order');
-  await setAppearance('light');
-
-  // Move BETA across into the second file before its first page; page identity
-  // and immutable source reference must follow it rather than being copied.
-  before = snapshot(await graph());
-  expected = snapshot(before);
-  const crossing = expected.columns[0].pages.shift();
-  expected.columns[1].pages.unshift(crossing);
-  await watchMotion();
-  await pageDrop(crossing.id, second.id, before.columns[1].pages[0].id);
-  await assertMotion('page');
-  await expectGraph(expected, 'native cross-column page move preserves its identity');
-  await undoRedo(before, expected, 'cross-column page move');
-
-  await click(`${composerSelector()} [aria-label="New PDF column"]`);
-  await saved(
-    (document) =>
-      document.objects.find((object) => object.id === composerId)?.pdfComposer.columns.length === 7,
-    'new empty column persists',
-  );
-  let composition = await graph();
-  const empty = composition.columns.at(-1);
-  assert.equal(empty.pages.length, 0);
-  const emptyExport = `${columnSelector(empty.id)} .pdf-composer-export`;
-  assert.equal(
-    await read(`document.querySelector(${JSON.stringify(emptyExport)}).disabled`),
-    true,
-    'empty column cannot export an empty PDF',
-  );
-  await bringIntoView(columnSelector(empty.id));
-  await replaceText(`${columnSelector(empty.id)} [aria-label="PDF column name"]`, 'Draft.2026');
-  await saved(
-    (document) =>
-      document.objects.find((object) => object.id === composerId)?.pdfComposer.columns.at(-1)
-        ?.name === 'Draft.2026',
-    'column rename preserves a dotted basename',
-  );
-  before = snapshot(await graph());
-  expected = snapshot(before);
-  const donor = expected.columns[5],
-    imagePage = donor.pages.shift();
-  expected.columns[6].pages.push(imagePage);
-  await pageDrop(imagePage.id, empty.id);
-  await expectGraph(expected, 'native page drop fills an empty column and leaves the donor empty');
-  await undoRedo(before, expected, 'empty-column page move');
-
-  // Bring two adjacent columns into view; reordering tests the real grip path.
-  before = snapshot(await graph());
-  expected = snapshot(before);
-  const movingColumn = expected.columns.shift();
-  expected.columns.splice(1, 0, movingColumn);
-  await watchMotion();
-  await columnDrop(before.columns[0].id, before.columns[1].id, true);
-  await assertMotion('column');
-  await expectGraph(expected, 'native column reorder persists without changing pages');
-  await undoRedo(before, expected, 'column move');
-  await assertOriginals();
-  checkpoint(
-    'native page and column sorting, cross-file movement, empty columns, rename and transactional undo/redo',
-  );
-
-  composition = snapshot(await graph());
-  for (const [index, column] of composition.columns.entries()) {
-    if (column.pages.length) await exportColumn(composition, column, index % 2 === 1);
-    else
-      assert.equal(
-        await read(
-          `document.querySelector(${JSON.stringify(`${columnSelector(column.id)} .pdf-composer-export`)}).disabled`,
-        ),
-        true,
-      );
-  }
-  assert.deepEqual(
-    await graph(),
-    composition,
-    'all exports leave the editable composition unchanged',
-  );
-  const cancelColumn = composition.columns.find((column) => column.pages.length);
-  await bringIntoView(columnSelector(cancelColumn.id));
-  const calls = await main.read('globalThis.__pdfComposerDownloads.calls.length');
-  await main.read('globalThis.__pdfComposerDownloads.cancelNext=true');
-  await click(`${columnSelector(cancelColumn.id)} .pdf-composer-export`);
-  const canceled = await until(
-    async () => (await main.read('globalThis.__pdfComposerDownloads.calls'))[calls],
-    'canceled column download returns',
-  );
-  assert.equal(canceled.canceled, true);
-  assert.equal(existsSync(canceled.filePath), false, 'native save cancellation writes no PDF');
-  assert.deepEqual(await graph(), composition);
-  checkpoint(
-    'each nonempty column exports real vector PDFs in edited order and original rotation; dotted names and picker cancellation verified',
-  );
-
-  composition = await convertAttachments(
-    [fixtures.docx, fixtures.text, fixtures.html],
-    'DOCX/TXT/HTML',
-  );
-  checkpoint(
-    'native DOCX/TXT/HTML auto-conversion preserves original bytes, Unicode text, multipage content and per-file columns',
-  );
-  if (officeFixtures.length) {
-    composition = await convertAttachments(officeFixtures, 'DOC/XLS/PPT');
+  if (process.env.CANVAS_COMPOSER_TABLE === '1') {
+    await tableFeatures();
+  } else {
+    await appendBoardCard(
+      originalObjects.find((object) => object.id === sourceCards[2].id),
+      3,
+    );
+    await appendBoardCard(
+      originalObjects.find((object) => object.id === sourceCards[3].id),
+      4,
+    );
+    const beforeExternal = snapshot(await graph());
+    await nativeDrop([fixtures.external, fixtures.jpg], composerSelector());
+    await saved(
+      (document) =>
+        document.objects.find((object) => object.id === composerId)?.pdfComposer.columns.length ===
+        6,
+      'native external PDF and image batch appends two columns',
+    );
+    const afterExternal = snapshot(await graph());
+    assert.deepEqual(
+      afterExternal.columns.slice(-2).map((column) => column.name),
+      [fixtures.external.name, fixtures.jpg.name],
+      'external file order becomes column order',
+    );
+    assert.deepEqual(
+      afterExternal.columns.map((column) => column.pages.length),
+      [2, 2, 2, 1, 1, 1],
+    );
+    await undoRedo(beforeExternal, afterExternal, 'external batch append');
+    await assertOriginals();
+    await rejectedDrop([fixtures.png, fixtures.malformed], 'malformed PDF batch');
+    await rejectedDrop([fixtures.unsupported], 'unsupported attachment');
     checkpoint(
-      'native legacy Office drops use the verified app-local engine and preserve exported text, page count and source bytes',
+      'native board PDF/image and external file drops preserve originals; failed batches are atomic',
+    );
+
+    // Swap two pages within the first source column using the real pointer path.
+    let before = snapshot(await graph()),
+      expected = snapshot(before);
+    const first = before.columns[0],
+      second = before.columns[1];
+    await watchMotion();
+    await pageDrop(first.pages[0].id, first.id, first.pages[1].id, true);
+    await assertMotion('page');
+    expected = movePdfComposerPage(before, first.pages[0].id, first.id, 1);
+    await expectGraph(expected, 'native within-column page reorder persists');
+    await undoRedo(before, expected, 'within-column page move');
+    await setAppearance('light', true);
+    await watchMotion();
+    await pageDrop(
+      expected.columns[0].pages[0].id,
+      first.id,
+      expected.columns[0].pages[1].id,
+      true,
+    );
+    const restoredSlots = movePdfComposerPage(
+      expected,
+      expected.columns[0].pages[0].id,
+      first.id,
+      1,
+    );
+    await expectGraph(restoredSlots, 'reduced-motion pointer reorder still updates page order');
+    await assertMotion('page', true);
+    await key('z', 'KeyZ', 2);
+    await expectGraph(expected, 'reduced-motion reorder undo restores edited order');
+    await setAppearance('light');
+
+    // Move BETA across into the second file before its first page; page identity
+    // and immutable source reference must follow it rather than being copied.
+    before = snapshot(await graph());
+    expected = snapshot(before);
+    const crossing = before.columns[0].pages[0];
+    expected = movePdfComposerPage(before, crossing.id, second.id, 0);
+    await watchMotion();
+    await pageDrop(crossing.id, second.id, before.columns[1].pages[0].id);
+    await assertMotion('page');
+    await expectGraph(expected, 'native cross-column page move preserves its identity');
+    await undoRedo(before, expected, 'cross-column page move');
+
+    await click(`${composerSelector()} [aria-label="New PDF column"]`);
+    await saved(
+      (document) =>
+        document.objects.find((object) => object.id === composerId)?.pdfComposer.columns.length ===
+        7,
+      'new empty column persists',
+    );
+    let composition = await graph();
+    const empty = composition.columns.at(-1);
+    assert.equal(empty.pages.length, 0);
+    const emptyExport = `${columnSelector(empty.id)} .pdf-composer-export`;
+    assert.equal(
+      await read(`document.querySelector(${JSON.stringify(emptyExport)}).disabled`),
+      true,
+      'empty column cannot export an empty PDF',
+    );
+    await bringIntoView(columnSelector(empty.id));
+    await replaceText(`${columnSelector(empty.id)} [aria-label="PDF column name"]`, 'Draft.2026');
+    await saved(
+      (document) =>
+        document.objects.find((object) => object.id === composerId)?.pdfComposer.columns.at(-1)
+          ?.name === 'Draft.2026',
+      'column rename preserves a dotted basename',
+    );
+    before = snapshot(await graph());
+    expected = snapshot(before);
+    const imagePage = before.columns[5].pages[0];
+    expected = movePdfComposerPage(before, imagePage.id, empty.id, 0);
+    await pageDrop(imagePage.id, empty.id);
+    await expectGraph(
+      expected,
+      'native page drop fills an empty column and leaves the donor empty',
+    );
+    await undoRedo(before, expected, 'empty-column page move');
+
+    // Bring two adjacent columns into view; reordering tests the real grip path.
+    before = snapshot(await graph());
+    expected = snapshot(before);
+    const movingColumn = expected.columns.shift();
+    expected.columns.splice(1, 0, movingColumn);
+    await watchMotion();
+    await columnDrop(before.columns[0].id, before.columns[1].id, true);
+    await assertMotion('column');
+    await expectGraph(expected, 'native column reorder persists without changing pages');
+    await undoRedo(before, expected, 'column move');
+    await assertOriginals();
+    checkpoint(
+      'native page and column sorting, cross-file movement, empty columns, rename and transactional undo/redo',
+    );
+
+    composition = snapshot(await graph());
+    for (const [index, column] of composition.columns.entries()) {
+      if (column.pages.length) await exportColumn(composition, column, index % 2 === 1);
+      else
+        assert.equal(
+          await read(
+            `document.querySelector(${JSON.stringify(`${columnSelector(column.id)} .pdf-composer-export`)}).disabled`,
+          ),
+          true,
+        );
+    }
+    assert.deepEqual(
+      await graph(),
+      composition,
+      'all exports leave the editable composition unchanged',
+    );
+    const cancelColumn = composition.columns.find((column) => column.pages.length);
+    await bringIntoView(columnSelector(cancelColumn.id));
+    const calls = await main.read('globalThis.__pdfComposerDownloads.calls.length');
+    await main.read('globalThis.__pdfComposerDownloads.cancelNext=true');
+    await click(`${columnSelector(cancelColumn.id)} .pdf-composer-export`);
+    const canceled = await until(
+      async () => (await main.read('globalThis.__pdfComposerDownloads.calls'))[calls],
+      'canceled column download returns',
+    );
+    assert.equal(canceled.canceled, true);
+    assert.equal(existsSync(canceled.filePath), false, 'native save cancellation writes no PDF');
+    assert.deepEqual(await graph(), composition);
+    checkpoint(
+      'each nonempty column exports real vector PDFs in edited order and original rotation; dotted names and picker cancellation verified',
+    );
+
+    composition = await convertAttachments(
+      [fixtures.docx, fixtures.text, fixtures.html],
+      'DOCX/TXT/HTML',
+    );
+    checkpoint(
+      'native DOCX/TXT/HTML auto-conversion preserves original bytes, Unicode text, multipage content and per-file columns',
+    );
+    if (officeFixtures.length) {
+      composition = await convertAttachments(officeFixtures, 'DOC/XLS/PPT');
+      checkpoint(
+        'native legacy Office drops use the verified app-local engine and preserve exported text, page count and source bytes',
+      );
+    }
+
+    await bringIntoView(columnSelector(composition.columns[0].id));
+    await setAppearance('dark');
+    await shot('composer-dark');
+    const persisted = snapshot(await composer());
+    await reloadBoard();
+    assert.deepEqual(
+      await composer(),
+      persisted,
+      'reload restores complete composer metadata and geometry',
+    );
+    await assertDomGraph();
+    await assertOriginals();
+    assert.deepEqual(errors, [], 'no uncaught renderer exceptions');
+    await closeChild();
+    await portableRoundtrip(persisted);
+    checkpoint(
+      'reload, native close and composer-only portable roundtrip preserve identities and every nested original asset',
     );
   }
-
-  await bringIntoView(columnSelector(composition.columns[0].id));
-  await setAppearance('dark');
-  await shot('composer-dark');
-  const persisted = snapshot(await composer());
-  await reloadBoard();
-  assert.deepEqual(
-    await composer(),
-    persisted,
-    'reload restores complete composer metadata and geometry',
-  );
-  await assertDomGraph();
-  await assertOriginals();
-  assert.deepEqual(errors, [], 'no uncaught renderer exceptions');
-  await closeChild();
-  await portableRoundtrip(persisted);
-  checkpoint(
-    'reload, native close and composer-only portable roundtrip preserve identities and every nested original asset',
-  );
   completed = true;
   console.log('PDF_COMPOSER_DESKTOP_OK', JSON.stringify({ root, executable, steps, errors }));
 } catch (error) {

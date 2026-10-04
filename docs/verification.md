@@ -1,5 +1,16 @@
 # Verification — Terra Board
 
+## PDF workspace as a paper table — 2026-10-05
+
+The workspace now has stacked/whole-sheet views, page zoom, Ctrl/Shift multi-selection and group dragging. Persistent page rows and column slot counts preserve holes after moving or deleting sheets. Occupied destinations exchange only affected sheets; other slots stay fixed. Export omits empty slots. Existing boards without row metadata retain their previous order. View/zoom/slots pass through storage, clipboard and MCP schemas. The generic frame Bold/Strikethrough controls no longer appear on PDF workspaces.
+
+- `npm test`: **323 passed, 0 failed**, including fixed-slot exchange, group ordering, trailing gaps, invalid coordinates and stored/MCP/clipboard settings.
+- `npm run package`: passed, including TypeScript. Package integrity check passed for all **11,694** entries and exact Electron/renderer bytes.
+- `CANVAS_COMPOSER_TABLE=1 node scripts/desktop-pdf-composer.mjs`: passed in `.local-test/desktop-pdf-composer-RM5x50`, with zero renderer exceptions. Native controls/pointer input verified non-overlapping whole sheets, stacked mode, increased canvas pixel resolution on zoom, Ctrl selection, Shift ranges, group motion, persistent source holes, single-sheet deletion, gap filling, one-step undo/redo, exact PDF downloads, original-byte preservation, reload and portable roundtrip. Whole-page, zoom and settled dark gap screenshots were inspected.
+- The full composer regression also passed in `.local-test/desktop-pdf-composer-xmNxFX`: native file addition, rejected batches, page/column movement, reduced motion, export order/rotation, DOCX/TXT/HTML conversion and persistence. Office conversion code is unchanged from the previous verified build.
+
+Preview resolution is bounded to 2048 pixels wide / 4 million pixels per visible sheet; exported PDFs retain their original page content. All checks used disposable libraries, leaving the user's boards untouched.
+
 ## On-board PDF composer and document conversion — 2026-10-04
 
 Dropping convertible documents onto another document creates a persistent frame with one column per source and overlapping page previews. Pages move within and across columns, column grips reorder files, and each hovered or focused column exports an independent PDF copy. Originals remain unchanged. Creation, conversion, previews and export have loading states; page/column moves use interruptible animations and honor reduced motion.

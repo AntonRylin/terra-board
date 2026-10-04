@@ -1,4 +1,4 @@
-import { uid, type PdfComposer, type PdfComposerSource } from '../model.ts';
+import { uid, type PdfComposer, type PdfComposerColumn, type PdfComposerSource } from '../model.ts';
 
 const LIMIT = 500;
 const validId = (value: unknown): value is string =>
@@ -55,8 +55,13 @@ export function pdfComposerValue(input: unknown): PdfComposer {
     const id = claim(column.id);
     count += column.pages.length;
     if (count > LIMIT) throw Error('A PDF composer is limited to 500 page references.');
-    const pages = column.pages.map((page: any) => {
+    const rows = new Set<number>();
+    const pages = column.pages.map((page: any, index: number) => {
       if (!page) throw Error('Invalid PDF composer page.');
+      const row = page.row ?? index;
+      if (!Number.isInteger(row) || row < 0 || row >= 1000 || rows.has(row))
+        throw Error('Invalid or duplicate PDF page slot');
+      rows.add(row);
       const pageId = claim(page.id);
       const source = byId.get(page.sourceId);
       if (
@@ -73,11 +78,38 @@ export function pdfComposerValue(input: unknown): PdfComposer {
         sourceId: source.id,
         pageIndex: page.pageIndex,
         rotation: page.rotation,
+        ...(column.pages.some((p: any) => p.row !== undefined) ? { row } : {}),
       };
     });
-    return { id, name: column.name, pages };
+    const slotCount = column.slotCount;
+    if (
+      slotCount !== undefined &&
+      (!Number.isInteger(slotCount) ||
+        slotCount < 0 ||
+        slotCount > 1000 ||
+        [...rows].some((row) => row >= slotCount))
+    )
+      throw Error('Invalid PDF column slot count');
+    pages.sort(
+      (a: any, b: any) =>
+        (a.row ?? column.pages.findIndex((p: any) => p.id === a.id)) -
+        (b.row ?? column.pages.findIndex((p: any) => p.id === b.id)),
+    );
+    return { id, name: column.name, pages, ...(slotCount !== undefined ? { slotCount } : {}) };
   });
-  return { sources, columns };
+  if (value.view !== undefined && !['stacked', 'full'].includes(value.view))
+    throw Error('Invalid PDF view');
+  if (
+    value.zoom !== undefined &&
+    (!Number.isFinite(value.zoom) || value.zoom < 0.75 || value.zoom > 3)
+  )
+    throw Error('Invalid PDF zoom');
+  return {
+    sources,
+    columns,
+    ...(value.view !== undefined ? { view: value.view } : {}),
+    ...(value.zoom !== undefined ? { zoom: value.zoom } : {}),
+  };
 }
 
 function allIds(composer: PdfComposer) {
@@ -139,24 +171,77 @@ function finalIndex(index: number, length: number) {
   return Math.max(0, Math.min(length, index));
 }
 
-/** toIndex is the final index after removing the page, also for same-column moves. */
+export function composerSlotCount(column: PdfComposerColumn) {
+  return Math.max(
+    column.slotCount ?? 0,
+    ...column.pages.map((page, index) => (page.row ?? index) + 1),
+  );
+}
+
+/** Persist empty positions, including the last sheet removed from a column. */
+function slotted(composer: PdfComposer) {
+  const result = pdfComposerValue(composer);
+  for (const column of result.columns) {
+    column.slotCount = composerSlotCount(column);
+    column.pages = column.pages.map((page, index) => ({ ...page, row: page.row ?? index }));
+  }
+  return result;
+}
+
+export function removePdfComposerPages(composer: PdfComposer, ids: string[]) {
+  const result = slotted(composer),
+    selected = new Set(ids);
+  for (const column of result.columns)
+    column.pages = column.pages.filter((page) => !selected.has(page.id));
+  return result;
+}
+
+/** Place sheets into fixed slots. Occupied slots exchange papers with the vacated slots;
+ * unrelated papers never move. Selection order follows the table, not click order. */
+export function movePdfComposerPages(
+  composer: PdfComposer,
+  ids: string[],
+  columnId: string,
+  row: number,
+): PdfComposer {
+  if (!Number.isSafeInteger(row) || row < 0 || row >= 1000)
+    throw Error('Invalid PDF composer destination index.');
+  const result = slotted(composer),
+    selected = new Set(ids);
+  const to = result.columns.find((column) => column.id === columnId);
+  if (!to) throw Error('The PDF composer destination column no longer exists.');
+  const moving = result.columns.flatMap((column) =>
+    column.pages
+      .filter((page) => selected.has(page.id))
+      .map((page) => ({ column, page, row: page.row! })),
+  );
+  if (!moving.length || moving.length !== selected.size)
+    throw Error('The PDF composer page no longer exists.');
+  if (row + moving.length > 1000) throw Error('A PDF column is limited to 1000 slots.');
+  const targets = new Set(moving.map((_, index) => row + index));
+  const displaced = to.pages.filter((page) => targets.has(page.row!) && !selected.has(page.id));
+  const vacancies = moving.filter((item) => item.column !== to || !targets.has(item.row));
+  for (const column of result.columns)
+    column.pages = column.pages.filter(
+      (page) => !selected.has(page.id) && !displaced.includes(page),
+    );
+  displaced.forEach((page, index) => {
+    const vacant = vacancies[index];
+    vacant.column.pages.push({ ...page, row: vacant.row });
+  });
+  moving.forEach((item, index) => to.pages.push({ ...item.page, row: row + index }));
+  to.slotCount = Math.max(to.slotCount!, row + moving.length);
+  for (const column of result.columns) column.pages.sort((a, b) => a.row! - b.row!);
+  return result;
+}
+
 export function movePdfComposerPage(
   composer: PdfComposer,
   pageId: string,
   columnId: string,
-  toIndex: number,
-): PdfComposer {
-  const result = pdfComposerValue(composer);
-  const from = result.columns.find((column) => column.pages.some((page) => page.id === pageId));
-  const to = result.columns.find((column) => column.id === columnId);
-  if (!from) throw Error('The PDF composer page no longer exists.');
-  if (!to) throw Error('The PDF composer destination column no longer exists.');
-  const [page] = from.pages.splice(
-    from.pages.findIndex((page) => page.id === pageId),
-    1,
-  );
-  to.pages.splice(finalIndex(toIndex, to.pages.length), 0, page);
-  return result;
+  row: number,
+) {
+  return movePdfComposerPages(composer, [pageId], columnId, row);
 }
 
 /** toIndex is the column's final index after removing it from its old position. */

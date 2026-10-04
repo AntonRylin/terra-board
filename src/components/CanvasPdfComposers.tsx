@@ -1,6 +1,25 @@
-import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent,
+} from 'react';
 import { createPortal } from 'react-dom';
-import { Download, FilePlus2, FileText, GripVertical, LoaderCircle, Plus } from 'lucide-react';
+import {
+  Download,
+  FilePlus2,
+  FileText,
+  GripVertical,
+  LoaderCircle,
+  Plus,
+  Layers,
+  LayoutList,
+  ZoomIn,
+  ZoomOut,
+  Trash2,
+} from 'lucide-react';
 import type {
   Camera,
   CanvasObject,
@@ -12,7 +31,9 @@ import { localToWorld } from '../canvas/transform';
 import {
   addPdfComposerColumn,
   movePdfComposerColumn,
-  movePdfComposerPage,
+  movePdfComposerPages,
+  removePdfComposerPages,
+  composerSlotCount,
 } from '../canvas/pdf-composer';
 import { ComposerPreviewPool } from '../canvas/pdf-composer-files';
 import { renderPdfSheet } from '../canvas/pdf-render';
@@ -243,7 +264,9 @@ function PagePreview({
   source,
   page,
   pool,
+  renderWidth,
 }: {
+  renderWidth: number;
   source: PdfComposerSource;
   page: PdfComposerPage;
   pool: ComposerPreviewPool;
@@ -262,7 +285,10 @@ function PagePreview({
     return () => observer.disconnect();
   }, []);
   useEffect(() => {
-    if (!visible) return;
+    if (!visible) {
+      host.current?.replaceChildren();
+      return;
+    }
     const abort = new AbortController(),
       canvas = document.createElement('canvas');
     setFailed(false);
@@ -271,9 +297,11 @@ function PagePreview({
       .acquire(source, abort.signal)
       .then(async (lease) => {
         try {
-          await renderPdfSheet(lease.pdf, page, canvas, 240, abort.signal, 250_000);
+          await renderPdfSheet(lease.pdf, page, canvas, renderWidth, abort.signal, 4_000_000);
           if (!abort.signal.aborted) {
+            const previous = host.current?.querySelector('canvas');
             host.current?.replaceChildren(canvas);
+            if (previous) previous.width = previous.height = 1;
             setLoading(false);
           }
         } catch (error) {
@@ -281,6 +309,8 @@ function PagePreview({
             setFailed(true);
             setLoading(false);
           }
+        } finally {
+          lease.release();
         }
       })
       .catch(() => {
@@ -291,10 +321,9 @@ function PagePreview({
       });
     return () => {
       abort.abort();
-      canvas.width = canvas.height = 1;
-      host.current?.replaceChildren();
+      if (!canvas.isConnected) canvas.width = canvas.height = 1;
     };
-  }, [visible, pool, source.assetId, source.kind, page.pageIndex, page.rotation]);
+  }, [visible, pool, source.assetId, source.kind, page.pageIndex, page.rotation, renderWidth]);
   return (
     <span
       className="pdf-composer-preview"
@@ -324,6 +353,8 @@ type DropTarget = {
 type Drag = {
   kind: 'page' | 'column';
   id: string;
+  ids: string[];
+  collapse: boolean;
   pointerId: number;
   capture: HTMLElement;
   startX: number;
@@ -364,8 +395,22 @@ function ComposerCard({
     label: string;
   } | null>(null);
   const [target, setTarget] = useState<DropTarget | null>(null),
-    [selectedPage, setSelectedPage] = useState('');
+    [selectedPages, setSelectedPages] = useState<string[]>([]);
+  const anchor = useRef('');
   const composer = object.pdfComposer!;
+  const pageZoom = composer.zoom ?? 1;
+  // Quantized screen resolution avoids a new render on every camera animation frame.
+  const renderWidth = Math.min(
+    2048,
+    Math.max(
+      256,
+      Math.ceil((150 * pageZoom * props.camera.zoom * (globalThis.devicePixelRatio || 1)) / 256) *
+        256,
+    ),
+  );
+  const selection = selectedPages.filter((id) =>
+    composer.columns.some((column) => column.pages.some((page) => page.id === id)),
+  );
   const sources = new Map(composer.sources.map((source) => [source.id, source]));
   const editing = props.editingId === object.id;
   const active = props.selectedIds.includes(object.id);
@@ -389,7 +434,7 @@ function ComposerCard({
   };
   const focusPage = (id: string) => {
     pendingFocus.current = { kind: 'page', id };
-    setSelectedPage(id);
+    if (!selectedPages.includes(id)) setSelectedPages([id]);
   };
   const focusPending = () => {
     const value = pendingFocus.current;
@@ -404,7 +449,7 @@ function ComposerCard({
       pendingFocus.current = null;
     }
   };
-  useLayoutEffect(focusPending, [object.pdfComposer, selectedPage]);
+  useLayoutEffect(focusPending, [object.pdfComposer, selectedPages]);
   useLayoutEffect(() => {
     if (root.current)
       motion.current!.update(
@@ -473,10 +518,30 @@ function ComposerCard({
     activate();
     event.currentTarget.focus({ preventScroll: true });
     event.currentTarget.setPointerCapture(event.pointerId);
-    if (kind === 'page') setSelectedPage(id);
+    let ids = [id];
+    if (kind === 'page') {
+      const all = latest.current.pdfComposer!.columns.flatMap((column) =>
+        column.pages.map((page) => page.id),
+      );
+      if (event.shiftKey && anchor.current && all.includes(anchor.current)) {
+        const a = all.indexOf(anchor.current),
+          b = all.indexOf(id);
+        ids = all.slice(Math.min(a, b), Math.max(a, b) + 1);
+      } else if (event.ctrlKey || event.metaKey) {
+        ids = selectedPages.includes(id)
+          ? selectedPages.filter((value) => value !== id)
+          : [...selectedPages, id];
+      } else ids = selectedPages.includes(id) ? selection : [id];
+      setSelectedPages(ids);
+      if (!event.shiftKey) anchor.current = id;
+      if (!ids.includes(id)) return;
+      if (ids.length > 1) label = `${ids.length} pages`;
+    }
     drag.current = {
       kind,
       id,
+      ids,
+      collapse: kind === 'page' && !event.ctrlKey && !event.metaKey && !event.shiftKey,
       pointerId: event.pointerId,
       capture: event.currentTarget,
       startX: event.clientX,
@@ -525,25 +590,13 @@ function ComposerCard({
         ),
       };
     }
-    const page = hit.closest<HTMLElement>('.pdf-composer-page');
-    let after = true;
-    if (page) {
-      const rect = page.getBoundingClientRect(),
-        next = page.nextElementSibling?.getBoundingClientRect();
-      const exposed = next ? Math.max(1, Math.min(rect.height, next.top - rect.top)) : rect.height;
-      after = event.clientY > rect.top + exposed / 2;
-    }
+    const slot = hit.closest<HTMLElement>('[data-slot-row]');
     return {
       kind: 'page',
       columnId: column.id,
-      targetId: page?.dataset.pageId,
-      after,
-      index: composerInsertionIndex(
-        column.pages.map((item) => item.id),
-        value.id,
-        page?.dataset.pageId || null,
-        after,
-      ),
+      targetId: slot?.dataset.pageId,
+      after: false,
+      index: slot ? Number(slot.dataset.slotRow) : composerSlotCount(column),
     };
   };
   const moveDrag = (event: PointerEvent) => {
@@ -586,7 +639,11 @@ function ComposerCard({
     event.stopPropagation();
     const destination = value.target;
     cancelDrag();
-    if (!value.moved || !destination) return;
+    if (!value.moved) {
+      if (value.collapse) setSelectedPages([value.id]);
+      return;
+    }
+    if (!destination) return;
     let next = latest.current.pdfComposer!;
     if (destination.kind === 'column') {
       if (!next.columns.some((column) => column.id === value.id)) return;
@@ -608,13 +665,7 @@ function ComposerCard({
       }
       const column = next.columns.find((column) => column.id === columnId);
       if (!column) return;
-      const index = composerInsertionIndex(
-        column.pages.map((page) => page.id),
-        value.id,
-        destination.targetId || null,
-        destination.after,
-      );
-      next = movePdfComposerPage(next, value.id, column.id, index);
+      next = movePdfComposerPages(next, value.ids, column.id, destination.index);
       focusPage(value.id);
     }
     commit(next);
@@ -626,17 +677,24 @@ function ComposerCard({
       data-composer-id={object.id}
       data-selected={active}
       data-editing={editing}
+      data-view={composer.view ?? 'stacked'}
       data-drag-files={droppingFiles || undefined}
       aria-busy={!!busy}
       aria-label={object.text || 'PDF composer'}
       tabIndex={-1}
-      style={{
-        left: origin.x * props.camera.zoom + props.camera.x,
-        top: origin.y * props.camera.zoom + props.camera.y,
-        width: object.width,
-        height: object.height,
-        transform: `scale(${props.camera.zoom}) rotate(${object.rotation || 0}deg)`,
-      }}
+      style={
+        {
+          '--page-width': `${162 * pageZoom}px`,
+          '--page-height': `${234 * pageZoom}px`,
+          '--page-overlap': `${(composer.view === 'full' ? -14 : 158) * pageZoom}px`,
+          '--column-width': `${162 * pageZoom + 30}px`,
+          left: origin.x * props.camera.zoom + props.camera.x,
+          top: origin.y * props.camera.zoom + props.camera.y,
+          width: object.width,
+          height: object.height,
+          transform: `scale(${props.camera.zoom}) rotate(${object.rotation || 0}deg)`,
+        } as CSSProperties
+      }
       onPointerDownCapture={() => {
         if (!root.current) return;
         root.current
@@ -707,6 +765,22 @@ function ComposerCard({
           event.shiftKey || key === 'y' ? props.onRedo() : props.onUndo();
           return;
         }
+        if (!operation.current && ['Delete', 'Backspace'].includes(event.key) && selection.length) {
+          event.preventDefault();
+          commit(removePdfComposerPages(latest.current.pdfComposer!, selection));
+          setSelectedPages([]);
+          root.current?.focus({ preventScroll: true });
+          return;
+        }
+        if (mod && key === 'a') {
+          event.preventDefault();
+          setSelectedPages(
+            latest.current.pdfComposer!.columns.flatMap((column) =>
+              column.pages.map((page) => page.id),
+            ),
+          );
+          return;
+        }
         if (
           ['Delete', 'Backspace'].includes(event.key) ||
           (mod && ['c', 'v', 'x', 'a', '+', '=', '-', '0', 's'].includes(key))
@@ -734,11 +808,13 @@ function ComposerCard({
           if (!destination) return;
           focusPage(pageId);
           commit(
-            movePdfComposerPage(
+            movePdfComposerPages(
               metadata,
-              pageId,
+              selection.includes(pageId) ? selection : [pageId],
               destination.id,
-              horizontal ? Math.min(pi, destination.pages.length) : pi + delta,
+              horizontal
+                ? (column.pages[pi].row ?? pi)
+                : Math.max(0, (column.pages[pi].row ?? pi) + delta),
             ),
           );
         } else if (columnId && ['ArrowLeft', 'ArrowRight'].includes(event.key)) {
@@ -755,6 +831,56 @@ function ComposerCard({
         <header className="pdf-composer-header">
           <FileText size={17} />
           <span className="pdf-composer-title">{object.text || 'PDF composer'}</span>
+          <button
+            className="pdf-composer-action"
+            aria-label={composer.view === 'full' ? 'Stack pages' : 'Show whole pages'}
+            data-tooltip={composer.view === 'full' ? 'Stack pages' : 'Show whole pages'}
+            disabled={!!busy}
+            onClick={() =>
+              commit({
+                ...latest.current.pdfComposer!,
+                view: composer.view === 'full' ? 'stacked' : 'full',
+              })
+            }
+          >
+            {composer.view === 'full' ? <Layers size={17} /> : <LayoutList size={17} />}
+          </button>
+          <button
+            className="pdf-composer-action"
+            aria-label="Zoom pages out"
+            data-tooltip="Smaller pages"
+            disabled={!!busy || pageZoom <= 0.75}
+            onClick={() =>
+              commit({ ...latest.current.pdfComposer!, zoom: Math.max(0.75, pageZoom - 0.25) })
+            }
+          >
+            <ZoomOut size={17} />
+          </button>
+          <button
+            className="pdf-composer-action"
+            aria-label="Zoom pages in"
+            data-tooltip="Larger pages"
+            disabled={!!busy || pageZoom >= 3}
+            onClick={() =>
+              commit({ ...latest.current.pdfComposer!, zoom: Math.min(3, pageZoom + 0.25) })
+            }
+          >
+            <ZoomIn size={17} />
+          </button>
+          {!!selection.length && (
+            <button
+              className="pdf-composer-action"
+              aria-label="Remove selected pages"
+              data-tooltip={`Remove ${selection.length} selected ${selection.length === 1 ? 'page' : 'pages'}`}
+              disabled={!!busy}
+              onClick={() => {
+                commit(removePdfComposerPages(latest.current.pdfComposer!, selection));
+                setSelectedPages([]);
+              }}
+            >
+              <Trash2 size={16} />
+            </button>
+          )}
           <button
             className="pdf-composer-action"
             aria-label="Add documents or images"
@@ -849,37 +975,69 @@ function ComposerCard({
                 {column.pages.length} {column.pages.length === 1 ? 'page' : 'pages'}
               </div>
               <div className="pdf-composer-pages" data-column-id={column.id}>
-                {column.pages.map((page, pi) => (
-                  <button
-                    className="pdf-composer-page"
-                    key={page.id}
-                    data-page-id={page.id}
-                    data-source-id={page.sourceId}
-                    data-page-index={page.pageIndex}
-                    data-selected={selectedPage === page.id || undefined}
-                    data-dragging={
-                      (dragging?.kind === 'page' && dragging.id === page.id) || undefined
-                    }
-                    data-drop-target={target?.targetId === page.id || undefined}
-                    data-drop-after={(target?.targetId === page.id && target.after) || undefined}
-                    aria-label={`Page ${pi + 1} of ${column.name}`}
-                    aria-describedby={`${object.id}-pdf-keys`}
-                    aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown Alt+ArrowLeft Alt+ArrowRight"
-                    disabled={!!busy}
-                    onPointerDown={(event) =>
-                      beginDrag(event, 'page', page.id, `Page ${pi + 1} · ${column.name}`)
-                    }
-                    onFocus={() => setSelectedPage(page.id)}
-                  >
-                    <span className="pdf-composer-page-number">{pi + 1}</span>
-                    {sources.get(page.sourceId) ? (
-                      <PagePreview source={sources.get(page.sourceId)!} page={page} pool={pool} />
-                    ) : (
-                      <FileText size={26} />
-                    )}
-                  </button>
-                ))}
-                {!column.pages.length && (
+                {Array.from({ length: composerSlotCount(column) }, (_, pi) => {
+                  const page = column.pages.find((item, index) => (item.row ?? index) === pi);
+                  if (!page)
+                    return (
+                      <button
+                        key={`slot-${pi}`}
+                        className="pdf-composer-slot"
+                        data-slot-row={pi}
+                        data-drop-target={
+                          (target?.columnId === column.id && target.index === pi) || undefined
+                        }
+                        aria-label={`Empty slot ${pi + 1} of ${column.name}`}
+                        onClick={() => setSelectedPages([])}
+                      >
+                        <span className="pdf-composer-page-number">{pi + 1}</span>
+                      </button>
+                    );
+                  return (
+                    <button
+                      className="pdf-composer-page"
+                      key={page.id}
+                      data-page-id={page.id}
+                      data-slot-row={pi}
+                      data-source-id={page.sourceId}
+                      data-page-index={page.pageIndex}
+                      data-selected={selection.includes(page.id) || undefined}
+                      aria-pressed={selection.includes(page.id)}
+                      data-dragging={
+                        (dragging?.kind === 'page' && selection.includes(page.id)) || undefined
+                      }
+                      data-drop-target={target?.targetId === page.id || undefined}
+                      data-drop-after={(target?.targetId === page.id && target.after) || undefined}
+                      aria-label={`Page ${pi + 1} of ${column.name}`}
+                      aria-describedby={`${object.id}-pdf-keys`}
+                      aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown Alt+ArrowLeft Alt+ArrowRight"
+                      disabled={!!busy}
+                      onPointerDown={(event) =>
+                        beginDrag(event, 'page', page.id, `Page ${pi + 1} · ${column.name}`)
+                      }
+                      onClick={(event) => {
+                        if (event.detail === 0)
+                          setSelectedPages(
+                            event.ctrlKey || event.metaKey
+                              ? [...new Set([...selection, page.id])]
+                              : [page.id],
+                          );
+                      }}
+                    >
+                      <span className="pdf-composer-page-number">{pi + 1}</span>
+                      {sources.get(page.sourceId) ? (
+                        <PagePreview
+                          source={sources.get(page.sourceId)!}
+                          page={page}
+                          pool={pool}
+                          renderWidth={renderWidth}
+                        />
+                      ) : (
+                        <FileText size={26} />
+                      )}
+                    </button>
+                  );
+                })}
+                {!composerSlotCount(column) && (
                   <span className="pdf-composer-empty">
                     <Plus size={22} />
                     <span>Drop pages here</span>
@@ -904,8 +1062,9 @@ function ComposerCard({
         }}
       />
       <span className="pdf-composer-sr-only" id={`${object.id}-pdf-keys`}>
-        Alt Up or Down reorders a page. Alt Left or Right moves it between files. Use the file
-        handle with Alt Left or Right to reorder files.
+        Ctrl click selects multiple pages. Shift click selects a range. Delete removes selected
+        pages and leaves empty slots. Alt Up or Down reorders selected pages. Alt Left or Right
+        moves it between files. Use the file handle with Alt Left or Right to reorder files.
       </span>
       {error && (
         <div className="pdf-composer-status" role="alert">

@@ -97,8 +97,13 @@ function pdfComposerValue(value) {
     const id = claim(column.id);
     count += column.pages.length;
     if (count > 500) throw Error('PDF composers are limited to 500 page references');
-    const pages = column.pages.map((page) => {
+    const rows = new Set();
+    const pages = column.pages.map((page, index) => {
       if (!page) throw Error('Invalid PDF composer page');
+      const row = page.row ?? index;
+      if (!Number.isInteger(row) || row < 0 || row >= 1000 || rows.has(row))
+        throw Error('Invalid or duplicate PDF page slot');
+      rows.add(row);
       const id = claim(page.id),
         source = byId.get(page.sourceId);
       if (
@@ -110,11 +115,43 @@ function pdfComposerValue(value) {
         throw Error('PDF composer page must reference an existing source page');
       if (!Number.isSafeInteger(page.rotation) || page.rotation % 90 !== 0)
         throw Error('Invalid PDF composer page rotation');
-      return { id, sourceId: source.id, pageIndex: page.pageIndex, rotation: page.rotation };
+      return {
+        id,
+        sourceId: source.id,
+        pageIndex: page.pageIndex,
+        rotation: page.rotation,
+        ...(column.pages.some((p) => p.row !== undefined) ? { row } : {}),
+      };
     });
-    return { id, name: column.name, pages };
+    const slotCount = column.slotCount;
+    if (
+      slotCount !== undefined &&
+      (!Number.isInteger(slotCount) ||
+        slotCount < 0 ||
+        slotCount > 1000 ||
+        [...rows].some((row) => row >= slotCount))
+    )
+      throw Error('Invalid PDF column slot count');
+    pages.sort(
+      (a, b) =>
+        (a.row ?? column.pages.findIndex((p) => p.id === a.id)) -
+        (b.row ?? column.pages.findIndex((p) => p.id === b.id)),
+    );
+    return { id, name: column.name, pages, ...(slotCount !== undefined ? { slotCount } : {}) };
   });
-  return { sources, columns };
+  if (value.view !== undefined && !['stacked', 'full'].includes(value.view))
+    throw Error('Invalid PDF view');
+  if (
+    value.zoom !== undefined &&
+    (!Number.isFinite(value.zoom) || value.zoom < 0.75 || value.zoom > 3)
+  )
+    throw Error('Invalid PDF zoom');
+  return {
+    sources,
+    columns,
+    ...(value.view !== undefined ? { view: value.view } : {}),
+    ...(value.zoom !== undefined ? { zoom: value.zoom } : {}),
+  };
 }
 const objectAssetIds = (object) =>
   [

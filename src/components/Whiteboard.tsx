@@ -572,7 +572,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         )
       : null;
   const canFormat = (o: CanvasObject) =>
-    ['text', 'note', 'rect', 'ellipse', 'frame', 'arrow', 'list'].includes(o.type) ||
+    (!o.pdfComposer &&
+      ['text', 'note', 'rect', 'ellipse', 'frame', 'arrow', 'list'].includes(o.type)) ||
     (o.type === 'image' && (!!o.imageTitle || editingSession.current?.object.id === o.id)) ||
     (o.type === 'document' && (!!o.documentTitle || editingSession.current?.object.id === o.id));
   const formattingSelection = (editingObject ? [editingObject] : selected).filter(canFormat);

@@ -33,13 +33,17 @@ export interface PdfComposerPage {
   sourceId: string;
   pageIndex: number;
   rotation: number;
+  row?: number;
 }
 export interface PdfComposerColumn {
   id: string;
   name: string;
   pages: PdfComposerPage[];
+  slotCount?: number;
 }
 export interface PdfComposer {
+  view?: 'stacked' | 'full';
+  zoom?: number;
   sources: PdfComposerSource[];
   columns: PdfComposerColumn[];
 }

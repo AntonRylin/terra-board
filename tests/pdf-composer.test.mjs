@@ -12,6 +12,9 @@ import {
   createPdfComposer,
   appendPdfComposer,
   movePdfComposerPage,
+  movePdfComposerPages,
+  removePdfComposerPages,
+  composerSlotCount,
   movePdfComposerColumn,
   addPdfComposerColumn,
   pdfComposerValue,
@@ -122,32 +125,103 @@ test('creating and appending composers makes one independent column per input, i
   assert.deepEqual(pdfComposerValue(appended), appended);
 });
 
-test('page movement uses final indexes, preserves identity and allows splitting into empty columns', () => {
+test('fixed slots keep gaps and occupied drops exchange only the affected sheets', () => {
   const original = composer(),
     before = clone(original);
-  let result = movePdfComposerPage(original, 'page-1', 'column-image', 0);
+  const result = movePdfComposerPage(original, 'page-1', 'column-image', 0);
   assert.deepEqual(
-    result.columns.map((c) => c.pages.map((p) => p.id)),
-    [['page-2'], ['page-1', 'page-3']],
+    result.columns.map((c) => c.pages.map((p) => [p.id, p.row])),
+    [
+      [
+        ['page-3', 0],
+        ['page-2', 1],
+      ],
+      [['page-1', 0]],
+    ],
   );
-  assert.deepEqual(result.columns[1].pages[0], original.columns[0].pages[0]);
-  result = movePdfComposerPage(result, 'page-1', 'column-image', 1);
+  const withGap = movePdfComposerPage(original, 'page-1', 'column-image', 1);
   assert.deepEqual(
-    result.columns[1].pages.map((p) => p.id),
-    ['page-3', 'page-1'],
+    withGap.columns[0].pages.map((p) => [p.id, p.row]),
+    [['page-2', 1]],
   );
-  result = addPdfComposerColumn(result, 'Split chapter');
-  const last = result.columns.at(-1);
-  assert.equal(last.name, 'Split chapter');
-  assert.deepEqual(last.pages, []);
-  result = movePdfComposerPage(result, 'page-2', last.id, 999);
-  assert.deepEqual(result.columns[0].pages, []);
-  assert.deepEqual(
-    result.columns.at(-1).pages.map((p) => p.id),
-    ['page-2'],
-  );
-  assert.deepEqual(result.sources, original.sources);
+  assert.equal(composerSlotCount(withGap.columns[0]), 2);
+  const removed = removePdfComposerPages(withGap, ['page-2']);
+  assert.equal(removed.columns[0].pages.length, 0);
+  assert.equal(composerSlotCount(removed.columns[0]), 2);
   assert.deepEqual(original, before);
+});
+
+test('group moves preserve source holes, stable table order and unrelated slots', () => {
+  const original = createPdfComposer([{ ...pdfSource, pageCount: 4 }]);
+  const withEmpty = addPdfComposerColumn(original);
+  const first = withEmpty.columns[0],
+    target = withEmpty.columns[1];
+  const selected = [first.pages[2].id, first.pages[0].id];
+  const moved = movePdfComposerPages(withEmpty, selected, target.id, 2);
+  assert.deepEqual(
+    moved.columns[0].pages.map((p) => p.row),
+    [1, 3],
+  );
+  assert.equal(moved.columns[0].slotCount, 4);
+  assert.deepEqual(
+    moved.columns[1].pages.map((p) => [p.pageIndex, p.row]),
+    [
+      [0, 2],
+      [2, 3],
+    ],
+  );
+  const deleted = removePdfComposerPages(moved, [first.pages[3].id]);
+  assert.deepEqual(
+    deleted.columns[0].pages.map((p) => p.row),
+    [1],
+  );
+  assert.equal(deleted.columns[0].slotCount, 4);
+  const overlapped = movePdfComposerPages(
+    original,
+    original.columns[0].pages.slice(0, 2).map((p) => p.id),
+    first.id,
+    1,
+  );
+  assert.deepEqual(
+    overlapped.columns[0].pages.map((p) => p.pageIndex),
+    [2, 0, 1, 3],
+  );
+  assert.throws(() => movePdfComposerPages(original, selected, first.id, 999), /1000/);
+});
+
+test('slot positions and view settings survive store, clipboard and MCP validation', () => {
+  let value = removePdfComposerPages(composer(), ['page-1']);
+  value = { ...value, view: 'full', zoom: 2.5 };
+  const object = frame(value);
+  assert.deepEqual(objectValue(object), object);
+  assert.deepEqual(clipboardObjects([object])[0], object);
+  const edit = tools(() => {}).find((t) => t.name === 'edit_board');
+  const schema = z.object(edit.schema);
+  assert.deepEqual(
+    schema.parse({ id: 'board', revision: 0, upserts: [object] }).upserts[0],
+    object,
+  );
+  // The public schema must expose every persistent field, independently of Store.
+  assert.ok(JSON.stringify(z.toJSONSchema(schema)).includes('slotCount'));
+  for (const mutate of [
+    (c) => {
+      c.columns[0].pages[0].row = -1;
+    },
+    (c) => {
+      c.columns[0].slotCount = 1;
+    },
+    (c) => {
+      c.zoom = 4;
+    },
+    (c) => {
+      c.view = 'other';
+    },
+  ]) {
+    const invalid = clone(value);
+    mutate(invalid);
+    assert.throws(() => pdfComposerValue(invalid));
+    assert.throws(() => objectValue(frame(invalid)));
+  }
 });
 
 test('column movement keeps pages and names intact and rejects stale page/column targets', () => {
@@ -371,7 +445,11 @@ test('MCP complete object edits preserve composers and reject invalid nested ref
       return JSON.parse((await tool.run(z.object(tool.schema).parse(args))).content[0].text);
     };
     const board = store.createBoard({ name: 'MCP composer' });
-    const original = frame(value);
+    const original = frame({
+      ...removePdfComposerPages(value, [value.columns[0].pages[0].id]),
+      view: 'full',
+      zoom: 2,
+    });
     await call('edit_board', { id: board.id, revision: 0, upserts: [original] });
     const read = await call('read_board', { id: board.id });
     assert.deepEqual(read.objects, [original]);

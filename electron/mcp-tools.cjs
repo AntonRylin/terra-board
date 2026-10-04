@@ -16,6 +16,8 @@ const point = z.object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1
 const head = z.enum(['none', 'arrow', 'triangle', 'open', 'diamond', 'circle']);
 const pdfComposer = z
   .object({
+    view: z.enum(['stacked', 'full']).optional(),
+    zoom: z.number().min(0.75).max(3).optional(),
     sources: z
       .array(
         z
@@ -35,6 +37,7 @@ const pdfComposer = z
           .object({
             id,
             name: z.string().max(100000),
+            slotCount: z.number().int().min(0).max(1000).optional(),
             pages: z
               .array(
                 z
@@ -43,6 +46,7 @@ const pdfComposer = z
                     sourceId: id,
                     pageIndex: z.number().int().min(0).max(499),
                     rotation: z.number().int().multipleOf(90),
+                    row: z.number().int().min(0).max(999).optional(),
                   })
                   .strict(),
               )

@@ -128,7 +128,9 @@ export async function exportComposerColumn(
   signal?.throwIfAborted();
   const column = composer.columns.find((candidate) => candidate.id === columnId);
   if (!column) throw Error('This PDF column is no longer available.');
-  const pages = column.pages.map((page) => ({ ...page }));
+  const pages = column.pages
+    .map((page, index) => ({ ...page, row: page.row ?? index }))
+    .sort((a, b) => a.row - b.row);
   const name = outputName(column.name);
   if (!pages.length) throw Error('Add at least one page before exporting this column.');
   if (pages.length > MAX_PDF_PAGES) throw Error('A PDF composer can export up to 500 pages.');

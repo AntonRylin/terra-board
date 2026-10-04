@@ -1,3 +1,4 @@
+import { composerSlotCount } from './pdf-composer';
 import type { CanvasObject } from '../model';
 import { ComposerPreviewPool } from './pdf-composer-files';
 import { renderPdfSheet } from './pdf-render';
@@ -5,6 +6,10 @@ import { renderPdfSheet } from './pdf-render';
 /** A bounded board-export snapshot; column PDF exports retain the original vectors. */
 export async function composerSnapshot(object: CanvasObject, requestedScale: number) {
   const composer = object.pdfComposer!;
+  const zoom = composer.zoom ?? 1,
+    width = 162 * zoom,
+    height = 234 * zoom;
+  const pitch = (composer.view === 'full' ? 248 : 76) * zoom;
   const scale = Math.min(
     requestedScale,
     4096 / object.width,
@@ -26,7 +31,7 @@ export async function composerSnapshot(object: CanvasObject, requestedScale: num
   try {
     for (let index = 0; index < composer.columns.length; index++) {
       const column = composer.columns[index],
-        x = 29 + index * 206;
+        x = 29 + index * (width + 44);
       if (x >= object.width) break;
       context.fillStyle = '#344456';
       context.font = '12px system-ui';
@@ -35,12 +40,19 @@ export async function composerSnapshot(object: CanvasObject, requestedScale: num
       context.fillText(`${column.pages.length} pages`, x, 94, 162);
       const leases = new Map<string, Awaited<ReturnType<ComposerPreviewPool['acquire']>>>();
       try {
-        for (let row = 0; row < column.pages.length; row++) {
-          const page = column.pages[row],
-            y = 113 + row * 76;
+        for (let row = 0; row < composerSlotCount(column); row++) {
+          const page = column.pages.find((item, index) => (item.row ?? index) === row),
+            y = 113 + row * pitch;
           if (y >= object.height) break;
+          if (!page) {
+            context.strokeStyle = '#dce3eb';
+            context.setLineDash([3, 4]);
+            context.strokeRect(x, y, width, height);
+            context.setLineDash([]);
+            continue;
+          }
           context.fillStyle = '#ffffff';
-          context.fillRect(x, y, 162, 202);
+          context.fillRect(x, y, width, height);
           const source = sources.get(page.sourceId);
           const sheet = document.createElement('canvas');
           try {
@@ -50,14 +62,14 @@ export async function composerSnapshot(object: CanvasObject, requestedScale: num
               leases.get(source.id)!.pdf,
               page,
               sheet,
-              Math.max(1, 150 * scale),
+              Math.max(1, (width - 12) * scale),
               undefined,
               2_000_000,
             );
-            const fit = Math.min(150 / sheet.width, 178 / sheet.height);
+            const fit = Math.min((width - 12) / sheet.width, (height - 24) / sheet.height);
             context.drawImage(
               sheet,
-              x + (162 - sheet.width * fit) / 2,
+              x + (width - sheet.width * fit) / 2,
               y + 18,
               sheet.width * fit,
               sheet.height * fit,
@@ -71,7 +83,7 @@ export async function composerSnapshot(object: CanvasObject, requestedScale: num
           }
           context.strokeStyle = '#dce3eb';
           context.lineWidth = 1;
-          context.strokeRect(x, y, 162, 202);
+          context.strokeRect(x, y, width, height);
           context.fillStyle = '#607084';
           context.font = '10px system-ui';
           context.fillText(String(row + 1), x + 8, y + 13);

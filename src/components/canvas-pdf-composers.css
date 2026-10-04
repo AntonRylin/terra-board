@@ -142,7 +142,7 @@
 .pdf-composer-column {
   display: flex;
   flex-direction: column;
-  flex: 0 0 192px;
+  flex: 0 0 var(--column-width, 192px);
   min-width: 0;
   border-radius: 13px;
   background: rgb(255 255 255 / 0.35);
@@ -211,11 +211,12 @@
   overscroll-behavior: contain;
 }
 .pdf-composer-page,
+.pdf-composer-slot,
 .pdf-composer-motion-page {
   position: relative;
   flex-shrink: 0;
-  width: 162px;
-  height: 202px;
+  width: var(--page-width, 162px);
+  height: var(--page-height, 234px);
   padding: 18px 6px 6px;
   border: 1px solid rgb(124 140 158 / 0.25);
   border-radius: 5px;
@@ -243,8 +244,19 @@
 [data-layout-motion] {
   will-change: transform;
 }
-.pdf-composer-page + .pdf-composer-page {
-  margin-top: -126px;
+.pdf-composer-pages > [data-slot-row] + [data-slot-row] {
+  margin-top: calc(-1 * var(--page-overlap, 158px));
+}
+.pdf-composer-slot {
+  background: transparent;
+  box-shadow: none;
+  border: 1px dashed rgb(124 140 158 / 0.24);
+  color: var(--muted);
+  cursor: default;
+}
+.pdf-composer-slot[data-drop-target='true'] {
+  border-color: #4486d9;
+  background: rgb(68 134 217 / 0.1);
 }
 .pdf-composer-page[data-selected='true'] {
   border-color: #4486d9;

@@ -23,12 +23,8 @@ function api() {
     require(id) {
       if (id.endsWith('.css')) return {};
       if (id === '../canvas/pdf-composer-files') return { ComposerPreviewPool: class {} };
-      if (
-        id === '../canvas/pdf-composer' ||
-        id === '../canvas/pdf-render' ||
-        id === './ListEditOutline'
-      )
-        return {};
+      if (id === '../canvas/pdf-composer') return require('../src/canvas/pdf-composer.ts');
+      if (id === '../canvas/pdf-render' || id === './ListEditOutline') return {};
       if (id === '../canvas/transform')
         return { localToWorld: (o, p) => ({ x: o.x + p.x, y: o.y + p.y }) };
       return require(id);
