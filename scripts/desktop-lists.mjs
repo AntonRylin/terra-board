@@ -141,11 +141,11 @@ try {
   );
   await sleep(600);
   await click('[aria-label="Insert"]');
-  const listMenuIndex = await read(
-    `Array.from(document.querySelectorAll('.insert-menu button')).findIndex(button=>button.textContent.trim()==='List')+1`,
+  assert.ok(
+    await read(`!!document.querySelector('.insert-menu [aria-label="Add list"]')`),
+    'the plus menu offers List',
   );
-  assert.ok(listMenuIndex > 0, 'the plus menu offers List beside Gallery');
-  await click(`.insert-menu button:nth-of-type(${listMenuIndex})`);
+  await click('.insert-menu [aria-label="Add list"]');
   await until(() => read(`document.querySelectorAll('.canvas-list').length===1`), 'new list');
   assert.equal(await read(`document.querySelector('.canvas-list').innerText.trim()`), '');
   assert.equal(await read(`document.querySelector('[aria-label="List name"]').value`), 'Title');
@@ -316,7 +316,8 @@ try {
   );
   await click('[aria-label="Remove item 2"]');
   await until(async () => (await state()).objects[0].items.length === 1, 'remove item saves');
-  await click('[aria-label="Add list"]');
+  await click('[aria-label="Insert"]');
+  await click('.insert-menu [aria-label="Add list"]');
   await until(() => read(`document.querySelectorAll('.canvas-list').length===2`), 'second list');
   await click('.canvas-list:last-child [aria-label="Edit list"]');
   await click('.canvas-list:last-child [aria-label="Remove item 2"]');

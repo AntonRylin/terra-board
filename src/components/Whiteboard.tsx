@@ -1,5 +1,7 @@
 import ArrowControls from './ArrowControls';
 import CanvasLists, { listHeight, type ListView } from './CanvasLists';
+import CanvasToolbar from './CanvasToolbar';
+import type { ToolbarId } from './toolbar-layout';
 import { useZoomControlSpace } from './useZoomControlSpace';
 import {
   forwardRef,
@@ -100,7 +102,7 @@ interface Props {
   onSave: (state: SaveState, message?: string) => void;
   onError: (message: string) => void;
 }
-const tools: { id: Tool; label: string; icon: typeof Type; key: string }[] = [
+const tools: { id: Tool & ToolbarId; label: string; icon: typeof Type; key: string }[] = [
   { id: 'select', label: 'Select', icon: MousePointer2, key: 'V' },
   { id: 'hand', label: 'Pan', icon: Hand, key: 'H' },
   { id: 'text', label: 'Text', icon: Type, key: 'T' },
@@ -261,7 +263,6 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     [linkPoint, setLinkPoint] = useState<{ x: number; y: number } | null>(null),
     [linkValue, setLinkValue] = useState(''),
     [menu, setMenu] = useState<{ x: number; y: number } | null>(null),
-    [insertMenu, setInsertMenu] = useState<{ x: number; y: number } | null>(null),
     [busy, setBusy] = useState(0),
     [copying, setCopying] = useState(false),
     [count, setCount] = useState(doc.objects.length);
@@ -1723,46 +1724,20 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           onCancel={() => finishCrop(true)}
         />
       )}
-      <div className="canvas-toolbar" aria-label="Canvas tools">
-        {tools.map(({ id, label, icon: Icon, key }, i) => (
-          <button
-            key={id}
-            className={'icon-button ' + (i === 2 ? 'tool-divider' : '')}
-            aria-label={label}
-            title={
-              id === 'hand' ? 'Pan · Right-drag anywhere · H · Space + drag' : `${label} · ${key}`
-            }
-            aria-pressed={tool === id}
-            onClick={() => selectTool(id)}
-          >
-            <Icon size={19} strokeWidth={1.7} />
-          </button>
-        ))}
-        <span className="divider" />
-        <button className="icon-button" aria-label="Add list" onClick={createList}>
-          <ListTodo size={19} strokeWidth={1.7} />
-        </button>
-        <button
-          className="icon-button"
-          aria-label="Add images or video"
-          title="Add images or video"
-          onClick={importMedia}
-        >
-          <ImagePlus size={19} />
-        </button>
-        <button
-          className="icon-button"
-          aria-label="Insert"
-          title="Insert"
-          aria-expanded={!!insertMenu}
-          onClick={(event) => {
-            const r = event.currentTarget.getBoundingClientRect();
-            setInsertMenu({ x: r.left, y: r.top - 60 });
-          }}
-        >
-          <Plus size={19} />
-        </button>
-      </div>
+      <CanvasToolbar
+        tools={[
+          ...tools.map(({ id, label, icon }) => ({
+            id,
+            label,
+            icon,
+            active: tool === id,
+            action: () => selectTool(id),
+          })),
+          { id: 'list', label: 'Add list', icon: ListTodo, action: createList },
+          { id: 'media', label: 'Add images or video', icon: ImagePlus, action: importMedia },
+          { id: 'gallery', label: 'Gallery', icon: Images, action: createGallery },
+        ]}
+      />
       <div ref={zoomControls} className="canvas-zoom">
         <button
           className="icon-button"
@@ -1812,17 +1787,6 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             window.open(exportResult.url, '_blank', 'noopener,noreferrer');
         }}
       />
-      {insertMenu && (
-        <ContextMenu
-          {...insertMenu}
-          className="insert-menu"
-          items={[
-            { label: 'Gallery', icon: <Images />, action: createGallery },
-            { label: 'List', icon: <ListTodo />, action: createList },
-          ]}
-          onClose={() => setInsertMenu(null)}
-        />
-      )}
       {video && (
         <Modal title={video.text || 'Video'} onClose={() => setVideo(null)} wide>
           <video

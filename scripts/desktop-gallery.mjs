@@ -209,7 +209,7 @@ try {
     { font: '14px', icon: 19 },
   );
   await shot('insert-menu');
-  await menuItem('Gallery');
+  await clickSelector('.insert-menu [aria-label="Gallery"]');
   let d = await saved((d) => !!galleryOf(d), 'gallery created');
   let g = galleryOf(d);
   await until(() => read('!!document.querySelector(".gallery-empty")'), 'empty hint');
@@ -389,11 +389,13 @@ try {
   assert.equal(galleryOf(d).text, 'Vehicle references');
   assert.equal(membersOf(d).length, 3);
   await clickSelector('[aria-label="Fit board"]');
+  // Fit can change only pan, leaving the rounded zoom unchanged. Camera saves debounce for 1200ms.
+  await sleep(1300);
   g = galleryOf(await documentState());
   p = await point(g);
   await click(p.x, p.y);
   await key('Enter', 'Enter');
-  await clickSelector('.gallery-controls button:last-child');
+  await clickSelector('.gallery-controls button:nth-child(2)');
   d = await saved((d) => galleryOf(d).gallery.direction === 'below', 'vertical matrix');
   await clickSelector('[aria-label="Fit board"]');
   const originalFirst = membersOf(d).find((o) => o.galleryRow === 0 && o.galleryColumn === 0);
