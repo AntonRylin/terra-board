@@ -1,4 +1,5 @@
 import ArrowControls from './ArrowControls';
+import CanvasLists, { listHeight, type ListView } from './CanvasLists';
 import { useZoomControlSpace } from './useZoomControlSpace';
 import {
   forwardRef,
@@ -21,6 +22,7 @@ import {
   Frame,
   Link2,
   ImagePlus,
+  ListTodo,
   Images,
   ArrowRight,
   ArrowDown,
@@ -264,6 +266,28 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     [copying, setCopying] = useState(false),
     [count, setCount] = useState(doc.objects.length);
   const activeGallery = selected.length === 1 && selected[0].gallery ? selected[0] : null;
+  const [listView, setListView] = useState<ListView>({ objects: [], camera: doc.camera });
+  const listViewKey = useRef('');
+  const createList = () => {
+    finishEdit();
+    const e = engine.current;
+    if (!e) return;
+    const p = e.center();
+    const o: CanvasObject = {
+      id: uid(),
+      type: 'list',
+      text: '',
+      items: [],
+      x: p.x - 160,
+      y: p.y - 46,
+      width: 320,
+      height: listHeight(0),
+      z: e.topZ() + 1,
+    };
+    e.apply({ upserts: [o], deleted: [] });
+    e.setSelection([o.id]);
+    selectTool('select');
+  };
   const canExportFromSelectionBar =
     selected.some((object) => object.type === 'frame') ||
     selected.filter((object) => object.type === 'image').length > 1;
@@ -345,7 +369,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     }
   };
   const alignmentSelection = (editingObject ? [editingObject] : selected).filter(
-    (o) => !['image', 'frame', 'link', 'arrow'].includes(o.type),
+    (o) => !['image', 'frame', 'link', 'arrow', 'list'].includes(o.type),
   );
   const editorOrigin =
     editingObject && editingPlacement
@@ -385,6 +409,14 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     engine.current?.setTool(value);
   };
   const startEdit = (o: CanvasObject) => {
+    if (o.type === 'list') {
+      (
+        window.document.querySelector(
+          `[data-list-id="${o.id}"] input:not([readonly])`,
+        ) as HTMLInputElement | null
+      )?.focus();
+      return;
+    }
     if (o.type === 'arrow') {
       (window.document.querySelector('[aria-label="Arrow label"]') as HTMLButtonElement)?.click();
       return;
@@ -565,6 +597,13 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     );
     if (resized.length) queue.current.enqueue({ upserts: resized, deleted: [] });
     const e = new Engine(host.current!, fitted, doc.camera, {
+      lists: (objects, camera) => {
+        const key = JSON.stringify([objects, camera]);
+        if (key !== listViewKey.current) {
+          listViewKey.current = key;
+          setListView({ objects, camera: { ...camera } });
+        }
+      },
       edit: (edit) => {
         if (!syncingExternal.current) queue.current!.enqueue(edit);
         setCount(e.objects.size);
@@ -1250,6 +1289,24 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         onDrop={drop}
       />
       {!ready && <div className="canvas-loading">Opening canvas…</div>}
+      <CanvasLists
+        view={listView}
+        host={host.current}
+        interactive={tool === 'select'}
+        beginPointer={(event) => engine.current?.beginOverlayPointer(event)}
+        selected={selected.map((o) => o.id)}
+        select={(id) => {
+          finishEdit();
+          engine.current?.setSelection([id]);
+        }}
+        update={(o) => {
+          engine.current?.apply({ upserts: [o], deleted: [] });
+          setListView((view) => ({
+            ...view,
+            objects: view.objects.map((item) => (item.id === o.id ? o : item)),
+          }));
+        }}
+      />
       {ready && !count && (
         <div className="empty-canvas">
           <h1>Room for your next idea.</h1>
@@ -1425,7 +1482,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             />
           )}
           {selected.every(
-            (o) => !['image', 'video', 'link', 'frame', 'arrow'].includes(o.type),
+            (o) => !['image', 'video', 'link', 'frame', 'arrow', 'list'].includes(o.type),
           ) && (
             <div className="color-options">
               {colors.map((color) => (
@@ -1679,6 +1736,9 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           </button>
         ))}
         <span className="divider" />
+        <button className="icon-button" aria-label="Add list" onClick={createList}>
+          <ListTodo size={19} strokeWidth={1.7} />
+        </button>
         <button
           className="icon-button"
           aria-label="Add images or video"

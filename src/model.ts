@@ -1,5 +1,10 @@
 export type ObjectType =
-  'text' | 'note' | 'rect' | 'ellipse' | 'frame' | 'image' | 'video' | 'link' | 'arrow';
+  'text' | 'note' | 'rect' | 'ellipse' | 'frame' | 'image' | 'video' | 'link' | 'arrow' | 'list';
+export interface ListItem {
+  id: string;
+  text: string;
+  checked: boolean;
+}
 export interface ImageCrop {
   x: number;
   y: number;
@@ -16,6 +21,7 @@ export interface ArrowStyle {
   thickness: number;
 }
 export interface CanvasObject {
+  items?: ListItem[];
   gallery?: { direction: 'right' | 'below'; size: number; gap: number };
   galleryId?: string;
   galleryIndex?: number;

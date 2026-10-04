@@ -30,6 +30,7 @@ const types = new Set([
   'video',
   'link',
   'arrow',
+  'list',
 ]);
 const idValue = (value) => {
   if (typeof value !== 'string' || !value || value.length > 100 || !/^[\w-]+$/.test(value))
@@ -111,6 +112,24 @@ function objectValue(o) {
   if (o.text !== undefined) {
     if (typeof o.text !== 'string' || o.text.length > 100000) throw Error('Invalid text');
     result.text = o.text;
+  }
+  if (o.type === 'list') {
+    if (
+      !Array.isArray(o.items) ||
+      o.items.length > 1000 ||
+      !o.items.every(
+        (item) =>
+          item &&
+          typeof item.id === 'string' &&
+          /^[\w-]{1,100}$/.test(item.id) &&
+          typeof item.text === 'string' &&
+          item.text.length <= 10000 &&
+          typeof item.checked === 'boolean',
+      ) ||
+      new Set(o.items.map((item) => item.id)).size !== o.items.length
+    )
+      throw Error('Invalid list items');
+    result.items = o.items.map(({ id, text, checked }) => ({ id, text, checked }));
   }
   if (o.imageTitle !== undefined) {
     if (o.type !== 'image' || typeof o.imageTitle !== 'string' || o.imageTitle.length > 100000)
@@ -437,20 +456,22 @@ class Store {
         json_extract(o.json, '$.text') AS text,
         json_extract(o.json, '$.imageTitle') AS imageTitle,
         json_extract(o.json, '$.url') AS url,
-        json_extract(o.json, '$.linkDescription') AS linkDescription
+        json_extract(o.json, '$.linkDescription') AS linkDescription,
+        (SELECT group_concat(json_extract(value, '$.text'), ' ') FROM json_each(o.json, '$.items')) AS listText
       FROM boards b JOIN objects o ON o.boardId = b.id
       WHERE b.trashed = 0 AND (
         search_contains(json_extract(o.json, '$.text'), ?) OR
         search_contains(json_extract(o.json, '$.imageTitle'), ?) OR
         search_contains(json_extract(o.json, '$.url'), ?) OR
-        search_contains(json_extract(o.json, '$.linkDescription'), ?))
+        search_contains(json_extract(o.json, '$.linkDescription'), ?) OR
+        EXISTS (SELECT 1 FROM json_each(o.json, '$.items') WHERE search_contains(json_extract(value, '$.text'), ?)))
       ORDER BY b.position, b.id, o.id LIMIT 61
     `,
       )
-      .all(needle, needle, needle, needle);
+      .all(needle, needle, needle, needle, needle);
     return {
       results: rows.slice(0, 60).map((row) => {
-        const text = [row.imageTitle, row.text, row.url, row.linkDescription]
+        const text = [row.imageTitle, row.text, row.url, row.linkDescription, row.listText]
           .map(searchText)
           .find((value) => value.toLowerCase().includes(needle));
         const index = text.toLowerCase().indexOf(needle);

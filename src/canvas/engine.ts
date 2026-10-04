@@ -16,7 +16,7 @@ import {
 } from './snapping';
 // Pixi's interpreter adapters keep shader setup compatible with a strict CSP (no eval).
 import 'pixi.js/unsafe-eval';
-import { Application, Container, Graphics, Sprite, Rectangle, Texture } from 'pixi.js';
+import { Application, Container, Graphics, Sprite, Rectangle, Texture, Text } from 'pixi.js';
 import type { CanvasObject, Camera, Edit, Tool, ImageCrop } from '../model';
 import { uid } from '../model';
 import { SpatialIndex, screenToWorld, zoomAt, boundsOf, type Point, type Bounds } from './geometry';
@@ -55,6 +55,7 @@ import {
   hasLinkImage,
 } from './link-preview';
 interface Callbacks {
+  lists?: (objects: CanvasObject[], camera: Camera) => void;
   tool?: (tool: Tool) => void;
   edit: (e: Edit) => void;
   camera: (c: Camera) => void;
@@ -290,8 +291,11 @@ export class Engine {
         );
       });
   }
-  private down = (e: PointerEvent) => {
-    if (e.target !== this.app.canvas || e.button > 2 || this.gesture) return;
+  beginOverlayPointer(e: PointerEvent) {
+    this.down(e, true);
+  }
+  private down = (e: PointerEvent, overlay = false) => {
+    if ((!overlay && e.target !== this.app.canvas) || e.button > 2 || this.gesture) return;
     e.preventDefault();
     this.stopCameraAnimation();
     this.host.focus();
@@ -1022,6 +1026,10 @@ export class Engine {
       if (index !== -1) visible.splice(index, 1);
       visible.push(this.cropPreview);
     }
+    this.callbacks.lists?.(
+      visible.filter((o) => o.type === 'list'),
+      c,
+    );
     const lightMargin = 600;
     const lightingObjects =
       this.dark && document.documentElement.dataset.nightGlow === 'true'
@@ -1219,6 +1227,58 @@ export class Engine {
       color = o.color || '#e8edf5';
     const dark = this.dark && !exporting;
     container.eventMode = 'none';
+    if (o.type === 'list') {
+      // Interactive glass is rendered in the DOM; exports use the same card geometry.
+      if (!exporting) return container;
+      g.roundRect(0, 0, o.width, o.height, 20)
+        .fill('#f4f7fa')
+        .stroke({ color: '#d7e0e7', width: 1 });
+      container.addChild(g);
+      const measure = document.createElement('canvas').getContext('2d')!;
+      const label = (value: string, x: number, y: number, size: number, checked = false) => {
+        measure.font = `${size}px Arial`;
+        const available = Math.max(1, Math.min(2048, o.width - x - 22));
+        value = value.replace(/\s+/g, ' ');
+        if (measure.measureText(value).width > available) {
+          let low = 0,
+            high = Math.min(value.length, 4096);
+          while (low < high) {
+            const middle = Math.ceil((low + high) / 2);
+            if (measure.measureText(value.slice(0, middle) + '…').width <= available) low = middle;
+            else high = middle - 1;
+          }
+          value = value.slice(0, low) + '…';
+        }
+        const text = new Text({
+          text: value,
+          resolution,
+          style: { fontFamily: 'Arial', fontSize: size, fill: checked ? '#87928e' : '#29313b' },
+        });
+        text.position.set(x, y);
+        const mask = new Graphics().rect(x, y, Math.max(1, o.width - x - 22), 32).fill('#ffffff');
+        container.addChild(mask, text);
+        text.mask = mask;
+        if (checked)
+          g.moveTo(x, y + 10)
+            .lineTo(Math.min(o.width - 22, x + text.width), y + 10)
+            .stroke({ color: '#87928e', width: 1 });
+      };
+      if (o.text) label(o.text, 16, 20, 15);
+      (o.items || []).forEach((item, i) => {
+        const y = 72 + i * 44;
+        if (y + 14 > o.height) return;
+        g.circle(28, y, 10).stroke({ color: item.checked ? '#729385' : '#a0aebb', width: 1.4 });
+        if (item.checked) {
+          g.circle(28, y, 10).fill('#729385');
+          g.moveTo(23, y)
+            .lineTo(27, y + 4)
+            .lineTo(33, y - 4)
+            .stroke({ color: '#ffffff', width: 1.5 });
+        }
+        label(item.text, 51, y - 10, 16, item.checked);
+      });
+      return container;
+    }
     if (o.type === 'arrow') {
       drawArrow(g, dark ? { ...o, color: nightInk(o, o.color || '#66758a') } : o);
       container.addChild(g);
@@ -1541,7 +1601,7 @@ export class Engine {
             .roundRect(0, 0, o.width * c.zoom, o.height * c.zoom, linkCornerRadius * c.zoom)
             .stroke({ color: '#4486d9', width: 1.5 })
             .restore();
-        } else g.poly(outline).stroke({ color: '#4486d9', width: 1.5 });
+        } else if (o.type !== 'list') g.poly(outline).stroke({ color: '#4486d9', width: 1.5 });
         for (const handle of resizeHandles) {
           const p = screen(handlePoint(o, handle));
           if (o.type === 'link') g.circle(p.x, p.y, 3.5);

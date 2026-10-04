@@ -52,6 +52,10 @@ export function resizeObject(
     width = edge && !/[ew]/.test(corner) ? o.width : Math.max(20, Math.min(1e6, o.width + dw));
     height = edge && !/[ns]/.test(corner) ? o.height : Math.max(20, Math.min(1e6, o.height + dh));
   }
+  if (o.type === 'list') {
+    width = Math.max(240, width);
+    height = Math.max(100 + (o.items?.length || 0) * 44, height);
+  }
   const shift = rotatePoint(
     { x: (width - o.width) * (west ? -0.5 : 0.5), y: (height - o.height) * (north ? -0.5 : 0.5) },
     o.rotation || 0,
@@ -98,6 +102,9 @@ export function resizeSelection(
       o.type === 'arrow' ? 0 : 1 / o.width,
       o.type === 'arrow' ? 0 : 1 / o.height,
       size ? 8 / size : 0,
+      o.type === 'list'
+        ? Math.max(240 / o.width, (100 + (o.items?.length || 0) * 44) / o.height)
+        : 0,
     );
     maximum = Math.min(maximum, 1e6 / o.width, 1e6 / o.height, size ? 300 / size : Infinity);
   }

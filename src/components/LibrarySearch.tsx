@@ -1,6 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
-import { Search, FileText, StickyNote, Frame, Image, Link2, Video, Shapes } from 'lucide-react';
+import {
+  Search,
+  FileText,
+  StickyNote,
+  Frame,
+  Image,
+  Link2,
+  Video,
+  Shapes,
+  ListTodo,
+} from 'lucide-react';
 import type { ContentSearchResponse, Library, ObjectType } from '../model';
 import { invoke } from '../bridge';
 import { AppIcon } from './Launcher';
@@ -16,6 +26,7 @@ interface Props {
   onRenameFolder: (id: string, name: string) => Promise<void>;
 }
 const kinds: Record<ObjectType, { label: string; icon: typeof Search }> = {
+  list: { label: 'List', icon: ListTodo },
   text: { label: 'Text', icon: FileText },
   note: { label: 'Note', icon: StickyNote },
   frame: { label: 'Frame', icon: Frame },

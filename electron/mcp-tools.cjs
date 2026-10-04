@@ -17,7 +17,22 @@ const head = z.enum(['none', 'arrow', 'triangle', 'open', 'diamond', 'circle']);
 const object = z
   .object({
     id,
-    type: z.enum(['text', 'note', 'rect', 'ellipse', 'frame', 'image', 'video', 'link', 'arrow']),
+    type: z.enum([
+      'text',
+      'note',
+      'rect',
+      'ellipse',
+      'frame',
+      'image',
+      'video',
+      'link',
+      'arrow',
+      'list',
+    ]),
+    items: z
+      .array(z.object({ id, text: z.string().max(10000), checked: z.boolean() }))
+      .max(1000)
+      .optional(),
     x: number,
     y: number,
     width: size,

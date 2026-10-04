@@ -16,11 +16,36 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
     if (
       !o ||
       typeof o !== 'object' ||
-      !['text', 'note', 'rect', 'ellipse', 'frame', 'image', 'video', 'link', 'arrow'].includes(
-        o.type,
-      )
+      ![
+        'text',
+        'note',
+        'rect',
+        'ellipse',
+        'frame',
+        'image',
+        'video',
+        'link',
+        'arrow',
+        'list',
+      ].includes(o.type)
     )
       throw Error('Invalid clipboard object');
+    if (
+      o.type === 'list' &&
+      (!Array.isArray(o.items) ||
+        o.items.length > 1000 ||
+        !o.items.every(
+          (item: any) =>
+            item &&
+            typeof item.id === 'string' &&
+            /^[\w-]{1,100}$/.test(item.id) &&
+            typeof item.text === 'string' &&
+            item.text.length <= 10000 &&
+            typeof item.checked === 'boolean',
+        ) ||
+        new Set(o.items.map((item: any) => item.id)).size !== o.items.length)
+    )
+      throw Error('Invalid clipboard list items');
     if (
       !['x', 'y', 'width', 'height', 'z'].every(
         (k) => typeof o[k] === 'number' && Number.isFinite(o[k]) && Math.abs(o[k]) < 1e9,
@@ -171,6 +196,9 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
         throw Error('Invalid arrow');
     }
     return {
+      ...(o.type === 'list'
+        ? { items: o.items.map(({ id, text, checked }: any) => ({ id, text, checked })) }
+        : {}),
       ...(o.type === 'arrow'
         ? { arrow: { ...o.arrow, points: o.arrow.points.map((p: any) => ({ x: p.x, y: p.y })) } }
         : {}),
