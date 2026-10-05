@@ -22,6 +22,12 @@ import type { CanvasObject, Camera, Edit, Tool, ImageCrop } from '../model';
 import { uid } from '../model';
 import { SpatialIndex, screenToWorld, zoomAt, boundsOf, type Point, type Bounds } from './geometry';
 import { History } from './history';
+import {
+  stackingHierarchy,
+  stackingOverlap,
+  stackingSelection,
+  bringToFrontEdit,
+} from './stacking';
 import { renderText, renderLinkCaption, textRegion } from './text-rendering';
 import { documentPreviewBox, renderDocumentCard } from './document-card';
 import { listLayout } from './list-layout';
@@ -45,7 +51,6 @@ import {
   rotationFromDrag,
   rotationHandlePoint,
   objectBounds,
-  containsObject,
 } from './transform';
 import { hitsFrameLabel, visualBounds, hasExternalLabel, arrowLabelObject } from './frame-label';
 import { galleryEdit, selectionWithGalleryImages } from './gallery';
@@ -275,6 +280,21 @@ export class Engine {
   }
   get clipboardSelection() {
     return selectionWithGalleryImages(this.selected, this.objects.values());
+  }
+  get selectionOverlaps() {
+    const selected = this.selected;
+    if (!selected.length) return false;
+    const hierarchy = stackingHierarchy(this.all);
+    const ids = new Set(selected.map((o) => o.id));
+    return selected.some((o) =>
+      this.index
+        .search(objectBounds(o))
+        .some((other) => !ids.has(other.id) && stackingOverlap(o, other, hierarchy)),
+    );
+  }
+  bringToFront() {
+    const edit = bringToFrontEdit(this.all, this.clipboardSelection);
+    if (edit.upserts.length) this.apply(edit);
   }
   galleryImageAt(point: Point) {
     const o = this.hit(this.screenPoint(point));
@@ -951,15 +971,7 @@ export class Engine {
   private moveObjects(): CanvasObject[] {
     // Capture membership before the drag, so crossing other objects cannot
     // collect them mid-gesture. Geometry also releases items moved out of a frame.
-    const moving = new Map(this.clipboardSelection.map((o) => [o.id, o]));
-    for (const frame of this.selected.filter((o) => o.type === 'frame')) {
-      if (frame.gallery || frame.pdfComposer) continue;
-      for (const o of this.index.search(boundsOf([frame])!)) {
-        if (moving.has(o.id)) continue;
-        if (containsObject(frame, o)) moving.set(o.id, o);
-      }
-    }
-    return [...moving.values()].map((o) => ({ ...o }));
+    return stackingSelection(this.all, this.selected).map((o) => ({ ...o }));
   }
   prepareExternalEdit() {
     this.stopCameraAnimation();

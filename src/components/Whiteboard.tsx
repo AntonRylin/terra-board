@@ -525,6 +525,34 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       <Download size={16} />
     </button>
   );
+  const bringToFrontButton = engine.current?.selectionOverlaps ? (
+    <button
+      className="icon-button"
+      aria-label="Bring to front"
+      data-launcher-label="Bring to front"
+      onClick={() => {
+        finishEdit();
+        engine.current?.bringToFront();
+        host.current?.focus();
+      }}
+    >
+      <svg
+        width={19}
+        height={19}
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={1.7}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M5 7H2v14h10v-2" />
+        <path d="M7 2h7l3 3v11H7Z M14 2v3h3" />
+        <path d="M15 21h2a4 4 0 0 0 4-4v-6m-2.5 2.5L21 11l2.5 2.5" />
+      </svg>
+    </button>
+  ) : null;
   const selectedGalleryTarget = (): GalleryTarget | null => {
     if (galleryTarget.current) return { ...galleryTarget.current };
     const objects = engine.current?.selected;
@@ -2058,6 +2086,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             </button>
           ))}
           {exportSelectionButton}
+          {bringToFrontButton}
         </div>
       )}
       {activeGallery &&
@@ -2325,6 +2354,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
               </button>
             </>
           )}
+          {bringToFrontButton}
           <button
             className="icon-button"
             aria-label="Duplicate selection"
