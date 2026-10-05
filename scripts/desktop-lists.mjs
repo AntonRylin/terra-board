@@ -161,13 +161,13 @@ try {
   assert.equal(await read(`document.querySelector('[aria-label="List name"]').value`), 'Title');
   assert.ok(
     await read(
-      `Math.abs(document.querySelector('[aria-label="List name"]').getBoundingClientRect().left - document.querySelector('.canvas-list-row input').getBoundingClientRect().left) < 1`,
+      `Math.abs(document.querySelector('[aria-label="List name"]').getBoundingClientRect().left - document.querySelector('.canvas-list-row textarea').getBoundingClientRect().left) < 1`,
     ),
     'title aligns with item text',
   );
   assert.deepEqual(
     await read(
-      `Array.from(document.querySelectorAll('.canvas-list-row input'), input=>input.value)`,
+      `Array.from(document.querySelectorAll('.canvas-list-row textarea'), input=>input.value)`,
     ),
     ['Item 1', 'Item 2'],
   );
@@ -303,7 +303,7 @@ try {
   );
   assert.equal(
     await read(
-      `getComputedStyle(document.querySelector('.canvas-list-row input')).textDecorationLine`,
+      `getComputedStyle(document.querySelector('.canvas-list-row textarea')).textDecorationLine`,
     ),
     'none',
     'title format does not affect items',
@@ -375,7 +375,7 @@ try {
   assert.equal(await read(`!!document.querySelector('[aria-label="Add list item"]')`), false);
   assert.equal(
     await read(
-      `Array.from(document.querySelectorAll('.canvas-list input')).every(input=>input.readOnly)`,
+      `Array.from(document.querySelectorAll('.canvas-list textarea')).every(input=>input.readOnly)`,
     ),
     true,
   );
@@ -498,7 +498,7 @@ try {
   await until(
     () =>
       read(
-        `document.activeElement?.closest('.canvas-list')===document.querySelector('.canvas-list:last-child') && document.activeElement?.tagName==='INPUT'`,
+        `document.activeElement?.closest('.canvas-list')===document.querySelector('.canvas-list:last-child') && document.activeElement?.tagName==='TEXTAREA'`,
       ),
     'empty list row focus',
   );

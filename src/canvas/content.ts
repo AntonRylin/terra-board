@@ -32,6 +32,11 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
       ].includes(o.type)
     )
       throw Error('Invalid clipboard object');
+    if (
+      o.listScale !== undefined &&
+      !(Number.isFinite(o.listScale) && o.listScale >= 1e-6 && o.listScale <= 1e6)
+    )
+      throw Error('Invalid clipboard list scale');
     let pdfComposer;
     if (o.pdfComposer !== undefined) {
       if (o.type !== 'frame' || o.gallery !== undefined)
@@ -254,6 +259,7 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
       ...(o.documentPageCount === undefined ? {} : { documentPageCount: o.documentPageCount }),
       ...(o.color === undefined ? {} : { color: o.color }),
       ...(o.fontSize === undefined ? {} : { fontSize: o.fontSize }),
+      ...(o.listScale === undefined ? {} : { listScale: o.listScale }),
       ...(o.bold === undefined ? {} : { bold: o.bold }),
       ...(o.strikethrough === undefined ? {} : { strikethrough: o.strikethrough }),
       ...(o.centerX === undefined ? {} : { centerX: o.centerX }),

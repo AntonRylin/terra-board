@@ -3,7 +3,7 @@ import { Check, Plus, X } from 'lucide-react';
 import type { Camera, CanvasObject, ListItem } from '../model';
 import { uid } from '../model';
 import { localToWorld } from '../canvas/transform';
-import { listLayout, withListItems } from '../canvas/list-layout';
+import { fitListHeight, listLayout, withListItems } from '../canvas/list-layout';
 import ListEditOutline from './ListEditOutline';
 import './canvas-lists.css';
 
@@ -32,11 +32,26 @@ function ListCard({
   editing: boolean;
   setEditing: (editing: boolean) => void;
 }) {
-  const inputs = useRef(new Map<string, HTMLInputElement>());
-  const name = useRef<HTMLInputElement>(null);
+  const inputs = useRef(new Map<string, HTMLTextAreaElement>());
+  const name = useRef<HTMLTextAreaElement>(null);
+  const card = useRef<HTMLElement>(null);
   const pendingFocus = useRef<string | null>(null);
   const items = o.items || [];
   const layout = listLayout(o);
+  useLayoutEffect(() => {
+    const element = card.current;
+    if (!element) return;
+    for (const input of element.querySelectorAll('textarea')) {
+      input.style.height = '0px';
+      input.style.height = `${input.scrollHeight}px`;
+    }
+    const header = element.querySelector<HTMLElement>('.canvas-list-header')!;
+    const rows = element.querySelector<HTMLElement>('.canvas-list-items')!;
+    // Reserve the add control even outside editing, so entering/leaving edit
+    // mode never changes wrapping or moves the card.
+    const needed = (62 + header.offsetHeight + 6 + rows.scrollHeight) * layout.scale;
+    if (needed > o.height + 0.5) update(fitListHeight(o, needed));
+  }, [o, editing, layout.width]);
   useLayoutEffect(() => {
     if (!active && editing) {
       setEditing(false);
@@ -79,6 +94,7 @@ function ListCard({
   const origin = localToWorld(o, { x: 0, y: 0 });
   return (
     <section
+      ref={card}
       className="canvas-list glass-surface"
       data-list-id={o.id}
       data-list-scale={layout.scale}
@@ -94,7 +110,7 @@ function ListCard({
         transform: `scale(${camera.zoom * layout.scale}) rotate(${o.rotation || 0}deg)`,
       }}
       onPointerDown={(event) => {
-        if (event.button !== 0 || !(event.target as HTMLElement).closest('button,input'))
+        if (event.button !== 0 || !(event.target as HTMLElement).closest('button,textarea'))
           forward(event);
         else select(o.id);
       }}
@@ -111,7 +127,7 @@ function ListCard({
           (event.target as HTMLElement).blur();
         }
         if (
-          (event.target as HTMLElement).closest('input') ||
+          (event.target as HTMLElement).closest('textarea') ||
           event.key === ' ' ||
           event.key === 'Enter'
         )
@@ -121,7 +137,8 @@ function ListCard({
       {editing && <ListEditOutline width={layout.width} height={layout.height} />}
       <header className="canvas-list-header">
         {o.text || editing ? (
-          <input
+          <textarea
+            rows={1}
             ref={name}
             className="canvas-list-name"
             aria-label="List name"
@@ -136,6 +153,7 @@ function ListCard({
             onChange={(event) => update({ ...o, text: event.target.value })}
             onKeyDown={(event) => {
               if (event.key === 'Enter' || event.key === 'Escape') {
+                event.preventDefault();
                 event.currentTarget.blur();
                 if (event.key === 'Escape') setEditing(false);
               }
@@ -167,7 +185,8 @@ function ListCard({
             >
               {item.checked && <Check size={13} strokeWidth={2.3} />}
             </button>
-            <input
+            <textarea
+              rows={1}
               ref={(el) => {
                 if (el) inputs.current.set(item.id, el);
                 else inputs.current.delete(item.id);
@@ -178,16 +197,15 @@ function ListCard({
               readOnly={!editing}
               tabIndex={editing ? 0 : -1}
               onChange={(event) =>
-                update({
-                  ...o,
-                  items: items.map((row) =>
+                changeItems(
+                  items.map((row) =>
                     row.id === item.id ? { ...row, text: event.target.value } : row,
                   ),
-                })
+                )
               }
               onKeyDown={(event) => {
                 if (!editing || event.nativeEvent.isComposing) return;
-                if (event.key === 'Enter') {
+                if (event.key === 'Enter' && !event.shiftKey) {
                   event.preventDefault();
                   add(index);
                 }
@@ -199,11 +217,19 @@ function ListCard({
                   event.currentTarget.blur();
                   setEditing(false);
                 }
-                if (event.key === 'ArrowUp' && index > 0) {
+                if (
+                  event.key === 'ArrowUp' &&
+                  index > 0 &&
+                  event.currentTarget.selectionStart === 0
+                ) {
                   event.preventDefault();
                   focus(items[index - 1].id);
                 }
-                if (event.key === 'ArrowDown' && index < items.length - 1) {
+                if (
+                  event.key === 'ArrowDown' &&
+                  index < items.length - 1 &&
+                  event.currentTarget.selectionStart === item.text.length
+                ) {
                   event.preventDefault();
                   focus(items[index + 1].id);
                 }

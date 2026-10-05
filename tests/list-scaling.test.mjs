@@ -8,6 +8,7 @@ import vm from 'node:vm';
 import ts from 'typescript';
 import { resizeObject, resizeSelection } from '../src/canvas/resize.ts';
 import { localToWorld } from '../src/canvas/transform.ts';
+import { listLayout, wrapListText } from '../src/canvas/list-layout.ts';
 
 const require = createRequire(import.meta.url);
 const list = {
@@ -24,6 +25,28 @@ const list = {
     { id: 'b', text: 'Pack bag', checked: true },
   ],
 };
+
+test('list edges extend only their axis and preserve text size through repeated resizes', () => {
+  for (const [edge, dx, dy, width, height, x, y] of [
+    ['e', 160, 0, 480, 188, 100, 200],
+    ['w', -160, 0, 480, 188, -60, 200],
+    ['s', 0, 94, 320, 282, 100, 200],
+    ['n', 0, -94, 320, 282, 100, 106],
+  ]) {
+    const resized = resizeObject(list, edge, dx, dy, false);
+    assert.deepEqual([resized.width, resized.height, resized.x, resized.y], [width, height, x, y]);
+    assert.equal(listLayout(resized).scale, 1);
+    const twice = resizeObject(resized, 's', 0, 94, false);
+    assert.equal(listLayout(twice).scale, 1);
+  }
+});
+
+test('list wrapping retains long words, explicit newlines and their endings', () => {
+  assert.deepEqual(
+    wrapListText('one two\nabcdefgh', 4, (value) => value.length),
+    ['one ', 'two', 'abcd', 'efgh'],
+  );
+});
 
 test('list corners scale the whole card proportionally and pin the opposite corner', () => {
   const horizontal = resizeObject(list, 'se', 100, 0, false);

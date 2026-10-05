@@ -18,6 +18,7 @@ const list = {
   text: '',
   bold: true,
   strikethrough: true,
+  listScale: 1,
   items: [
     { id: 'first', text: 'Plan the trip', checked: false },
     { id: 'second', text: 'Book train', checked: true },

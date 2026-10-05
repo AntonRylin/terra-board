@@ -241,6 +241,10 @@ function objectValue(o) {
     )
       throw Error('Invalid list items');
     result.items = o.items.map(({ id, text, checked }) => ({ id, text, checked }));
+    if (o.listScale !== undefined) {
+      if (!number(o.listScale, 1e-6, 1e6)) throw Error('Invalid list scale');
+      result.listScale = o.listScale;
+    }
   }
   if (o.imageTitle !== undefined) {
     if (o.type !== 'image' || typeof o.imageTitle !== 'string' || o.imageTitle.length > 100000)

@@ -586,8 +586,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     [editing, draft],
   );
   const editingLayout = useMemo(
-    () => (editingObject ? textLayout(editingObject, draft) : null),
-    [editingObject, draft],
+    () => (editingObject ? textLayout(editingObject, draft, camera.zoom) : null),
+    [editingObject, draft, camera.zoom],
   );
   const editingAppearance = editingLayout?.appearance;
   const editingPlacement =
@@ -665,8 +665,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     if (o.type === 'list') {
       (
         window.document.querySelector(
-          `[data-list-id="${o.id}"] input:not([readonly])`,
-        ) as HTMLInputElement | null
+          `[data-list-id="${o.id}"] textarea:not([readonly])`,
+        ) as HTMLTextAreaElement | null
       )?.focus();
       return;
     }

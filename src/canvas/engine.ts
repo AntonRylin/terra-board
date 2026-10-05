@@ -30,7 +30,7 @@ import {
 } from './stacking';
 import { renderText, renderLinkCaption, textRegion } from './text-rendering';
 import { documentPreviewBox, renderDocumentCard } from './document-card';
-import { listLayout } from './list-layout';
+import { listLayout, wrapListText } from './list-layout';
 import { TextureCache } from './textures';
 import { appearanceEvent, nightInk } from '../appearance';
 import { NightLighting } from './night-lighting';
@@ -187,7 +187,11 @@ export class Engine {
   objects = new Map<string, CanvasObject>();
   selection = new Set<string>();
   history = new History();
-  private index = new SpatialIndex(visualBounds);
+  // Index the largest possible title once; actual zoom bounds are checked at
+  // rendering, marquee and pointer time without rebuilding the index on zoom.
+  private index = new SpatialIndex((o) =>
+    visualBounds(o, false, o.type === 'frame' ? 0.01 : undefined),
+  );
   private world = new Container();
   private selectionLayer = new Graphics();
   private snapGuides: SnapGuide[] = [];
@@ -337,7 +341,7 @@ export class Engine {
               Math.abs(q.y - label.y) < box.height / 2 + 2)
           );
         }
-        if (hitsFrameLabel(o, q)) return true;
+        if (hitsFrameLabel(o, q, this.camera.zoom)) return true;
         if (q.x < 0 || q.y < 0 || q.x > o.width || q.y > o.height) return false;
         if (
           o.type === 'ellipse' &&
@@ -453,9 +457,9 @@ export class Engine {
           const editOnClick =
             !additive &&
             hit.type !== 'document' &&
-            (hit.type !== 'image' || hitsFrameLabel(hit, worldToLocal(hit, w))) &&
+            (hit.type !== 'image' || hitsFrameLabel(hit, worldToLocal(hit, w), this.camera.zoom)) &&
             ((!hit.groupId &&
-              (hitsFrameLabel(hit, worldToLocal(hit, w)) ||
+              (hitsFrameLabel(hit, worldToLocal(hit, w), this.camera.zoom) ||
                 hitsLinkPlay(hit, worldToLocal(hit, w)))) ||
               (this.selection.size === 1 && this.selection.has(hit.id)))
               ? hit.id
@@ -688,7 +692,20 @@ export class Engine {
     else if (g.mode === 'pan') this.callbacks.camera({ ...this.camera });
     else if (g.mode === 'box' && g.box) {
       const next = new Set(g.original.map((o) => o.id));
-      const hits = new Set(this.index.search(g.box).flatMap((o) => this.members(o)));
+      const hits = new Set(
+        this.index
+          .search(g.box)
+          .filter((o) => {
+            const b = visualBounds(o, false, this.camera.zoom);
+            return (
+              b.x <= g.box!.x + g.box!.width &&
+              b.x + b.width >= g.box!.x &&
+              b.y <= g.box!.y + g.box!.height &&
+              b.y + b.height >= g.box!.y
+            );
+          })
+          .flatMap((o) => this.members(o)),
+      );
       for (const id of hits) g.toggle && next.has(id) ? next.delete(id) : next.add(id);
       this.setSelection([...next]);
     } else if (
@@ -827,7 +844,9 @@ export class Engine {
     if (o)
       this.callbacks.activate(
         o,
-        o.type === 'image' && hitsFrameLabel(o, worldToLocal(o, world)) ? 'title' : undefined,
+        o.type === 'image' && hitsFrameLabel(o, worldToLocal(o, world), this.camera.zoom)
+          ? 'title'
+          : undefined,
       );
     else this.callbacks.create('text', world);
   };
@@ -1134,6 +1153,15 @@ export class Engine {
         width: (w + 100) / c.zoom,
         height: (h + 100) / c.zoom,
       })
+      .filter((o) => {
+        const b = visualBounds(o, false, c.zoom);
+        return (
+          (b.x + b.width) * c.zoom + c.x >= -50 &&
+          b.x * c.zoom + c.x <= w + 50 &&
+          (b.y + b.height) * c.zoom + c.y >= -50 &&
+          b.y * c.zoom + c.y <= h + 50
+        );
+      })
       .sort((a, b) => a.z - b.z);
     if (this.editingPreview) {
       const index = visible.findIndex((o) => o.id === this.editingPreview!.id);
@@ -1247,7 +1275,7 @@ export class Engine {
             ? !!o.imageTitle?.trim() || !texture
             : o.type === 'frame' || o.type === 'video' || o.type === 'link' || !!o.text));
       const resolution = 2 ** Math.ceil(Math.log2(c.zoom * devicePixelRatio));
-      const region = textRegion(o, c, w, h);
+      const region = textRegion(o, c, w, h, c.zoom);
       const signature = JSON.stringify([
         this.dark,
         !!o.gallery,
@@ -1273,6 +1301,7 @@ export class Engine {
         o.centerX,
         o.centerY,
         o.type,
+        o.type === 'frame' ? c.zoom : null,
         o.crop,
         o.arrow,
         key,
@@ -1397,42 +1426,33 @@ export class Engine {
         bold = false,
         strike = checked,
       ) => {
-        measure.font = `${bold ? 'bold' : 'normal'} ${size}px Arial`;
-        const available = Math.max(1, Math.min(2048, o.width - x - 22));
-        value = value.replace(/\s+/g, ' ');
-        if (measure.measureText(value).width > available) {
-          let low = 0,
-            high = Math.min(value.length, 4096);
-          while (low < high) {
-            const middle = Math.ceil((low + high) / 2);
-            if (measure.measureText(value.slice(0, middle) + '…').width <= available) low = middle;
-            else high = middle - 1;
-          }
-          value = value.slice(0, low) + '…';
-        }
-        const text = new Text({
-          text: value,
-          resolution,
-          style: {
-            fontFamily: 'Arial',
-            fontSize: size,
-            fontWeight: bold ? 'bold' : 'normal',
-            fill: checked ? '#87928e' : '#29313b',
-          },
+        measure.font = `${bold ? 'bold' : 'normal'} ${size}px "Segoe UI", sans-serif`;
+        const available = Math.max(1, o.width - x - (size === 16 ? 56 : 16));
+        const lines = wrapListText(value, available, (text) => measure.measureText(text).width);
+        lines.forEach((line, index) => {
+          const text = new Text({
+            text: line,
+            resolution,
+            style: {
+              fontFamily: 'Segoe UI',
+              fontSize: size,
+              fontWeight: bold ? 'bold' : 'normal',
+              fill: checked ? '#87928e' : '#29313b',
+            },
+          });
+          const lineY = y + index * 24;
+          text.position.set(x, lineY);
+          card.addChild(text);
+          if (strike)
+            g.moveTo(x, lineY + 10)
+              .lineTo(Math.min(o.width - 22, x + text.width), lineY + 10)
+              .stroke({ color: '#87928e', width: 1 });
         });
-        text.position.set(x, y);
-        const mask = new Graphics().rect(x, y, Math.max(1, o.width - x - 22), 32).fill('#ffffff');
-        card.addChild(mask, text);
-        text.mask = mask;
-        if (strike)
-          g.moveTo(x, y + 10)
-            .lineTo(Math.min(o.width - 22, x + text.width), y + 10)
-            .stroke({ color: '#87928e', width: 1 });
+        return lines.length;
       };
-      if (o.text) label(o.text, 51, 20, 15, false, o.bold, o.strikethrough);
-      (o.items || []).forEach((item, i) => {
-        const y = 72 + i * 44;
-        if (y + 14 > o.height) return;
+      const titleLines = o.text ? label(o.text, 51, 20, 15, false, o.bold, o.strikethrough) : 1;
+      let y = 72 + (titleLines - 1) * 24;
+      (o.items || []).forEach((item) => {
         g.circle(28, y, 10).stroke({ color: item.checked ? '#729385' : '#a0aebb', width: 1.4 });
         if (item.checked) {
           g.circle(28, y, 10).fill('#729385');
@@ -1441,7 +1461,8 @@ export class Engine {
             .lineTo(33, y - 4)
             .stroke({ color: '#ffffff', width: 1.5 });
         }
-        label(item.text, 51, y - 10, 16, item.checked);
+        const lines = label(item.text, 51, y - 10, 16, item.checked);
+        y += Math.max(44, lines * 24 + 20);
       });
       return container;
     }
@@ -1641,6 +1662,7 @@ export class Engine {
           resolution,
           region,
           dark,
+          exporting ? undefined : this.camera?.zoom,
         );
         if (label) container.addChild(label);
       }
@@ -1700,7 +1722,7 @@ export class Engine {
         hasExternalLabel(o) ||
         ((o.type === 'image' || o.type === 'document') && this.editingId === o.id)
       ) {
-        const visual = visualBounds(o, this.editingId === o.id);
+        const visual = visualBounds(o, this.editingId === o.id, c.zoom);
         toolbarBounds = {
           x: visual.x * c.zoom + c.x,
           y: visual.y * c.zoom + c.y,

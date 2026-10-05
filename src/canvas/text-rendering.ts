@@ -90,9 +90,22 @@ export function renderLinkCaption(
   return sprite;
 }
 
-export function textRegion(o: CanvasObject, c: Camera, width: number, height: number) {
+export function textRegion(
+  o: CanvasObject,
+  c: Camera,
+  width: number,
+  height: number,
+  frameZoom?: number,
+) {
   if (o.rotation || hasExternalLabel(o)) {
-    const b = localViewport(o, c, width, height, 64, hasExternalLabel(o) ? frameLabel(o).top : 0);
+    const b = localViewport(
+      o,
+      c,
+      width,
+      height,
+      64,
+      hasExternalLabel(o) ? frameLabel(o, frameZoom).top : 0,
+    );
     return {
       x: Math.floor(b.left),
       y: Math.floor(b.top),
@@ -118,8 +131,9 @@ export function renderText(
   resolution: number,
   region: ReturnType<typeof textRegion>,
   dark = false,
+  frameZoom?: number,
 ) {
-  const { appearance: a, metrics } = textLayout(o, text);
+  const { appearance: a, metrics } = textLayout(o, text, frameZoom);
   const placement = textPlacement(o, a, metrics.lines.length);
   const centered = o.type !== 'frame' && o.type !== 'image' && o.type !== 'document' && o.centerX;
   const anchor = centered ? o.width / 2 : a.padding;

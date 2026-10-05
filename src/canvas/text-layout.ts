@@ -2,9 +2,10 @@ import { CanvasTextMetrics, TextStyle } from 'pixi.js';
 import type { CanvasObject } from '../model';
 import { textAppearance } from './text-style';
 import { localToWorld } from './transform';
+import { frameTitleSize } from './frame-title-size';
 
 type Layout = {
-  appearance: ReturnType<typeof textAppearance> & { wrapWidth: number };
+  appearance: ReturnType<typeof textAppearance> & { wrapWidth: number; labelGap?: number };
   metrics: CanvasTextMetrics;
   editorContentHeight?: number;
 };
@@ -36,7 +37,9 @@ export function textLayout(
   o: CanvasObject,
   text = (o.type === 'image' ? o.imageTitle : o.type === 'document' ? o.documentTitle : o.text) ||
     '',
+  frameZoom?: number,
 ): Layout {
+  const titleSize = o.type === 'frame' ? frameTitleSize(o, frameZoom) : undefined;
   const key = JSON.stringify([
     o.type,
     o.width,
@@ -46,6 +49,7 @@ export function textLayout(
     o.textBox,
     o.bold,
     text,
+    titleSize,
   ]);
   const cached = cache.get(key);
   if (cached) {
@@ -53,7 +57,7 @@ export function textLayout(
     cache.set(key, cached);
     return cached;
   }
-  const base = textAppearance(o);
+  const base = { ...textAppearance(o), ...titleSize };
   const measure = (fontSize: number): Layout => {
     // Leave room for the handwriting font's ink overhang at a wrapped edge.
     // Checking its ink width against the exact wrap width makes long unbroken
@@ -121,16 +125,25 @@ export function fitTextObject(
 ): CanvasObject {
   if (o.type === 'image') return { ...o, imageTitle: text };
   if (o.type === 'document') return { ...o, documentTitle: text };
-  if (o.type !== 'text' || o.textBox) return { ...o, text };
-  const { appearance: a, metrics } = textLayout(o, text);
+  if (o.type !== 'text') return { ...o, text };
+  const { appearance: a, metrics } = textLayout({ ...o, textBox: false }, text);
   const fitted = {
     ...o,
     text,
     width: Math.min(
       1e6,
-      Math.max(a.fontSize * 0.5, metrics.maxLineWidth) + a.padding * 2 + a.fontSize * 0.08,
+      Math.max(
+        o.textBox ? o.width : 0,
+        Math.max(a.fontSize * 0.5, metrics.maxLineWidth) + a.padding * 2 + a.fontSize * 0.08,
+      ),
     ),
-    height: Math.min(1e6, Math.max(1, metrics.lines.length) * a.lineHeight + a.padding * 2),
+    height: Math.min(
+      1e6,
+      Math.max(
+        o.textBox ? o.height : 0,
+        Math.max(1, metrics.lines.length) * a.lineHeight + a.padding * 2,
+      ),
+    ),
   };
   if (o.rotation) {
     const before = localToWorld(o, { x: 0, y: 0 }),

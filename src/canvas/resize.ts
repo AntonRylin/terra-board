@@ -34,7 +34,9 @@ export function resizeObject(
     fontSize = o.fontSize;
   if (
     !edge &&
-    (o.type === 'text' || (['image', 'video', 'document', 'list'].includes(o.type) && !free))
+    (o.type === 'text' ||
+      o.type === 'list' ||
+      (['image', 'video', 'document'].includes(o.type) && !free))
   ) {
     // Project the pointer onto the original diagonal, so either axis scales naturally.
     const requested = 1 + (dw * o.width + dh * o.height) / (o.width ** 2 + o.height ** 2);
@@ -62,7 +64,7 @@ export function resizeObject(
   if (o.type === 'list') {
     const layout = listLayout(o);
     width = Math.min(layout.maximumWidth, Math.max(240, width));
-    height = Math.max(layout.minimumHeight * (width / o.width), height);
+    height = Math.max(layout.minimumHeight * (edge ? 1 : width / o.width), height);
   }
   const shift = rotatePoint(
     { x: (width - o.width) * (west ? -0.5 : 0.5), y: (height - o.height) * (north ? -0.5 : 0.5) },
@@ -75,6 +77,7 @@ export function resizeObject(
     width,
     height,
     fontSize,
+    ...(o.type === 'list' ? { listScale: listLayout(o).scale * (edge ? 1 : width / o.width) } : {}),
     ...(edge && o.type === 'text' ? { textBox: true } : {}),
   };
 }
@@ -127,6 +130,7 @@ export function resizeSelection(
     y: anchor.y + (o.y - anchor.y) * scale,
     width: Math.max(1, o.width * scale),
     height: Math.max(1, o.height * scale),
+    ...(o.type === 'list' ? { listScale: listLayout(o).scale * scale } : {}),
     ...(font(o) ? { fontSize: Math.max(8, Math.min(300, font(o)! * scale)) } : {}),
     ...(o.arrow
       ? {

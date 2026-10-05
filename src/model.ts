@@ -58,6 +58,7 @@ export interface ArrowStyle {
 }
 export interface CanvasObject {
   items?: ListItem[];
+  listScale?: number;
   gallery?: { direction: 'right' | 'below'; size: number; gap: number };
   pdfComposer?: PdfComposer;
   galleryId?: string;

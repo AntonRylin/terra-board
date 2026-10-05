@@ -99,6 +99,7 @@ const object = z
     documentExcerpt: z.string().max(10000).optional(),
     documentPageCount: z.number().int().min(1).max(100000).optional(),
     fontSize: z.number().min(8).max(300).optional(),
+    listScale: z.number().min(1e-6).max(1e6).optional(),
     color: z
       .string()
       .regex(/^#[a-f\d]{6}$/i)
