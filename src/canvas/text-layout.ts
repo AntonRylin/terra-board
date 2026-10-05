@@ -67,6 +67,8 @@ export function textLayout(
       o.width - base.padding * 2 - (o.type === 'note' ? fontSize * 0.25 + 1 : 0),
     );
     const appearance = { ...base, fontSize, lineHeight: fontSize * 1.45, wrapWidth };
+    if (o.type === 'frame' && frameZoom !== undefined)
+      appearance.labelGap = Math.min(base.labelGap!, fontSize * 0.4);
     // Pixi drops a trailing empty line; the native editor needs it for the caret.
     const measuredText = /[\r\n][\t ]*$/.test(text) ? text + '\u200b' : text;
     const metrics = CanvasTextMetrics.measureText(
@@ -85,6 +87,28 @@ export function textLayout(
     return { appearance, metrics };
   };
   let result = measure(base.fontSize);
+  if (o.type === 'frame' && frameZoom !== undefined) {
+    // Cap the entire wrapped title, not just each glyph. Long names must not
+    // turn into a heading block almost as tall as their frame when zoomed out.
+    const budget = o.height * 0.16;
+    const fits = (layout: Layout) =>
+      Math.max(1, layout.metrics.lines.length) * layout.appearance.lineHeight +
+        (layout.appearance.labelGap || 0) <=
+      budget;
+    if (!fits(result)) {
+      let low = 0.0001,
+        high = base.fontSize;
+      result = measure(low);
+      for (let i = 0; i < 14; i++) {
+        const mid = (low + high) / 2,
+          candidate = measure(mid);
+        if (fits(candidate)) {
+          low = mid;
+          result = candidate;
+        } else high = mid;
+      }
+    }
+  }
   if (o.type === 'note') {
     const width = Math.max(1, o.width - base.padding * 2);
     const height = Math.max(1, o.height - base.padding * 2);

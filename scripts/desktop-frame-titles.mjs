@@ -36,6 +36,16 @@ store.patchBoard({
       z: 2,
       text: 'Small frame',
     },
+    {
+      id: 'long-title',
+      type: 'frame',
+      x: 3000,
+      y: 0,
+      width: 1700,
+      height: 1150,
+      z: 3,
+      text: 'Scratchgate и как надо выбирать чехлы',
+    },
   ],
 });
 store.setLastBoard({ id: board.id });
@@ -186,11 +196,11 @@ try {
   const checks = [];
   for (const [zoom, expected] of [
     [1, 14],
-    [0.25, 12],
-    [0.1, 12],
-    [0.025, 6.25],
-    [2, 28],
-    [8, 28],
+    [0.25, 10],
+    [0.1, 10],
+    [0.025, 2.5],
+    [2, 18],
+    [8, 18],
   ]) {
     await read(
       `window.canvas.invoke('saveCamera',{id:${JSON.stringify(board.id)},camera:{x:400,y:300,zoom:${zoom}}})`,
@@ -217,7 +227,17 @@ try {
     );
     if (zoom === 0.1) {
       const small = await read(`window.__frameDraws.filter(d=>d.text==='Small frame').at(-1)`);
-      assert.equal(small.font, 30);
+      assert.equal(small.font, 10);
+      await mouse('mousePressed', 705, 289, 1);
+      await mouse('mouseReleased', 705, 289);
+      await until(() => read(`!!document.querySelector('.text-editor')`), 'long title editor');
+      const title = await rect('.text-editor');
+      assert.ok(
+        300 - title.y <= 115 * 0.16 + 1,
+        'entire wrapped title and gap fit within 16 percent of frame height',
+      );
+      assert.ok(title.height < 19, 'long title stays compact');
+      await key('Escape');
       await screenshot('frame-titles-10-percent.png');
     }
     if (zoom === 0.25) {
@@ -228,7 +248,7 @@ try {
       const size = await read(
         `parseFloat(getComputedStyle(document.querySelector('.text-editor')).fontSize)`,
       );
-      assert.equal(size, 12, 'editor matches visible title');
+      assert.equal(size, 10, 'editor matches visible title');
       const r = await rect('.text-editor');
       assert.ok(r.y < 300 && r.y + r.height < 300, 'editor stays above frame');
       await key('Escape');
@@ -247,7 +267,7 @@ try {
     return c.zoom < 7.9 && c;
   }, 'wheel zoom saves');
   const wheelDraw = await read(`window.__frameDraws.filter(d=>d.text==='Frame overview').at(-1)`);
-  assert.ok(Math.abs(wheelDraw.font * wheeled.zoom - 28) < 0.05, 'title tracks live wheel zoom');
+  assert.ok(Math.abs(wheelDraw.font * wheeled.zoom - 18) < 0.05, 'title tracks live wheel zoom');
   assert.deepEqual(
     (await state()).objects,
     originalObjects,
@@ -268,4 +288,3 @@ try {
   socket?.close();
   child.kill();
 }
-

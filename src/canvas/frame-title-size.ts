@@ -8,7 +8,7 @@ export function frameTitleSize(
   const base = o.fontSize || 14;
   if (zoom === undefined) return { fontSize: base, labelGap: 8 };
   const z = Math.max(0.01, Math.min(8, zoom));
-  const frameLimit = Math.max(base, Math.min(o.width / 8, o.height / 4));
-  const fontSize = Math.min(frameLimit, Math.max(base, 12 / z), 28 / z);
-  return { fontSize, labelGap: Math.min(8 / z, fontSize * 0.75) };
+  const frameLimit = Math.min(o.width / 16, o.height / 12);
+  const fontSize = Math.min(frameLimit, Math.max(base, 10 / z), 18 / z);
+  return { fontSize, labelGap: Math.min(5 / z, fontSize * 0.4) };
 }
