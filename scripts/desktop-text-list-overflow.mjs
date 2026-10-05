@@ -36,7 +36,7 @@ store.patchBoard({
       x: 400,
       y: 650,
       width: 180,
-      height: 40,
+      height: 180,
       z: 2,
       text: 'Short text',
       fontSize: 24,
@@ -209,12 +209,12 @@ try {
   await until(() => read(`!!document.querySelector('.text-editor')`), 'text editor');
   await read(`document.querySelector('.text-editor').select()`);
   const typed =
-    'This plain text must keep growing to the right so the complete ending stays visible.';
+    'This plain text must wrap inside the chosen width so the complete ending stays visible.';
   await send('Input.insertText', { text: typed });
   const plain = await read(
-    `(()=>{const e=document.querySelector('.text-editor');return {w:e.clientWidth,sw:e.scrollWidth,h:e.clientHeight,sh:e.scrollHeight};})()`,
+    `(()=>{const e=document.querySelector('.text-editor');return {w:e.clientWidth,sw:e.scrollWidth,h:e.clientHeight,sh:e.scrollHeight,font:parseFloat(getComputedStyle(e).fontSize)};})()`,
   );
-  if (!(plain.w > 600 && plain.sw <= plain.w + 1 && plain.sh <= plain.h + 1))
+  if (!(plain.w <= 180 && plain.font <= 24 && plain.sw <= plain.w + 1 && plain.sh <= plain.h + 1))
     failures.push({ plain });
   await key('Enter', 'Enter', 2);
   await until(
@@ -223,6 +223,73 @@ try {
   );
   await screenshot('text-lists-overflow.png');
   assert.deepEqual(failures, []);
+  const textState = async () => (await state()).objects.find((o) => o.id === 'text');
+  assert.equal((await textState()).width, 180, 'editing retains the chosen text box width');
+  // Observe the actual renderer's draw calls, grouped by texture, to ensure it
+  // paints every character after wrapping (not just the visible first rows).
+  await read(`(() => {
+    const original = CanvasRenderingContext2D.prototype.fillText;
+    const groups = new WeakMap();
+    window.__textPaints = [];
+    CanvasRenderingContext2D.prototype.fillText = function(text, ...args) {
+      let group = groups.get(this.canvas);
+      if (!group) { group = []; groups.set(this.canvas, group); window.__textPaints.push(group); }
+      group.push(text);
+      return original.call(this, text, ...args);
+    };
+  })()`);
+  async function resizeText(edge, dx, dy) {
+    const before = await textState();
+    const x = before.x + (edge === 'e' ? before.width : before.width / 2);
+    const y = before.y + (edge === 's' ? before.height : before.height / 2);
+    await mouse('mouseMoved', x, y);
+    await mouse('mousePressed', x, y, 1, 1, 1);
+    for (let i = 1; i <= 8; i++)
+      await mouse('mouseMoved', x + (dx * i) / 8, y + (dy * i) / 8, 1, 1, 1);
+    await mouse('mouseReleased', x + dx, y + dy);
+    return until(async () => {
+      const next = await textState();
+      return (next.width !== before.width || next.height !== before.height) && next;
+    }, 'text resize ' + edge);
+  }
+  const narrowed = await resizeText('e', -90, 0);
+  assert.equal(narrowed.width, 90);
+  const compact = (text) => text.replace(/\s/g, '');
+  await until(
+    async () =>
+      (await read('window.__textPaints')).some(
+        (lines) => lines.length > 1 && compact(lines.join('')) === compact(typed),
+      ),
+    'all wrapped text painted',
+  );
+  async function checkEditor(text, maximumFont = 24) {
+    const object = await textState();
+    await mouse('mousePressed', object.x + object.width / 2, object.y + object.height / 2, 1);
+    await mouse('mouseReleased', object.x + object.width / 2, object.y + object.height / 2);
+    await until(() => read(`!!document.querySelector('.text-editor')`), 'resized text editor');
+    if (text !== undefined) {
+      await read(`document.querySelector('.text-editor').select()`);
+      await send('Input.insertText', { text });
+    }
+    const metrics = await read(`(() => {
+      const e = document.querySelector('.text-editor'), s = getComputedStyle(e);
+      return { w: e.clientWidth, sw: e.scrollWidth, h: e.clientHeight, sh: e.scrollHeight,
+        font: parseFloat(s.fontSize), value: e.value };
+    })()`);
+    assert.ok(metrics.w <= object.width && metrics.h <= object.height, JSON.stringify(metrics));
+    assert.ok(metrics.sw <= metrics.w + 1 && metrics.sh <= metrics.h + 1, JSON.stringify(metrics));
+    assert.ok(metrics.font < maximumFont, 'font shrinks to keep every line visible');
+    await key('Enter', 'Enter', 2);
+    await until(async () => (await textState()).text === metrics.value, 'resized text saved');
+    return metrics;
+  }
+  const narrowEditor = await checkEditor();
+  const shortened = await resizeText('s', 0, -100);
+  assert.equal(shortened.height, 80);
+  await checkEditor(undefined, narrowEditor.font);
+  await checkEditor('Supercalifragilisticexpialidocious'.repeat(4) + '\n🧑‍🚀你好🌍 Final ending\n');
+  await checkEditor(typed);
+  await screenshot('text-narrowed.png');
   await doubleClick('.canvas-list-header');
   await click('[aria-label="List item 1"]');
   await read(`document.querySelector('[aria-label="List item 1"]').select()`);
@@ -286,6 +353,8 @@ try {
   );
   assert.equal((await listState()).listScale, resized.listScale);
   assert.equal((await state()).objects.find((o) => o.id === 'text').text, typed);
+  assert.equal((await textState()).width, 90, 'reload preserves narrowed width');
+  assert.equal((await textState()).height, 80, 'reload preserves shortened height');
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ status: 'TEXT_LISTS_OVERFLOW_OK', root, wrapped, plain }));
 } catch (error) {

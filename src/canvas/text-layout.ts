@@ -58,15 +58,17 @@ export function textLayout(
     return cached;
   }
   const base = { ...textAppearance(o), ...titleSize };
+  const fittedBox = o.type === 'note' || (o.type === 'text' && !!o.textBox);
   const measure = (fontSize: number): Layout => {
+    const padding = o.type === 'text' ? fontSize * 0.2 : base.padding;
     // Leave room for the handwriting font's ink overhang at a wrapped edge.
     // Checking its ink width against the exact wrap width makes long unbroken
     // words fail fitting at nearly every size despite wrapping successfully.
     const wrapWidth = Math.max(
       1,
-      o.width - base.padding * 2 - (o.type === 'note' ? fontSize * 0.25 + 1 : 0),
+      o.width - padding * 2 - (o.type === 'note' ? fontSize * 0.25 + 1 : 0),
     );
-    const appearance = { ...base, fontSize, lineHeight: fontSize * 1.45, wrapWidth };
+    const appearance = { ...base, padding, fontSize, lineHeight: fontSize * 1.45, wrapWidth };
     if (o.type === 'frame' && frameZoom !== undefined)
       appearance.labelGap = Math.min(base.labelGap!, fontSize * 0.4);
     // Pixi drops a trailing empty line; the native editor needs it for the caret.
@@ -109,14 +111,20 @@ export function textLayout(
       }
     }
   }
-  if (o.type === 'note') {
-    const width = Math.max(1, o.width - base.padding * 2);
-    const height = Math.max(1, o.height - base.padding * 2);
-    const fits = (layout: Layout) =>
-      layout.metrics.maxLineWidth <= width &&
-      Math.max(layout.metrics.height, layout.metrics.lines.length * layout.appearance.lineHeight) <=
-        height - 1 &&
-      editorHeight(text, layout.appearance) <= height - 1;
+  if (fittedBox) {
+    const fits = (layout: Layout) => {
+      const width = Math.max(1, o.width - layout.appearance.padding * 2);
+      const height = Math.max(1, o.height - layout.appearance.padding * 2);
+      return (
+        layout.metrics.maxLineWidth <= width &&
+        Math.max(
+          layout.metrics.height,
+          layout.metrics.lines.length * layout.appearance.lineHeight,
+        ) <=
+          height - 1 &&
+        editorHeight(text, layout.appearance) <= height - 1
+      );
+    };
     if (!fits(result)) {
       let low = 0.0001,
         high = base.fontSize;
@@ -133,15 +141,15 @@ export function textLayout(
   }
   result.editorContentHeight = Math.max(
     Math.max(1, result.metrics.lines.length) * result.appearance.lineHeight,
-    o.type === 'note' ? editorHeight(text, result.appearance) : 0,
+    fittedBox ? editorHeight(text, result.appearance) : 0,
   );
   cache.set(key, result);
   if (cache.size > 200) cache.delete(cache.keys().next().value!);
   return result;
 }
 
-// Plain text grows with its explicit lines, rather than retaining an arbitrary
-// creation rectangle. Keep a little room for ink overhang and the editor caret.
+// Free text grows with its explicit lines. Resized text boxes retain the user's
+// rectangle; textLayout wraps and fits their contents instead of widening them.
 export function fitTextObject(
   o: CanvasObject,
   text = (o.type === 'image' ? o.imageTitle : o.type === 'document' ? o.documentTitle : o.text) ||
@@ -149,25 +157,16 @@ export function fitTextObject(
 ): CanvasObject {
   if (o.type === 'image') return { ...o, imageTitle: text };
   if (o.type === 'document') return { ...o, documentTitle: text };
-  if (o.type !== 'text') return { ...o, text };
-  const { appearance: a, metrics } = textLayout({ ...o, textBox: false }, text);
+  if (o.type !== 'text' || o.textBox) return { ...o, text };
+  const { appearance: a, metrics } = textLayout(o, text);
   const fitted = {
     ...o,
     text,
     width: Math.min(
       1e6,
-      Math.max(
-        o.textBox ? o.width : 0,
-        Math.max(a.fontSize * 0.5, metrics.maxLineWidth) + a.padding * 2 + a.fontSize * 0.08,
-      ),
+      Math.max(a.fontSize * 0.5, metrics.maxLineWidth) + a.padding * 2 + a.fontSize * 0.08,
     ),
-    height: Math.min(
-      1e6,
-      Math.max(
-        o.textBox ? o.height : 0,
-        Math.max(1, metrics.lines.length) * a.lineHeight + a.padding * 2,
-      ),
-    ),
+    height: Math.min(1e6, Math.max(1, metrics.lines.length) * a.lineHeight + a.padding * 2),
   };
   if (o.rotation) {
     const before = localToWorld(o, { x: 0, y: 0 }),
