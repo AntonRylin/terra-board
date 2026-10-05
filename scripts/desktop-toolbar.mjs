@@ -151,7 +151,7 @@ try {
   await matchingBoardIcons();
   const zoneIds = (zone) =>
     read(
-      `Array.from(document.querySelectorAll('[data-tool-zone="${zone}"] [data-tool-id]'),el=>el.dataset.toolId)`,
+      `Array.from(document.querySelectorAll('.canvas-toolbar [data-tool-zone="${zone}"] [data-tool-id]'),el=>el.dataset.toolId)`,
     );
   const stored = () =>
     read(`JSON.parse(localStorage.getItem('terra-board.toolbar-layout')||'null')`);

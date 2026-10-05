@@ -206,7 +206,12 @@ const DocumentReader = forwardRef<DocumentReaderHandle, Props>(function Document
             >
               <Maximize2 size={15} />
             </button>
-            <button aria-label="Edit PDF" data-tooltip="Edit PDF" onClick={() => onExpandPdf(true)}>
+            <button
+              disabled={o.locked}
+              aria-label="Edit PDF"
+              data-tooltip="Edit PDF"
+              onClick={() => onExpandPdf(true)}
+            >
               <Pencil size={15} />
             </button>
           </>
@@ -295,6 +300,7 @@ const DocumentReader = forwardRef<DocumentReaderHandle, Props>(function Document
         </div>
       ) : kind === 'text' ? (
         <textarea
+          readOnly={o.locked}
           className="document-text-editor"
           aria-label="Edit document text"
           spellCheck={false}

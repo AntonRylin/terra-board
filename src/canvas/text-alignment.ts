@@ -2,7 +2,14 @@ import type { CanvasObject } from '../model';
 
 export function textPlacement(
   o: CanvasObject,
-  a: { padding: number; wrapWidth: number; lineHeight: number; labelGap?: number },
+  a: {
+    padding: number;
+    wrapWidth: number;
+    lineHeight: number;
+    labelGap?: number;
+    inkTop?: number;
+    inkHeight?: number;
+  },
   lineCount: number,
   contentHeight?: number,
 ) {
@@ -11,7 +18,9 @@ export function textPlacement(
     return { left: 0, top: -height - (a.labelGap ?? 8), height };
   return {
     left: o.centerX ? (o.width - a.wrapWidth) / 2 : a.padding,
-    top: o.centerY ? Math.max(a.padding, (o.height - height) / 2) : a.padding,
+    top:
+      (o.centerY ? Math.max(a.padding, (o.height - (a.inkHeight ?? height)) / 2) : a.padding) -
+      (a.inkTop ?? 0),
     height,
   };
 }

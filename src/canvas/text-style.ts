@@ -9,10 +9,10 @@ export function textAppearance(o: CanvasObject) {
   return {
     fontSize,
     fontWeight: o.bold ? ('700' as const) : ('400' as const),
-    lineHeight: fontSize * 1.45,
+    lineHeight: fontSize * (o.type === 'text' ? 1.3 : 1.45),
     padding:
       o.type === 'text'
-        ? fontSize * 0.2
+        ? fontSize * 0.14
         : o.type === 'frame' || o.type === 'image' || o.type === 'document'
           ? 0
           : o.type === 'note'

@@ -105,6 +105,7 @@ const object = z
       .regex(/^#[a-f\d]{6}$/i)
       .optional(),
     bold: z.boolean().optional(),
+    locked: z.boolean().optional(),
     strikethrough: z.boolean().optional(),
     centerX: z.boolean().optional(),
     centerY: z.boolean().optional(),
@@ -260,7 +261,13 @@ function tools(call) {
     },
     'content',
     async (a) =>
-      text(await call('patchBoard', { ...a, operationId: a.operationId || randomUUID() })),
+      text(
+        await call('patchBoard', {
+          ...a,
+          operationId: a.operationId || randomUUID(),
+          protectLocked: true,
+        }),
+      ),
   );
   add(
     'import_media',

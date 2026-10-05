@@ -638,7 +638,7 @@ export default function App() {
     }
   }
   const modalTitle: Record<ModalState['kind'], string> = {
-    'new-board': 'New board',
+    'new-board': 'Name of the new board',
     'new-folder': 'New folder',
     'rename-board': 'Rename board',
     'rename-folder': 'Rename folder',
@@ -974,7 +974,7 @@ export default function App() {
                     </label>
                   ) : (
                     <label>
-                      Name
+                      {modal.kind !== 'new-board' && 'Name'}
                       <input
                         aria-label="Name"
                         value={name}

@@ -3,14 +3,21 @@ import type { CanvasObject } from '../model';
 import { textAppearance } from './text-style';
 import { localToWorld } from './transform';
 import { frameTitleSize } from './frame-title-size';
+import { textInkBounds } from './text-ink';
 
 type Layout = {
-  appearance: ReturnType<typeof textAppearance> & { wrapWidth: number; labelGap?: number };
+  appearance: ReturnType<typeof textAppearance> & {
+    wrapWidth: number;
+    labelGap?: number;
+    inkTop?: number;
+    inkHeight?: number;
+  };
   metrics: CanvasTextMetrics;
   editorContentHeight?: number;
 };
 const cache = new Map<string, Layout>();
 let probe: HTMLTextAreaElement | undefined;
+let inkProbe: CanvasRenderingContext2D | undefined;
 
 // Use the browser's own line-breaking rules too (notably emoji and mixed
 // scripts). One hidden probe is reused only on layout cache misses. Measuring
@@ -60,7 +67,7 @@ export function textLayout(
   const base = { ...textAppearance(o), ...titleSize };
   const fittedBox = o.type === 'note' || (o.type === 'text' && !!o.textBox);
   const measure = (fontSize: number): Layout => {
-    const padding = o.type === 'text' ? fontSize * 0.2 : base.padding;
+    const padding = o.type === 'text' ? fontSize * 0.14 : base.padding;
     // Leave room for the handwriting font's ink overhang at a wrapped edge.
     // Checking its ink width against the exact wrap width makes long unbroken
     // words fail fitting at nearly every size despite wrapping successfully.
@@ -68,7 +75,13 @@ export function textLayout(
       1,
       o.width - padding * 2 - (o.type === 'note' ? fontSize * 0.25 + 1 : 0),
     );
-    const appearance = { ...base, padding, fontSize, lineHeight: fontSize * 1.45, wrapWidth };
+    const appearance = {
+      ...base,
+      padding,
+      fontSize,
+      lineHeight: fontSize * (o.type === 'text' ? 1.3 : 1.45),
+      wrapWidth,
+    };
     if (o.type === 'frame' && frameZoom !== undefined)
       appearance.labelGap = Math.min(base.labelGap!, fontSize * 0.4);
     // Pixi drops a trailing empty line; the native editor needs it for the caret.
@@ -143,6 +156,16 @@ export function textLayout(
     Math.max(1, result.metrics.lines.length) * result.appearance.lineHeight,
     fittedBox ? editorHeight(text, result.appearance) : 0,
   );
+  if (o.type === 'text' && !o.textBox) {
+    inkProbe ??= document.createElement('canvas').getContext('2d')!;
+    const a = result.appearance;
+    inkProbe.font = `${a.fontWeight} ${a.fontSize}px ${a.fontFamily}`;
+    const ink = textInkBounds(result.metrics.lines, a.lineHeight, (line) =>
+      inkProbe!.measureText(line),
+    );
+    a.inkTop = ink.top;
+    a.inkHeight = ink.height;
+  }
   cache.set(key, result);
   if (cache.size > 200) cache.delete(cache.keys().next().value!);
   return result;
@@ -166,7 +189,10 @@ export function fitTextObject(
       1e6,
       Math.max(a.fontSize * 0.5, metrics.maxLineWidth) + a.padding * 2 + a.fontSize * 0.08,
     ),
-    height: Math.min(1e6, Math.max(1, metrics.lines.length) * a.lineHeight + a.padding * 2),
+    height: Math.min(
+      1e6,
+      (a.inkHeight ?? Math.max(1, metrics.lines.length) * a.lineHeight) + a.padding * 2,
+    ),
   };
   if (o.rotation) {
     const before = localToWorld(o, { x: 0, y: 0 }),

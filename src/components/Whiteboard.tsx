@@ -8,6 +8,8 @@ import { convertibleFile, needsOfficeConversion } from '../canvas/pdf-conversion
 import { convertComposerInputs } from '../canvas/document-convert';
 import ListEditOutline from './ListEditOutline';
 import CanvasToolbar from './CanvasToolbar';
+import SelectionToolbar from './SelectionToolbar';
+import ObjectLockButton from './ObjectLockButton';
 import type { ToolbarId } from './toolbar-layout';
 import { useZoomControlSpace } from './useZoomControlSpace';
 import {
@@ -201,6 +203,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     // The empty gallery's "Paste images here" area is its first insertion target.
     if (
       gallery?.gallery &&
+      !gallery.locked &&
       point &&
       !galleryMembers(gallery.id, e!.all).length &&
       point.x >= gallery.x &&
@@ -256,6 +259,12 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     el.style.left = `${left}px`;
     el.style.top = `${top}px`;
     el.style.visibility = 'visible';
+  };
+  const measureTools = () => {
+    const el = toolsRef.current;
+    if (!el) return;
+    toolsSize.current = { width: el.offsetWidth, height: el.offsetHeight };
+    positionTools();
   };
   const [cropping, setCropping] = useState<{ object: CanvasObject; crop: CropBounds } | null>(null);
   const [player, setPlayer] = useState<{ id: string; videoId: string; muted: boolean } | null>(
@@ -390,6 +399,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   const saveDocument = async (o: CanvasObject, bytes: Uint8Array<ArrayBuffer>, excerpt: string) => {
     const e = engine.current;
     if (!e || !alive.current) throw Error('This board is no longer open.');
+    if (e.objects.get(o.id)?.locked) throw Error('Unlock this document before editing it.');
     const asset = await invoke<Asset>('importAsset', { name: o.text || 'Document.txt', bytes });
     const current = e.objects.get(o.id);
     if (!alive.current || engine.current !== e || !current || current.assetId !== o.assetId)
@@ -422,6 +432,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     if (current?.assetId) await downloadAsset(current.assetId, current.text || 'Document');
   };
   const openPdfWorkspace = async (objects: CanvasObject[], mode: 'preview' | 'edit') => {
+    if (mode === 'edit' && objects.some((o) => engine.current?.objects.get(o.id)?.locked)) return;
     await documentReader.current?.flush();
     if (!alive.current || !engine.current) return;
     if (editingSession.current) finishEdit();
@@ -516,6 +527,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     selected.filter((object) => object.type === 'image').length > 1;
   const exportSelectionButton = (
     <button
+      key="export"
       className="icon-button"
       aria-label="Export selected"
       title="Export selected"
@@ -527,6 +539,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   );
   const bringToFrontButton = engine.current?.selectionOverlaps ? (
     <button
+      key="front"
       className="icon-button"
       aria-label="Bring to front"
       data-launcher-label="Bring to front"
@@ -556,7 +569,9 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   const selectedGalleryTarget = (): GalleryTarget | null => {
     if (galleryTarget.current) return { ...galleryTarget.current };
     const objects = engine.current?.selected;
-    return objects?.length === 1 && objects[0].gallery ? { galleryId: objects[0].id } : null;
+    return objects?.length === 1 && objects[0].gallery && !objects[0].locked
+      ? { galleryId: objects[0].id }
+      : null;
   };
   const createGallery = () => {
     finishEdit();
@@ -662,6 +677,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     engine.current?.setTool(value);
   };
   const startEdit = (o: CanvasObject) => {
+    if (engine.current?.objects.get(o.id)?.locked) return;
     if (o.type === 'list') {
       (
         window.document.querySelector(
@@ -707,6 +723,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     }
   };
   const activate = (o: CanvasObject, intent?: 'title') => {
+    if (engine.current?.objects.get(o.id)?.locked) return;
     if (intent === 'title') startEdit(o);
     else if (o.pdfComposer) setEditingComposerId(o.id);
     else if (o.type === 'document') void openDocument(o).catch(error);
@@ -746,6 +763,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     refreshLink(o, e, true);
   };
   const startCrop = (o: CanvasObject) => {
+    if (engine.current?.objects.get(o.id)?.locked) return;
     if (editingSession.current) finishEdit();
     const session = { object: { ...o }, crop: { ...(o.crop || fullCrop) } };
     cropSession.current = session;
@@ -851,11 +869,13 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       error,
     );
     const fitted = doc.objects.map((o) =>
-      o.type === 'text'
-        ? fitTextObject(o)
-        : o.type === 'link' && !o.assetId
-          ? normalizeLinkSize(o)
-          : o,
+      o.locked
+        ? o
+        : o.type === 'text'
+          ? fitTextObject(o)
+          : o.type === 'link' && !o.assetId
+            ? normalizeLinkSize(o)
+            : o,
     );
     const resized = fitted.filter(
       (o, i) => o.width !== doc.objects[i].width || o.height !== doc.objects[i].height,
@@ -999,6 +1019,12 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   useLayoutEffect(() => {
     const el = editorRef.current;
     if (!editing || !el || !editingAppearance) return;
+    if (editing.type === 'text' && !editing.textBox && editingPlacement) {
+      // The selection hugs the ink; the native textarea still needs its full
+      // line boxes so accents, descenders and the caret remain visible.
+      el.style.height = `${editingPlacement.height * camera.zoom}px`;
+      return;
+    }
     if (
       (editing.centerY || ['frame', 'image', 'document'].includes(editing.type)) &&
       editingPlacement
@@ -1222,6 +1248,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     });
   }
   function removeImageBackground(object: CanvasObject) {
+    if (engine.current?.objects.get(object.id)?.locked) return;
     const currentEngine = engine.current;
     if (!currentEngine || !object.assetId || backgroundJob.current || external.current) return;
     if (editingSession.current) finishEdit();
@@ -1613,6 +1640,35 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       exportTask.current = null;
     });
   }
+  const selectionLocked = !!engine.current?.selectionLocked;
+  const lockButton = (
+    <ObjectLockButton
+      key="lock"
+      locked={selectionLocked}
+      selectionKey={selected
+        .map((o) => o.id)
+        .sort()
+        .join(',')}
+      onChange={(locked) => {
+        finishEdit();
+        arrowDraft.current?.flush();
+        setEditingListId(null);
+        setEditingComposerId(null);
+        const e = engine.current;
+        if (!e) return;
+        const ids = [...e.selection].sort().join(',');
+        const applyLock = () => {
+          if (alive.current && engine.current === e && [...e.selection].sort().join(',') === ids)
+            e.setSelectionLocked(locked);
+        };
+        // A text attachment can have an unsaved draft in its reader. Save it
+        // before making the attachment read-only, keeping failures editable.
+        if (locked && documentReader.current)
+          void documentReader.current.flush().then(applyLock).catch(error);
+        else applyLock();
+      }}
+    />
+  );
   const contextItems: (MenuItem | null)[] = [
     ...(activeGallery
       ? [
@@ -1912,6 +1968,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           engine.current?.setSelection([id]);
         }}
         update={(o) => {
+          if (engine.current?.objects.get(o.id)?.locked) return;
           engine.current?.apply({ upserts: [o], deleted: [] });
           setListView((view) => ({
             ...view,
@@ -2067,29 +2124,37 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           role="toolbar"
           aria-label="Gallery layout"
         >
-          {(['right', 'below'] as const).map((direction) => (
-            <button
-              key={direction}
-              aria-pressed={activeGallery.gallery!.direction === direction}
-              onClick={() => {
-                const o = engine.current?.objects.get(activeGallery.id);
-                if (o?.gallery)
-                  engine.current?.apply({
-                    upserts: [{ ...o, gallery: { ...o.gallery, direction } }],
-                    deleted: [],
-                  });
-                host.current?.focus();
-              }}
-            >
-              {direction === 'right' ? <ArrowRight size={16} /> : <ArrowDown size={16} />}
-              {direction === 'right' ? 'Right' : 'Below'}
-            </button>
-          ))}
-          {exportSelectionButton}
-          {bringToFrontButton}
+          <SelectionToolbar
+            locked={selectionLocked}
+            onLayoutChange={measureTools}
+            contextKey={activeGallery.id}
+          >
+            {lockButton}
+            {(['right', 'below'] as const).map((direction) => (
+              <button
+                key={direction}
+                aria-pressed={activeGallery.gallery!.direction === direction}
+                onClick={() => {
+                  const o = engine.current?.objects.get(activeGallery.id);
+                  if (o?.gallery)
+                    engine.current?.apply({
+                      upserts: [{ ...o, gallery: { ...o.gallery, direction } }],
+                      deleted: [],
+                    });
+                  host.current?.focus();
+                }}
+              >
+                {direction === 'right' ? <ArrowRight size={16} /> : <ArrowDown size={16} />}
+                {direction === 'right' ? 'Right' : 'Below'}
+              </button>
+            ))}
+            {exportSelectionButton}
+            {bringToFrontButton}
+          </SelectionToolbar>
         </div>
       )}
       {activeGallery &&
+        !activeGallery.locked &&
         !galleryMembers(activeGallery.id, engine.current?.all || []).length &&
         camera.zoom > 0.35 && (
           <div
@@ -2111,6 +2176,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         <div
           ref={toolsRef}
           className="selection-tools"
+          role="toolbar"
           aria-label="Selection actions"
           onPointerDown={(event) => {
             if (editingSession.current && !(event.target instanceof HTMLInputElement))
@@ -2132,249 +2198,274 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
               finishEdit();
           }}
         >
-          {selected.length === 1 && selected[0].type === 'arrow' && (
-            <ArrowControls
-              key={selected[0].id}
-              draftRef={arrowDraft}
-              object={selected[0]}
-              onChange={(patch, record = true) => {
-                const e = engine.current,
-                  o = e?.objects.get(selected[0].id);
-                if (o) e?.apply({ upserts: [{ ...o, ...patch }], deleted: [] }, record);
-              }}
-              onCommitSlider={(field, before) => {
-                const e = engine.current,
-                  o = e?.objects.get(selected[0].id);
-                if (!e || !o?.arrow) return;
-                const current = field === 'thickness' ? o.arrow.thickness : o.fontSize || 18;
-                if (current === before) return;
-                e.history.push(
-                  { upserts: [o], deleted: [] },
-                  {
-                    upserts: [
-                      field === 'thickness'
-                        ? { ...o, arrow: { ...o.arrow, thickness: before } }
-                        : { ...o, fontSize: before },
-                    ],
-                    deleted: [],
-                  },
-                );
-              }}
-            />
-          )}
-          {selected.every(
-            (o) => !['image', 'video', 'link', 'frame', 'arrow', 'list'].includes(o.type),
-          ) && (
-            <div className="color-options">
-              {colors.map((color) => (
-                <button
-                  key={color}
-                  style={{ background: color }}
-                  aria-label={'Set color ' + color}
-                  title={color === '#000000' ? 'Black' : color}
-                  onClick={() => setSelectionColor(color)}
+          <SelectionToolbar
+            locked={selectionLocked}
+            onLayoutChange={measureTools}
+            contextKey={selected.map((object) => object.id).join(',')}
+          >
+            {lockButton}
+            {selected.length === 1 && selected[0].type === 'arrow' && (
+              <div key="arrow-style">
+                <ArrowControls
+                  key={selected[0].id}
+                  draftRef={arrowDraft}
+                  object={selected[0]}
+                  onChange={(patch, record = true) => {
+                    const e = engine.current,
+                      o = e?.objects.get(selected[0].id);
+                    if (o) e?.apply({ upserts: [{ ...o, ...patch }], deleted: [] }, record);
+                  }}
+                  onCommitSlider={(field, before) => {
+                    const e = engine.current,
+                      o = e?.objects.get(selected[0].id);
+                    if (!e || !o?.arrow) return;
+                    const current = field === 'thickness' ? o.arrow.thickness : o.fontSize || 18;
+                    if (current === before) return;
+                    e.history.push(
+                      { upserts: [o], deleted: [] },
+                      {
+                        upserts: [
+                          field === 'thickness'
+                            ? { ...o, arrow: { ...o.arrow, thickness: before } }
+                            : { ...o, fontSize: before },
+                        ],
+                        deleted: [],
+                      },
+                    );
+                  }}
                 />
-              ))}
-              <label className="custom-color" title="Custom color">
-                <Plus size={12} aria-hidden="true" />
-                <input
-                  type="color"
-                  aria-label="Custom color"
-                  value={editingObject?.color || selected[0]?.color || '#29313b'}
-                  onChange={(event) => setSelectionColor(event.target.value, false)}
-                />
-              </label>
-            </div>
-          )}
-          {selected.length === 1 && ['video', 'link'].includes(selected[0].type) && (
-            <button
-              className="icon-button"
-              aria-label={
-                selected[0].type === 'video' || youtubeId(selected[0].url || '')
-                  ? 'Play video'
-                  : 'Open link'
-              }
-              onClick={() => openObject(selected[0])}
-            >
-              {selected[0].type === 'video' || youtubeId(selected[0].url || '') ? (
-                <Play size={16} />
-              ) : (
-                <ExternalLink size={16} />
-              )}
-            </button>
-          )}
-          {selected.length === 1 &&
-            selected[0].type === 'link' &&
-            youtubeId(selected[0].url || '') && (
+              </div>
+            )}
+            {selected.every(
+              (o) => !['image', 'video', 'link', 'frame', 'arrow', 'list'].includes(o.type),
+            ) && (
+              <div key="colors" className="color-options">
+                {colors.map((color) => (
+                  <button
+                    key={color}
+                    style={{ background: color }}
+                    aria-label={'Set color ' + color}
+                    title={color === '#000000' ? 'Black' : color}
+                    onClick={() => setSelectionColor(color)}
+                  />
+                ))}
+                <label className="custom-color" title="Custom color">
+                  <Plus size={12} aria-hidden="true" />
+                  <input
+                    type="color"
+                    aria-label="Custom color"
+                    value={editingObject?.color || selected[0]?.color || '#29313b'}
+                    onChange={(event) => setSelectionColor(event.target.value, false)}
+                  />
+                </label>
+              </div>
+            )}
+            {selected.length === 1 && ['video', 'link'].includes(selected[0].type) && (
               <button
+                key="open"
                 className="icon-button"
-                aria-label="Open on YouTube"
-                onClick={() => openLink(selected[0].url!).catch(error)}
+                aria-label={
+                  selected[0].type === 'video' || youtubeId(selected[0].url || '')
+                    ? 'Play video'
+                    : 'Open link'
+                }
+                onClick={() => openObject(selected[0])}
               >
-                <ExternalLink size={16} />
+                {selected[0].type === 'video' || youtubeId(selected[0].url || '') ? (
+                  <Play size={16} />
+                ) : (
+                  <ExternalLink size={16} />
+                )}
               </button>
             )}
-          {selected.length > 1 && (
-            <button
-              className="icon-button"
-              aria-label={selected.some((o) => o.groupId) ? 'Ungroup selection' : 'Group selection'}
-              onClick={() =>
-                selected.some((o) => o.groupId)
-                  ? engine.current?.ungroup()
-                  : engine.current?.group()
-              }
-            >
-              {selected.some((o) => o.groupId) ? <Ungroup size={17} /> : <Group size={17} />}
-            </button>
-          )}
-          {formattingSelection.length > 0 && (
-            <>
-              <button
-                className="icon-button"
-                aria-label="Bold"
-                title="Bold (Ctrl+B)"
-                aria-pressed={
-                  formattingSelection.every((o) => o.bold)
-                    ? true
-                    : formattingSelection.some((o) => o.bold)
-                      ? 'mixed'
-                      : false
-                }
-                onClick={() => toggleFormatting('bold')}
-              >
-                <Bold size={17} />
-              </button>
-              <button
-                className="icon-button"
-                aria-label="Strikethrough"
-                title="Strikethrough"
-                aria-pressed={
-                  formattingSelection.every((o) => o.strikethrough)
-                    ? true
-                    : formattingSelection.some((o) => o.strikethrough)
-                      ? 'mixed'
-                      : false
-                }
-                onClick={() => toggleFormatting('strikethrough')}
-              >
-                <Strikethrough size={17} />
-              </button>
-            </>
-          )}
-          {alignmentSelection.length > 0 && (
-            <>
-              <button
-                className="icon-button"
-                aria-label="Center horizontally"
-                title="Center horizontally"
-                aria-pressed={
-                  alignmentSelection.length > 0 && alignmentSelection.every((o) => o.centerX)
-                }
-                disabled={!alignmentSelection.length}
-                onClick={() => toggleAlignment('centerX')}
-              >
-                <AlignHorizontalJustifyCenter size={17} />
-              </button>
-              <button
-                className="icon-button"
-                aria-label="Center vertically"
-                title="Center vertically"
-                aria-pressed={
-                  alignmentSelection.length > 0 && alignmentSelection.every((o) => o.centerY)
-                }
-                disabled={!alignmentSelection.length}
-                onClick={() => toggleAlignment('centerY')}
-              >
-                <AlignVerticalJustifyCenter size={17} />
-              </button>
-            </>
-          )}
-          {selected.length === 1 && ['image', 'document'].includes(selected[0].type) && (
-            <button
-              className="icon-button"
-              aria-label={
-                (selected[0].type === 'document'
-                  ? selected[0].documentTitle
-                  : selected[0].imageTitle
-                )?.trim()
-                  ? 'Edit title'
-                  : 'Add title'
-              }
-              title={
-                (selected[0].type === 'document'
-                  ? selected[0].documentTitle
-                  : selected[0].imageTitle
-                )?.trim()
-                  ? 'Edit title'
-                  : 'Add title'
-              }
-              onClick={() => startEdit(selected[0])}
-            >
-              <Type size={17} />
-            </button>
-          )}
-          {canExportFromSelectionBar && exportSelectionButton}
-          {selected.length === 1 && selected[0].type === 'document' && (
-            <>
-              <button
-                className="icon-button"
-                aria-label="Preview document"
-                title="Preview document"
-                onClick={() => void openDocument(selected[0]).catch(error)}
-              >
-                <FileText size={16} />
-              </button>
-              {documentKind(selected[0].text || '', selected[0].documentMime) === 'pdf' && (
-                <>
-                  <button
-                    className="icon-button"
-                    aria-label="Full PDF preview"
-                    title="Full PDF preview"
-                    onClick={() => void openPdfWorkspace(selected, 'preview').catch(error)}
-                  >
-                    <Maximize2 size={16} />
-                  </button>
-                  <button
-                    className="icon-button"
-                    aria-label="Edit PDF"
-                    title="Edit PDF"
-                    onClick={() => void openPdfWorkspace(selected, 'edit').catch(error)}
-                  >
-                    <Pencil size={16} />
-                  </button>
-                </>
+            {selected.length === 1 &&
+              selected[0].type === 'link' &&
+              youtubeId(selected[0].url || '') && (
+                <button
+                  key="youtube"
+                  className="icon-button"
+                  aria-label="Open on YouTube"
+                  onClick={() => openLink(selected[0].url!).catch(error)}
+                >
+                  <ExternalLink size={16} />
+                </button>
               )}
+            {selected.length > 1 && (
               <button
+                key="group"
                 className="icon-button"
-                aria-label="Download document"
-                title="Download document"
-                onClick={() => void downloadDocument(selected[0]).catch(error)}
+                aria-label={
+                  selected.some((o) => o.groupId) ? 'Ungroup selection' : 'Group selection'
+                }
+                onClick={() =>
+                  selected.some((o) => o.groupId)
+                    ? engine.current?.ungroup()
+                    : engine.current?.group()
+                }
               >
-                <Download size={16} />
+                {selected.some((o) => o.groupId) ? <Ungroup size={17} /> : <Group size={17} />}
               </button>
-            </>
-          )}
-          {bringToFrontButton}
-          <button
-            className="icon-button"
-            aria-label="Duplicate selection"
-            onClick={() => {
-              finishEdit();
-              engine.current?.duplicate();
-            }}
-          >
-            <Copy size={16} />
-          </button>
-          <button
-            className="icon-button"
-            aria-label="Delete selection"
-            onClick={() => {
-              finishEdit();
-              engine.current?.deleteSelected();
-            }}
-          >
-            <Trash2 size={16} />
-          </button>
+            )}
+            {formattingSelection.length > 0 && (
+              <>
+                <button
+                  key="bold"
+                  className="icon-button"
+                  aria-label="Bold"
+                  title="Bold (Ctrl+B)"
+                  aria-pressed={
+                    formattingSelection.every((o) => o.bold)
+                      ? true
+                      : formattingSelection.some((o) => o.bold)
+                        ? 'mixed'
+                        : false
+                  }
+                  onClick={() => toggleFormatting('bold')}
+                >
+                  <Bold size={17} />
+                </button>
+                <button
+                  key="strikethrough"
+                  className="icon-button"
+                  aria-label="Strikethrough"
+                  title="Strikethrough"
+                  aria-pressed={
+                    formattingSelection.every((o) => o.strikethrough)
+                      ? true
+                      : formattingSelection.some((o) => o.strikethrough)
+                        ? 'mixed'
+                        : false
+                  }
+                  onClick={() => toggleFormatting('strikethrough')}
+                >
+                  <Strikethrough size={17} />
+                </button>
+              </>
+            )}
+            {alignmentSelection.length > 0 && (
+              <>
+                <button
+                  key="center-x"
+                  className="icon-button"
+                  aria-label="Center horizontally"
+                  title="Center horizontally"
+                  aria-pressed={
+                    alignmentSelection.length > 0 && alignmentSelection.every((o) => o.centerX)
+                  }
+                  disabled={!alignmentSelection.length}
+                  onClick={() => toggleAlignment('centerX')}
+                >
+                  <AlignHorizontalJustifyCenter size={17} />
+                </button>
+                <button
+                  key="center-y"
+                  className="icon-button"
+                  aria-label="Center vertically"
+                  title="Center vertically"
+                  aria-pressed={
+                    alignmentSelection.length > 0 && alignmentSelection.every((o) => o.centerY)
+                  }
+                  disabled={!alignmentSelection.length}
+                  onClick={() => toggleAlignment('centerY')}
+                >
+                  <AlignVerticalJustifyCenter size={17} />
+                </button>
+              </>
+            )}
+            {selected.length === 1 && ['image', 'document'].includes(selected[0].type) && (
+              <button
+                key="title"
+                className="icon-button"
+                aria-label={
+                  (selected[0].type === 'document'
+                    ? selected[0].documentTitle
+                    : selected[0].imageTitle
+                  )?.trim()
+                    ? 'Edit title'
+                    : 'Add title'
+                }
+                title={
+                  (selected[0].type === 'document'
+                    ? selected[0].documentTitle
+                    : selected[0].imageTitle
+                  )?.trim()
+                    ? 'Edit title'
+                    : 'Add title'
+                }
+                onClick={() => startEdit(selected[0])}
+              >
+                <Type size={17} />
+              </button>
+            )}
+            {canExportFromSelectionBar && exportSelectionButton}
+            {selected.length === 1 && selected[0].type === 'document' && (
+              <>
+                <button
+                  key="preview-document"
+                  className="icon-button"
+                  aria-label="Preview document"
+                  title="Preview document"
+                  onClick={() => void openDocument(selected[0]).catch(error)}
+                >
+                  <FileText size={16} />
+                </button>
+                {documentKind(selected[0].text || '', selected[0].documentMime) === 'pdf' && (
+                  <>
+                    <button
+                      key="preview-pdf"
+                      className="icon-button"
+                      aria-label="Full PDF preview"
+                      title="Full PDF preview"
+                      onClick={() => void openPdfWorkspace(selected, 'preview').catch(error)}
+                    >
+                      <Maximize2 size={16} />
+                    </button>
+                    <button
+                      key="edit-pdf"
+                      className="icon-button"
+                      aria-label="Edit PDF"
+                      title="Edit PDF"
+                      onClick={() => void openPdfWorkspace(selected, 'edit').catch(error)}
+                    >
+                      <Pencil size={16} />
+                    </button>
+                  </>
+                )}
+                <button
+                  key="download"
+                  className="icon-button"
+                  aria-label="Download document"
+                  title="Download document"
+                  onClick={() => void downloadDocument(selected[0]).catch(error)}
+                >
+                  <Download size={16} />
+                </button>
+              </>
+            )}
+            {bringToFrontButton}
+            <button
+              key="duplicate"
+              className="icon-button"
+              aria-label="Duplicate selection"
+              onClick={() => {
+                finishEdit();
+                engine.current?.duplicate();
+              }}
+            >
+              <Copy size={16} />
+            </button>
+            <button
+              key="delete"
+              className="icon-button"
+              aria-label="Delete selection"
+              onClick={() => {
+                finishEdit();
+                engine.current?.deleteSelected();
+              }}
+            >
+              <Trash2 size={16} />
+            </button>
+          </SelectionToolbar>
         </div>
       )}
       {editing && editingAppearance && (
@@ -2514,7 +2605,34 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           <MoreHorizontal size={17} />
         </button>
       </div>
-      {menu && <ContextMenu {...menu} items={contextItems} onClose={() => setMenu(null)} />}
+      {menu && (
+        <ContextMenu
+          {...menu}
+          items={contextItems.map(
+            (item) =>
+              item && {
+                ...item,
+                disabled:
+                  item.disabled ||
+                  (selectionLocked &&
+                    ![
+                      'Undo',
+                      'Redo',
+                      'Duplicate',
+                      'Fit board',
+                      'Export selected…',
+                      'Export visible area…',
+                      'Download',
+                      'Preview document',
+                      'Full PDF preview',
+                      'Full image preview',
+                      'Copy as image',
+                    ].includes(item.label)),
+              },
+          )}
+          onClose={() => setMenu(null)}
+        />
+      )}
       <ExportControls
         scope={exportScope}
         progress={exportProgress}

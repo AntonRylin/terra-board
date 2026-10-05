@@ -12,14 +12,16 @@ export class History {
       this.bytes -= this.back.shift()!.bytes;
     }
   }
-  undo() {
+  undo(allow: (edit: Edit) => boolean = () => true) {
+    if (this.back.length && !allow(this.back.at(-1)!.inverse)) return null;
     const e = this.back.pop();
     if (!e) return null;
     this.bytes -= e.bytes;
     this.next.push(e);
     return e.inverse;
   }
-  redo() {
+  redo(allow: (edit: Edit) => boolean = () => true) {
+    if (this.next.length && !allow(this.next.at(-1)!.forward)) return null;
     const e = this.next.pop();
     if (!e) return null;
     this.back.push(e);

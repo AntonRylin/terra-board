@@ -20,6 +20,7 @@ export function pdfComposerTargetAt(
     if (excluded.has(object.id)) continue;
     const local = worldToLocal(object, point);
     if (local.x < 0 || local.y < 0 || local.x > object.width || local.y > object.height) continue;
+    if (object.locked) return null;
     if (object.pdfComposer || (object.type === 'document' && isPdfComposerInput(object)))
       return object;
     // Ordinary frames can contain PDF cards; solid foreground cards occlude them.

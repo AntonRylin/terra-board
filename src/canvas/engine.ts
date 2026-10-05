@@ -1,3 +1,4 @@
+import { editTouchesLocked } from './object-lock';
 import {
   arrowFromPoints,
   arrowPoints,
@@ -285,6 +286,25 @@ export class Engine {
   get clipboardSelection() {
     return selectionWithGalleryImages(this.selected, this.objects.values());
   }
+  get selectionLocked() {
+    const selected = this.selected;
+    return (
+      selected.some((o) => o.locked) ||
+      (selected.some((o) => o.type === 'frame') &&
+        stackingSelection(this.all, selected).some((o) => o.locked))
+    );
+  }
+  setSelectionLocked(locked: boolean) {
+    this.cancel();
+    const upserts = stackingSelection(this.all, this.selected)
+      .filter((o) => !!o.locked !== locked)
+      .map((o) => ({ ...o, locked }));
+    // Lock state is independent of undo: only the hold control can release it.
+    for (const o of upserts) this.preview(o);
+    if (upserts.length) this.callbacks.edit({ upserts, deleted: [] });
+    this.callbacks.selection(this.selected);
+    this.invalidate();
+  }
   get selectionOverlaps() {
     const selected = this.selected;
     if (!selected.length) return false;
@@ -302,7 +322,9 @@ export class Engine {
   }
   galleryImageAt(point: Point) {
     const o = this.hit(this.screenPoint(point));
-    return o?.type === 'image' && o.galleryId ? o.id : null;
+    return o?.type === 'image' && o.galleryId && !o.locked && !this.objects.get(o.galleryId)?.locked
+      ? o.id
+      : null;
   }
   private rebuildGroups() {
     this.groupMembers.clear();
@@ -471,6 +493,7 @@ export class Engine {
             this.setSelection([...next]);
             if (remove) return;
           } else if (!this.selection.has(hit.id)) this.setSelection(ids);
+          if (this.selectionLocked) return;
           this.gesture = {
             mode: 'move',
             editOnClick,
@@ -481,6 +504,7 @@ export class Engine {
           };
         } else if (
           !additive &&
+          !this.selectionLocked &&
           this.selection.size > 1 &&
           bounds &&
           w.x >= bounds.x &&
@@ -841,6 +865,7 @@ export class Engine {
     }
     const world = this.screenPoint(this.point(e));
     const o = this.hit(world);
+    if (o?.locked) return;
     if (o)
       this.callbacks.activate(
         o,
@@ -903,6 +928,7 @@ export class Engine {
     }
   }
   private arrowHandle(p: Point) {
+    if (this.selectionLocked) return;
     if (this.selection.size !== 1 || this.selected[0].type !== 'arrow') return;
     const o = this.selected[0];
     return arrowHandles(o)
@@ -918,6 +944,7 @@ export class Engine {
       });
   }
   private resizeCorner(p: Point): ResizeHandle | 'rotate' | undefined {
+    if (this.selectionLocked) return;
     if (!this.selection.size || this.editingId || this.cropPreview) return;
     if (this.selection.size > 1) {
       const b = boundsOf(this.selected)!;
@@ -1004,10 +1031,27 @@ export class Engine {
       this.linkPreviews.delete(id);
       this.documentPreviews.delete(id);
     }
-    this.apply(edit);
+    // This snapshot has already been validated and persisted externally.
+    // Preserve its lock state instead of treating it as a local content edit.
+    this.applyEdit(edit, true);
   }
   apply(edit: Edit, record = true) {
+    if (editTouchesLocked(this.objects, edit)) return;
+    edit = {
+      ...edit,
+      upserts: edit.upserts.map((o) => {
+        const current = this.objects.get(o.id);
+        if (!current) return o;
+        const { locked: _locked, ...content } = o;
+        return current.locked === undefined ? content : { ...content, locked: current.locked };
+      }),
+    };
     if (record) edit = galleryEdit(this.objects, edit, visualBounds);
+    if (editTouchesLocked(this.objects, edit)) return;
+    if (!edit.upserts.length && !edit.deleted.length) return;
+    this.applyEdit(edit, record);
+  }
+  private applyEdit(edit: Edit, record: boolean) {
     const inverse: Edit = { upserts: [], deleted: [] };
     for (const o of edit.upserts) {
       const before = this.objects.get(o.id);
@@ -1030,11 +1074,11 @@ export class Engine {
     this.invalidate();
   }
   undo() {
-    const edit = this.history.undo();
+    const edit = this.history.undo((edit) => !editTouchesLocked(this.objects, edit));
     if (edit) this.apply(edit, false);
   }
   redo() {
-    const edit = this.history.redo();
+    const edit = this.history.redo((edit) => !editTouchesLocked(this.objects, edit));
     if (edit) this.apply(edit, false);
   }
   deleteSelected() {
@@ -1748,7 +1792,9 @@ export class Engine {
         y = b.y * c.zoom + c.y,
         w = b.width * c.zoom,
         h = b.height * c.zoom;
-      if (this.selection.size === 1 && this.selected[0].type === 'arrow') {
+      if (this.selectionLocked) {
+        g.rect(x, y, w, h).stroke({ color: '#8b98a9', width: 1.5 });
+      } else if (this.selection.size === 1 && this.selected[0].type === 'arrow') {
         const o = this.selected[0];
         const path = arrowPath(o).map((p) => localToWorld(o, p));
         for (let i = 0; i < path.length; i++) {

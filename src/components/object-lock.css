@@ -1,0 +1,74 @@
+.object-lock {
+  position: relative;
+  touch-action: none;
+  user-select: none;
+  transition:
+    color 220ms ease,
+    background-color 220ms ease;
+}
+.object-lock[data-locked='true'] {
+  color: #6f9dd0;
+  background: rgb(111 157 208 / 0.12);
+}
+.object-lock-glyph {
+  transition: transform 220ms ease;
+}
+.object-lock[data-holding='true'] .object-lock-glyph {
+  transform: scale(0.88);
+}
+.object-lock-progress {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+  pointer-events: none;
+}
+.object-lock-progress circle {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  opacity: 0;
+}
+.object-lock[data-holding='true'] .object-lock-progress circle {
+  opacity: 1;
+}
+.object-lock::after {
+  content: attr(data-lock-label);
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel);
+  color: var(--ink);
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+}
+.object-lock:is(:hover, :focus-visible, [data-holding='true'])::after {
+  opacity: 1;
+}
+.selection-tool-menu .object-lock::after,
+.selection-tool-slot[data-held] .object-lock::after {
+  display: none;
+}
+.object-lock .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+@media (prefers-reduced-motion: reduce) {
+  .object-lock,
+  .object-lock-glyph {
+    transition: none;
+  }
+}

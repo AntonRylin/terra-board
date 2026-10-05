@@ -50,7 +50,7 @@ function ListCard({
     // Reserve the add control even outside editing, so entering/leaving edit
     // mode never changes wrapping or moves the card.
     const needed = (62 + header.offsetHeight + 6 + rows.scrollHeight) * layout.scale;
-    if (needed > o.height + 0.5) update(fitListHeight(o, needed));
+    if (!o.locked && needed > o.height + 0.5) update(fitListHeight(o, needed));
   }, [o, editing, layout.width]);
   useLayoutEffect(() => {
     if (!active && editing) {
@@ -335,11 +335,15 @@ export default function CanvasLists({
           key={o.id}
           object={o}
           camera={view.camera}
-          update={update}
+          update={(next) => {
+            if (!o.locked) update(next);
+          }}
           select={select}
           active={selected.includes(o.id)}
-          editing={editingId === o.id}
-          setEditing={(editing) => onEdit(editing ? o.id : null)}
+          editing={!o.locked && editingId === o.id}
+          setEditing={(editing) => {
+            if (!o.locked) onEdit(editing ? o.id : null);
+          }}
           forward={(event) => {
             event.preventDefault();
             beginPointer(event.nativeEvent);

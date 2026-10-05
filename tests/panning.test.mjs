@@ -8,6 +8,95 @@ import ts from 'typescript';
 const require = createRequire(import.meta.url);
 import { localToWorld } from '../src/canvas/transform.ts';
 
+test('an accepted external lock immediately protects the open board', () => {
+  const f = fixture();
+  const item = { id: 'external-lock', type: 'note', x: 50, y: 50, width: 200, height: 160, z: 1 };
+  f.engine.apply({ upserts: [item], deleted: [] });
+  f.engine.setSelection([item.id]);
+  f.engine.acceptExternalEdit({ upserts: [{ ...item, locked: true }], deleted: [] });
+  assert.equal(f.engine.objects.get(item.id).locked, true);
+  f.engine.apply({ upserts: [{ ...item, x: 999 }], deleted: [] });
+  f.engine.undo();
+  assert.equal(f.engine.objects.get(item.id).x, 50);
+  assert.equal(f.engine.objects.get(item.id).locked, true);
+});
+
+test('locked selection rejects transform gestures, editing, deletion and undo until explicitly unlocked', () => {
+  const f = fixture();
+  f.engine.camera = { x: 0, y: 0, zoom: 1 };
+  const item = {
+    id: 'protected',
+    type: 'note',
+    x: 100,
+    y: 100,
+    width: 200,
+    height: 160,
+    z: 1,
+    text: 'Keep',
+  };
+  f.engine.apply({ upserts: [item], deleted: [] });
+  f.engine.setSelection([item.id]);
+  f.engine.setSelectionLocked(true);
+  const locked = JSON.stringify(f.engine.objects.get(item.id));
+  for (const [x, y] of [
+    [180, 180],
+    [300, 260],
+    [100, 100],
+    [90, 280],
+  ]) {
+    f.engine.down(f.event(x, y, 0));
+    f.engine.move(f.event(x + 90, y + 70, 0));
+    f.engine.up(f.event(x + 90, y + 70, 0));
+    assert.equal(JSON.stringify(f.engine.objects.get(item.id)), locked);
+  }
+  f.engine.callbacks.create = () => assert.fail('locked double-click must not create an item');
+  f.engine.doubleClick(f.event(180, 180, 0));
+  assert.deepEqual(f.activations, []);
+  f.engine.setSelection([item.id]);
+  f.engine.apply({ upserts: [{ ...item, text: 'Changed', locked: false }], deleted: [] });
+  f.engine.deleteSelected();
+  f.engine.undo();
+  assert.equal(JSON.stringify(f.engine.objects.get(item.id)), locked);
+  f.engine.setSelectionLocked(false);
+  f.engine.down(f.event(180, 180, 0));
+  f.engine.move(f.event(230, 220, 0));
+  f.engine.up(f.event(230, 220, 0));
+  assert.equal(f.engine.objects.get(item.id).x, 150);
+  f.engine.undo();
+  assert.equal(f.engine.objects.get(item.id).x, 100);
+  assert.equal(f.engine.objects.get(item.id).locked, false);
+});
+
+test('a locked child prevents moving its enclosing frame or a mixed selection', () => {
+  const f = fixture();
+  f.engine.camera = { x: 0, y: 0, zoom: 1 };
+  const frame = { id: 'container', type: 'frame', x: 50, y: 50, width: 500, height: 400, z: 0 };
+  const child = {
+    id: 'protected',
+    type: 'note',
+    x: 150,
+    y: 150,
+    width: 150,
+    height: 120,
+    z: 1,
+    locked: true,
+  };
+  const other = { ...child, id: 'other', x: 650, locked: false };
+  f.engine.apply({ upserts: [frame, child, other], deleted: [] });
+  for (const ids of [[frame.id], [child.id, other.id]]) {
+    f.engine.setSelection(ids);
+    assert.equal(f.engine.selectionLocked, true);
+    const x = ids.length === 1 ? 52 : 700,
+      y = ids.length === 1 ? 52 : 200;
+    f.engine.down(f.event(x, y, 0));
+    f.engine.move(f.event(x + 60, y + 70, 0));
+    f.engine.up(f.event(x + 60, y + 70, 0));
+    assert.equal(f.engine.objects.get(child.id).x, child.x);
+    assert.equal(f.engine.objects.get(frame.id).x, frame.x);
+    assert.equal(f.engine.objects.get(other.id).x, other.x);
+  }
+});
+
 test('search focuses and selects an offscreen rotated item without changing its content', () => {
   const f = fixture('frame');
   const target = {

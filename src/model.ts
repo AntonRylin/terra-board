@@ -57,6 +57,7 @@ export interface ArrowStyle {
   thickness: number;
 }
 export interface CanvasObject {
+  locked?: boolean;
   items?: ListItem[];
   listScale?: number;
   gallery?: { direction: 'right' | 'below'; size: number; gap: number };

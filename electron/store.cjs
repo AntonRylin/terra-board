@@ -293,7 +293,7 @@ function objectValue(o) {
     if (!number(o.rotation, 0, 360)) throw Error('Invalid rotation');
     result.rotation = o.rotation;
   }
-  for (const key of ['centerX', 'centerY', 'textBox', 'bold', 'strikethrough']) {
+  for (const key of ['centerX', 'centerY', 'textBox', 'bold', 'strikethrough', 'locked']) {
     if (o[key] !== undefined) {
       if (typeof o[key] !== 'boolean') throw Error('Invalid text alignment or formatting');
       result[key] = o[key];
@@ -664,7 +664,15 @@ class Store {
       revision: b.revision,
     };
   }
-  patchBoard({ id, revision, upserts = [], deleted = [], camera, operationId }) {
+  patchBoard({
+    id,
+    revision,
+    upserts = [],
+    deleted = [],
+    camera,
+    operationId,
+    protectLocked = false,
+  }) {
     if (!Number.isSafeInteger(revision) || revision < 0) throw Error('Invalid revision');
     if (
       !Array.isArray(upserts) ||
@@ -712,6 +720,20 @@ class Store {
         .prepare('SELECT revision FROM merge_floors WHERE boardId=?')
         .get(id).revision;
       const touched = new Set([...objects.map((o) => o.id), ...deleted]);
+      if (protectLocked) {
+        const readObject = this.db.prepare('SELECT json FROM objects WHERE boardId=? AND id=?');
+        const targets = new Set([...touched, ...objects.map((o) => o.galleryId).filter(Boolean)]);
+        const locked = [...targets].filter((oid) => {
+          const row = readObject.get(id, oid);
+          return row && JSON.parse(row.json).locked;
+        });
+        if (locked.length)
+          throw Error(
+            'Objects are locked: ' +
+              locked.slice(0, 20).join(', ') +
+              '. Hold the lock button in Terra Board for five seconds to unlock.',
+          );
+      }
       if (revision < floor)
         throw Error('Board revision is too old; read_board again before editing');
       if (revision < b.revision) {

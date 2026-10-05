@@ -12,7 +12,8 @@ export const toolbarIds = [
   'gallery',
 ] as const;
 export type ToolbarId = (typeof toolbarIds)[number];
-export type ToolbarLayout = { bar: ToolbarId[]; inventory: ToolbarId[] };
+export type ToolLayout<Id extends string> = { bar: Id[]; inventory: Id[] };
+export type ToolbarLayout = ToolLayout<ToolbarId>;
 export type ToolbarZone = keyof ToolbarLayout;
 export const toolbarStorageKey = 'terra-board.toolbar-layout';
 
@@ -40,16 +41,37 @@ export function readToolbarLayout(value: unknown): ToolbarLayout {
   return { bar, inventory };
 }
 
-export function moveToolbarTool(
-  layout: ToolbarLayout,
-  id: ToolbarId,
+export function moveToolbarTool<Id extends string>(
+  layout: ToolLayout<Id>,
+  id: Id,
   zone: ToolbarZone,
   index: number,
-): ToolbarLayout {
-  const next: ToolbarLayout = {
+): ToolLayout<Id> {
+  const next: ToolLayout<Id> = {
     bar: layout.bar.filter((tool) => tool !== id),
     inventory: layout.inventory.filter((tool) => tool !== id),
   };
   next[zone].splice(Math.max(0, Math.min(index, next[zone].length)), 0, id);
   return next;
+}
+
+// Contextual ribbons show only a subset of the saved layout. Inserting beside a
+// visible neighbor must not discard the preferences for other object types.
+export function moveVisibleToolbarTool<Id extends string>(
+  layout: ToolLayout<Id>,
+  id: Id,
+  zone: ToolbarZone,
+  index: number,
+  available: readonly Id[],
+): ToolLayout<Id> {
+  const remaining = layout[zone].filter((tool) => tool !== id);
+  const visible = remaining.filter((tool) => available.includes(tool));
+  const target = visible[Math.max(0, index)];
+  const globalIndex =
+    target !== undefined
+      ? remaining.indexOf(target)
+      : visible.length
+        ? remaining.indexOf(visible[visible.length - 1]) + 1
+        : remaining.length;
+  return moveToolbarTool(layout, id, zone, globalIndex);
 }

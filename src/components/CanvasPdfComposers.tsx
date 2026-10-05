@@ -412,11 +412,12 @@ function ComposerCard({
     composer.columns.some((column) => column.pages.some((page) => page.id === id)),
   );
   const sources = new Map(composer.sources.map((source) => [source.id, source]));
-  const editing = props.editingId === object.id;
+  const editing = !object.locked && props.editingId === object.id;
   const active = props.selectedIds.includes(object.id);
   const origin = localToWorld(object, { x: 0, y: 0 });
   const commit = (next: PdfComposer) => {
     const current = latest.current;
+    if (current.locked) return;
     if (
       next === current.pdfComposer ||
       JSON.stringify(next) === JSON.stringify(current.pdfComposer)
@@ -430,7 +431,7 @@ function ComposerCard({
   };
   const activate = () => {
     props.onSelect(object.id);
-    props.onEdit(object.id);
+    if (!object.locked) props.onEdit(object.id);
   };
   const focusPage = (id: string) => {
     pendingFocus.current = { kind: 'page', id };
@@ -695,7 +696,13 @@ function ComposerCard({
           transform: `scale(${props.camera.zoom}) rotate(${object.rotation || 0}deg)`,
         } as CSSProperties
       }
-      onPointerDownCapture={() => {
+      onPointerDownCapture={(event) => {
+        if (object.locked) {
+          event.preventDefault();
+          event.stopPropagation();
+          props.onSelect(object.id);
+          return;
+        }
         if (!root.current) return;
         root.current
           .querySelector('.pdf-composer-content')
@@ -703,8 +710,19 @@ function ComposerCard({
           .forEach((animation) => animation.finish());
         motion.current!.capture(root.current);
       }}
-      onKeyDownCapture={() => {
+      onKeyDownCapture={(event) => {
+        if (object.locked && event.key !== 'Tab' && event.key !== 'Escape') {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
         if (root.current) motion.current!.capture(root.current);
+      }}
+      onClickCapture={(event) => {
+        if (object.locked) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
       }}
       onScrollCapture={() => {
         if (root.current) motion.current!.capture(root.current);
@@ -741,6 +759,7 @@ function ComposerCard({
         event.preventDefault();
         event.stopPropagation();
         setDroppingFiles(false);
+        if (object.locked) return;
         files([...event.dataTransfer.files]);
       }}
       onCopy={(event) => event.stopPropagation()}
@@ -1111,34 +1130,25 @@ export default function CanvasPdfComposers(props: Props) {
     const node = overlay.current;
     if (!node) return;
     const wheel = (event: WheelEvent) => {
-      const hit = event.target as HTMLElement;
-      const track = hit.closest<HTMLElement>('.pdf-composer-columns');
-      if (track) {
-        event.stopPropagation();
-        if (event.ctrlKey || event.metaKey) event.preventDefault();
-        else if (event.shiftKey || !hit.closest('.pdf-composer-pages')) {
-          event.preventDefault();
-          track.scrollLeft += event.deltaY || event.deltaX;
-        }
-      } else {
-        event.preventDefault();
-        event.stopPropagation();
-        node.parentElement?.querySelector('.canvas-surface')?.dispatchEvent(
-          new WheelEvent('wheel', {
-            bubbles: true,
-            cancelable: true,
-            clientX: event.clientX,
-            clientY: event.clientY,
-            deltaX: event.deltaX,
-            deltaY: event.deltaY,
-            deltaMode: event.deltaMode,
-            ctrlKey: event.ctrlKey,
-            shiftKey: event.shiftKey,
-            metaKey: event.metaKey,
-            altKey: event.altKey,
-          }),
-        );
-      }
+      // The workspace is part of the board: wheel zoom stays anchored to the
+      // pointer over pages and columns just as it does over the canvas itself.
+      event.preventDefault();
+      event.stopPropagation();
+      node.parentElement?.querySelector('.canvas-surface > canvas')?.dispatchEvent(
+        new WheelEvent('wheel', {
+          bubbles: true,
+          cancelable: true,
+          clientX: event.clientX,
+          clientY: event.clientY,
+          deltaX: event.deltaX,
+          deltaY: event.deltaY,
+          deltaMode: event.deltaMode,
+          ctrlKey: event.ctrlKey,
+          shiftKey: event.shiftKey,
+          metaKey: event.metaKey,
+          altKey: event.altKey,
+        }),
+      );
     };
     node.addEventListener('wheel', wheel, { passive: false });
     return () => node.removeEventListener('wheel', wheel);
