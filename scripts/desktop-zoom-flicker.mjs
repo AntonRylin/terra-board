@@ -183,13 +183,17 @@ try {
         descriptor.set.call(this, value);
       }});
     }
-    const decode = HTMLImageElement.prototype.decode;
-    HTMLImageElement.prototype.decode = async function() {
-      await decode.call(this);
-      if (window.__zoomProbe.hold && this.src.endsWith('/' + window.__zoomProbe.hold)) {
+    // Textures are fetched and decoded off the main thread. Hold the response
+    // of the replacement variant so its decode stays in flight.
+    const fetchMedia = window.fetch;
+    window.fetch = async function(input, init) {
+      const response = await fetchMedia.call(this, input, init);
+      const url = String(input && input.url || input);
+      if (window.__zoomProbe.hold && url.endsWith('/' + window.__zoomProbe.hold)) {
         window.__zoomProbe.held++;
         await new Promise(resolve => window.__zoomProbe.releases.push(resolve));
       }
+      return response;
     };
   `,
   });

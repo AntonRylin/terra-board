@@ -883,7 +883,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     if (resized.length) queue.current.enqueue({ upserts: resized, deleted: [] });
     const e = new Engine(host.current!, fitted, doc.camera, {
       composers: (objects, camera) => {
-        const key = JSON.stringify([objects, camera]);
+        const key = objects.length ? JSON.stringify([objects, camera]) : '';
         if (key !== composerViewKey.current) {
           composerViewKey.current = key;
           setComposerView({ objects, camera: { ...camera } });
@@ -904,7 +904,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         return true;
       },
       lists: (objects, camera) => {
-        const key = JSON.stringify([objects, camera]);
+        const key = objects.length ? JSON.stringify([objects, camera]) : '';
         if (key !== listViewKey.current) {
           listViewKey.current = key;
           setListView({ objects, camera: { ...camera } });

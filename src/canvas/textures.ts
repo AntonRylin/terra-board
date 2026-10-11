@@ -1,6 +1,6 @@
 import { Texture } from 'pixi.js';
 import { mediaUrl } from '../bridge';
-type Entry = { texture: Texture; bytes: number; time: number };
+type Entry = { texture: Texture; bytes: number; time: number; bitmap: ImageBitmap };
 // Base image variants cover the same pixels. Detail tiles do not.
 const fallbackKey = (key: string) => {
   const [id, variant] = key.split('/');
@@ -17,6 +17,10 @@ export class TextureCache {
   private disposed = false;
   private failures = new Set<string>();
   private deferred = new Set<string>();
+  // Decoded off the main thread, then handed to the GPU a bounded amount per frame
+  // so several large previews finishing together cannot stall a single frame.
+  private ready: { key: string; bitmap: ImageBitmap }[] = [];
+  private releaseFrame = 0;
   constructor(private redraw: () => void) {}
   begin(wanted: Set<string>) {
     this.requested = wanted;
@@ -66,6 +70,7 @@ export class TextureCache {
       this.entries.delete(key);
       this.bytes -= e.bytes;
       e.texture.destroy(true);
+      e.bitmap.close();
       if (this.bytes < 128 * 1024 * 1024) break;
     }
   }
@@ -75,50 +80,84 @@ export class TextureCache {
       if (!this.wanted.has(key)) continue;
       this.pending.add(key);
       this.loading++;
-      const [id, variant] = key.split('/'),
-        img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.src = mediaUrl(id, variant);
-      img
-        .decode()
-        .then(() => {
-          if (this.disposed || !this.wanted.has(key)) return;
-          const bytes = img.naturalWidth * img.naturalHeight * 4;
-          this.evict();
-          const fallbackId = fallbackKey(key);
-          const fallback = !this.requested.has(fallbackId) && this.entries.get(fallbackId);
-          // A loaded large preview must not prevent its smaller replacement
-          // from fitting. Reclaim it only when needed, and only after the new
-          // texture exists; another object's explicitly requested variant stays.
-          const reclaim = this.bytes + bytes > 192 * 1024 * 1024 && fallback;
-          if (this.bytes + bytes - (reclaim ? reclaim.bytes : 0) > 192 * 1024 * 1024) {
-            this.deferred.add(key);
-            return;
-          }
-          const texture = Texture.from(img);
-          if (reclaim) {
-            this.entries.delete(fallbackId);
-            this.bytes -= reclaim.bytes;
-            reclaim.texture.destroy(true);
-            this.deferred.clear();
-          }
-          this.entries.set(key, { texture, bytes, time: performance.now() });
-          this.bytes += bytes;
+      const [id, variant] = key.split('/');
+      // Fetching the bytes lets the browser decode on a background thread.
+      fetch(mediaUrl(id, variant))
+        .then((response) => {
+          if (!response.ok) throw Error('Media not found');
+          return response.blob();
         })
-        .catch(() => this.failures.add(key))
-        .finally(() => {
+        .then((blob) => createImageBitmap(blob))
+        .then((bitmap) => {
+          if (this.disposed) return bitmap.close();
+          this.ready.push({ key, bitmap });
+          this.scheduleRelease();
+        })
+        .catch(() => {
+          this.failures.add(key);
           this.pending.delete(key);
+          if (!this.disposed) this.redraw();
+        })
+        .finally(() => {
           this.loading--;
-          if (!this.disposed) {
-            this.redraw();
-            this.pump();
-          }
+          if (!this.disposed) this.pump();
         });
     }
   }
+  private scheduleRelease() {
+    if (!this.releaseFrame && !this.disposed)
+      this.releaseFrame = requestAnimationFrame(this.release);
+  }
+  private release = () => {
+    this.releaseFrame = 0;
+    let pixels = 0;
+    while (
+      this.ready.length &&
+      (!pixels || pixels + this.ready[0].bitmap.width * this.ready[0].bitmap.height <= 2_200_000)
+    ) {
+      const { key, bitmap } = this.ready.shift()!;
+      pixels += bitmap.width * bitmap.height;
+      this.pending.delete(key);
+      if (this.disposed || !this.wanted.has(key)) {
+        bitmap.close();
+        continue;
+      }
+      const bytes = bitmap.width * bitmap.height * 4;
+      this.evict();
+      const fallbackId = fallbackKey(key);
+      const fallback = !this.requested.has(fallbackId) && this.entries.get(fallbackId);
+      // A loaded large preview must not prevent its smaller replacement
+      // from fitting. Reclaim it only when needed, and only after the new
+      // texture exists; another object's explicitly requested variant stays.
+      const reclaim = this.bytes + bytes > 192 * 1024 * 1024 && fallback;
+      if (this.bytes + bytes - (reclaim ? reclaim.bytes : 0) > 192 * 1024 * 1024) {
+        this.deferred.add(key);
+        bitmap.close();
+        continue;
+      }
+      const texture = Texture.from(bitmap);
+      if (reclaim) {
+        this.entries.delete(fallbackId);
+        this.bytes -= reclaim.bytes;
+        reclaim.texture.destroy(true);
+        reclaim.bitmap.close();
+        this.deferred.clear();
+      }
+      this.entries.set(key, { texture, bytes, time: performance.now(), bitmap });
+      this.bytes += bytes;
+    }
+    if (!this.disposed) this.redraw();
+    if (this.ready.length) this.scheduleRelease();
+  };
   destroy() {
     this.disposed = true;
-    for (const e of this.entries.values()) e.texture.destroy(true);
+    cancelAnimationFrame(this.releaseFrame);
+    for (const { bitmap } of this.ready) bitmap.close();
+    this.ready = [];
+    for (const e of this.entries.values()) {
+      e.texture.destroy(true);
+      e.bitmap.close();
+    }
     this.entries.clear();
     this.queue = [];
   }

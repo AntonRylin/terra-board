@@ -4,20 +4,31 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
 
-// Keep the real cache/eviction/decode lifecycle; only the browser image and GPU
-// upload boundaries are controlled so a replacement can remain in flight.
+// Keep the real cache/eviction/decode lifecycle; only the browser fetch/decode,
+// display frame and GPU upload boundaries are controlled so a replacement can
+// remain in flight.
 function fixture() {
   const requests = new Map();
+  const frames = [];
   let uid = 0;
-  class Image {
-    naturalWidth = 256;
-    naturalHeight = 256;
-    decode() {
-      return new Promise((resolve, reject) =>
-        requests.set(this.src, { resolve, reject, image: this }),
-      );
-    }
-  }
+  const fetch = (src) =>
+    new Promise((resolve, reject) => {
+      const request = {
+        size: 256,
+        resolve: () => resolve({ ok: true, blob: async () => ({ src, size: request.size }) }),
+        reject,
+      };
+      requests.set(src, request);
+    });
+  const createImageBitmap = async ({ src, size }) => ({
+    src,
+    width: size,
+    height: size,
+    closed: false,
+    close() {
+      this.closed = true;
+    },
+  });
   const exports = {};
   vm.runInNewContext(
     ts.transpileModule(
@@ -28,7 +39,10 @@ function fixture() {
     ).outputText,
     {
       exports,
-      Image,
+      fetch,
+      createImageBitmap,
+      requestAnimationFrame: (callback) => frames.push(callback),
+      cancelAnimationFrame() {},
       performance,
       require: (id) =>
         id === 'pixi.js'
@@ -48,17 +62,70 @@ function fixture() {
     },
   );
   const cache = new exports.TextureCache(() => {});
-  const settle = () => new Promise((resolve) => setImmediate(resolve));
+  const decoded = () => new Promise((resolve) => setImmediate(resolve));
+  // One display frame: the point where decoded images are handed to the GPU.
+  const frame = () => {
+    for (const callback of frames.splice(0)) callback();
+  };
+  const settle = async () => {
+    await decoded();
+    for (let i = 0; frames.length && i < 100; i++) frame();
+  };
   const load = async (key, size = 256) => {
     const request = requests.get(key);
     assert.ok(request, `decode requested for ${key}`);
-    request.image.naturalWidth = request.image.naturalHeight = size;
+    request.size = size;
     request.resolve();
     await settle();
     return cache.get(key);
   };
-  return { cache, requests, load, settle };
+  return { cache, requests, load, settle, decoded, frame };
 }
+
+test('previews that finish decoding together are uploaded on separate frames', async () => {
+  const { cache, requests, decoded, frame } = fixture();
+  const keys = ['a/preview', 'b/preview', 'c/preview'];
+  cache.begin(new Set(keys));
+  for (const key of keys) cache.get(key);
+  for (const key of keys) {
+    requests.get(key).size = 1600;
+    requests.get(key).resolve();
+  }
+  await decoded();
+  const uploaded = () => keys.filter((key) => cache.get(key)).length;
+  assert.equal(uploaded(), 0, 'nothing reaches the GPU outside a frame');
+  for (const expected of [1, 2, 3]) {
+    frame();
+    assert.equal(uploaded(), expected, 'one large preview per frame');
+  }
+  cache.destroy();
+});
+
+test('thumbnails that finish decoding together share one frame', async () => {
+  const { cache, requests, decoded, frame } = fixture();
+  const keys = ['a/thumb', 'b/thumb', 'c/thumb', 'd/thumb'];
+  cache.begin(new Set(keys));
+  for (const key of keys) cache.get(key);
+  for (const key of keys) requests.get(key).resolve();
+  await decoded();
+  frame();
+  assert.equal(keys.filter((key) => cache.get(key)).length, 4);
+  cache.destroy();
+});
+
+test('decoded bitmaps are released with their textures', async () => {
+  const { cache, requests, load, decoded } = fixture();
+  cache.begin(new Set(['kept/thumb', 'late/thumb']));
+  cache.get('kept/thumb');
+  const kept = await load('kept/thumb');
+  cache.get('late/thumb');
+  requests.get('late/thumb').resolve();
+  await decoded();
+  cache.destroy();
+  assert.equal(kept.destroyed, true);
+  assert.equal(kept.image.closed, true, 'an uploaded bitmap is closed with its texture');
+  assert.equal(cache.get('late/thumb'), null, 'a bitmap still waiting for a frame is dropped');
+});
 
 for (const [from, to] of [
   ['thumb', 'preview'],

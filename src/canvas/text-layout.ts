@@ -16,6 +16,22 @@ type Layout = {
   editorContentHeight?: number;
 };
 const cache = new Map<string, Layout>();
+// Frame titles are sized per zoom level, so an animated zoom makes new entries
+// on every frame. Kept apart, they cannot push note and text layouts out.
+const titleCache = new Map<string, Layout>();
+// Typing and resizing also make a new layout per key press or pointer move.
+// Only an object's latest few stay cached, so one long edit cannot evict the
+// layouts of everything else on the board.
+const recentKeys = new Map<string, string[]>();
+// The size the last search found for each object. After a small edit it is
+// usually still the answer; it is checked against the search's own end
+// condition, never assumed.
+const fitHints = new Map<string, { shape: string; size: number }>();
+function remember<T>(map: Map<string, T>, key: string, value: T, limit: number) {
+  map.delete(key);
+  map.set(key, value);
+  if (map.size > limit) map.delete(map.keys().next().value!);
+}
 let probe: HTMLTextAreaElement | undefined;
 let inkProbe: CanvasRenderingContext2D | undefined;
 
@@ -58,10 +74,11 @@ export function textLayout(
     text,
     titleSize,
   ]);
-  const cached = cache.get(key);
+  const store = titleSize && frameZoom !== undefined ? titleCache : cache;
+  const cached = store.get(key);
   if (cached) {
-    cache.delete(key);
-    cache.set(key, cached);
+    store.delete(key);
+    store.set(key, cached);
     return cached;
   }
   const base = { ...textAppearance(o), ...titleSize };
@@ -86,6 +103,9 @@ export function textLayout(
       appearance.labelGap = Math.min(base.labelGap!, fontSize * 0.4);
     // Pixi drops a trailing empty line; the native editor needs it for the caret.
     const measuredText = /[\r\n][\t ]*$/.test(text) ? text + '\u200b' : text;
+    // No style here has letter spacing. On its fallback path Pixi still segments
+    // every measured token into graphemes just to multiply their count by zero.
+    CanvasTextMetrics.experimentalLetterSpacing = true;
     const metrics = CanvasTextMetrics.measureText(
       measuredText,
       new TextStyle({
@@ -139,16 +159,31 @@ export function textLayout(
       );
     };
     if (!fits(result)) {
-      let low = 0.0001,
-        high = base.fontSize;
-      result = measure(low);
-      for (let i = 0; i < 16; i++) {
-        const mid = (low + high) / 2,
-          candidate = measure(mid);
-        if (fits(candidate)) {
-          low = mid;
+      // The search below ends on the largest of its 2^16 steps that fits.
+      const shape = JSON.stringify([o.type, o.width, o.height, base.fontSize, o.textBox, o.bold]);
+      const step = (base.fontSize - 0.0001) / 65536;
+      const hint = fitHints.get(o.id);
+      let found = false;
+      if (hint?.shape === shape && hint.size > 0.0001 && hint.size + step <= base.fontSize) {
+        const candidate = measure(hint.size);
+        if (fits(candidate) && !fits(measure(hint.size + step))) {
           result = candidate;
-        } else high = mid;
+          found = true;
+        }
+      }
+      if (!found) {
+        let low = 0.0001,
+          high = base.fontSize;
+        result = measure(low);
+        for (let i = 0; i < 16; i++) {
+          const mid = (low + high) / 2,
+            candidate = measure(mid);
+          if (fits(candidate)) {
+            low = mid;
+            result = candidate;
+          } else high = mid;
+        }
+        remember(fitHints, o.id, { shape, size: low }, 4000);
       }
     }
   }
@@ -166,8 +201,16 @@ export function textLayout(
     a.inkTop = ink.top;
     a.inkHeight = ink.height;
   }
-  cache.set(key, result);
-  if (cache.size > 200) cache.delete(cache.keys().next().value!);
+  remember(store, key, result, store === titleCache ? 256 : 4000);
+  if (store === cache) {
+    const keys = recentKeys.get(o.id) || [];
+    keys.push(key);
+    if (keys.length > 4) {
+      const stale = keys.shift()!;
+      if (!keys.includes(stale)) cache.delete(stale);
+    }
+    remember(recentKeys, o.id, keys, 4000);
+  }
   return result;
 }
 

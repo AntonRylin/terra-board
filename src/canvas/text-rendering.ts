@@ -97,30 +97,41 @@ export function textRegion(
   height: number,
   frameZoom?: number,
 ) {
-  if (o.rotation || hasExternalLabel(o)) {
-    const b = localViewport(
-      o,
-      c,
-      width,
-      height,
-      64,
-      hasExternalLabel(o) ? frameLabel(o, frameZoom).top : 0,
-    );
-    return {
-      x: Math.floor(b.left),
-      y: Math.floor(b.top),
-      width: Math.max(0, b.right - Math.floor(b.left)),
-      height: Math.max(0, b.bottom - Math.floor(b.top)),
+  const external = hasExternalLabel(o);
+  const minTop = external ? frameLabel(o, frameZoom).top : 0;
+  const b =
+    o.rotation || external
+      ? localViewport(o, c, width, height, 64, minTop)
+      : {
+          left: Math.max(0, (-c.x - 64) / c.zoom - o.x),
+          top: Math.max(0, (-c.y - 64) / c.zoom - o.y),
+          right: Math.min(o.width, (width - c.x + 64) / c.zoom - o.x),
+          bottom: Math.min(o.height, (height - c.y + 64) / c.zoom - o.y),
+        };
+  let { left, top, right, bottom } = b;
+  if (frameZoom !== undefined && right > left && bottom > top) {
+    // On screen, grow the clip to a coarse grid (128-256 screen pixels, in a
+    // power-of-two board unit). The region then stays identical while panning,
+    // so text is not rasterised and uploaded again on every frame. Objects
+    // smaller than a cell are simply rendered whole.
+    const cell = 2 ** Math.ceil(Math.log2(128 / c.zoom));
+    const snapped = {
+      left: Math.max(0, Math.floor(left / cell) * cell),
+      top: Math.max(minTop, Math.floor(top / cell) * cell),
+      right: Math.min(o.width, Math.ceil(right / cell) * cell),
+      bottom: Math.min(o.height, Math.ceil(bottom / cell) * cell),
     };
+    const resolution = 2 ** Math.ceil(Math.log2(c.zoom * devicePixelRatio));
+    // Never exceed what the unsnapped clip could already require.
+    if (
+      (snapped.right - snapped.left) * resolution <= 8192 &&
+      (snapped.bottom - snapped.top) * resolution <= 8192
+    )
+      ({ left, top, right, bottom } = snapped);
   }
-  const x = Math.max(0, Math.floor((-c.x - 64) / c.zoom - o.x));
-  const y = Math.max(0, Math.floor((-c.y - 64) / c.zoom - o.y));
-  return {
-    x,
-    y,
-    width: Math.max(0, Math.min(o.width, (width - c.x + 64) / c.zoom - o.x) - x),
-    height: Math.max(0, Math.min(o.height, (height - c.y + 64) / c.zoom - o.y) - y),
-  };
+  const x = Math.floor(left),
+    y = Math.floor(top);
+  return { x, y, width: Math.max(0, right - x), height: Math.max(0, bottom - y) };
 }
 
 // Rasterize vector font outlines at the current display scale. Only the visible

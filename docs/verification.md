@@ -1,5 +1,17 @@
 # Verification — Terra Board
 
+## Canvas rendering performance — 2026-10-11
+
+Text layouts are no longer evicted by per-zoom frame titles or by typing; a note's previous fitted size is verified before searching again; text raster regions stay stable while panning; sharper text and frame titles are rebuilt within a per-frame budget; image variants decode off the main thread and reach the GPU a bounded amount per frame; night shadows share one blur pass. No object data, storage or export format changed.
+
+- `npm test`: **363 passed, 0 failed**. New cases cover layout survival across an animated zoom and a long edit, warm fitting equal to a full search, stable and bounded raster regions, staged texture uploads, released bitmaps and the single shadow blur. Five of the six new layout/region cases fail on the previous code.
+- `npm run package`: passed, including TypeScript. Packaged startup smoke passed.
+- Packaged checks passed on this build: `desktop-check`, `desktop-text-zoom`, `desktop-zoom-flicker` (its decode hold now wraps `fetch`), `desktop-night-mode`, `desktop-export`, `desktop-pdf-composer`. `desktop-lists` passed 6 of 8 runs; the two failures were the hidden test window pausing frames (the saved library and failure screenshot contained the expected second list) and a startup attach race. `desktop-text-formatting` and `desktop-interactions` stop at the same early step on the previous build as well, so they did not exercise this change.
+- Measured in a hidden 3819×2033 window at 144 Hz, dark theme with night glow, on disposable boards shaped like real ones (about 90 objects; notes of 900–2,000 characters), two runs each. Note board: wheel zoom 56 → 127 fps with the longest frame 753 → 71 ms; zoom into a note and back 123 → 142 fps; pan 136 → 142 fps; typing in a 2,000-character note 21.0 → 6.7 ms of main-thread work per key. Image/list board: wheel zoom 108 → 136 fps (23% → 4% of frames missed); pan stays at 144 fps with about a quarter of the previous GPU-thread work.
+- Screenshots of the previous and new renderer at the same camera states differ by at most 3/255 per channel, except sub-pixel anti-aliasing on text of objects cut by the viewport edge, which now rasterise exactly as when fully visible. Typed notes fit to the identical font size, line height and wrap width. A transparent cutout over shapes, a cropped rotated photo and deep-zoom detail tiles matched within 2/255.
+
+These are machine-specific measurements, not guarantees. The first layout of a long note still costs about 10 ms, so first opening a note-heavy board takes roughly half a second and new notes entering the view can produce 30–70 ms frames. Boards of thousands of objects were not optimised: at 2,000 objects wheel zoom ran at about 61 fps and dragging everything at once at about 64 fps.
+
 ## PDF workspace as a paper table — 2026-10-05
 
 The workspace now has stacked/whole-sheet views, page zoom, Ctrl/Shift multi-selection and group dragging. Persistent page rows and column slot counts preserve holes after moving or deleting sheets. Occupied destinations exchange only affected sheets; other slots stay fixed. Export omits empty slots. Existing boards without row metadata retain their previous order. View/zoom/slots pass through storage, clipboard and MCP schemas. The generic frame Bold/Strikethrough controls no longer appear on PDF workspaces.

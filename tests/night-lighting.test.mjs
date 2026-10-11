@@ -21,29 +21,36 @@ test('camera frames reuse the lighting surface and clear old light without accum
       'ellipse',
       'roundRect',
       'fill',
+      'drawImage',
     ].map((name) => [name, (...args) => operations.push([name, ...args])]),
   );
   context.createRadialGradient = () => ({ addColorStop() {} });
-  let allocations = 0,
-    width = 300,
-    height = 150;
-  const canvas = {
-    setAttribute() {},
-    getContext: () => context,
-    get width() {
-      return width;
-    },
-    set width(value) {
-      width = value;
-      allocations++;
-    },
-    get height() {
-      return height;
-    },
-    set height(value) {
-      height = value;
-      allocations++;
-    },
+  let allocations = 0;
+  // The visible light layer, then the offscreen layer its shadows are drawn on.
+  const canvases = [];
+  const createCanvas = () => {
+    let width = 300,
+      height = 150;
+    const canvas = {
+      setAttribute() {},
+      getContext: () => context,
+      get width() {
+        return width;
+      },
+      set width(value) {
+        width = value;
+        allocations++;
+      },
+      get height() {
+        return height;
+      },
+      set height(value) {
+        height = value;
+        allocations++;
+      },
+    };
+    canvases.push(canvas);
+    return canvas;
   };
   const exports = {};
   vm.runInNewContext(
@@ -53,9 +60,10 @@ test('camera frames reuse the lighting surface and clear old light without accum
         compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
       },
     ).outputText,
-    { exports, document: { createElement: () => canvas }, require: () => ({ nightScene }) },
+    { exports, document: { createElement: createCanvas }, require: () => ({ nightScene }) },
   );
   const lighting = new exports.NightLighting({ prepend() {} });
+  const canvas = canvases[0];
   const objects = [
     { id: 'light', type: 'note', x: 100, y: 100, width: 200, height: 200, color: '#ffcc66' },
   ];
@@ -64,6 +72,20 @@ test('camera frames reuse the lighting surface and clear old light without accum
   for (const zoom of [1.1, 1.2, 0.9, 1.01])
     lighting.draw(objects, { x: 10, y: 20, zoom }, 1000, 700, true);
   assert.equal(allocations, firstAllocations, 'zoom must not reset the canvas backing surface');
+  operations.length = 0;
+  lighting.draw(
+    [0, 1, 2].map((i) => ({ ...objects[0], id: 'light-' + i, x: 100 + i * 260 })),
+    { x: 0, y: 0, zoom: 1 },
+    1000,
+    700,
+    true,
+  );
+  assert.equal(operations.filter(([name]) => name === 'fill').length, 3, 'every shadow is drawn');
+  assert.equal(
+    operations.filter(([name]) => name === 'drawImage').length,
+    1,
+    'all shadows share a single blur pass',
+  );
   operations.length = 0;
   lighting.draw([], { x: 0, y: 0, zoom: 1 }, 1000, 700, true);
   assert.deepEqual(operations[0], ['setTransform', 1, 0, 0, 1, 0, 0]);

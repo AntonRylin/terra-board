@@ -5,6 +5,8 @@ import { nightScene } from './night-scene';
 export class NightLighting {
   readonly canvas = document.createElement('canvas');
   private signature = '';
+  // Shadows are drawn sharp here, with room for the blur to reach past the edges.
+  private shadows = document.createElement('canvas');
   constructor(host: HTMLElement) {
     this.canvas.className = 'night-lighting';
     this.canvas.setAttribute('aria-hidden', 'true');
@@ -44,17 +46,33 @@ export class NightLighting {
       ctx.fillRect(x - r, y - r, r * 2, r * 2);
     }
     ctx.globalCompositeOperation = 'source-over';
-    for (const s of scene.shadows) {
-      ctx.save();
-      ctx.translate(s.x + s.dx, s.y + s.dy);
-      ctx.rotate(s.rotation);
+    if (scene.shadows.length) {
+      const margin = 48;
+      if (this.shadows.width !== pixelWidth + margin * 2)
+        this.shadows.width = pixelWidth + margin * 2;
+      if (this.shadows.height !== pixelHeight + margin * 2)
+        this.shadows.height = pixelHeight + margin * 2;
+      const layer = this.shadows.getContext('2d')!;
+      layer.setTransform(1, 0, 0, 1, 0, 0);
+      layer.clearRect(0, 0, this.shadows.width, this.shadows.height);
+      layer.translate(margin, margin);
+      layer.scale(scale, scale);
+      layer.fillStyle = 'rgba(0, 0, 0, 0.32)';
+      for (const s of scene.shadows) {
+        layer.save();
+        layer.translate(s.x + s.dx, s.y + s.dy);
+        layer.rotate(s.rotation);
+        layer.beginPath();
+        if (s.ellipse) layer.ellipse(0, 0, s.width / 2, s.height / 2, 0, 0, Math.PI * 2);
+        else layer.roundRect(-s.width / 2, -s.height / 2, s.width, s.height, 8);
+        layer.fill();
+        layer.restore();
+      }
+      // One blur for the whole layer instead of one GPU pass per shadow.
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.filter = 'blur(14px)';
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.32)';
-      ctx.beginPath();
-      if (s.ellipse) ctx.ellipse(0, 0, s.width / 2, s.height / 2, 0, 0, Math.PI * 2);
-      else ctx.roundRect(-s.width / 2, -s.height / 2, s.width, s.height, 8);
-      ctx.fill();
-      ctx.restore();
+      ctx.drawImage(this.shadows, -margin, -margin);
+      ctx.filter = 'none';
     }
   }
   destroy() {

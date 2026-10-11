@@ -196,7 +196,7 @@ export class Engine {
   private world = new Container();
   private selectionLayer = new Graphics();
   private snapGuides: SnapGuide[] = [];
-  private views = new Map<string, { container: Container; signature: string }>();
+  private views = new Map<string, { container: Container; signature: string; sharpness: string }>();
   private textures: TextureCache;
   private observer: ResizeObserver;
   private frame = 0;
@@ -1177,6 +1177,9 @@ export class Engine {
     });
   }
   private draw() {
+    const drawStarted = performance.now();
+    let refined = 0,
+      refinePending = false;
     const c = this.camera,
       w = this.host.clientWidth,
       h = this.host.clientHeight;
@@ -1345,7 +1348,6 @@ export class Engine {
         o.centerX,
         o.centerY,
         o.type,
-        o.type === 'frame' ? c.zoom : null,
         o.crop,
         o.arrow,
         key,
@@ -1353,13 +1355,33 @@ export class Engine {
         iconKey,
         iconTexture?.uid,
         detail,
-        hasLabel ? resolution : 0,
-        hasLabel ? region : null,
         this.editingId === o.id,
         detailTiles.map((tile) => [tile.key, tile.texture?.uid]),
       ]);
+      // Raster sharpness only: what changes when the camera moves over unchanged
+      // content. These rebuilds are spread across frames within a small budget;
+      // the previous bitmap stays on screen until its sharper replacement is ready.
+      const sharpness = hasLabel
+        ? [
+            o.type === 'frame' ? c.zoom : '',
+            resolution,
+            region.x,
+            region.y,
+            region.width,
+            region.height,
+          ].join('|')
+        : o.type === 'frame'
+          ? String(c.zoom)
+          : '';
       let view = this.views.get(o.id);
-      if (!view || view.signature !== signature) {
+      let rebuild = !view || view.signature !== signature;
+      if (!rebuild && view!.sharpness !== sharpness) {
+        if (!refined || performance.now() - drawStarted < 4) {
+          rebuild = true;
+          refined++;
+        } else refinePending = true;
+      }
+      if (rebuild || !view) {
         if (view) {
           this.world.removeChild(view.container);
           view.container.destroy({ children: true });
@@ -1390,7 +1412,7 @@ export class Engine {
             sprite.height = tile.height;
             container.addChild(sprite);
           }
-        view = { container, signature };
+        view = { container, signature, sharpness };
         this.views.set(o.id, view);
         this.world.addChild(container);
       }
@@ -1402,14 +1424,14 @@ export class Engine {
         spinner.rotation = performance.now() / 180;
         animateLoading = true;
       }
-      this.world.setChildIndex(view.container, i);
+      if (this.world.children[i] !== view.container) this.world.setChildIndex(view.container, i);
     });
     this.drawSelection();
     const gap = 24 * c.zoom;
     this.host.style.backgroundSize = `${Math.max(8, gap)}px ${Math.max(8, gap)}px`;
     this.host.style.backgroundPosition = `${c.x}px ${c.y}px`;
     this.app.render();
-    if (animateLoading) this.invalidate();
+    if (animateLoading || refinePending) this.invalidate();
     if (!this.rendered) {
       this.rendered = true;
       this.callbacks.ready();
