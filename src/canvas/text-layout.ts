@@ -250,23 +250,26 @@ export function fitTextObject(
   return fitted;
 }
 
-// Pasted text has to land readable inside the visible area. Long lines wrap to the
-// view first; the type only shrinks when the wrapped text is still too tall for it.
+// Pasted text has to land readable inside the visible area without taking it over:
+// it may cover about a third of the view. Long lines wrap first; the type only
+// shrinks when the wrapped text is still too tall.
 export function fitTextToView(
   o: CanvasObject,
   view: { x: number; y: number; width: number; height: number },
   // Text being edited stays where it is, moving only as far as the view requires.
   inPlace = false,
+  share = 1 / 3,
 ): CanvasObject {
   let fitted = fitTextObject(o);
-  if (fitted.width > view.width || fitted.height > view.height) {
+  const limit = { width: view.width * Math.sqrt(share), height: view.height * Math.sqrt(share) };
+  if (fitted.width > limit.width || fitted.height > limit.height) {
     const box = {
       ...fitted,
       textBox: true,
-      width: Math.min(fitted.width, view.width),
-      height: view.height,
+      width: Math.min(fitted.width, limit.width),
+      height: limit.height,
     };
-    // The fitted type rarely fills the view exactly: close the box around its lines.
+    // The fitted type rarely fills that area exactly: close the box around its lines.
     const { appearance: a, metrics, editorContentHeight } = textLayout(box);
     fitted = {
       ...box,
