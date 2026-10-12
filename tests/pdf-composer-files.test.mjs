@@ -5,6 +5,10 @@ import vm from 'node:vm';
 import ts from 'typescript';
 import { PDFDocument, degrees } from 'pdf-lib';
 import sharp from 'sharp';
+import { compressPdfPages } from '../src/canvas/pdf-size.ts';
+import { createCanvas } from '@napi-rs/canvas';
+import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
+import { randomBytes } from 'node:crypto';
 import {
   inspectPdfSource,
   assemblePdf,
@@ -39,6 +43,7 @@ function fixture(assets = new Map(), overrides = {}) {
       Map,
       Set,
       Promise,
+      document: { createElement: () => createCanvas(1, 1) },
       fetch: async (url, { signal } = {}) => {
         signal?.throwIfAborted();
         calls.push(url);
@@ -55,6 +60,7 @@ function fixture(assets = new Map(), overrides = {}) {
               /\.pdf$/i.test(name) || mime === 'application/pdf' ? 'pdf' : 'file',
           };
         if (id === './pdf-edit') return { MAX_PDF_PAGES, MAX_PDF_WORKSPACE_BYTES };
+        if (id === './pdf-size') return { compressPdfPages };
         if (id === './pdf-edit-client')
           return {
             inspectPdfSourceLocal: overrides.inspect || inspectPdfSource,
@@ -108,6 +114,69 @@ const object = (assetId, text, type = 'document') => ({
   width: 320,
   height: 400,
   z: 1,
+});
+
+test('composer size target compresses large PDFs, keeps small vector PDFs intact and releases its renderer', async () => {
+  const pdf = await PDFDocument.create();
+  const image = await pdf.embedPng(
+    await sharp(randomBytes(900 * 1200 * 3), {
+      raw: { width: 900, height: 1200, channels: 3 },
+    })
+      .png()
+      .toBuffer(),
+  );
+  pdf.addPage([450, 600]).drawImage(image, { x: 0, y: 0, width: 450, height: 600 });
+  const small = await PDFDocument.create();
+  small.addPage([300, 400]).drawText('Keep selectable text');
+  const assets = new Map([
+    ['large/original', await pdf.save()],
+    ['small/original', await small.save()],
+  ]);
+  let loading;
+  const f = fixture(assets, {
+    loadPdf: async (bytes) => {
+      loading = getDocument({ data: bytes, useSystemFonts: true });
+      return loading.promise;
+    },
+  });
+  const composition = (id) => ({
+    sources: [{ id, assetId: id, name: `${id}.pdf`, kind: 'pdf', pageCount: 1 }],
+    columns: [
+      {
+        id: 'column',
+        name: 'Email export',
+        pages: [{ id: 'page', sourceId: id, pageIndex: 0, rotation: 0 }],
+      },
+    ],
+  });
+  const result = await f.api('exportComposerColumn')(
+    composition('large'),
+    'column',
+    undefined,
+    100000,
+  );
+  assert.ok(result.bytes.length <= 100000);
+  assert.equal((await PDFDocument.load(result.bytes)).getPageCount(), 1);
+  assert.equal(loading.destroyed, true);
+  loading = undefined;
+  const unchanged = await f.api('exportComposerColumn')(
+    composition('small'),
+    'column',
+    undefined,
+    100000,
+  );
+  assert.equal(loading, undefined, 'a small PDF needs no rasterization');
+  const check = getDocument({ data: unchanged.bytes, useSystemFonts: true });
+  try {
+    assert.match(
+      (await (await (await check.promise).getPage(1)).getTextContent()).items
+        .map((x) => x.str)
+        .join(' '),
+      /Keep selectable text/,
+    );
+  } finally {
+    await check.destroy();
+  }
 });
 
 test('composer preparation inspects PDF originals and orientation-normalized full-resolution images', async () => {

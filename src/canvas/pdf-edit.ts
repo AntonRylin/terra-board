@@ -212,6 +212,35 @@ async function embedImage(doc: PDFDocument, source: PdfSource) {
   }
 }
 
+async function resizeImage(source: PdfSource, size: ImageSize, scale: number): Promise<PdfSource> {
+  const width = Math.max(1, Math.floor(size.width * scale));
+  const height = Math.max(1, Math.floor(size.height * scale));
+  const type = source.kind === 'png' ? 'image/png' : 'image/jpeg';
+  let bitmap: ImageBitmap | undefined;
+  let canvas: OffscreenCanvas | undefined;
+  try {
+    // Decode and resize one source at a time in the PDF worker. PNG encoding
+    // retains transparency; JPEG sources use high quality photo compression.
+    bitmap = await createImageBitmap(new Blob([source.bytes], { type }), {
+      resizeWidth: width,
+      resizeHeight: height,
+      resizeQuality: 'high',
+      imageOrientation: 'none',
+    });
+    canvas = new OffscreenCanvas(width, height);
+    const context = canvas.getContext('2d');
+    if (!context) throw Error('Image canvas could not be created.');
+    context.drawImage(bitmap, 0, 0, width, height);
+    const blob = await canvas.convertToBlob({ type, quality: 0.92 });
+    return { ...source, bytes: new Uint8Array(await blob.arrayBuffer()) };
+  } catch (error) {
+    throw failure(error, source);
+  } finally {
+    bitmap?.close();
+    if (canvas) canvas.width = canvas.height = 1;
+  }
+}
+
 export async function inspectPdfSource(
   source: PdfSource,
 ): Promise<{ pageCount: number; hasForms: boolean }> {
@@ -258,14 +287,17 @@ export async function assemblePdf(
     selected.set(spec.sourceId, entries);
   });
   let decodeBytes = 0;
+  const imageSizes = new Map<string, ImageSize>();
   for (const source of sources) {
     if (!selected.has(source.id) || source.kind === 'pdf') continue;
-    decodeBytes += imageSize(source).decodeBytes;
-    if (decodeBytes > MAX_IMAGE_DECODE_BYTES)
-      throw new PdfEditError(
-        'These images need too much memory together. Resize them or use fewer images.',
-      );
+    const size = imageSize(source);
+    imageSizes.set(source.id, size);
+    decodeBytes += size.decodeBytes;
   }
+  // Keep normal exports at original resolution. Oversized batches share a
+  // reduced pixel budget, with headroom for decoding and PNG alpha masks.
+  const imageScale =
+    decodeBytes > MAX_IMAGE_DECODE_BYTES ? Math.sqrt(MAX_IMAGE_DECODE_BYTES / 2 / decodeBytes) : 1;
   try {
     const result = await PDFDocument.create();
     const outputPages: PDFPage[] = new Array(pages.length);
@@ -313,15 +345,19 @@ export async function assemblePdf(
       } else {
         if (entries.some(({ spec }) => spec.pageIndex !== 0))
           throw new PdfEditError(`${label(source)} contains one image page only.`);
-        const image = await embedImage(result, source);
-        const scale = Math.min(1, MAX_IMAGE_PAGE_EDGE / Math.max(image.width, image.height));
+        const size = imageSizes.get(source.id)!;
+        const prepared = imageScale < 1 ? await resizeImage(source, size, imageScale) : source;
+        const image = await embedImage(result, prepared);
+        // Release decoded PNG buffers before processing the next source.
+        await image.embed();
+        const scale = Math.min(1, MAX_IMAGE_PAGE_EDGE / Math.max(size.width, size.height));
         for (const { spec, position } of entries) {
-          const copy = result.addPage([image.width * scale, image.height * scale]);
+          const copy = result.addPage([size.width * scale, size.height * scale]);
           copy.drawImage(image, {
             x: 0,
             y: 0,
-            width: image.width * scale,
-            height: image.height * scale,
+            width: size.width * scale,
+            height: size.height * scale,
           });
           copy.setRotation(degrees(((spec.rotation % 360) + 360) % 360));
           result.removePage(result.getPageCount() - 1);

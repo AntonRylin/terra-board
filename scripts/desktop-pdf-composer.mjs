@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { movePdfComposerPage } from '../src/canvas/pdf-composer.ts';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import {
   existsSync,
   mkdirSync,
@@ -21,6 +22,8 @@ import { createRequire } from 'node:module';
 import { createServer } from 'node:net';
 import { basename, dirname, join, resolve } from 'node:path';
 import { inspectPdfPages, pdfComposerFixtures } from '../tests/pdf-workspace-fixtures.mjs';
+import sharp from 'sharp';
+import { PDFDocument, PDFName } from 'pdf-lib';
 
 const require = createRequire(import.meta.url);
 const { Store } = require('../electron/store.cjs');
@@ -72,6 +75,63 @@ for (const fixture of Object.values(fixtures)) {
 }
 const store = new Store(root);
 const board = store.createBoard({ name: 'PDF composer check' });
+const compressionBoard = store.createBoard({ name: 'Large converter export check' });
+const compressionSources = [];
+const compressionOriginals = [];
+for (const [index, background] of ['#f008', '#0a8', '#37c'].entries()) {
+  const bytes =
+    index === 2
+      ? await sharp(randomBytes(3600 * 3600 * 3), {
+          raw: { width: 3600, height: 3600, channels: 3 },
+        })
+          .png()
+          .toBuffer()
+      : await sharp({ create: { width: 3600, height: 3600, channels: 4, background } })
+          .png()
+          .toBuffer();
+  const name = `Large image ${index + 1}.png`;
+  const asset = await store.importAsset({ bytes, name });
+  compressionSources.push({
+    id: `large-${index}`,
+    assetId: asset.id,
+    name,
+    kind: 'image',
+    pageCount: 1,
+  });
+  compressionOriginals.push(bytes);
+}
+const compressionFrame = {
+  id: 'compression-frame',
+  type: 'frame',
+  x: 300,
+  y: 160,
+  width: 420,
+  height: 650,
+  z: 1,
+  text: 'Large converter export',
+  pdfComposer: {
+    sources: compressionSources,
+    columns: [
+      {
+        id: 'compression-column',
+        name: 'Compressed images',
+        pages: compressionSources.map((source, index) => ({
+          id: `large-page-${index}`,
+          sourceId: source.id,
+          pageIndex: 0,
+          rotation: index * 90,
+        })),
+      },
+    ],
+  },
+};
+store.patchBoard({
+  id: compressionBoard.id,
+  revision: 0,
+  upserts: [compressionFrame],
+  deleted: [],
+  camera: { x: 0, y: 0, zoom: 1 },
+});
 const sourceCards = [];
 for (const [index, key] of ['source', 'merge', 'rotated', 'png'].entries()) {
   const fixture = fixtures[key];
@@ -677,6 +737,7 @@ async function setAppearance(theme, reduced = false) {
   );
 }
 async function checkBorderMotion() {
+  await renderer.send('Page.bringToFront');
   const path = `${composerSelector()} .canvas-list-edit-outline path`;
   await click(`${composerSelector()} .pdf-composer-header`);
   const initial = await until(
@@ -706,9 +767,10 @@ async function checkBorderMotion() {
   await shot('composer-reduced-motion');
   await setAppearance('light');
 }
-async function download(action, name) {
+async function download(action, name, preset = 'original', targetMb) {
   const count = await main.read('globalThis.__pdfComposerDownloads.calls.length');
   await action();
+  await prepareExportDialog(preset, targetMb);
   let previousSize;
   const call = await until(
     async () => {
@@ -724,6 +786,28 @@ async function download(action, name) {
   );
   assert.equal(basename(call.defaultPath), name, 'native picker preserves the column filename');
   return { ...call, bytes: readFileSync(call.filePath) };
+}
+async function prepareExportDialog(preset, targetMb) {
+  await until(() => rect('[aria-label="Export PDF"]'), 'PDF size controls open');
+  const presets = await read(`Array.from(document.querySelectorAll('[data-pdf-size]')).map(e => {
+    const r=e.getBoundingClientRect(); return {x:r.x,y:r.y};
+  })`);
+  assert.equal(presets.length, 4);
+  assert.equal(presets[0].y, presets[1].y);
+  assert.ok(presets[2].y > presets[0].y, 'size presets form two balanced rows');
+  await click(`[data-pdf-size=${JSON.stringify(preset)}]`);
+  if (preset === 'custom') {
+    await click('[aria-label="Target size in MB"]');
+    await key('a', 'KeyA', 2);
+    await renderer.send('Input.insertText', { text: String(targetMb) });
+  }
+  await click('[data-pdf-prepare]');
+  await until(() => rect('[data-pdf-save]'), 'PDF is prepared with actual size', 60000);
+  const size = await read('Number(document.querySelector("[data-pdf-bytes]").dataset.pdfBytes)');
+  assert.ok(size > 0, 'actual output size is displayed');
+  if (preset === 'custom') assert.ok(size <= targetMb * 1_000_000, 'custom target is enforced');
+  await shot(`pdf-size-${preset}`);
+  await click('[data-pdf-save]');
 }
 const exportedName = (name) =>
   name.replace(
@@ -1206,12 +1290,68 @@ try {
     mobile: false,
   });
   await boardReady();
+  // Keep animation assertions deterministic while the user works in another window.
+  await main.read(`(() => {
+    const {BrowserWindow}=process.mainModule.require('electron');
+    for(const window of BrowserWindow.getAllWindows()) window.webContents.setBackgroundThrottling(false);
+  })()`);
   await setAppearance('light');
   assert.equal(
     resolve(await read('window.canvas.dataDirectory()')),
     root,
     'all test state stays outside the real Library',
   );
+  await openBoard(compressionBoard);
+  composerId = compressionFrame.id;
+  const exportSelector = `${columnSelector('compression-column')} .pdf-composer-export`;
+  await until(() => rect(exportSelector), 'large converter export mounts');
+  await bringIntoView(columnSelector('compression-column'));
+  const compressionBefore = await graph();
+  const compressed = await download(() => click(exportSelector), 'Compressed images.pdf');
+  const compressedPdf = await PDFDocument.load(compressed.bytes);
+  assert.equal(compressedPdf.getPageCount(), 3);
+  assert.deepEqual(
+    compressedPdf.getPages().map((page) => page.getRotation().angle),
+    [0, 90, 180],
+  );
+  let compressedPixels = 0;
+  for (const page of compressedPdf.getPages()) {
+    assert.deepEqual(page.getSize(), { width: 1440, height: 1440 });
+    const [, ref] = page.node.Resources().lookup(PDFName.of('XObject')).entries()[0];
+    const image = compressedPdf.context.lookup(ref);
+    const width = image.dict.get(PDFName.of('Width')).asNumber();
+    const height = image.dict.get(PDFName.of('Height')).asNumber();
+    assert.ok(width > 0 && width < 3600 && height === width, 'worker downsamples oversized images');
+    compressedPixels += width * height;
+  }
+  assert.ok(compressedPixels * 4 <= 128 * 1024 * 1024);
+  for (const [index, source] of compressionSources.entries())
+    assert.deepEqual(originalAsset(source.assetId), compressionOriginals[index]);
+  assert.deepEqual(await graph(), compressionBefore, 'export preserves the editable composition');
+  await shot('compressed-image-export');
+  checkpoint(
+    'oversized converter image batch exports through the real worker and native download with automatic downsampling',
+  );
+  const smallExport = await download(
+    () => click(exportSelector),
+    'Compressed images.pdf',
+    'custom',
+    1,
+  );
+  assert.ok(smallExport.bytes.length <= 1_000_000);
+  assert.ok(
+    smallExport.bytes.length < compressed.bytes.length / 2,
+    'email compression materially reduces the file',
+  );
+  assert.equal((await PDFDocument.load(smallExport.bytes)).getPageCount(), 3);
+  const emailExport = await download(() => click(exportSelector), 'Compressed images.pdf', 'email');
+  assert.ok(emailExport.bytes.length <= 10_000_000);
+  assert.deepEqual(await graph(), compressionBefore);
+  checkpoint(
+    `PDF size controls: original ${compressed.bytes.length} bytes, custom 1 MB ${smallExport.bytes.length} bytes, email ${emailExport.bytes.length} bytes`,
+  );
+  await openBoard(board);
+  composerId = undefined;
   await saved(
     (document) =>
       document.objects
@@ -1453,12 +1593,14 @@ try {
     const calls = await main.read('globalThis.__pdfComposerDownloads.calls.length');
     await main.read('globalThis.__pdfComposerDownloads.cancelNext=true');
     await click(`${columnSelector(cancelColumn.id)} .pdf-composer-export`);
+    await prepareExportDialog('original');
     const canceled = await until(
       async () => (await main.read('globalThis.__pdfComposerDownloads.calls'))[calls],
       'canceled column download returns',
     );
     assert.equal(canceled.canceled, true);
     assert.equal(existsSync(canceled.filePath), false, 'native save cancellation writes no PDF');
+    await click('[aria-label="Close dialog"]');
     assert.deepEqual(await graph(), composition);
     checkpoint(
       'each nonempty column exports real vector PDFs in edited order and original rotation; dotted names and picker cancellation verified',
@@ -1481,6 +1623,11 @@ try {
     await bringIntoView(columnSelector(composition.columns[0].id));
     await setAppearance('dark');
     await shot('composer-dark');
+    await click(`${columnSelector(composition.columns[0].id)} .pdf-composer-export`);
+    await until(() => rect('[aria-label="Export PDF"]'), 'dark PDF export dialog');
+    await click('[data-pdf-size="small"]');
+    await shot('pdf-size-dark');
+    await click('[aria-label="Close dialog"]');
     const persisted = snapshot(await composer());
     await reloadBoard();
     assert.deepEqual(

@@ -5,6 +5,7 @@ import { MAX_PDF_PAGES, MAX_PDF_WORKSPACE_BYTES, type PdfSource } from './pdf-ed
 import { inspectPdfSourceLocal, assemblePdfLocal } from './pdf-edit-client';
 import { createPdfPreviewWorker, loadPdf } from './document-preview';
 import type { PDFDocumentProxy, PDFWorker } from 'pdfjs-dist';
+import { compressPdfPages } from './pdf-size';
 
 const byteLimit = () =>
   Error('A PDF composer can use up to 64 MB of source files. Use fewer or smaller files.');
@@ -124,8 +125,15 @@ export async function exportComposerColumn(
   composer: PdfComposer,
   columnId: string,
   signal?: AbortSignal,
+  targetBytes?: number,
+  progress?: (message: string) => void,
 ): Promise<{ bytes: Uint8Array<ArrayBuffer>; name: string; pageCount: number }> {
   signal?.throwIfAborted();
+  if (
+    targetBytes !== undefined &&
+    (!Number.isFinite(targetBytes) || targetBytes < 100_000 || targetBytes > 50_000_000)
+  )
+    throw Error('Choose a PDF target size from 0.1 to 50 MB.');
   const column = composer.columns.find((candidate) => candidate.id === columnId);
   if (!column) throw Error('This PDF column is no longer available.');
   const pages = column.pages
@@ -147,7 +155,23 @@ export async function exportComposerColumn(
     total += bytes.length;
     loaded.push(input(source, bytes));
   }
-  const bytes = await assemblePdfLocal(loaded, pages, signal);
+  let bytes = await assemblePdfLocal(loaded, pages, signal);
+  signal?.throwIfAborted();
+  if (targetBytes !== undefined && bytes.length > targetBytes) {
+    progress?.('Preparing pages for compression…');
+    const pdf = await loadPdf(bytes.slice(), signal);
+    try {
+      bytes = await compressPdfPages(
+        pdf,
+        targetBytes,
+        document.createElement('canvas'),
+        signal,
+        progress,
+      );
+    } finally {
+      await pdf.loadingTask.destroy();
+    }
+  }
   signal?.throwIfAborted();
   return { bytes, name, pageCount: pages.length };
 }
