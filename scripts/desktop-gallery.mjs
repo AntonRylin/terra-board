@@ -206,7 +206,7 @@ try {
     await read(
       `(()=>{const e=document.querySelector('.insert-menu button'),icon=e.querySelector('svg');return {font:getComputedStyle(e).fontSize,icon:parseFloat(getComputedStyle(icon).width)};})()`,
     ),
-    { font: '14px', icon: 19 },
+    { font: '13px', icon: 19 },
   );
   await shot('insert-menu');
   await clickSelector('.insert-menu [aria-label="Gallery"]');

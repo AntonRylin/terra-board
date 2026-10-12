@@ -53,47 +53,84 @@
 .toolbar-slot[data-held] > button {
   visibility: hidden;
 }
+/* Shared by the canvas and selection "more tools" menus. */
+.tool-menu {
+  width: max-content;
+  min-width: 48px;
+  min-height: 48px;
+  max-width: calc(100vw - 32px);
+  overflow-y: auto;
+  /* Rows glide into place with transforms, which would flash scrollbars while they overflow. */
+  scrollbar-width: none;
+  overscroll-behavior: contain;
+  padding: 6px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-auto-rows: 34px;
+  gap: 2px;
+  align-content: start;
+  /* Rows keep the bar's 12px corners, so the panel sits one padding step outside them. */
+  border-radius: 18px !important;
+}
+.tool-menu > [data-tool-id] {
+  width: 100%;
+  height: 34px;
+}
+/* The icon keeps the 34px square it has on the bar; the name hangs beside it. */
+.customizable-toolbar .tool-menu > [data-tool-id] > .icon-button {
+  width: 100%;
+  height: 34px;
+  min-width: 0;
+  padding: 0 14px 0 7.5px;
+  justify-content: flex-start;
+  gap: 10px;
+  font-size: 13px;
+  text-align: left;
+}
+.customizable-toolbar
+  .tool-menu
+  > [data-tool-id]
+  > .icon-button:not(:hover, :focus-visible, [aria-pressed='true']) {
+  background: none;
+  box-shadow: none;
+}
+.tool-inventory-name {
+  white-space: nowrap;
+}
 .tool-inventory {
   position: absolute;
   right: 0;
   bottom: calc(100% + 12px);
-  width: max-content;
-  min-width: 56px;
-  max-width: calc(100vw - 32px);
-  min-height: 56px;
   max-height: calc(100dvh - 170px);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: 8px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  grid-auto-rows: 38px;
-  gap: 3px;
-  align-content: start;
   animation: inventory-appear 180ms cubic-bezier(0.22, 1, 0.36, 1);
   transform-origin: bottom right;
 }
-.tool-inventory.insert-menu button {
-  min-width: 0;
-  justify-content: flex-start;
-  gap: 12px;
+.highlighter-options {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 12px);
+  translate: -50% 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px 7px 6px;
+  border-radius: 18px !important;
+  animation: inventory-appear 180ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
 }
-.tool-inventory .toolbar-slot {
-  width: 100%;
-  height: 38px;
+.highlighter-options .color-options button[aria-pressed='true'] {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
-.customizable-toolbar .tool-inventory .toolbar-slot .icon-button {
-  width: 100%;
-  height: 38px;
-  padding: 0 12px;
-  text-align: left;
+.highlighter-options input[type='range'] {
+  width: 96px;
+  accent-color: var(--accent);
 }
-.tool-inventory-name {
-  font-size: 14px;
-  white-space: nowrap;
-}
-.tool-inventory .toolbar-slot .icon-button {
-  background: rgb(var(--control-rgb, 255 255 255) / var(--glass-control, 0.3565));
+.highlighter-options output {
+  min-width: 3ch;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 .inventory-empty {
   position: absolute;

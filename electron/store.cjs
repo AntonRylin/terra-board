@@ -32,6 +32,7 @@ const types = new Set([
   'document',
   'link',
   'arrow',
+  'highlight',
   'list',
 ]);
 const idValue = (value) => {
@@ -219,6 +220,19 @@ function objectValue(o) {
       dash: a.dash,
       thickness: a.thickness,
     };
+  }
+  if (o.type === 'highlight') {
+    const h = o.highlight;
+    if (
+      !h ||
+      !Array.isArray(h.points) ||
+      h.points.length < 2 ||
+      h.points.length > 2000 ||
+      !h.points.every((p) => p && number(p.x, 0, 1) && number(p.y, 0, 1)) ||
+      !number(h.size, 0.25, 10000)
+    )
+      throw Error('Invalid highlight');
+    result.highlight = { points: h.points.map((p) => ({ x: p.x, y: p.y })), size: h.size };
   }
   if (o.text !== undefined) {
     if (typeof o.text !== 'string' || o.text.length > 100000) throw Error('Invalid text');

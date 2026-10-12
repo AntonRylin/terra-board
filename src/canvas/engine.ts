@@ -9,6 +9,17 @@ import {
 } from './arrows';
 import { drawArrow } from './arrow-rendering';
 import {
+  clampHighlightSize,
+  defaultHighlightStyle,
+  highlightAlpha,
+  highlightBounds,
+  highlightFromPoints,
+  highlightPoints,
+  highlightSize,
+  hitsHighlight,
+  simplifyStroke,
+} from './highlight';
+import {
   snapMove,
   snapResize,
   snapTargets,
@@ -18,7 +29,16 @@ import {
 } from './snapping';
 // Pixi's interpreter adapters keep shader setup compatible with a strict CSP (no eval).
 import 'pixi.js/unsafe-eval';
-import { Application, Container, Graphics, Sprite, Rectangle, Texture, Text } from 'pixi.js';
+import {
+  AlphaFilter,
+  Application,
+  Container,
+  Graphics,
+  Sprite,
+  Rectangle,
+  Texture,
+  Text,
+} from 'pixi.js';
 import type { CanvasObject, Camera, Edit, Tool, ImageCrop } from '../model';
 import { uid } from '../model';
 import { SpatialIndex, screenToWorld, zoomAt, boundsOf, type Point, type Bounds } from './geometry';
@@ -78,11 +98,24 @@ interface Callbacks {
   activate: (o: CanvasObject, intent?: 'title') => void;
   create: (tool: Tool, p: Point) => void;
   context: (p: Point) => void;
+  highlightSize?: (size: number) => void;
   ready: () => void;
   error: (message: string) => void;
 }
 type Gesture = {
-  mode: 'pan' | 'move' | 'resize' | 'rotate' | 'box' | 'drawArrow' | 'arrowPoint';
+  mode:
+    | 'pan'
+    | 'move'
+    | 'resize'
+    | 'rotate'
+    | 'box'
+    | 'drawArrow'
+    | 'arrowPoint'
+    | 'drawHighlight'
+    | 'highlightSize';
+  highlightDraft?: CanvasObject;
+  highlightPath?: Point[];
+  highlightSize?: number;
   arrowDraft?: CanvasObject;
   arrowIndex?: number;
   arrowPoints?: Point[];
@@ -185,6 +218,8 @@ export class Engine {
   app = new Application();
   camera: Camera;
   tool: Tool = 'select';
+  highlightStyle = { ...defaultHighlightStyle };
+  private pointer: Point | null = null;
   objects = new Map<string, CanvasObject>();
   selection = new Set<string>();
   history = new History();
@@ -260,6 +295,7 @@ export class Engine {
     host.addEventListener('pointermove', this.move);
     host.addEventListener('pointerup', this.up);
     host.addEventListener('pointercancel', this.cancel);
+    host.addEventListener('pointerleave', this.leave);
     host.addEventListener('wheel', this.wheel, { passive: false });
     host.addEventListener('dblclick', this.doubleClick);
     host.addEventListener('contextmenu', this.context);
@@ -342,7 +378,7 @@ export class Engine {
   private members(o: CanvasObject) {
     return o.groupId ? [...(this.groupMembers.get(o.groupId) || [o.id])] : [o.id];
   }
-  private hit(p: Point) {
+  private hit(p: Point, ink = true) {
     return this.index
       .search({
         x: p.x - 8 / this.camera.zoom,
@@ -353,6 +389,7 @@ export class Engine {
       .sort((a, b) => b.z - a.z)
       .find((o) => {
         const q = worldToLocal(o, p);
+        if (o.type === 'highlight') return ink && hitsHighlight(o, q, 2 / this.camera.zoom);
         if (o.type === 'arrow') {
           const label = arrowLabelPoint(o),
             box = o.text ? arrowLabelObject(o) : null;
@@ -403,7 +440,19 @@ export class Engine {
     const p = this.point(e),
       w = this.screenPoint(p);
     this.secondaryContextHandled = e.button === 2;
-    if (this.space || this.tool === 'hand' || e.button === 1 || e.button === 2) {
+    this.pointer = p;
+    if (this.tool === 'highlight' && e.button === 2 && !this.space && !this.hit(w)) {
+      // Right-drag on empty canvas sizes the marker: left shrinks it, right grows it.
+      this.gesture = {
+        mode: 'highlightSize',
+        start: p,
+        world: w,
+        camera: { ...this.camera },
+        original: [],
+        secondary: true,
+        highlightSize: this.highlightStyle.size,
+      };
+    } else if (this.space || this.tool === 'hand' || e.button === 1 || e.button === 2) {
       this.gesture = {
         mode: 'pan',
         start: p,
@@ -437,6 +486,32 @@ export class Engine {
         camera: { ...this.camera },
         original: [],
         arrowDraft: draft,
+      };
+    } else if (this.tool === 'highlight') {
+      const draft = highlightFromPoints(
+        {
+          id: uid(),
+          type: 'highlight',
+          x: w.x,
+          y: w.y,
+          width: 1,
+          height: 1,
+          z: this.topZ() + 1,
+          color: this.highlightStyle.color,
+          highlight: { points: [], size: this.highlightStyle.size / this.camera.zoom },
+        },
+        [w],
+      );
+      this.setSelection([]);
+      this.preview(draft);
+      this.gesture = {
+        mode: 'drawHighlight',
+        start: p,
+        world: w,
+        camera: { ...this.camera },
+        original: [],
+        highlightDraft: draft,
+        highlightPath: [w],
       };
     } else if (this.tool !== 'select') {
       this.callbacks.create(this.tool, w);
@@ -556,6 +631,10 @@ export class Engine {
   };
   private move = (e: PointerEvent) => {
     const g = this.gesture;
+    if (this.tool === 'highlight') {
+      this.pointer = e.target === this.app.canvas || g ? this.point(e) : null;
+      this.invalidate();
+    }
     if (!g) {
       const hovered =
         this.tool === 'select' && !this.space && e.target === this.app.canvas
@@ -581,7 +660,25 @@ export class Engine {
     const moved = Math.abs(dx) + Math.abs(dy) > 2;
     g.dragged ||= moved;
     g.changed = g.secondary ? g.changed || moved : moved;
-    if (g.mode === 'drawArrow') {
+    if (g.mode === 'highlightSize') {
+      if (!g.changed) return;
+      // The ring's edge follows the pointer: every pixel changes the radius by one.
+      const size = clampHighlightSize(g.highlightSize! + dx * 2);
+      if (size !== this.highlightStyle.size) {
+        this.highlightStyle = { ...this.highlightStyle, size };
+        this.callbacks.highlightSize?.(size);
+      }
+      this.invalidate();
+    } else if (g.mode === 'drawHighlight') {
+      const path = g.highlightPath!,
+        w = this.screenPoint(p),
+        last = path.at(-1)!;
+      // Shift rules a straight line, the way one marks a line of text.
+      if (e.shiftKey) path.splice(1, Infinity, w);
+      else if (Math.hypot(w.x - last.x, w.y - last.y) * this.camera.zoom >= 1.5) path.push(w);
+      this.preview(highlightFromPoints(g.highlightDraft!, path));
+      this.invalidate();
+    } else if (g.mode === 'drawArrow') {
       this.preview(arrowFromPoints(g.arrowDraft!, [g.world, this.screenPoint(p)]));
       this.invalidate();
     } else if (g.mode === 'arrowPoint') {
@@ -705,7 +802,17 @@ export class Engine {
       this.invalidate();
       return;
     }
-    if (g.mode === 'drawArrow') {
+    if (g.mode === 'highlightSize') {
+      if (!g.changed) this.openContext(e);
+    } else if (g.mode === 'drawHighlight') {
+      const o = highlightFromPoints(
+        g.highlightDraft!,
+        simplifyStroke(g.highlightPath!, 0.75 / this.camera.zoom),
+      );
+      this.preview(o);
+      this.history.push({ upserts: [o], deleted: [] }, { upserts: [], deleted: [o.id] });
+      this.callbacks.edit({ upserts: [o], deleted: [] });
+    } else if (g.mode === 'drawArrow') {
       const o = this.objects.get(g.arrowDraft!.id)!;
       this.history.push({ upserts: [o], deleted: [] }, { upserts: [], deleted: [o.id] });
       this.callbacks.edit({ upserts: [o], deleted: [] });
@@ -771,10 +878,23 @@ export class Engine {
         this.index.remove(g.arrowDraft!.id);
         this.setSelection([]);
       }
+      if (g.mode === 'drawHighlight') {
+        this.objects.delete(g.highlightDraft!.id);
+        this.index.remove(g.highlightDraft!.id);
+      }
+      if (g.mode === 'highlightSize' && g.highlightSize !== this.highlightStyle.size) {
+        this.highlightStyle = { ...this.highlightStyle, size: g.highlightSize! };
+        this.callbacks.highlightSize?.(g.highlightSize!);
+      }
       for (const o of g.original) this.preview(o);
       if (g.mode === 'pan') this.camera = g.camera;
       this.invalidate();
     }
+  };
+  private leave = () => {
+    if (!this.pointer || this.gesture) return;
+    this.pointer = null;
+    this.invalidate();
   };
   private blur = () => {
     this.stopCameraAnimation();
@@ -864,7 +984,8 @@ export class Engine {
       return;
     }
     const world = this.screenPoint(this.point(e));
-    const o = this.hit(world);
+    // Ink lies over what it marks; a double click reaches the object underneath.
+    const o = this.hit(world, false);
     if (o?.locked) return;
     if (o)
       this.callbacks.activate(
@@ -891,7 +1012,13 @@ export class Engine {
   }
   setTool(tool: Tool) {
     this.tool = tool;
+    this.pointer = null;
     this.updateCursor();
+    this.invalidate();
+  }
+  setHighlightStyle(style: { color: string; size: number }) {
+    this.highlightStyle = { color: style.color, size: clampHighlightSize(style.size) };
+    this.invalidate();
   }
   setEditing(id: string | null) {
     this.stopCameraAnimation();
@@ -956,7 +1083,7 @@ export class Engine {
     }
     const o = this.selected[0],
       c = this.camera;
-    if (o.type === 'arrow') return;
+    if (o.type === 'arrow' || o.type === 'highlight') return;
     let nearest: ResizeHandle | 'rotate' | undefined,
       distance = Infinity;
     for (const corner of [...resizeHandles, 'rotate'] as const) {
@@ -1350,6 +1477,9 @@ export class Engine {
         o.type,
         o.crop,
         o.arrow,
+        o.highlight,
+        // Tiny strokes skip the flattening pass; their overlaps are invisible.
+        o.type === 'highlight' && highlightSize(o) * c.zoom >= 3,
         key,
         texture?.uid,
         iconKey,
@@ -1530,6 +1660,30 @@ export class Engine {
         const lines = label(item.text, 51, y - 10, 16, item.checked);
         y += Math.max(44, lines * 24 + 20);
       });
+      return container;
+    }
+    if (o.type === 'highlight') {
+      const points = highlightPoints(o),
+        width = highlightSize(o),
+        ink = o.color || defaultHighlightStyle.color;
+      g.moveTo(points[0].x, points[0].y);
+      for (const p of points.slice(1)) g.lineTo(p.x, p.y);
+      g.stroke({ color: ink, width, cap: 'round', join: 'round' });
+      // A zero-length stroke has no outline to cap; a press still leaves a dot.
+      if (points.every((p) => p.x === points[0].x && p.y === points[0].y))
+        g.circle(points[0].x, points[0].y, width / 2).fill(ink);
+      // Draw opaque, then fade the whole stroke once, so it never darkens where it crosses itself.
+      if (exporting || width * this.camera.zoom >= 3)
+        g.filters = [
+          new AlphaFilter({
+            alpha: highlightAlpha,
+            antialias: 'inherit',
+            resolution: 'inherit',
+            padding: 2,
+          }),
+        ];
+      else g.alpha = highlightAlpha;
+      container.addChild(g);
       return container;
     }
     if (o.type === 'arrow') {
@@ -1782,7 +1936,12 @@ export class Engine {
           height: b.height * c.zoom,
         }
       : null;
-    if (toolbarBounds && this.selection.size === 1 && this.selected[0].type !== 'arrow') {
+    if (
+      toolbarBounds &&
+      this.selection.size === 1 &&
+      this.selected[0].type !== 'arrow' &&
+      this.selected[0].type !== 'highlight'
+    ) {
       const o = this.editingPreview || this.selected[0];
       if (
         hasExternalLabel(o) ||
@@ -1831,6 +1990,15 @@ export class Engine {
             .fill(h.insert ? '#4486d9' : '#ffffff')
             .stroke({ color: h.insert ? '#ffffff' : '#4486d9', width: 1.5 });
         }
+      } else if (this.selection.size === 1 && this.selected[0].type === 'highlight') {
+        const ink = highlightBounds(this.selected[0]);
+        g.roundRect(
+          ink.x * c.zoom + c.x,
+          ink.y * c.zoom + c.y,
+          ink.width * c.zoom,
+          ink.height * c.zoom,
+          Math.min(ink.width, ink.height, highlightSize(this.selected[0])) * 0.5 * c.zoom,
+        ).stroke({ color: '#4486d9', width: 1.5 });
       } else if (this.selection.size !== 1) {
         g.rect(x, y, w, h).stroke({ color: '#4486d9', width: 1.5 });
         for (const corner of corners) {
@@ -1890,6 +2058,14 @@ export class Engine {
       }
     }
     if (this.gesture?.mode !== 'rotate') this.callbacks.rotation?.(null);
+    if (this.tool === 'highlight' && this.pointer && !this.space && this.gesture?.mode !== 'pan') {
+      // The ring is the marker's true footprint, pinned in place while it is resized.
+      const at = this.gesture?.mode === 'highlightSize' ? this.gesture.start : this.pointer,
+        radius = this.highlightStyle.size / 2;
+      g.circle(at.x, at.y, radius)
+        .fill({ color: this.highlightStyle.color, alpha: this.gesture ? 0.25 : 0.12 })
+        .stroke({ color: this.dark ? '#ffffff' : '#252d38', width: 1, alpha: 0.55 });
+    }
     if (this.gesture?.box) {
       const b = this.gesture.box;
       g.rect(b.x * c.zoom + c.x, b.y * c.zoom + c.y, b.width * c.zoom, b.height * c.zoom)
@@ -2137,6 +2313,7 @@ export class Engine {
     this.host.removeEventListener('pointermove', this.move);
     this.host.removeEventListener('pointerup', this.up);
     this.host.removeEventListener('pointercancel', this.cancel);
+    this.host.removeEventListener('pointerleave', this.leave);
     this.host.removeEventListener('wheel', this.wheel);
     this.host.removeEventListener('dblclick', this.doubleClick);
     this.host.removeEventListener('contextmenu', this.context);

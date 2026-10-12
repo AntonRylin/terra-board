@@ -26,6 +26,7 @@ contextBridge.exposeInMainWorld('canvas', {
   },
   assetDimensions: (id) => ipcRenderer.invoke('canvas:asset-dimensions', id),
   openExport: (id, folder) => ipcRenderer.invoke('canvas:open-export', id, folder),
+  copyExport: (id) => ipcRenderer.invoke('canvas:copy-export', id),
   openExternal: (url) => ipcRenderer.invoke('canvas:open-link', url),
   linkPreview: (url) => ipcRenderer.invoke('canvas:link-preview', url),
   mcpStatus: () => ipcRenderer.invoke('canvas:mcp-status'),

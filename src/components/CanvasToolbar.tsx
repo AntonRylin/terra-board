@@ -1,4 +1,4 @@
-import { type CSSProperties } from 'react';
+import { type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Plus, SquareDashed, type LucideIcon } from 'lucide-react';
 import {
@@ -18,7 +18,14 @@ export type ToolbarAction = {
   active?: boolean;
   action: () => void;
 };
-export default function CanvasToolbar({ tools }: { tools: ToolbarAction[] }) {
+export default function CanvasToolbar({
+  tools,
+  options,
+}: {
+  tools: ToolbarAction[];
+  // Settings of the active tool, shown above the bar while the tool menu is closed.
+  options?: ReactNode;
+}) {
   const {
     layout,
     open,
@@ -136,7 +143,7 @@ export default function CanvasToolbar({ tools }: { tools: ToolbarAction[] }) {
           <div
             ref={inventory}
             id="tool-inventory"
-            className="tool-inventory insert-menu glass-surface"
+            className="tool-inventory tool-menu insert-menu glass-surface"
             role="group"
             aria-label="More tools"
             data-tool-zone="inventory"
@@ -147,6 +154,7 @@ export default function CanvasToolbar({ tools }: { tools: ToolbarAction[] }) {
             )}
           </div>
         )}
+        {!open && !dragging && options}
       </div>
       {dragging &&
         DragIcon &&

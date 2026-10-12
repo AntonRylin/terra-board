@@ -5,6 +5,7 @@ export const toolbarIds = [
   'note',
   'rect',
   'arrow',
+  'highlight',
   'frame',
   'link',
   'list',
@@ -18,7 +19,7 @@ export type ToolbarZone = keyof ToolbarLayout;
 export const toolbarStorageKey = 'terra-board.toolbar-layout';
 
 export const defaultToolbarLayout = (): ToolbarLayout => ({
-  bar: ['select', 'hand', 'text', 'note', 'rect', 'arrow', 'frame', 'link', 'media'],
+  bar: ['select', 'hand', 'text', 'note', 'rect', 'arrow', 'highlight', 'frame', 'link', 'media'],
   inventory: ['gallery', 'list'],
 });
 

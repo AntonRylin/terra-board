@@ -56,7 +56,7 @@ export function nightScene(objects: CanvasObject[], camera: Camera, width: numbe
   }
   const shadows: NightShadow[] = [];
   for (const p of candidates) {
-    if (['text', 'arrow', 'frame'].includes(p.o.type)) continue;
+    if (['text', 'arrow', 'highlight', 'frame'].includes(p.o.type)) continue;
     const closest = lights
       .filter(
         (l) =>

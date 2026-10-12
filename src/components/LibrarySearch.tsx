@@ -37,6 +37,7 @@ const kinds: Record<ObjectType, { label: string; icon: typeof Search }> = {
   rect: { label: 'Shape', icon: Shapes },
   ellipse: { label: 'Shape', icon: Shapes },
   arrow: { label: 'Arrow', icon: Shapes },
+  highlight: { label: 'Highlight', icon: Shapes },
 };
 function Excerpt({ text, query }: { text: string; query: string }) {
   const index = text.toLowerCase().indexOf(query.toLowerCase());

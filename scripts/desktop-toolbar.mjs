@@ -199,7 +199,7 @@ try {
     `Math.max(...Array.from(document.querySelectorAll('.tool-inventory-name'),el=>el.offsetWidth))`,
   );
   assert.ok(
-    Math.abs(menuWidth - longestName - 73) < 3,
+    Math.abs(menuWidth - longestName - 64) < 3,
     `menu fits longest name plus icon and padding: ${menuWidth}, ${longestName}`,
   );
   const hover = await center('[data-tool-id="text"] button');

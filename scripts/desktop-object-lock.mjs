@@ -351,9 +351,9 @@ try {
   await mouse('mouseReleased', p.x + 120, p.y + 120);
   assert.ok(await locked(), 'leaving cancels hold');
 
-  p = await hold(4600);
-  assert.ok(await locked(), 'still locked before five seconds');
-  await until(async () => !(await locked()), 'continuous five-second unlock', 4000);
+  p = await hold(2600);
+  assert.ok(await locked(), 'still locked before three seconds');
+  await until(async () => !(await locked()), 'continuous three-second unlock', 4000);
   await mouse('mouseReleased', p.x, p.y);
   assert.equal(await locked(), false, 'release does not relock');
   await flush();
@@ -411,7 +411,7 @@ try {
   await choose(905, 605);
   assert.ok(await locked(), 'lock survives reload');
 
-  // Keyboard hold and focus-loss cancellation use the same five-second rule.
+  // Keyboard hold and focus-loss cancellation use the same three-second rule.
   await read(`document.querySelector('.object-lock').focus()`);
   await send('Input.dispatchKeyEvent', {
     type: 'keyDown',
@@ -474,7 +474,7 @@ try {
         'format/delete/undo blocked',
         'early-release cancellation',
         'pointer-leave cancellation',
-        'five-second hold',
+        'three-second hold',
         'editing and movement restored',
         'locked list',
         'frame contents',

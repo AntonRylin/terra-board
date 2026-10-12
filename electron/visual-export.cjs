@@ -2,7 +2,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 
-function createVisualExport({ dialog, shell, getWindow }) {
+function createVisualExport({ dialog, shell, getWindow, copyImage }) {
   const saved = new Map();
   return {
     async save({ format, name, bytes }) {
@@ -45,6 +45,13 @@ function createVisualExport({ dialog, shell, getWindow }) {
       saved.set(id, file);
       if (saved.size > 100) saved.delete(saved.keys().next().value);
       return { id, name: path.basename(file) };
+    },
+    async copy(id) {
+      const file = saved.get(id);
+      if (!file) throw Error('This export is no longer available.');
+      if (!/\.(png|jpe?g)$/i.test(file)) throw Error('Only image exports can be copied.');
+      await fs.access(file);
+      await copyImage(file);
     },
     async open(id, folder) {
       const file = saved.get(id);

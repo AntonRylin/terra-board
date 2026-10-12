@@ -148,8 +148,12 @@ export function textLayout(
     const fits = (layout: Layout) => {
       const width = Math.max(1, o.width - layout.appearance.padding * 2);
       const height = Math.max(1, o.height - layout.appearance.padding * 2);
+      // Pixi wraps by adding up word widths, so a wrapped line can measure a hair wider
+      // than its limit. Counting that as overflow rejects sizes that fit, and the search
+      // below then settles on needlessly small type. Notes already wrap this much short.
+      const slack = o.type === 'text' ? layout.appearance.fontSize * 0.25 + 1 : 0;
       return (
-        layout.metrics.maxLineWidth <= width &&
+        layout.metrics.maxLineWidth <= width + slack &&
         Math.max(
           layout.metrics.height,
           layout.metrics.lines.length * layout.appearance.lineHeight,
@@ -244,4 +248,36 @@ export function fitTextObject(
     fitted.y += before.y - after.y;
   }
   return fitted;
+}
+
+// Pasted text has to land readable inside the visible area. Long lines wrap to the
+// view first; the type only shrinks when the wrapped text is still too tall for it.
+export function fitTextToView(
+  o: CanvasObject,
+  view: { x: number; y: number; width: number; height: number },
+): CanvasObject {
+  let fitted = fitTextObject(o);
+  if (fitted.width > view.width || fitted.height > view.height) {
+    const box = {
+      ...fitted,
+      textBox: true,
+      width: Math.min(fitted.width, view.width),
+      height: view.height,
+    };
+    // The fitted type rarely fills the view exactly: close the box around its lines.
+    const { appearance: a, metrics, editorContentHeight } = textLayout(box);
+    fitted = {
+      ...box,
+      width: Math.min(box.width, Math.ceil(metrics.maxLineWidth + a.padding * 2) + 2),
+      height: Math.min(
+        box.height,
+        Math.ceil(Math.max(editorContentHeight || 0, metrics.height) + a.padding * 2) + 2,
+      ),
+    };
+  }
+  return {
+    ...fitted,
+    x: view.x + (view.width - fitted.width) / 2,
+    y: view.y + (view.height - fitted.height) / 2,
+  };
 }

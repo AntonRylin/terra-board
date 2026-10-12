@@ -28,6 +28,7 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
         'document',
         'link',
         'arrow',
+        'highlight',
         'list',
       ].includes(o.type)
     )
@@ -234,6 +235,29 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
       )
         throw Error('Invalid arrow');
     }
+    if (o.type === 'highlight') {
+      const h = o.highlight;
+      if (
+        !h ||
+        !Array.isArray(h.points) ||
+        h.points.length < 2 ||
+        h.points.length > 2000 ||
+        !h.points.every(
+          (p: any) =>
+            p &&
+            Number.isFinite(p.x) &&
+            Number.isFinite(p.y) &&
+            p.x >= 0 &&
+            p.x <= 1 &&
+            p.y >= 0 &&
+            p.y <= 1,
+        ) ||
+        !Number.isFinite(h.size) ||
+        h.size < 0.25 ||
+        h.size > 10000
+      )
+        throw Error('Invalid highlight');
+    }
     return {
       ...(pdfComposer === undefined ? {} : { pdfComposer }),
       ...(o.type === 'list'
@@ -241,6 +265,14 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
         : {}),
       ...(o.type === 'arrow'
         ? { arrow: { ...o.arrow, points: o.arrow.points.map((p: any) => ({ x: p.x, y: p.y })) } }
+        : {}),
+      ...(o.type === 'highlight'
+        ? {
+            highlight: {
+              points: o.highlight.points.map((p: any) => ({ x: p.x, y: p.y })),
+              size: o.highlight.size,
+            },
+          }
         : {}),
       id: o.id,
       type: o.type,

@@ -1,5 +1,5 @@
-import { Check, Download, ExternalLink, FolderOpen, X } from 'lucide-react';
-import { useState } from 'react';
+import { Check, CircleAlert, Copy, Download, ExternalLink, FolderOpen, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { Modal } from './Dialogs';
 import type { ExportScope, ExportQuality } from '../canvas/export-plan';
 import type { ExportFormat } from '../canvas/export-format';
@@ -22,6 +22,7 @@ export default function ExportControls({
   onExport,
   onDismiss,
   onOpen,
+  onCopy,
 }: {
   scope: ExportScope | null;
   progress: ExportProgress | null;
@@ -30,8 +31,16 @@ export default function ExportControls({
   onExport: (format: ExportFormat, quality: ExportQuality) => void;
   onDismiss: () => void;
   onOpen: (folder: boolean) => void;
+  onCopy: () => Promise<void>;
 }) {
   const [quality, setQuality] = useState<ExportQuality>('full');
+  const [copied, setCopied] = useState<'copied' | 'failed' | null>(null);
+  useEffect(() => setCopied(null), [result]);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(null), 2200);
+    return () => clearTimeout(timer);
+  }, [copied]);
   return (
     <>
       {scope && (
@@ -127,7 +136,27 @@ export default function ExportControls({
                 Open folder
               </button>
             )}
+            {/\.(png|jpe?g)$/i.test(result.name) && (
+              <button
+                className="button export-copy"
+                onClick={() =>
+                  void onCopy().then(
+                    () => setCopied('copied'),
+                    () => setCopied('failed'),
+                  )
+                }
+              >
+                <Copy size={15} />
+                Copy
+              </button>
+            )}
           </div>
+          {copied && (
+            <div className="toast export-copy-toast" role="status" data-state={copied}>
+              {copied === 'copied' ? <Check size={15} /> : <CircleAlert size={15} />}
+              {copied === 'copied' ? 'Copied' : 'Failed to copy'}
+            </div>
+          )}
         </div>
       )}
     </>

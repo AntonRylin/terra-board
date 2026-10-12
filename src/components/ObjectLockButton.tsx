@@ -69,7 +69,7 @@ export default function ObjectLockButton({
     started.current = performance.now();
     const tick = () => {
       if (started.current === null) return;
-      const next = Math.min(1, (performance.now() - started.current) / 5000);
+      const next = Math.min(1, (performance.now() - started.current) / 3000);
       setProgress(next);
       if (next >= 1) {
         started.current = null;
@@ -78,7 +78,7 @@ export default function ObjectLockButton({
     };
     frame.current = requestAnimationFrame(tick);
   };
-  const label = locked ? 'Hold 5 seconds to unlock' : 'Lock selection';
+  const label = locked ? 'Hold 3 seconds to unlock' : 'Lock selection';
   return (
     <button
       {...buttonProps}

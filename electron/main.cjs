@@ -10,6 +10,7 @@ const {
   Menu,
   clipboard,
   ClipboardItem,
+  nativeImage,
 } = require('electron');
 const { createImageClipboard } = require('./image-clipboard.cjs');
 const { createVisualExport } = require('./visual-export.cjs');
@@ -533,7 +534,16 @@ app
       });
       return r.canceled ? false : call('exportFile', { id, file: r.filePath });
     });
-    const visualExport = createVisualExport({ dialog, shell, getWindow: () => win });
+    const visualExport = createVisualExport({
+      dialog,
+      shell,
+      getWindow: () => win,
+      copyImage: (file) => {
+        const image = nativeImage.createFromPath(file);
+        if (image.isEmpty()) throw Error('The exported image could not be read.');
+        clipboard.writeImage(image);
+      },
+    });
     documentPrint = createDocumentPrint({
       BrowserWindow,
       session,
@@ -576,6 +586,10 @@ app
     ipcMain.handle('canvas:export-image', (e, args) => {
       trusted(e);
       return visualExport.save(args);
+    });
+    ipcMain.handle('canvas:copy-export', (e, id) => {
+      trusted(e);
+      return visualExport.copy(id);
     });
     ipcMain.handle('canvas:open-export', (e, id, folder) => {
       trusted(e);

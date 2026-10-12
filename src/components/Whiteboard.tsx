@@ -1,6 +1,8 @@
 import ArrowControls from './ArrowControls';
 import CanvasLists, { listHeight, type ListView } from './CanvasLists';
 import CanvasPdfComposers from './CanvasPdfComposers';
+import PdfExportDialog from './PdfExportDialog';
+import type { PdfComposer } from '../model';
 import { createPdfComposer, appendPdfComposer } from '../canvas/pdf-composer';
 import { prepareComposerSources, exportComposerColumn } from '../canvas/pdf-composer-files';
 import { isPdfComposerInput, pdfComposerTargetAt } from '../canvas/pdf-drop';
@@ -11,6 +13,12 @@ import CanvasToolbar from './CanvasToolbar';
 import SelectionToolbar from './SelectionToolbar';
 import ObjectLockButton from './ObjectLockButton';
 import type { ToolbarId } from './toolbar-layout';
+import {
+  highlightColors,
+  highlightSizeRange,
+  readHighlightStyle,
+  defaultHighlightStyle,
+} from '../canvas/highlight';
 import { useZoomControlSpace } from './useZoomControlSpace';
 import {
   forwardRef,
@@ -26,6 +34,7 @@ import {
   Strikethrough,
   MousePointer2,
   MoveUpRight,
+  Highlighter,
   Hand,
   Type,
   StickyNote,
@@ -78,7 +87,7 @@ import {
   type GalleryTarget,
 } from '../canvas/gallery';
 import { textAppearance } from '../canvas/text-style';
-import { textLayout, fitTextObject } from '../canvas/text-layout';
+import { textLayout, fitTextObject, fitTextToView } from '../canvas/text-layout';
 import { textPlacement } from '../canvas/text-alignment';
 import { localToWorld, objectBounds } from '../canvas/transform';
 import { SaveQueue, CameraSaveQueue, type SaveState } from '../canvas/save-queue';
@@ -128,6 +137,7 @@ const tools: { id: Tool & ToolbarId; label: string; icon: typeof Type; key: stri
   { id: 'note', label: 'Note', icon: StickyNote, key: 'N' },
   { id: 'rect', label: 'Shape', icon: Square, key: 'R' },
   { id: 'arrow', label: 'Arrow', icon: MoveUpRight, key: 'A' },
+  { id: 'highlight', label: 'Highlighter', icon: Highlighter, key: 'M' },
   { id: 'frame', label: 'Frame', icon: Frame, key: 'F' },
   { id: 'link', label: 'Link', icon: Link2, key: 'L' },
 ];
@@ -154,6 +164,23 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       localStorage.setItem('terra-board.text-size', String(size));
     } catch {}
   };
+  const [highlightStyle, setHighlightStyle] = useState(() => {
+    try {
+      return readHighlightStyle(
+        JSON.parse(localStorage.getItem('terra-board.highlighter') || 'null'),
+      );
+    } catch {
+      return { ...defaultHighlightStyle };
+    }
+  });
+  const highlightStyleRef = useRef(highlightStyle);
+  highlightStyleRef.current = highlightStyle;
+  useEffect(() => {
+    engine.current?.setHighlightStyle(highlightStyle);
+    try {
+      localStorage.setItem('terra-board.highlighter', JSON.stringify(highlightStyle));
+    } catch {}
+  }, [highlightStyle]);
   const backgroundJob = useRef<Promise<void> | null>(null);
   const [removingBackground, setRemovingBackground] = useState(false);
   const exportTask = useRef<Promise<void> | null>(null);
@@ -317,6 +344,11 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   const [pdfDropTarget, setPdfDropTarget] = useState<CanvasObject | null>(null);
   const [officeProgress, setOfficeProgress] = useState('');
   const [composerProgress, setComposerProgress] = useState('');
+  const [pdfExport, setPdfExport] = useState<{
+    composer: PdfComposer;
+    columnId: string;
+    name: string;
+  } | null>(null);
   useEffect(() => window.canvas?.onOfficeProgress(setOfficeProgress), []);
   const composerViewKey = useRef('');
   const composerTail = useRef<Promise<void>>(Promise.resolve());
@@ -542,7 +574,6 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       key="front"
       className="icon-button"
       aria-label="Bring to front"
-      data-launcher-label="Bring to front"
       onClick={() => {
         finishEdit();
         engine.current?.bringToFront();
@@ -637,7 +668,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     }
   };
   const alignmentSelection = (editingObject ? [editingObject] : selected).filter(
-    (o) => !['image', 'document', 'frame', 'link', 'arrow', 'list'].includes(o.type),
+    (o) => !['image', 'document', 'frame', 'link', 'arrow', 'highlight', 'list'].includes(o.type),
   );
   const editorOrigin =
     editingObject && editingPlacement
@@ -677,7 +708,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     engine.current?.setTool(value);
   };
   const startEdit = (o: CanvasObject) => {
-    if (engine.current?.objects.get(o.id)?.locked) return;
+    if (engine.current?.objects.get(o.id)?.locked || o.type === 'highlight') return;
     if (o.type === 'list') {
       (
         window.document.querySelector(
@@ -966,6 +997,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       activate,
       create,
       context: (p) => setMenu(p),
+      highlightSize: (size) => setHighlightStyle((style) => ({ ...style, size })),
       ready: () => {
         setReady(true);
         onReady();
@@ -974,6 +1006,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       error: onError,
     });
     engine.current = e;
+    e.setHighlightStyle(highlightStyleRef.current);
     const recoverPreviews = () => {
       for (const o of e.all) if (o.type === 'link' && !o.assetId) refreshLink(o, e);
     };
@@ -1234,18 +1267,11 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       );
     });
   }
-  function exportComposer(id: string, columnId: string) {
-    return composerTask(async (e, signal) => {
-      setComposerProgress('Creating PDF…');
-      const composer = e.objects.get(id)?.pdfComposer;
-      if (!composer) throw Error('The PDF workspace was removed.');
-      const result = await exportComposerColumn(composer, columnId, signal);
-      signal.throwIfAborted();
-      const asset = await invoke<Asset>('importAsset', { name: result.name, bytes: result.bytes });
-      signal.throwIfAborted();
-      setComposerProgress('Choose where to save your PDF…');
-      await downloadAsset(asset.id, result.name);
-    });
+  async function exportComposer(id: string, columnId: string) {
+    const composer = engine.current?.objects.get(id)?.pdfComposer;
+    const column = composer?.columns.find((item) => item.id === columnId);
+    if (!composer || !column) throw Error('The PDF workspace was removed.');
+    setPdfExport({ composer: structuredClone(composer), columnId, name: column.name });
   }
   function removeImageBackground(object: CanvasObject) {
     if (engine.current?.objects.get(object.id)?.locked) return;
@@ -1468,7 +1494,35 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         fontSize: url ? 22 : lastTextSize.current!,
         ...(url ? { url } : {}),
       };
-      e.apply({ upserts: [fitTextObject(o)], deleted: [] });
+      // Keep clear of the floating header and toolbar, and of the board panel's edge.
+      const surface = host.current!.getBoundingClientRect(),
+        panel = window.document.querySelector('.launcher')?.getBoundingClientRect();
+      const inset = { left: 32, top: 84, right: 32, bottom: 124 };
+      if (panel?.width && panel.height) {
+        const upright = panel.height > panel.width;
+        const near = upright
+          ? panel.left + panel.right < surface.left + surface.right
+          : panel.top + panel.bottom < surface.top + surface.bottom;
+        const cover = upright
+          ? near
+            ? panel.right - surface.left
+            : surface.right - panel.left
+          : near
+            ? panel.bottom - surface.top
+            : surface.bottom - panel.top;
+        inset[upright ? (near ? 'left' : 'right') : near ? 'top' : 'bottom'] += Math.max(0, cover);
+      }
+      const from = e.screenPoint({ x: inset.left, y: inset.top }),
+        to = e.screenPoint({
+          x: surface.width - inset.right,
+          y: surface.height - inset.bottom,
+        });
+      const view = {
+        ...from,
+        width: Math.max(160 / e.camera.zoom, to.x - from.x),
+        height: Math.max(80 / e.camera.zoom, to.y - from.y),
+      };
+      e.apply({ upserts: [url ? fitTextObject(o) : fitTextToView(o, view)], deleted: [] });
       e.setSelection([o.id]);
       if (url) enrichLink(o, e);
     };
@@ -2240,15 +2294,17 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
               (o) => !['image', 'video', 'link', 'frame', 'arrow', 'list'].includes(o.type),
             ) && (
               <div key="colors" className="color-options">
-                {colors.map((color) => (
-                  <button
-                    key={color}
-                    style={{ background: color }}
-                    aria-label={'Set color ' + color}
-                    title={color === '#000000' ? 'Black' : color}
-                    onClick={() => setSelectionColor(color)}
-                  />
-                ))}
+                {(selected.every((o) => o.type === 'highlight') ? highlightColors : colors).map(
+                  (color) => (
+                    <button
+                      key={color}
+                      style={{ background: color }}
+                      aria-label={'Set color ' + color}
+                      title={color === '#000000' ? 'Black' : color}
+                      onClick={() => setSelectionColor(color)}
+                    />
+                  ),
+                )}
                 <label className="custom-color" title="Custom color">
                   <Plus size={12} aria-hidden="true" />
                   <input
@@ -2570,6 +2626,51 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           { id: 'media', label: 'Add files', icon: ImagePlus, action: importMedia },
           { id: 'gallery', label: 'Gallery', icon: Images, action: createGallery },
         ]}
+        options={
+          tool === 'highlight' && (
+            <div
+              className="highlighter-options glass-surface"
+              role="group"
+              aria-label="Highlighter"
+            >
+              <div className="color-options">
+                {highlightColors.map((color) => (
+                  <button
+                    key={color}
+                    style={{ background: color }}
+                    aria-label={'Highlight color ' + color}
+                    aria-pressed={highlightStyle.color === color}
+                    onClick={() => setHighlightStyle((style) => ({ ...style, color }))}
+                  />
+                ))}
+                <label className="custom-color" title="Custom color">
+                  <Plus size={12} aria-hidden="true" />
+                  <input
+                    type="color"
+                    aria-label="Custom highlight color"
+                    value={highlightStyle.color}
+                    onChange={(event) =>
+                      setHighlightStyle((style) => ({ ...style, color: event.target.value }))
+                    }
+                  />
+                </label>
+              </div>
+              <input
+                type="range"
+                min={highlightSizeRange.min}
+                max={highlightSizeRange.max}
+                step="1"
+                aria-label="Highlighter size"
+                title="Size. Right-drag on the board: left is thinner, right is thicker"
+                value={highlightStyle.size}
+                onChange={(event) =>
+                  setHighlightStyle((style) => ({ ...style, size: Number(event.target.value) }))
+                }
+              />
+              <output aria-hidden="true">{highlightStyle.size}</output>
+            </div>
+          )
+        }
       />
       <div ref={zoomControls} className="canvas-zoom">
         <button
@@ -2633,6 +2734,29 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           onClose={() => setMenu(null)}
         />
       )}
+      {pdfExport && (
+        <PdfExportDialog
+          name={pdfExport.name}
+          onClose={() => setPdfExport(null)}
+          onPrepare={(target, signal, progress) =>
+            exportComposerColumn(
+              pdfExport.composer,
+              pdfExport.columnId,
+              AbortSignal.any([signal, documentAbort.current.signal]),
+              target,
+              progress,
+            )
+          }
+          onSave={async (result) => {
+            const asset = await invoke<Asset>('importAsset', {
+              name: result.name,
+              bytes: result.bytes,
+            });
+            documentAbort.current.signal.throwIfAborted();
+            return downloadAsset(asset.id, result.name);
+          }}
+        />
+      )}
       <ExportControls
         scope={exportScope}
         progress={exportProgress}
@@ -2640,6 +2764,12 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         onClose={() => setExportScope(null)}
         onExport={startExport}
         onDismiss={() => setExportResult(null)}
+        onCopy={async () => {
+          if (exportResult?.id) return window.canvas!.copyExport(exportResult.id);
+          if (!exportResult?.url) throw Error('This export is no longer available.');
+          const blob = await (await fetch(exportResult.url)).blob();
+          await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+        }}
         onOpen={(folder) => {
           if (exportResult?.id)
             void window.canvas?.openExport(exportResult.id, folder).catch(error);

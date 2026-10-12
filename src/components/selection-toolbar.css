@@ -59,30 +59,6 @@
   position: absolute;
   visibility: hidden;
   z-index: 30;
-  width: max-content;
-  min-width: 56px;
-  min-height: 56px;
-  max-width: calc(100vw - 32px);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: 8px;
-  display: grid;
-  grid-auto-rows: 38px;
-  align-content: start;
-  gap: 3px;
-}
-.selection-tool-menu .selection-tool-slot {
-  width: 100%;
-  height: 38px;
-}
-.selection-tool-menu .selection-tool-slot > .icon-button {
-  width: 100%;
-  height: 38px;
-  min-width: 0;
-  padding: 0 12px;
-  justify-content: flex-start;
-  gap: 12px;
-  text-align: left;
 }
 .selection-tools .selection-toolbar-content .selection-tool-menu.glass-surface {
   background-color: var(--panel);

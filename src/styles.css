@@ -856,17 +856,6 @@ body.reordering * {
   border-top: 1px solid var(--line);
   margin: 4px 5px;
 }
-.insert-menu button {
-  font-size: 14px;
-  min-height: 42px;
-  gap: 12px;
-}
-.insert-menu svg {
-  width: 19px;
-  height: 19px;
-  stroke-width: 1.8;
-  color: #526174;
-}
 .gallery-insertion {
   position: absolute;
   pointer-events: none;
@@ -1360,6 +1349,18 @@ kbd {
   flex: 1;
   justify-content: center;
   font-size: 12px;
+  white-space: nowrap;
+}
+.export-copy-toast {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  white-space: nowrap;
+}
+.export-actions .export-copy {
+  flex: none;
+}
+.export-copy-toast[data-state='failed'] svg {
+  color: #b8544d;
 }
 @media (prefers-reduced-motion: reduce) {
   .export-toast progress::-webkit-progress-value {

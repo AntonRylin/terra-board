@@ -2,6 +2,7 @@ import type { CanvasObject } from '../model';
 import { textLayout } from './text-layout';
 import { textPlacement } from './text-alignment';
 import { localToWorld, objectBounds } from './transform';
+import { highlightSize } from './highlight';
 
 export function frameLabel(o: CanvasObject, zoom?: number) {
   const { appearance, metrics } = textLayout(
@@ -55,6 +56,11 @@ export function visualBounds(o: CanvasObject, editingTitle = false, zoom?: numbe
         (o.arrow?.thickness || 3) * 5,
         label ? Math.max(label.width, label.height) / 2 + 8 : 0,
       );
+    return { x: b.x - pad, y: b.y - pad, width: b.width + pad * 2, height: b.height + pad * 2 };
+  }
+  if (o.type === 'highlight') {
+    const b = objectBounds(o),
+      pad = highlightSize(o) / 2;
     return { x: b.x - pad, y: b.y - pad, width: b.width + pad * 2, height: b.height + pad * 2 };
   }
   if (!hasExternalLabel(o) && !(editingTitle && (o.type === 'image' || o.type === 'document')))

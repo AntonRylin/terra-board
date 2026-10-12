@@ -281,7 +281,7 @@ export default function SelectionToolbar({
               <div
                 ref={inventory}
                 id="selection-tool-menu"
-                className="selection-tool-menu glass-surface"
+                className="selection-tool-menu tool-menu glass-surface"
                 role="group"
                 aria-label="More object tools"
                 data-tool-zone="inventory"

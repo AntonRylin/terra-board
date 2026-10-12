@@ -9,6 +9,7 @@ export type ObjectType =
   | 'document'
   | 'link'
   | 'arrow'
+  | 'highlight'
   | 'list';
 export interface ListItem {
   id: string;
@@ -56,6 +57,10 @@ export interface ArrowStyle {
   dash: 'solid' | 'dashed' | 'dotted';
   thickness: number;
 }
+export interface HighlightStroke {
+  points: { x: number; y: number }[];
+  size: number;
+}
 export interface CanvasObject {
   locked?: boolean;
   items?: ListItem[];
@@ -67,6 +72,7 @@ export interface CanvasObject {
   galleryRow?: number;
   galleryColumn?: number;
   arrow?: ArrowStyle;
+  highlight?: HighlightStroke;
   id: string;
   type: ObjectType;
   x: number;
@@ -156,5 +162,14 @@ export interface Edit {
   deleted: string[];
 }
 export type Tool =
-  'select' | 'hand' | 'text' | 'note' | 'rect' | 'ellipse' | 'frame' | 'link' | 'arrow';
+  | 'select'
+  | 'hand'
+  | 'text'
+  | 'note'
+  | 'rect'
+  | 'ellipse'
+  | 'frame'
+  | 'link'
+  | 'arrow'
+  | 'highlight';
 export const uid = () => crypto.randomUUID();

@@ -71,6 +71,7 @@ const object = z
       'document',
       'link',
       'arrow',
+      'highlight',
       'list',
     ]),
     items: z
@@ -146,6 +147,12 @@ const object = z
         end: head,
         dash: z.enum(['solid', 'dashed', 'dotted']),
         thickness: z.number().min(0.5).max(40),
+      })
+      .optional(),
+    highlight: z
+      .object({
+        points: z.array(point).min(2).max(2000),
+        size: z.number().min(0.25).max(10000),
       })
       .optional(),
   })

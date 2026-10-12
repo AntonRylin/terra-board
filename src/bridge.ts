@@ -20,6 +20,7 @@ interface DesktopBridge {
   convertOffice(args: { id: string; name: string }): Promise<Asset>;
   onOfficeProgress(callback: (message: string) => void): () => void;
   openExport(id: string, folder: boolean): Promise<void>;
+  copyExport(id: string): Promise<void>;
   copyObjects(objects: CanvasObject[]): Promise<boolean>;
   copyText(text: string): Promise<void>;
   cancelCopy(): void;

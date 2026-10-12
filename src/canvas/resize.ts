@@ -110,8 +110,8 @@ export function resizeSelection(
     const size = font(o);
     minimum = Math.max(
       minimum,
-      o.type === 'arrow' ? 0 : 1 / o.width,
-      o.type === 'arrow' ? 0 : 1 / o.height,
+      o.type === 'arrow' || o.type === 'highlight' ? 0 : 1 / o.width,
+      o.type === 'arrow' || o.type === 'highlight' ? 0 : 1 / o.height,
       size ? 8 / size : 0,
       o.type === 'list' ? 240 / o.width : 0,
     );
@@ -141,6 +141,14 @@ export function resizeSelection(
               y: (p.y * o.height * scale) / Math.max(1, o.height * scale),
             })),
             thickness: Math.max(0.5, Math.min(40, o.arrow.thickness * scale)),
+          },
+        }
+      : {}),
+    ...(o.highlight
+      ? {
+          highlight: {
+            ...o.highlight,
+            size: Math.max(0.25, Math.min(10000, o.highlight.size * scale)),
           },
         }
       : {}),

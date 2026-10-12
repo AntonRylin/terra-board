@@ -44,8 +44,10 @@ test('save, overwrite, and open actions use only successfully exported files', a
       },
       showItemInFolder: (p) => actions.push(['folder', p]),
     },
+    copyImage: (p) => actions.push(['copy', p]),
   });
   await assert.rejects(service.open(file, false), /no longer available/);
+  await assert.rejects(service.copy(file), /no longer available/);
   const first = await service.save({ format: 'png', name: 'Board', bytes: png });
   const second = await service.save({ format: 'png', name: 'Board', bytes: png });
   assert.notEqual(first.id, second.id);
@@ -53,9 +55,11 @@ test('save, overwrite, and open actions use only successfully exported files', a
   assert.deepEqual(await readdir(dir), ['Board.png']);
   await service.open(second.id, false);
   await service.open(second.id, true);
+  await service.copy(second.id);
   assert.deepEqual(actions, [
     ['file', file],
     ['folder', file],
+    ['copy', file],
   ]);
 });
 test('cancellation never yields a success token; invalid data never opens a dialog', async () => {
