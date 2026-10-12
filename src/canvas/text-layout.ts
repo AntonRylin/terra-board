@@ -255,6 +255,8 @@ export function fitTextObject(
 export function fitTextToView(
   o: CanvasObject,
   view: { x: number; y: number; width: number; height: number },
+  // Text being edited stays where it is, moving only as far as the view requires.
+  inPlace = false,
 ): CanvasObject {
   let fitted = fitTextObject(o);
   if (fitted.width > view.width || fitted.height > view.height) {
@@ -275,9 +277,15 @@ export function fitTextToView(
       ),
     };
   }
+  const within = (at: number, size: number, from: number, span: number) =>
+    Math.max(from, Math.min(at, from + span - size));
   return {
     ...fitted,
-    x: view.x + (view.width - fitted.width) / 2,
-    y: view.y + (view.height - fitted.height) / 2,
+    x: inPlace
+      ? within(o.x, fitted.width, view.x, view.width)
+      : view.x + (view.width - fitted.width) / 2,
+    y: inPlace
+      ? within(o.y, fitted.height, view.y, view.height)
+      : view.y + (view.height - fitted.height) / 2,
   };
 }

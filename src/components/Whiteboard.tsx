@@ -220,6 +220,33 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       return e.center();
     return e.screenPoint({ x: p.x - rect.left, y: p.y - rect.top });
   };
+  // The board area in view, clear of the floating header and toolbar and of the board panel.
+  const visibleBoardArea = (e: Engine) => {
+    const surface = host.current!.getBoundingClientRect(),
+      panel = window.document.querySelector('.launcher')?.getBoundingClientRect();
+    const inset = { left: 32, top: 84, right: 32, bottom: 124 };
+    if (panel?.width && panel.height) {
+      const upright = panel.height > panel.width;
+      const near = upright
+        ? panel.left + panel.right < surface.left + surface.right
+        : panel.top + panel.bottom < surface.top + surface.bottom;
+      const cover = upright
+        ? near
+          ? panel.right - surface.left
+          : surface.right - panel.left
+        : near
+          ? panel.bottom - surface.top
+          : surface.bottom - panel.top;
+      inset[upright ? (near ? 'left' : 'right') : near ? 'top' : 'bottom'] += Math.max(0, cover);
+    }
+    const from = e.screenPoint({ x: inset.left, y: inset.top }),
+      to = e.screenPoint({ x: surface.width - inset.right, y: surface.height - inset.bottom });
+    return {
+      ...from,
+      width: Math.max(160 / e.camera.zoom, to.x - from.x),
+      height: Math.max(80 / e.camera.zoom, to.y - from.y),
+    };
+  };
   const pasteTarget = () => {
     // Only an explicit insertion target captures a paste; selection alone does not.
     const target = galleryTarget.current;
@@ -1494,35 +1521,10 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         fontSize: url ? 22 : lastTextSize.current!,
         ...(url ? { url } : {}),
       };
-      // Keep clear of the floating header and toolbar, and of the board panel's edge.
-      const surface = host.current!.getBoundingClientRect(),
-        panel = window.document.querySelector('.launcher')?.getBoundingClientRect();
-      const inset = { left: 32, top: 84, right: 32, bottom: 124 };
-      if (panel?.width && panel.height) {
-        const upright = panel.height > panel.width;
-        const near = upright
-          ? panel.left + panel.right < surface.left + surface.right
-          : panel.top + panel.bottom < surface.top + surface.bottom;
-        const cover = upright
-          ? near
-            ? panel.right - surface.left
-            : surface.right - panel.left
-          : near
-            ? panel.bottom - surface.top
-            : surface.bottom - panel.top;
-        inset[upright ? (near ? 'left' : 'right') : near ? 'top' : 'bottom'] += Math.max(0, cover);
-      }
-      const from = e.screenPoint({ x: inset.left, y: inset.top }),
-        to = e.screenPoint({
-          x: surface.width - inset.right,
-          y: surface.height - inset.bottom,
-        });
-      const view = {
-        ...from,
-        width: Math.max(160 / e.camera.zoom, to.x - from.x),
-        height: Math.max(80 / e.camera.zoom, to.y - from.y),
-      };
-      e.apply({ upserts: [url ? fitTextObject(o) : fitTextToView(o, view)], deleted: [] });
+      e.apply({
+        upserts: [url ? fitTextObject(o) : fitTextToView(o, visibleBoardArea(e))],
+        deleted: [],
+      });
       e.setSelection([o.id]);
       if (url) enrichLink(o, e);
     };
@@ -2549,8 +2551,30 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           maxLength={100000}
           value={draft}
           onChange={(e) => {
-            if (editingSession.current) editingSession.current.draft = e.target.value;
-            setDraft(e.target.value);
+            const session = editingSession.current,
+              value = e.target.value;
+            if (session) {
+              session.draft = value;
+              // Text pasted into free text can run far off screen on one line;
+              // wrap it into view the way a paste onto the board is.
+              if (
+                engine.current &&
+                session.object.type === 'text' &&
+                !session.object.textBox &&
+                (e.nativeEvent as InputEvent).inputType === 'insertFromPaste'
+              ) {
+                const fitted = fitTextToView(
+                  { ...session.object, text: value },
+                  visibleBoardArea(engine.current),
+                  true,
+                );
+                if (fitted.textBox) {
+                  session.object = { ...fitted, text: session.object.text };
+                  setEditing(session.object);
+                }
+              }
+            }
+            setDraft(value);
           }}
           onBlur={(event) => {
             if (!toolsRef.current?.contains(event.relatedTarget)) finishEdit();
