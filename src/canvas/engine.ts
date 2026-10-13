@@ -119,6 +119,8 @@ type Gesture = {
   highlightPath?: Point[];
   highlightSize?: number;
   arrowDraft?: CanvasObject;
+  arrowPointer?: Point;
+  clickToPlace?: boolean;
   arrowIndex?: number;
   arrowPoints?: Point[];
   start: Point;
@@ -468,7 +470,79 @@ export class Engine {
   beginOverlayPointer(e: PointerEvent) {
     this.down(e, true);
   }
+  get canOpenQuickTools() {
+    return !this.gesture && !this.editingId;
+  }
+  private beginArrow(w: Point, p: Point, selectDraft = true) {
+    const draft = arrowFromPoints(
+      {
+        id: uid(),
+        type: 'arrow',
+        x: w.x,
+        y: w.y,
+        width: 1,
+        height: 1,
+        z: this.topZ() + 1,
+        color: '#333333',
+        fontSize: 18,
+      },
+      [w, { x: w.x + 160 / this.camera.zoom, y: w.y }],
+    );
+    this.preview(draft);
+    this.setSelection(selectDraft ? [draft.id] : []);
+    this.gesture = {
+      mode: 'drawArrow',
+      start: p,
+      world: w,
+      camera: { ...this.camera },
+      original: [],
+      arrowDraft: draft,
+      arrowPointer: p,
+    };
+  }
+  private updateArrowPreview(shift: boolean, ctrl: boolean) {
+    const g = this.gesture;
+    if (!g?.arrowPointer || (g.mode !== 'drawArrow' && g.mode !== 'arrowPoint')) return;
+    const end = this.screenPoint(g.arrowPointer);
+    const index = g.arrowIndex ?? 1;
+    const anchor = g.mode === 'drawArrow' ? g.world : g.arrowPoints![index === 0 ? 1 : index - 1];
+    if (ctrl) end.x = anchor.x;
+    else if (shift) end.y = anchor.y;
+    if (g.mode === 'drawArrow') this.preview(arrowFromPoints(g.arrowDraft!, [anchor, end]));
+    else {
+      const points = g.arrowPoints!.map((p) => ({ ...p }));
+      points[index] = end;
+      const original = arrowPoints(g.original[0]).map((p) => localToWorld(g.original[0], p));
+      g.changed =
+        points.length !== original.length ||
+        points.some((p, i) => Math.hypot(p.x - original[i].x, p.y - original[i].y) > 1e-8);
+      this.preview(arrowFromPoints(g.original[0], points));
+    }
+    this.invalidate();
+  }
+  beginQuickArrow(anchor: Point, pointer: Point) {
+    this.cancel();
+    this.stopCameraAnimation();
+    this.setTool('arrow');
+    this.callbacks.tool?.('arrow');
+    this.beginArrow(anchor, pointer, false);
+    this.gesture!.clickToPlace = true;
+    this.preview(arrowFromPoints(this.gesture!.arrowDraft!, [anchor, this.screenPoint(pointer)]));
+    this.invalidate();
+  }
   private down = (e: PointerEvent, overlay = false) => {
+    if (this.gesture?.clickToPlace) {
+      e.preventDefault();
+      if (e.button === 0) {
+        this.move(e);
+        this.gesture.clickToPlace = false;
+        this.up(e);
+      } else if (e.button === 2) {
+        this.secondaryContextHandled = true;
+        this.cancel();
+      }
+      return;
+    }
     if ((!overlay && e.target !== this.app.canvas) || e.button > 2 || this.gesture) return;
     e.preventDefault();
     this.stopCameraAnimation();
@@ -499,30 +573,7 @@ export class Engine {
       };
       this.updateCursor();
     } else if (this.tool === 'arrow') {
-      const draft = arrowFromPoints(
-        {
-          id: uid(),
-          type: 'arrow',
-          x: w.x,
-          y: w.y,
-          width: 1,
-          height: 1,
-          z: this.topZ() + 1,
-          color: '#333333',
-          fontSize: 18,
-        },
-        [w, { x: w.x + 160 / this.camera.zoom, y: w.y }],
-      );
-      this.preview(draft);
-      this.setSelection([draft.id]);
-      this.gesture = {
-        mode: 'drawArrow',
-        start: p,
-        world: w,
-        camera: { ...this.camera },
-        original: [],
-        arrowDraft: draft,
-      };
+      this.beginArrow(w, p);
     } else if (this.tool === 'highlight') {
       const draft = highlightFromPoints(
         {
@@ -556,7 +607,7 @@ export class Engine {
       const bounds = boundsOf(this.selected),
         additive = e.shiftKey || e.ctrlKey || e.metaKey;
       const resize = !e.ctrlKey && !e.metaKey && this.resizeCorner(p);
-      const arrowHandle = !additive && this.arrowHandle(p);
+      const arrowHandle = !e.metaKey && this.arrowHandle(p);
       if (arrowHandle) {
         const o = this.selected[0],
           points = arrowPoints(o).map((q) => localToWorld(o, q));
@@ -569,7 +620,9 @@ export class Engine {
           original: [{ ...o }],
           arrowIndex: arrowHandle.index,
           arrowPoints: points,
+          arrowPointer: p,
         };
+        if (e.shiftKey || e.ctrlKey) this.updateArrowPreview(e.shiftKey, e.ctrlKey);
       } else if (resize)
         this.gesture = {
           mode: resize === 'rotate' ? 'rotate' : 'resize',
@@ -715,14 +768,9 @@ export class Engine {
       else if (Math.hypot(w.x - last.x, w.y - last.y) * this.camera.zoom >= 1.5) path.push(w);
       this.preview(highlightFromPoints(g.highlightDraft!, path));
       this.invalidate();
-    } else if (g.mode === 'drawArrow') {
-      this.preview(arrowFromPoints(g.arrowDraft!, [g.world, this.screenPoint(p)]));
-      this.invalidate();
-    } else if (g.mode === 'arrowPoint') {
-      const points = g.arrowPoints!.map((q) => ({ ...q }));
-      points[g.arrowIndex!] = this.screenPoint(p);
-      this.preview(arrowFromPoints(g.original[0], points));
-      this.invalidate();
+    } else if (g.mode === 'drawArrow' || g.mode === 'arrowPoint') {
+      g.arrowPointer = p;
+      this.updateArrowPreview(e.shiftKey, e.ctrlKey);
     } else if (g.mode === 'pan') {
       if (g.secondary && !g.changed) return;
       this.camera = { ...g.camera, x: g.camera.x + dx, y: g.camera.y + dy };
@@ -824,7 +872,11 @@ export class Engine {
   };
   private up = (e: PointerEvent) => {
     const g = this.gesture;
-    if (!g) return;
+    if (!g || g.clickToPlace) return;
+    if ((g.mode === 'drawArrow' || g.mode === 'arrowPoint') && g.changed) {
+      g.arrowPointer = this.point(e);
+      this.updateArrowPreview(e.shiftKey, e.ctrlKey);
+    }
     this.snapGuides = [];
     this.gesture = null;
     this.updateCursor();
@@ -925,6 +977,10 @@ export class Engine {
       }
       for (const o of g.original) this.preview(o);
       if (g.mode === 'pan') this.camera = g.camera;
+      if (g.clickToPlace) {
+        this.setTool('select');
+        this.callbacks.tool?.('select');
+      }
       this.invalidate();
     }
   };
@@ -984,10 +1040,28 @@ export class Engine {
       )
     )
       return;
+    if (this.gesture?.arrowPointer && ['Shift', 'Control'].includes(e.key)) {
+      this.updateArrowPreview(e.shiftKey, e.ctrlKey);
+      return;
+    }
     if (e.key === 'Escape' && this.gesture) {
       e.preventDefault();
       e.stopImmediatePropagation();
       this.cancel();
+      return;
+    }
+    if (
+      this.gesture?.clickToPlace &&
+      (e.key === 'Delete' ||
+        e.key === 'Backspace' ||
+        ((e.ctrlKey || e.metaKey) &&
+          ['z', 'y', 'a', 'c', 'x', 'd', 'g'].includes(e.key.toLowerCase())))
+    ) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      // A floating preview is not yet a board object. Undo/Delete cancel it;
+      // clipboard and selection commands must not publish or transform it.
+      if (['z', 'Delete', 'Backspace'].includes(e.key)) this.cancel();
       return;
     }
     if (e.code === 'Space') {
@@ -997,6 +1071,7 @@ export class Engine {
     }
   };
   private keyUp = (e: KeyboardEvent) => {
+    if (['Shift', 'Control'].includes(e.key)) this.updateArrowPreview(e.shiftKey, e.ctrlKey);
     if (e.code === 'Space') {
       this.space = false;
       this.updateCursor();
@@ -1048,6 +1123,7 @@ export class Engine {
     this.callbacks.context({ x: e.clientX, y: e.clientY });
   }
   setTool(tool: Tool) {
+    if (this.gesture?.clickToPlace) this.cancel();
     this.tool = tool;
     this.pointer = null;
     this.updateCursor();

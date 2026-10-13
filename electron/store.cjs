@@ -57,6 +57,34 @@ function cameraValue(c) {
     throw Error('Invalid camera');
   return { x: c.x, y: c.y, zoom: c.zoom };
 }
+function backgroundAppearanceValue(value = {}) {
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    throw Error('Invalid background appearance');
+  const result = {
+    blur: 0,
+    brightness: 100,
+    saturation: 100,
+    sharpness: 0,
+    filter: 'none',
+    ...value,
+  };
+  for (const [key, max] of [
+    ['blur', 40],
+    ['brightness', 200],
+    ['saturation', 200],
+    ['sharpness', 100],
+  ])
+    if (!number(result[key], 0, max)) throw Error('Invalid background ' + key);
+  if (!['none', 'sepia', 'mono', 'warm', 'cool'].includes(result.filter))
+    throw Error('Invalid background filter');
+  return {
+    blur: result.blur,
+    brightness: result.brightness,
+    saturation: result.saturation,
+    sharpness: result.sharpness,
+    filter: result.filter,
+  };
+}
 function pdfComposerValue(value) {
   if (!value || !Array.isArray(value.sources) || !Array.isArray(value.columns))
     throw Error('Invalid PDF composer sources or columns');
@@ -182,7 +210,12 @@ function objectValue(o) {
     z: o.z,
   };
   if (o.frameLink !== undefined) {
-    if (o.type !== 'frame' || !o.frameLink || o.gallery !== undefined || o.pdfComposer !== undefined)
+    if (
+      o.type !== 'frame' ||
+      !o.frameLink ||
+      o.gallery !== undefined ||
+      o.pdfComposer !== undefined
+    )
       throw Error('Invalid frame link');
     result.frameLink = {
       boardId: idValue(o.frameLink.boardId),
@@ -457,6 +490,20 @@ class Store {
         .some((column) => column.name === 'showInitial')
     )
       this.db.exec('ALTER TABLE boards ADD COLUMN showInitial INTEGER NOT NULL DEFAULT 1');
+    if (
+      !this.db
+        .prepare('PRAGMA table_info(boards)')
+        .all()
+        .some((column) => column.name === 'backgroundAssetId')
+    )
+      this.db.exec('ALTER TABLE boards ADD COLUMN backgroundAssetId TEXT DEFAULT NULL');
+    if (
+      !this.db
+        .prepare('PRAGMA table_info(boards)')
+        .all()
+        .some((column) => column.name === 'backgroundAppearance')
+    )
+      this.db.exec("ALTER TABLE boards ADD COLUMN backgroundAppearance TEXT NOT NULL DEFAULT '{}'");
     const backup = path.join(root, 'backups', new Date().toISOString().slice(0, 10) + '.sqlite');
     if (!fs.existsSync(backup) && this.db.prepare('SELECT count(*) AS n FROM boards').get().n) {
       try {
@@ -487,10 +534,15 @@ class Store {
     return {
       boards: this.db
         .prepare(
-          'SELECT id,name,icon,color,iconShape,showInitial,folderId,position,trashed,updated FROM boards ORDER BY position',
+          'SELECT id,name,icon,color,iconShape,showInitial,backgroundAssetId,backgroundAppearance,folderId,position,trashed,updated FROM boards ORDER BY position',
         )
         .all()
-        .map((b) => ({ ...b, trashed: !!b.trashed, showInitial: !!b.showInitial })),
+        .map((b) => ({
+          ...b,
+          backgroundAppearance: backgroundAppearanceValue(JSON.parse(b.backgroundAppearance)),
+          trashed: !!b.trashed,
+          showInitial: !!b.showInitial,
+        })),
       folders: this.db.prepare('SELECT * FROM folders ORDER BY position').all(),
       lastBoard:
         this.db.prepare("SELECT value FROM settings WHERE key='lastBoard'").get()?.value || null,
@@ -500,7 +552,12 @@ class Store {
   board(id) {
     const b = this.db.prepare('SELECT * FROM boards WHERE id=?').get(idValue(id));
     if (!b) throw Error('Board not found');
-    return { ...b, trashed: !!b.trashed, showInitial: !!b.showInitial };
+    return {
+      ...b,
+      backgroundAppearance: backgroundAppearanceValue(JSON.parse(b.backgroundAppearance)),
+      trashed: !!b.trashed,
+      showInitial: !!b.showInitial,
+    };
   }
   position() {
     return (
@@ -523,6 +580,8 @@ class Store {
       name: nameValue(name),
       icon: 'none',
       showInitial: true,
+      backgroundAssetId: null,
+      backgroundAppearance: backgroundAppearanceValue(),
       color: 'blue',
       folderId: this.folderId(folderId),
       position: this.position(),
@@ -559,6 +618,19 @@ class Store {
   updateBoard({ id, patch }) {
     const b = this.board(id);
     if (!patch || typeof patch !== 'object') throw Error('Invalid board update');
+    if (patch.backgroundAppearance !== undefined)
+      b.backgroundAppearance = backgroundAppearanceValue(patch.backgroundAppearance);
+    if (patch.backgroundAssetId !== undefined) {
+      const assetId = patch.backgroundAssetId;
+      if (
+        assetId !== null &&
+        (typeof assetId !== 'string' ||
+          !/^[a-f0-9]{64}$/.test(assetId) ||
+          !this.db.prepare("SELECT id FROM assets WHERE id=? AND mime LIKE 'image/%'").get(assetId))
+      )
+        throw Error('Choose a valid image for the board background');
+      b.backgroundAssetId = assetId;
+    }
     if (patch.name !== undefined) b.name = nameValue(patch.name);
     if (patch.icon !== undefined) {
       if (!validIcon(patch.icon)) throw Error('Invalid icon');
@@ -594,7 +666,7 @@ class Store {
     }
     this.db
       .prepare(
-        'UPDATE boards SET name=?,icon=?,color=?,iconShape=?,showInitial=?,folderId=?,position=?,trashed=?,updated=? WHERE id=?',
+        'UPDATE boards SET name=?,icon=?,color=?,iconShape=?,showInitial=?,backgroundAssetId=?,backgroundAppearance=?,folderId=?,position=?,trashed=?,updated=? WHERE id=?',
       )
       .run(
         b.name,
@@ -602,6 +674,8 @@ class Store {
         b.color,
         b.iconShape,
         +b.showInitial,
+        b.backgroundAssetId,
+        JSON.stringify(b.backgroundAppearance),
         b.folderId,
         b.position,
         +b.trashed,
@@ -816,12 +890,16 @@ class Store {
           folderId: original.folderId,
         });
       this.db
-        .prepare('UPDATE boards SET icon=?,color=?,iconShape=?,showInitial=?,camera=? WHERE id=?')
+        .prepare(
+          'UPDATE boards SET icon=?,color=?,iconShape=?,showInitial=?,backgroundAssetId=?,backgroundAppearance=?,camera=? WHERE id=?',
+        )
         .run(
           original.icon,
           original.color,
           original.iconShape,
           +original.showInitial,
+          original.backgroundAssetId,
+          JSON.stringify(original.backgroundAppearance),
           original.camera,
           copy.id,
         );
@@ -834,6 +912,8 @@ class Store {
         color: original.color,
         iconShape: original.iconShape,
         showInitial: original.showInitial,
+        backgroundAssetId: original.backgroundAssetId,
+        backgroundAppearance: original.backgroundAppearance,
       };
     });
   }
@@ -1008,7 +1088,11 @@ class Store {
     const d = this.loadBoard({ id }),
       ids = [
         ...new Set(
-          [iconAssetId(d.board.icon), ...d.objects.flatMap(objectAssetIds)].filter(Boolean),
+          [
+            iconAssetId(d.board.icon),
+            d.board.backgroundAssetId,
+            ...d.objects.flatMap(objectAssetIds),
+          ].filter(Boolean),
         ),
       ],
       assets = ids.map((id) => this.db.prepare('SELECT * FROM assets WHERE id=?').get(id));
@@ -1025,6 +1109,8 @@ class Store {
           color: d.board.color,
           iconShape: d.board.iconShape,
           showInitial: d.board.showInitial,
+          backgroundAssetId: d.board.backgroundAssetId,
+          backgroundAppearance: d.board.backgroundAppearance,
           objects: d.objects,
           camera: d.camera,
           assets,
@@ -1090,6 +1176,7 @@ class Store {
     }
     if (
       (iconAssetId(m.icon) && !assetIds.has(iconAssetId(m.icon))) ||
+      (m.backgroundAssetId != null && !assetIds.has(m.backgroundAssetId)) ||
       objects.some((o) => objectAssetIds(o).some((id) => !assetIds.has(id)))
     )
       throw Error('Missing media in portable board');
@@ -1114,6 +1201,8 @@ class Store {
           color: m.color || 'blue',
           iconShape: m.iconShape || 'rounded',
           showInitial: m.showInitial ?? true,
+          backgroundAssetId: m.backgroundAssetId ?? null,
+          backgroundAppearance: m.backgroundAppearance ?? {},
         },
       });
       this.patchBoardInner(b.id, objects, m.camera);

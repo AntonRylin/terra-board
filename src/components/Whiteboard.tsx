@@ -10,6 +10,9 @@ import { convertibleFile, needsOfficeConversion } from '../canvas/pdf-conversion
 import { convertComposerInputs } from '../canvas/document-convert';
 import ListEditOutline from './ListEditOutline';
 import CanvasToolbar from './CanvasToolbar';
+import RadialMenu from './RadialMenu';
+import { BackgroundImage } from './BoardBackground';
+import type { BackgroundAppearance } from '../model';
 import SelectionToolbar from './SelectionToolbar';
 import FrameUsages from './FrameUsages';
 import { frameReference, type FrameReference } from '../canvas/frame-usages';
@@ -125,6 +128,7 @@ export interface WhiteboardHandle {
   fit: () => void;
 }
 interface Props {
+  backgroundPreview?: BackgroundAppearance;
   onOpenFrame: (boardId: string, frameId: string) => void;
   onReady: () => void;
   searchTarget: { objectId: string } | null;
@@ -146,7 +150,7 @@ const tools: { id: Tool & ToolbarId; label: string; icon: typeof Type; key: stri
 ];
 const colors = ['#f8efd4', '#e4eee8', '#e4ecfa', '#efe5f1', '#f4e4e5', '#ffffff', '#000000'];
 const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
-  { document: doc, onSave, onError, onReady, theme, searchTarget, onOpenFrame },
+  { document: doc, onSave, onError, onReady, theme, searchTarget, onOpenFrame, backgroundPreview },
   ref,
 ) {
   const external = useRef(false);
@@ -621,7 +625,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     refreshDocument(e.objects.get(id) || copy, e);
   };
   const listViewKey = useRef('');
-  const createList = () => {
+  const createList = (point?: { x: number; y: number }) => {
     finishEdit();
     const e = engine.current;
     if (!e) return;
@@ -634,8 +638,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         { id: uid(), text: 'Item 1', checked: false },
         { id: uid(), text: 'Item 2', checked: false },
       ],
-      x: p.x - 160,
-      y: p.y - listHeight(2) / 2,
+      x: point?.x ?? p.x - 160,
+      y: point?.y ?? p.y - listHeight(2) / 2,
       width: 320,
       height: listHeight(2),
       z: e.topZ() + 1,
@@ -694,7 +698,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       ? { galleryId: objects[0].id }
       : null;
   };
-  const createGallery = () => {
+  const createGallery = (point?: { x: number; y: number }) => {
     finishEdit();
     const e = engine.current;
     if (!e) return;
@@ -705,8 +709,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       text: 'Gallery',
       fontSize: 14,
       color: '#66758a',
-      x: p.x - 216,
-      y: p.y - 90,
+      x: point?.x ?? p.x - 216,
+      y: point?.y ?? p.y - 90,
       width: 432,
       height: 180,
       z: e.topZ() + 1,
@@ -795,8 +799,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   };
   const error = (e: unknown) => onError(e instanceof Error ? e.message : String(e));
   const selectTool = (value: Tool) => {
-    setTool(value);
     engine.current?.setTool(value);
+    setTool(value);
   };
   const startEdit = (o: CanvasObject) => {
     if (o.frameLink) return;
@@ -1854,10 +1858,11 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           {
             label: 'Find usages',
             icon: <Frame />,
-            action: () => setUsageTarget({
-              source: frameReference(doc.board.id, selected[0]),
-              name: selected[0].text || 'Untitled frame',
-            }),
+            action: () =>
+              setUsageTarget({
+                source: frameReference(doc.board.id, selected[0]),
+                name: selected[0].text || 'Untitled frame',
+              }),
           },
           {
             label: 'Copy frame link',
@@ -2099,11 +2104,19 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           hoverImage(null);
       }}
     >
+      {doc.board.backgroundAssetId && (
+        <BackgroundImage
+          key={doc.board.backgroundAssetId}
+          assetId={doc.board.backgroundAssetId}
+          appearance={backgroundPreview || doc.board.backgroundAppearance}
+        />
+      )}
       <div
         ref={host}
         tabIndex={0}
         aria-label="Whiteboard"
         className={'canvas-surface tool-' + tool}
+        style={doc.board.backgroundAssetId ? { backgroundImage: 'none' } : undefined}
         onDragOver={(e) => {
           if (e.dataTransfer.types.includes('Files')) {
             e.preventDefault();
@@ -2849,6 +2862,35 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           onCancel={() => finishCrop(true)}
         />
       )}
+      <RadialMenu
+        engine={engine}
+        host={host}
+        tools={[
+          ...tools.map(({ id, label, icon }) => ({
+            id,
+            label,
+            icon,
+            action: () => selectTool(id),
+          })),
+          { id: 'list', label: 'List', icon: ListTodo, action: createList },
+          { id: 'media', label: 'Files', icon: ImagePlus, action: importMedia },
+          { id: 'gallery', label: 'Gallery', icon: Images, action: createGallery },
+        ]}
+        onChoose={(id, anchor, pointer) => {
+          const e = engine.current,
+            surface = host.current;
+          if (!e || !surface) return;
+          setMenu(null);
+          if (id === 'arrow') {
+            const rect = surface.getBoundingClientRect();
+            e.beginQuickArrow(anchor, { x: pointer.x - rect.left, y: pointer.y - rect.top });
+          } else if (id === 'list') createList(anchor);
+          else if (id === 'gallery') createGallery(anchor);
+          else if (id === 'media') void performImport(pickMedia, anchor);
+          else if (id === 'select' || id === 'hand' || id === 'highlight') selectTool(id);
+          else create(id, anchor);
+        }}
+      />
       <CanvasToolbar
         tools={[
           ...tools.map(({ id, label, icon }) => ({

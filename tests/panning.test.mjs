@@ -7,6 +7,220 @@ import vm from 'node:vm';
 import ts from 'typescript';
 const require = createRequire(import.meta.url);
 import { localToWorld } from '../src/canvas/transform.ts';
+import { arrowPoints, arrowFromPoints } from '../src/canvas/arrows.ts';
+
+test('existing arrow endpoints align to the opposite endpoint, even when rotated or modifiers are held before grabbing', () => {
+  for (const rotation of [0, 35])
+    for (const index of [0, 1])
+      for (const ctrlKey of [false, true]) {
+        const f = fixture();
+        f.engine.camera = { x: 30, y: 50, zoom: 2 };
+        const o = {
+          ...arrowFromPoints({ id: 'edit-arrow', type: 'arrow', z: 1 }, [
+            { x: 100, y: 100 },
+            { x: 300, y: 200 },
+          ]),
+          rotation,
+        };
+        f.engine.apply({ upserts: [o], deleted: [] });
+        f.engine.setSelection([o.id]);
+        const original = arrowPoints(o).map((p) => localToWorld(o, p));
+        const screen = (p) => ({ x: p.x * 2 + 30, y: p.y * 2 + 50 });
+        const start = screen(original[index]);
+        const modifiers = { ctrlKey, shiftKey: !ctrlKey };
+        f.engine.down({ ...f.event(start.x, start.y, 0), ...modifiers });
+        assert.equal(f.engine.gesture?.mode, 'arrowPoint');
+        f.engine.move({ ...f.event(start.x - 80, start.y + 140, 0), ...modifiers });
+        f.engine.up({ ...f.event(start.x - 80, start.y + 140, 0), ...modifiers });
+        const updated = f.engine.objects.get(o.id),
+          points = arrowPoints(updated).map((p) => localToWorld(updated, p));
+        assert.ok(
+          Math.abs(points[index][ctrlKey ? 'x' : 'y'] - original[1 - index][ctrlKey ? 'x' : 'y']) <
+            1e-8,
+        );
+        assert.ok(
+          Math.hypot(
+            points[1 - index].x - original[1 - index].x,
+            points[1 - index].y - original[1 - index].y,
+          ) < 1e-8,
+          'fixed endpoint stays put',
+        );
+        f.engine.undo();
+        assert.equal(JSON.stringify(f.engine.objects.get(o.id)), JSON.stringify(o));
+      }
+});
+
+test('existing arrow point modifiers apply without pointer movement and restore free movement on release', () => {
+  const f = fixture();
+  f.engine.camera = { x: 0, y: 0, zoom: 1 };
+  const o = arrowFromPoints({ id: 'edit-arrow', type: 'arrow', z: 1 }, [
+    { x: 100, y: 100 },
+    { x: 300, y: 200 },
+  ]);
+  f.engine.apply({ upserts: [o], deleted: [] });
+  f.engine.setSelection([o.id]);
+  const end = () => {
+    const a = f.engine.objects.get(o.id);
+    return localToWorld(a, arrowPoints(a)[1]);
+  };
+  const modifier = (key, shiftKey, ctrlKey) => ({ key, shiftKey, ctrlKey });
+  f.engine.down(f.event(300, 200, 0));
+  f.engine.keyDown(modifier('Shift', true, false));
+  assert.equal(end().y, 100);
+  f.engine.keyDown(modifier('Control', true, true));
+  assert.equal(end().x, 100);
+  f.engine.keyUp(modifier('Control', true, false));
+  assert.equal(end().y, 100);
+  f.engine.keyUp(modifier('Shift', false, false));
+  assert.equal(end().x, 300);
+  assert.equal(end().y, 200);
+  f.engine.keyDown(modifier('Shift', true, false));
+  f.engine.up({ ...f.event(300, 200, 0), shiftKey: true });
+  assert.equal(end().y, 100, 'key-only constraint is committed');
+  f.engine.undo();
+  assert.equal(end().y, 200);
+});
+
+test('inner arrow points align to their preceding neighbor and Escape restores all points', () => {
+  const f = fixture();
+  f.engine.camera = { x: 0, y: 0, zoom: 1 };
+  const o = arrowFromPoints({ id: 'bend', type: 'arrow', z: 1 }, [
+    { x: 100, y: 100 },
+    { x: 200, y: 200 },
+    { x: 400, y: 100 },
+  ]);
+  f.engine.apply({ upserts: [o], deleted: [] });
+  f.engine.setSelection([o.id]);
+  f.engine.down(f.event(200, 200, 0));
+  f.engine.move({ ...f.event(260, 280, 0), ctrlKey: true });
+  const updated = f.engine.objects.get(o.id),
+    points = arrowPoints(updated).map((p) => localToWorld(updated, p));
+  assert.equal(points[1].x, 100);
+  assert.equal(points[1].y, 280);
+  assert.equal(points[2].x, 400);
+  f.engine.cancel();
+  assert.equal(JSON.stringify(f.engine.objects.get(o.id)), JSON.stringify(o));
+});
+
+test('arrow modifiers constrain from its anchor and update immediately on press and release', () => {
+  const f = fixture();
+  f.engine.camera = { x: 40, y: 60, zoom: 2 };
+  f.engine.beginQuickArrow({ x: 100, y: 120 }, { x: 240, y: 300 });
+  const endpoints = () => {
+    const o = f.engine.all[0];
+    return arrowPoints(o).map((p) => localToWorld(o, p));
+  };
+  const modifier = (key, shiftKey, ctrlKey) => ({
+    key,
+    shiftKey,
+    ctrlKey,
+    preventDefault() {},
+    stopImmediatePropagation() {},
+  });
+  for (const [x, y] of [
+    [640, 460],
+    [80, 100],
+  ]) {
+    f.engine.move(f.event(x, y, 0));
+    f.engine.keyDown(modifier('Shift', true, false));
+    assert.equal(endpoints()[1].y, 120);
+    assert.equal(endpoints()[1].x, (x - 40) / 2);
+    f.engine.keyDown(modifier('Control', true, true));
+    assert.equal(endpoints()[1].x, 100, 'Ctrl wins when both keys are held');
+    assert.equal(endpoints()[1].y, (y - 60) / 2);
+    f.engine.keyUp(modifier('Control', true, false));
+    assert.equal(endpoints()[1].y, 120, 'releasing Ctrl restores held Shift');
+    f.engine.keyUp(modifier('Shift', false, false));
+    assert.equal(endpoints()[1].x, (x - 40) / 2);
+    assert.equal(endpoints()[1].y, (y - 60) / 2);
+    assert.equal(endpoints()[0].x, 100);
+    assert.equal(endpoints()[0].y, 120);
+  }
+  f.engine.down({ ...f.event(80, 100, 0), ctrlKey: true });
+  assert.equal(endpoints()[1].x, 100, 'click commits constrained endpoint');
+  assert.equal(f.edits.length, 1);
+  f.engine.undo();
+  assert.equal(f.engine.all.length, 0);
+});
+
+test('Shift and Ctrl constrain ordinary dragged arrows through release', () => {
+  for (const axis of ['horizontal', 'vertical']) {
+    const f = fixture('arrow');
+    f.engine.camera = { x: 0, y: 0, zoom: 1 };
+    f.engine.down(f.event(100, 120, 0));
+    const constrained = {
+      ...f.event(20, 30, 0),
+      shiftKey: axis === 'horizontal',
+      ctrlKey: axis === 'vertical',
+    };
+    f.engine.move(constrained);
+    f.engine.up(constrained);
+    const o = f.engine.all[0],
+      p = arrowPoints(o).map((p) => localToWorld(o, p));
+    assert.equal(p[1].x, axis === 'horizontal' ? 20 : 100);
+    assert.equal(p[1].y, axis === 'horizontal' ? 120 : 30);
+    assert.equal(f.edits.length, 1);
+  }
+});
+
+test('radial arrow stays anchored through hover, commits on left click and undoes in one step', () => {
+  const f = fixture();
+  f.engine.camera = { x: 40, y: 60, zoom: 2 };
+  assert.equal(typeof f.engine.beginQuickArrow, 'function');
+  f.engine.beginQuickArrow({ x: 100, y: 120 }, { x: 140, y: 160 });
+  assert.equal(
+    f.engine.selected.length,
+    0,
+    'unfinished arrow must not expose saved-object controls',
+  );
+  f.engine.move(f.event(640, 460, 0));
+  f.engine.up(f.event(640, 460, 0));
+  assert.equal(f.edits.length, 0, 'hover and unrelated release do not persist a draft');
+  const draft = f.engine.all[0];
+  const points = arrowPoints(draft).map((p) => localToWorld(draft, p));
+  assert.equal(points[0].x, 100);
+  assert.equal(points[0].y, 120);
+  assert.equal(points[1].x, 300);
+  assert.equal(points[1].y, 200);
+  f.engine.down(f.event(680, 500, 0));
+  f.engine.up(f.event(680, 500, 0));
+  assert.equal(f.edits.length, 1);
+  assert.equal(f.engine.tool, 'select');
+  f.engine.undo();
+  assert.equal(f.engine.all.length, 0);
+  f.engine.redo();
+  assert.equal(f.engine.all.length, 1);
+});
+
+test('radial arrow cancellation and tool changes discard the unsaved preview', () => {
+  for (const cancel of [
+    (f) => f.engine.cancel(),
+    (f) => f.engine.blur(),
+    (f) => f.engine.setTool('note'),
+    (f) => f.engine.down(f.event(300, 200, 2)),
+  ]) {
+    const f = fixture();
+    assert.equal(typeof f.engine.beginQuickArrow, 'function');
+    f.engine.beginQuickArrow({ x: 100, y: 120 }, { x: 140, y: 160 });
+    cancel(f);
+    assert.equal(f.engine.all.length, 0);
+    assert.equal(f.edits.length, 0);
+    assert.equal(f.engine.history.canUndo, false);
+  }
+});
+
+test('undo while placing a radial arrow cancels only its unsaved preview', () => {
+  const f = fixture();
+  f.engine.apply({
+    upserts: [{ id: 'keep', type: 'rect', x: 10, y: 20, width: 50, height: 50, z: 1 }],
+    deleted: [],
+  });
+  f.engine.beginQuickArrow({ x: 100, y: 120 }, { x: 140, y: 160 });
+  f.engine.keyDown({ key: 'z', ctrlKey: true, preventDefault() {}, stopImmediatePropagation() {} });
+  assert.equal(f.engine.all.length, 1);
+  assert.equal(f.engine.all[0].id, 'keep');
+  assert.equal(f.edits.length, 1);
+});
 
 test('an accepted external lock immediately protects the open board', () => {
   const f = fixture();

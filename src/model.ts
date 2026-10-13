@@ -111,7 +111,16 @@ export interface Camera {
   y: number;
   zoom: number;
 }
+export interface BackgroundAppearance {
+  blur: number;
+  brightness: number;
+  saturation: number;
+  sharpness: number;
+  filter: 'none' | 'sepia' | 'mono' | 'warm' | 'cool';
+}
 export interface Board {
+  backgroundAppearance?: BackgroundAppearance;
+  backgroundAssetId?: string | null;
   showInitial?: boolean;
   iconShape?: 'rounded' | 'circle';
   id: string;

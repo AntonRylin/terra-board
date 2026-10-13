@@ -28,8 +28,16 @@ import {
   ImagePlus,
   Folder as FolderIcon,
 } from 'lucide-react';
-import type { Board, Document, Folder, Library } from './model';
-import { desktop, exportPortable, importPortable, invoke } from './bridge';
+import type { Board, Document, Folder, Library, BackgroundAppearance } from './model';
+import BoardBackgroundSettings, { defaultBackgroundAppearance } from './components/BoardBackground';
+import {
+  chooseFiles,
+  importFiles,
+  desktop,
+  exportPortable,
+  importPortable,
+  invoke,
+} from './bridge';
 import type { SaveState } from './canvas/save-queue';
 import Launcher, { AppIcon } from './components/Launcher';
 import LibrarySearch from './components/LibrarySearch';
@@ -51,6 +59,7 @@ type ModalState = {
     | 'rename-board'
     | 'rename-folder'
     | 'icon'
+    | 'background'
     | 'move'
     | 'search'
     | 'trash'
@@ -124,6 +133,9 @@ export default function App() {
     [color, setColor] = useState('blue'),
     [iconShape, setIconShape] = useState<'rounded' | 'circle'>('rounded'),
     [showInitial, setShowInitial] = useState(true),
+    [backgroundAppearance, setBackgroundAppearance] = useState<BackgroundAppearance>(
+      defaultBackgroundAppearance,
+    ),
     [destination, setDestination] = useState(''),
     [search, setSearch] = useState(''),
     [saveState, setSaveState] = useState<SaveState>('saved'),
@@ -499,6 +511,39 @@ export default function App() {
             ask({ kind: 'icon', id: b.id });
           },
         },
+        {
+          label: b.backgroundAssetId ? 'Change background image…' : 'Set background image…',
+          icon: <ImagePlus />,
+          action: () =>
+            run(async () => {
+              const [file] = await chooseFiles('.png,.jpg,.jpeg,.webp,.gif,.avif,.tif,.tiff');
+              if (!file) return;
+              const [asset] = await importFiles([file]);
+              await change(b.id, { backgroundAssetId: asset.id });
+              notify('Board background updated');
+            }),
+        },
+        ...(b.backgroundAssetId
+          ? [
+              {
+                label: 'Adjust background…',
+                icon: <Palette />,
+                action: () => {
+                  setBackgroundAppearance(b.backgroundAppearance || defaultBackgroundAppearance);
+                  ask({ kind: 'background', id: b.id });
+                },
+              },
+              {
+                label: 'Remove background image',
+                icon: <Undo2 />,
+                action: () =>
+                  run(async () => {
+                    await change(b.id, { backgroundAssetId: null });
+                    notify('Board background removed');
+                  }),
+              },
+            ]
+          : []),
         { label: 'Duplicate', icon: <Copy />, action: () => duplicate(b.id) },
         {
           label: 'Move to…',
@@ -630,6 +675,7 @@ export default function App() {
           showInitial,
         });
       else if (modal.kind === 'move') await change(modal.id!, { folderId: destination || null });
+      else if (modal.kind === 'background') await change(modal.id!, { backgroundAppearance });
       setModal(null);
     } catch (e) {
       report(String(e));
@@ -643,6 +689,7 @@ export default function App() {
     'rename-board': 'Rename board',
     'rename-folder': 'Rename folder',
     icon: 'Board icon',
+    background: 'Background image',
     move: 'Move board',
     search: 'Search',
     trash: 'Trash',
@@ -800,6 +847,11 @@ export default function App() {
               key={doc.board.id}
               ref={whiteboard}
               document={doc}
+              backgroundPreview={
+                modal?.kind === 'background' && modal.id === doc.board.id
+                  ? backgroundAppearance
+                  : undefined
+              }
               onOpenFrame={(boardId, frameId) => {
                 if (boardId === doc.board.id) setSearchTarget({ boardId, objectId: frameId });
                 else void openBoard(boardId, frameId);
@@ -867,6 +919,7 @@ export default function App() {
                 'rename-board',
                 'rename-folder',
                 'icon',
+                'background',
                 'move',
               ].includes(modal.kind) ? (
                 <form
@@ -885,7 +938,13 @@ export default function App() {
                     }
                   }}
                 >
-                  {modal.kind === 'icon' ? (
+                  {modal.kind === 'background' ? (
+                    <BoardBackgroundSettings
+                      assetId={library.boards.find((b) => b.id === modal.id)!.backgroundAssetId!}
+                      value={backgroundAppearance}
+                      onChange={setBackgroundAppearance}
+                    />
+                  ) : modal.kind === 'icon' ? (
                     <>
                       <BoardIconImage
                         ref={iconImage}
@@ -1075,6 +1134,8 @@ export default function App() {
                       ['Zoom toward pointer', 'Mouse wheel'],
                       ['Fit your board', '0'],
                       ['Draw an arrow', 'A + drag'],
+                      ['Arrow: horizontal / vertical', 'Shift / Ctrl'],
+                      ['Quick tools at cursor', 'Tab'],
                       ['Edit text', 'Double-click'],
                       ['Finish text editing', 'Ctrl Enter'],
                     ].map(([a, b]) => (

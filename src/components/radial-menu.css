@@ -1,0 +1,183 @@
+.radial-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+}
+.radial-menu {
+  position: fixed;
+  width: 280px;
+  height: 330px;
+  transform: translate(-50%, -140px);
+  color: inherit;
+}
+.radial-wheel {
+  position: relative;
+  width: 280px;
+  height: 330px;
+  filter: drop-shadow(0 8px 18px #0002);
+}
+.radial-segments {
+  position: absolute;
+  inset: 0;
+  width: 280px;
+  height: 280px;
+  overflow: visible;
+}
+.radial-segments path {
+  fill: var(--panel);
+  stroke: var(--line);
+  stroke-width: 1;
+}
+.radial-segments path[data-active] {
+  fill: color-mix(in srgb, var(--accent) 20%, var(--panel));
+  stroke: var(--accent);
+}
+.radial-center {
+  position: absolute;
+  left: 85px;
+  top: 85px;
+  width: 110px;
+  height: 110px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 5px;
+  border-radius: 50%;
+  background: var(--paper);
+  box-shadow: 0 0 0 1px var(--line);
+  text-align: center;
+  pointer-events: none;
+}
+.radial-center span {
+  font-size: 12px;
+  font-weight: 600;
+}
+.radial-center small {
+  font-size: 10px;
+  color: var(--muted);
+}
+.radial-tool {
+  position: absolute;
+  width: 70px;
+  height: 60px;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  background: transparent;
+  color: inherit;
+  border: 0;
+  border-radius: 18px;
+  cursor: pointer;
+  padding: 0;
+}
+.radial-tool span {
+  font-size: 10px;
+  white-space: nowrap;
+}
+.radial-tool:hover,
+.radial-tool:focus-visible {
+  background: var(--blue);
+  color: var(--accent);
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.radial-settings.icon-button {
+  position: absolute;
+  left: 120px;
+  top: 284px;
+  width: 40px;
+  height: 40px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 50%;
+}
+.radial-menu.is-editing {
+  width: min(660px, calc(100vw - 32px));
+  height: auto;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 16px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  box-shadow: 0 16px 80px #0003;
+}
+.radial-menu.is-editing .radial-wheel {
+  flex: 0 0 280px;
+}
+.radial-palette {
+  flex: 1;
+  padding: 14px;
+  border-radius: 18px;
+  min-width: 0;
+}
+.radial-palette-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  margin-bottom: 14px;
+}
+.radial-palette-heading strong {
+  font-size: 15px;
+}
+.radial-palette-heading p {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 6px 0 0;
+}
+.radial-choices {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+}
+.radial-choices button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid transparent;
+  padding: 10px 8px;
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font-size: 12px;
+}
+.radial-choices button:hover {
+  background: var(--panel);
+}
+.radial-choices button[aria-pressed='true'] {
+  background: var(--blue);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.radial-reset {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  background: none;
+  color: var(--muted);
+  border: 0;
+  font-size: 12px;
+  padding: 18px 0 0;
+  cursor: pointer;
+}
+@media (max-width: 650px) {
+  .radial-menu.is-editing {
+    flex-direction: column;
+    gap: 4px;
+  }
+  .radial-palette {
+    width: 100%;
+  }
+}

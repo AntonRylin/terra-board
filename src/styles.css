@@ -633,6 +633,33 @@ body.reordering * {
   font-size: 12px;
   cursor: pointer;
 }
+.board-wallpaper {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+  user-select: none;
+}
+.background-settings {
+  display: grid;
+  gap: 15px;
+}
+.background-settings-preview {
+  position: relative;
+  height: 150px;
+  overflow: hidden;
+  border-radius: 10px;
+  background: var(--surface);
+}
+.background-settings .glass-slider-label {
+  margin-bottom: 5px;
+}
+.background-filter-label {
+  display: grid;
+  gap: 7px;
+}
 .canvas-surface {
   position: absolute;
   inset: 0;
