@@ -121,6 +121,7 @@ const object = z
       })
       .optional(),
     galleryId: id.optional(),
+    frameLink: z.object({ boardId: id, frameId: id }).optional(),
     pdfComposer: pdfComposer.optional(),
     galleryIndex: z.number().min(0).max(1e7).optional(),
     galleryRow: z.number().int().min(0).max(10000).optional(),

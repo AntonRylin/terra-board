@@ -38,6 +38,17 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
       !(Number.isFinite(o.listScale) && o.listScale >= 1e-6 && o.listScale <= 1e6)
     )
       throw Error('Invalid clipboard list scale');
+    if (
+      o.frameLink !== undefined &&
+      (o.type !== 'frame' ||
+        !o.frameLink ||
+        o.gallery !== undefined ||
+        o.pdfComposer !== undefined ||
+        ![o.frameLink.boardId, o.frameLink.frameId].every(
+          (v) => typeof v === 'string' && /^[\w-]{1,100}$/.test(v),
+        ))
+    )
+      throw Error('Invalid frame link');
     let pdfComposer;
     if (o.pdfComposer !== undefined) {
       if (o.type !== 'frame' || o.gallery !== undefined)
@@ -283,6 +294,9 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
       z: o.z,
       ...(o.text === undefined ? {} : { text: o.text }),
       ...(o.imageTitle === undefined ? {} : { imageTitle: o.imageTitle }),
+      ...(o.frameLink
+        ? { frameLink: { boardId: o.frameLink.boardId, frameId: o.frameLink.frameId } }
+        : {}),
       ...(o.documentTitle === undefined ? {} : { documentTitle: o.documentTitle }),
       ...(o.documentMime === undefined ? {} : { documentMime: o.documentMime }),
       ...(o.documentBytes === undefined ? {} : { documentBytes: o.documentBytes }),

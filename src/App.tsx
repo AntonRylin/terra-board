@@ -275,7 +275,7 @@ export default function App() {
   }, []);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (document.querySelector('.pdf-workspace, .image-viewer')) return;
+      if (document.querySelector('.pdf-workspace, .image-viewer, .frame-usages')) return;
       if (aiBusy || modal?.kind === 'settings' || e.isComposing || e.repeat) return;
       if (
         (e.ctrlKey || e.metaKey) &&
@@ -800,6 +800,10 @@ export default function App() {
               key={doc.board.id}
               ref={whiteboard}
               document={doc}
+              onOpenFrame={(boardId, frameId) => {
+                if (boardId === doc.board.id) setSearchTarget({ boardId, objectId: frameId });
+                else void openBoard(boardId, frameId);
+              }}
               searchTarget={searchTarget?.boardId === doc.board.id ? searchTarget : null}
               onError={report}
               onReady={() => setCanvasReady(true)}

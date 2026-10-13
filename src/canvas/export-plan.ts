@@ -42,7 +42,7 @@ export function exportPlan(
     // Normal frames own their contents by placement, just as when dragging them.
     // Galleries keep their explicit membership, including galleries inside frames.
     const frames = all.filter(
-      (o) => ids.has(o.id) && o.type === 'frame' && !o.gallery && !o.pdfComposer,
+      (o) => ids.has(o.id) && o.type === 'frame' && !o.gallery && !o.pdfComposer && !o.frameLink,
     );
     objects = selectionWithGalleryImages(
       all.filter((o) => ids.has(o.id) || frames.some((frame) => containsObject(frame, o))),

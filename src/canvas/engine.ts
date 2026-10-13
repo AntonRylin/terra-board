@@ -1,4 +1,6 @@
 import { editTouchesLocked } from './object-lock';
+import { linkedFrameScene, sceneObjects, type FrameBoards, type FrameScene } from './frame-links';
+import { frameMediaKey, renderLinkedFrame } from './frame-link-rendering';
 import {
   arrowFromPoints,
   arrowPoints,
@@ -134,6 +136,39 @@ type Gesture = {
   snap?: { bounds: Bounds; targets: SnapTargets; state: SnapState };
 };
 export class Engine {
+  private frameBoardId = '';
+  private frameBoards: FrameBoards = new Map();
+  private composerPreviews = new Map<string, Texture | null>();
+  private frameMediaVariants = new Map<string, string>();
+  setFrameBoard(id: string, objects: CanvasObject[] | null, current = false) {
+    if (current) this.frameBoardId = id;
+    if (
+      JSON.stringify(this.frameBoards.get(id)) === JSON.stringify(objects) &&
+      this.frameBoards.has(id)
+    )
+      return;
+    this.frameBoards.set(id, objects);
+    this.invalidate();
+  }
+  private frameScene(o: CanvasObject) {
+    this.frameBoards.set(this.frameBoardId, this.all);
+    return linkedFrameScene(o, this.frameBoards);
+  }
+  private composerTexture(o: CanvasObject, wanted: Set<string>) {
+    const key = `composer:${JSON.stringify(o.pdfComposer)}:${o.width}:${o.height}`;
+    wanted.add(key);
+    if (!this.composerPreviews.has(key)) {
+      this.composerPreviews.set(key, null);
+      void import('./pdf-composer-snapshot')
+        .then(({ composerSnapshot }) => composerSnapshot(o, 1))
+        .then((canvas) => {
+          if (this.disposed || !this.composerPreviews.has(key)) return;
+          this.composerPreviews.set(key, Texture.from(canvas));
+          this.invalidate();
+        })
+        .catch(() => {});
+    }
+  }
   private documentPreviews = new Map<
     string,
     {
@@ -412,6 +447,7 @@ export class Engine {
         return (
           o.type !== 'frame' ||
           !!o.pdfComposer ||
+          !!o.frameLink ||
           q.x < 10 ||
           q.x > o.width - 10 ||
           q.y < 32 ||
@@ -553,6 +589,7 @@ export class Engine {
           const ids = this.members(hit);
           const editOnClick =
             !additive &&
+            !hit.frameLink &&
             hit.type !== 'document' &&
             (hit.type !== 'image' || hitsFrameLabel(hit, worldToLocal(hit, w), this.camera.zoom)) &&
             ((!hit.groupId &&
@@ -986,7 +1023,7 @@ export class Engine {
     const world = this.screenPoint(this.point(e));
     // Ink lies over what it marks; a double click reaches the object underneath.
     const o = this.hit(world, false);
-    if (o?.locked) return;
+    if (o?.locked && !o.frameLink) return;
     if (o)
       this.callbacks.activate(
         o,
@@ -1425,7 +1462,42 @@ export class Engine {
       });
       tiles.set(o.id, detailTiles);
     }
+    const linkedScenes = new Map<string, FrameScene>();
+    const composerKeys = new Set<string>();
+    this.frameMediaVariants.clear();
+    const requestLinkedMedia = (key: string) => {
+      if (this.frameMediaVariants.has(key)) return;
+      let actual = key;
+      let cost = key.endsWith('/thumb') ? 256 * 256 * 4 : 1600 * 1600 * 4;
+      if (!wanted.has(actual) && bytes + cost > 100 * 1024 * 1024) {
+        actual = key.replace('/preview', '/thumb');
+        cost = 256 * 256 * 4;
+      }
+      if (!wanted.has(actual)) {
+        if (bytes + cost > 128 * 1024 * 1024) return;
+        bytes += cost;
+        wanted.add(actual);
+      }
+      this.frameMediaVariants.set(key, actual);
+    };
+    for (const o of visible)
+      if (o.frameLink) {
+        const scene = this.frameScene(o);
+        linkedScenes.set(o.id, scene);
+        for (const child of sceneObjects(scene)) {
+          const key = frameMediaKey(child);
+          if (key) requestLinkedMedia(key);
+          if (child.linkIconId) requestLinkedMedia(`${child.linkIconId}/thumb`);
+          if (child.pdfComposer) this.composerTexture(child, composerKeys);
+        }
+      }
+    for (const [key, texture] of this.composerPreviews)
+      if (!composerKeys.has(key)) {
+        texture?.destroy(true);
+        this.composerPreviews.delete(key);
+      }
     this.textures.begin(wanted);
+    const linkedTextureIds = [...wanted].map((key) => [key, this.textures.get(key)?.uid]);
     let animateLoading = false;
     const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     visible.forEach((o, i) => {
@@ -1451,6 +1523,13 @@ export class Engine {
       const resolution = 2 ** Math.ceil(Math.log2(c.zoom * devicePixelRatio));
       const region = textRegion(o, c, w, h, c.zoom);
       const signature = JSON.stringify([
+        o.frameLink
+          ? [
+              linkedScenes.get(o.id),
+              linkedTextureIds,
+              [...this.composerPreviews].map(([k, t]) => [k, t?.uid]),
+            ]
+          : null,
         this.dark,
         !!o.gallery,
         o.width,
@@ -1524,6 +1603,8 @@ export class Engine {
           region,
           loading,
           iconTexture,
+          false,
+          linkedScenes.get(o.id),
         );
         const loadedTiles = detailTiles.filter((tile) => tile.texture);
         if (texture && loadedTiles.length) {
@@ -1576,14 +1657,45 @@ export class Engine {
     loading = false,
     iconTexture: Texture | null = null,
     exporting = false,
-  ) {
+    linkedScene?: FrameScene,
+    linkedTextures?: Map<string, Texture>,
+    staticPreview = false,
+  ): Container {
+    if (o.frameLink)
+      return renderLinkedFrame(
+        linkedScene || this.frameScene(o),
+        resolution,
+        this.dark && !exporting,
+        (item, texture, icon) =>
+          this.makeView(
+            item,
+            texture,
+            true,
+            Math.min(resolution, 8192 / Math.max(item.width, item.height)),
+            { x: -100, y: -400, width: item.width + 200, height: item.height + 800 },
+            false,
+            icon,
+            exporting,
+            undefined,
+            undefined,
+            true,
+          ),
+        (key) =>
+          linkedTextures
+            ? linkedTextures.get(key) || null
+            : key.startsWith('composer:')
+              ? this.composerPreviews.get(key) || null
+              : this.frameMediaVariants.has(key)
+                ? this.textures.get(this.frameMediaVariants.get(key)!)
+                : null,
+      );
     const container = new Container(),
       g = new Graphics(),
       color = o.color || '#e8edf5';
     const dark = this.dark && !exporting;
     container.eventMode = 'none';
     if (o.pdfComposer) {
-      if (exporting && texture) {
+      if ((exporting || staticPreview) && texture) {
         const sprite = new Sprite(texture);
         sprite.width = o.width;
         sprite.height = o.height;
@@ -1593,7 +1705,7 @@ export class Engine {
     }
     if (o.type === 'document') {
       container.addChild(renderDocumentCard(o, texture, resolution, region, dark));
-      if ((exporting || this.editingId !== o.id) && o.documentTitle?.trim()) {
+      if ((exporting || staticPreview || this.editingId !== o.id) && o.documentTitle?.trim()) {
         const label = renderText(o, o.documentTitle, resolution, region, dark);
         if (label) container.addChild(label);
       }
@@ -1601,7 +1713,7 @@ export class Engine {
     }
     if (o.type === 'list') {
       // Interactive glass is rendered in the DOM; exports use the same card geometry.
-      if (!exporting) return container;
+      if (!exporting && !staticPreview) return container;
       const layout = listLayout(o);
       const card = new Container();
       card.scale.set(layout.scale);
@@ -1870,7 +1982,7 @@ export class Engine {
         );
     }
     container.addChild(g);
-    if (exporting || this.editingId !== o.id) {
+    if (exporting || staticPreview || this.editingId !== o.id) {
       let text = o.text || '';
       if (o.type === 'frame') text = o.text || 'Untitled frame';
       if (o.type === 'image') text = o.imageTitle?.trim() ? o.imageTitle : 'Image';
@@ -2213,6 +2325,32 @@ export class Engine {
       // Yield to paint progress even when every item is a shape or text.
       await new Promise((resolve) => setTimeout(resolve, 0));
       try {
+        const linkedScene = o.frameLink ? this.frameScene(o) : undefined;
+        const linkedTextures = new Map<string, Texture>();
+        if (linkedScene)
+          for (const child of sceneObjects(linkedScene)) {
+            const key = frameMediaKey(child);
+            if (key && !linkedTextures.has(key)) {
+              const [id, variant] = key.split('/');
+              try {
+                linkedTextures.set(key, await load(id, variant === 'thumb'));
+              } catch (error) {
+                if (child.type !== 'document') throw error;
+              }
+            }
+            if (child.linkIconId && !linkedTextures.has(`${child.linkIconId}/thumb`))
+              linkedTextures.set(`${child.linkIconId}/thumb`, await load(child.linkIconId, true));
+            if (child.pdfComposer) {
+              const key = `composer:${JSON.stringify(child.pdfComposer)}:${child.width}:${child.height}`;
+              if (!linkedTextures.has(key)) {
+                const { composerSnapshot } = await import('./pdf-composer-snapshot');
+                const canvas = await composerSnapshot(child, Math.min(2, plan.scale));
+                const texture = Texture.from(canvas);
+                linkedTextures.set(key, texture);
+                textures.push(texture);
+              }
+            }
+          }
         const imageId =
           o.type === 'document'
             ? o.documentPreviewId
@@ -2250,6 +2388,8 @@ export class Engine {
           false,
           icon,
           true,
+          linkedScene,
+          linkedTextures,
         );
         view.pivot.set(o.width / 2, o.height / 2);
         view.position.set(o.x + o.width / 2, o.y + o.height / 2);
@@ -2309,6 +2449,8 @@ export class Engine {
     window.removeEventListener(appearanceEvent, this.appearanceChanged);
     this.lighting.destroy();
     this.textures.destroy();
+    for (const texture of this.composerPreviews.values()) texture?.destroy(true);
+    this.composerPreviews.clear();
     this.host.removeEventListener('pointerdown', this.down);
     this.host.removeEventListener('pointermove', this.move);
     this.host.removeEventListener('pointerup', this.up);

@@ -494,6 +494,31 @@ function fixture(tool = 'select') {
   return { engine, host, menus, saves, event, activations, edits, tick, motion };
 }
 
+test('linked frames select on single click, open on double click, and move without altering their source', () => {
+  const f = fixture();
+  f.engine.camera = { x: 0, y: 0, zoom: 1 };
+  const original = { id: 'source', type: 'frame', x: 0, y: 400, width: 300, height: 200, z: 0 };
+  const linked = { ...original, id: 'linked', x: 100, y: 100, z: 2, frameLink: { boardId: 'board', frameId: 'source' } };
+  f.engine.apply({ upserts: [original, linked], deleted: [] });
+  f.engine.down(f.event(180, 180, 0));
+  f.engine.up(f.event(180, 180, 0));
+  assert.deepEqual([...f.engine.selection], ['linked']);
+  assert.deepEqual(f.activations, []);
+  f.engine.down(f.event(180, 180, 0));
+  f.engine.up(f.event(180, 180, 0));
+  assert.deepEqual(f.activations, [], 'a selected link still requires double-click');
+  f.engine.doubleClick(f.event(180, 180, 0));
+  assert.deepEqual(f.activations, ['linked']);
+  f.engine.down(f.event(180, 180, 0));
+  f.engine.move({ ...f.event(220, 220, 0), altKey: true });
+  f.engine.up(f.event(220, 220, 0));
+  assert.equal(f.engine.objects.get('linked').x, 140);
+  assert.equal(f.engine.objects.get('source').x, 0);
+  assert.deepEqual(f.engine.objects.get('linked').frameLink, linked.frameLink);
+  f.engine.undo();
+  assert.equal(f.engine.objects.get('linked').x, 100);
+});
+
 test('double click retargeted to the pointer-capturing surface opens the object editor', () => {
   const f = fixture();
   f.engine.apply({

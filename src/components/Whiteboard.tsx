@@ -11,6 +11,8 @@ import { convertComposerInputs } from '../canvas/document-convert';
 import ListEditOutline from './ListEditOutline';
 import CanvasToolbar from './CanvasToolbar';
 import SelectionToolbar from './SelectionToolbar';
+import FrameUsages from './FrameUsages';
+import { frameReference, type FrameReference } from '../canvas/frame-usages';
 import ObjectLockButton from './ObjectLockButton';
 import type { ToolbarId } from './toolbar-layout';
 import {
@@ -89,7 +91,7 @@ import {
 import { textAppearance } from '../canvas/text-style';
 import { textLayout, fitTextObject, fitTextToView } from '../canvas/text-layout';
 import { textPlacement } from '../canvas/text-alignment';
-import { localToWorld, objectBounds } from '../canvas/transform';
+import { localToWorld, objectBounds, containsObject } from '../canvas/transform';
 import { SaveQueue, CameraSaveQueue, type SaveState } from '../canvas/save-queue';
 import {
   importFiles,
@@ -123,6 +125,7 @@ export interface WhiteboardHandle {
   fit: () => void;
 }
 interface Props {
+  onOpenFrame: (boardId: string, frameId: string) => void;
   onReady: () => void;
   searchTarget: { objectId: string } | null;
   theme: ResolvedTheme;
@@ -143,10 +146,70 @@ const tools: { id: Tool & ToolbarId; label: string; icon: typeof Type; key: stri
 ];
 const colors = ['#f8efd4', '#e4eee8', '#e4ecfa', '#efe5f1', '#f4e4e5', '#ffffff', '#000000'];
 const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
-  { document: doc, onSave, onError, onReady, theme, searchTarget },
+  { document: doc, onSave, onError, onReady, theme, searchTarget, onOpenFrame },
   ref,
 ) {
   const external = useRef(false);
+  const [usageTarget, setUsageTarget] = useState<{
+    source: FrameReference;
+    name: string;
+  } | null>(null);
+  const refreshLinkedBoards = useRef<() => Promise<void>>(async () => {});
+  const [frameClipboard, setFrameClipboard] = useState<CanvasObject | null>(() => {
+    try {
+      const value = JSON.parse(localStorage.getItem('terra-board.frame-link') || 'null');
+      return value ? clipboardObjects([value])[0] : null;
+    } catch {
+      return null;
+    }
+  });
+  const openOriginalFrame = async (o: CanvasObject) => {
+    if (!o.frameLink) return;
+    const { boardId, frameId } = o.frameLink;
+    const source =
+      boardId === doc.board.id
+        ? engine.current?.all
+        : (await invoke<Document>('loadBoard', { id: boardId })).objects;
+    if (!source?.some((item) => item.id === frameId && item.type === 'frame'))
+      throw Error('The original frame is unavailable. Restore it to reconnect this link.');
+    onOpenFrame(boardId, frameId);
+  };
+  const copyFrameLink = async (o: CanvasObject) => {
+    finishEdit();
+    await queue.current?.flush();
+    const original = engine.current?.objects.get(o.id) || o;
+    const link: CanvasObject = {
+      id: uid(),
+      type: 'frame',
+      x: original.x,
+      y: original.y,
+      width: original.width,
+      height: original.height,
+      z: 0,
+      text: original.text,
+      frameLink: original.frameLink || { boardId: doc.board.id, frameId: original.id },
+    };
+    localStorage.setItem('terra-board.frame-link', JSON.stringify(link));
+    setFrameClipboard(link);
+    if (window.canvas) await copyDesktop([link]);
+  };
+  const pasteFrameLink = () => {
+    const e = engine.current;
+    if (!e || !frameClipboard) return;
+    const surface = host.current!.getBoundingClientRect();
+    const p = menu
+      ? e.screenPoint({ x: menu.x - surface.left, y: menu.y - surface.top })
+      : e.center();
+    const o = {
+      ...frameClipboard,
+      id: uid(),
+      x: p.x - frameClipboard.width / 2,
+      y: p.y - frameClipboard.height / 2,
+      z: e.topZ() + 1,
+    };
+    e.apply({ upserts: [o], deleted: [] });
+    e.setSelection([o.id]);
+  };
   const lastTextSize = useRef<number | null>(null);
   if (lastTextSize.current === null) {
     let saved = 0;
@@ -673,7 +736,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         )
       : null;
   const canFormat = (o: CanvasObject) =>
-    (!o.pdfComposer &&
+    (!o.frameLink &&
+      !o.pdfComposer &&
       ['text', 'note', 'rect', 'ellipse', 'frame', 'arrow', 'list'].includes(o.type)) ||
     (o.type === 'image' && (!!o.imageTitle || editingSession.current?.object.id === o.id)) ||
     (o.type === 'document' && (!!o.documentTitle || editingSession.current?.object.id === o.id));
@@ -735,6 +799,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     engine.current?.setTool(value);
   };
   const startEdit = (o: CanvasObject) => {
+    if (o.frameLink) return;
     if (engine.current?.objects.get(o.id)?.locked || o.type === 'highlight') return;
     if (o.type === 'list') {
       (
@@ -781,6 +846,10 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     }
   };
   const activate = (o: CanvasObject, intent?: 'title') => {
+    if (o.frameLink) {
+      void openOriginalFrame(o).catch(error);
+      return;
+    }
     if (engine.current?.objects.get(o.id)?.locked) return;
     if (intent === 'title') startEdit(o);
     else if (o.pdfComposer) setEditingComposerId(o.id);
@@ -972,6 +1041,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         if (!syncingExternal.current) queue.current!.enqueue(edit);
         setCount(e.objects.size);
         syncDocumentView();
+        void refreshLinkedBoards.current();
       },
       camera: (c) => {
         setCamera(c);
@@ -1033,6 +1103,54 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       error: onError,
     });
     engine.current = e;
+    e.setFrameBoard(doc.board.id, fitted, true);
+    let frameRefresh: Promise<void> | null = null;
+    let framesDisposed = false;
+    const refreshFrames = (): Promise<void> => {
+      if (frameRefresh) return frameRefresh;
+      frameRefresh = (async () => {
+        const boards = new Map<string, CanvasObject[] | null>([[doc.board.id, e.all]]);
+        const visited = new Set<string>();
+        const scan = async (objects: CanvasObject[], depth = 0) => {
+          if (depth >= 12 || framesDisposed) return;
+          for (const object of objects)
+            if (object.frameLink) {
+              const { boardId, frameId } = object.frameLink;
+              const key = `${boardId}/${frameId}`;
+              if (visited.has(key) || visited.size >= 256) continue;
+              visited.add(key);
+              if (!boards.has(boardId)) {
+                try {
+                  const source = await invoke<Document>('loadBoard', { id: boardId });
+                  boards.set(boardId, source.board.trashed ? null : source.objects);
+                } catch {
+                  boards.set(boardId, null);
+                }
+                if (framesDisposed) return;
+                e.setFrameBoard(boardId, boards.get(boardId)!);
+              }
+              const all = boards.get(boardId);
+              const source = all?.find(
+                (o) => o.id === frameId && o.type === 'frame' && !o.frameLink,
+              );
+              if (source)
+                await scan(
+                  all!.filter((o) => o.id !== source.id && containsObject(source, o)),
+                  depth + 1,
+                );
+            }
+        };
+        await scan(e.all);
+      })().finally(() => {
+        frameRefresh = null;
+      });
+      return frameRefresh;
+    };
+    refreshLinkedBoards.current = refreshFrames;
+    void refreshFrames();
+    const frameTimer = window.setInterval(() => {
+      void refreshFrames();
+    }, 1500);
     e.setHighlightStyle(highlightStyleRef.current);
     const recoverPreviews = () => {
       for (const o of e.all) if (o.type === 'link' && !o.assetId) refreshLink(o, e);
@@ -1040,6 +1158,9 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     recoverPreviews();
     window.addEventListener('online', recoverPreviews);
     return () => {
+      framesDisposed = true;
+      window.clearInterval(frameTimer);
+      refreshLinkedBoards.current = async () => {};
       window.removeEventListener('online', recoverPreviews);
       alive.current = false;
       documentAbort.current.abort();
@@ -1403,7 +1524,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     const groups = new Map<string, string>();
     const objectIds = new Map(objects.map((o) => [o.id, uid()]));
     const top = e.topZ();
-    const bounds = point && objects.some((o) => o.type === 'image') ? boundsOf(objects) : null;
+    const bounds =
+      point && objects.some((o) => o.type === 'image' || o.frameLink) ? boundsOf(objects) : null;
     const offset =
       point && bounds
         ? { x: point.x - bounds.x - bounds.width / 2, y: point.y - bounds.y - bounds.height / 2 }
@@ -1656,6 +1778,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         await flush(false);
         const current = engine.current;
         if (!current) throw Error('The canvas is not ready to export.');
+        await refreshLinkedBoards.current();
         const rendered = await current.exportCanvas(
           scope,
           progress,
@@ -1726,6 +1849,43 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     />
   );
   const contextItems: (MenuItem | null)[] = [
+    ...(selected.length === 1 && selected[0].type === 'frame'
+      ? [
+          {
+            label: 'Find usages',
+            icon: <Frame />,
+            action: () => setUsageTarget({
+              source: frameReference(doc.board.id, selected[0]),
+              name: selected[0].text || 'Untitled frame',
+            }),
+          },
+          {
+            label: 'Copy frame link',
+            icon: <Link2 />,
+            action: () => {
+              void copyFrameLink(selected[0]).catch(error);
+            },
+          },
+          ...(selected[0].frameLink
+            ? [
+                {
+                  label: 'Open original frame',
+                  icon: <ExternalLink />,
+                  action: () => {
+                    void openOriginalFrame(selected[0]).catch(error);
+                  },
+                },
+              ]
+            : []),
+        ]
+      : []),
+    {
+      label: 'Paste linked frame',
+      icon: <Link2 />,
+      action: pasteFrameLink,
+      disabled: !frameClipboard,
+    },
+    null,
     ...(activeGallery
       ? [
           { label: 'Rename gallery', icon: <Type />, action: () => startEdit(activeGallery) },
@@ -2186,6 +2346,32 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             contextKey={activeGallery.id}
           >
             {lockButton}
+            {selected.length === 1 && selected[0].type === 'frame' && (
+              <button
+                key="copy-frame-link"
+                className="icon-button"
+                aria-label="Copy frame link"
+                title="Copy frame link"
+                onClick={() => {
+                  void copyFrameLink(selected[0]).catch(error);
+                }}
+              >
+                <Link2 size={16} />
+              </button>
+            )}
+            {selected.length === 1 && selected[0].frameLink && (
+              <button
+                key="open-frame"
+                className="icon-button"
+                aria-label="Open original frame"
+                title="Open original frame (double-click)"
+                onClick={() => {
+                  void openOriginalFrame(selected[0]).catch(error);
+                }}
+              >
+                <ExternalLink size={16} />
+              </button>
+            )}
             {(['right', 'below'] as const).map((direction) => (
               <button
                 key={direction}
@@ -2260,6 +2446,32 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             contextKey={selected.map((object) => object.id).join(',')}
           >
             {lockButton}
+            {selected.length === 1 && selected[0].type === 'frame' && (
+              <button
+                key="copy-frame-link"
+                className="icon-button"
+                aria-label="Copy frame link"
+                title="Copy frame link"
+                onClick={() => {
+                  void copyFrameLink(selected[0]).catch(error);
+                }}
+              >
+                <Link2 size={16} />
+              </button>
+            )}
+            {selected.length === 1 && selected[0].frameLink && (
+              <button
+                key="open-frame"
+                className="icon-button"
+                aria-label="Open original frame"
+                title="Open original frame (double-click)"
+                onClick={() => {
+                  void openOriginalFrame(selected[0]).catch(error);
+                }}
+              >
+                <ExternalLink size={16} />
+              </button>
+            )}
             {selected.length === 1 && selected[0].type === 'arrow' && (
               <div key="arrow-style">
                 <ArrowControls
@@ -2752,10 +2964,19 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
                       'Full PDF preview',
                       'Full image preview',
                       'Copy as image',
+                      'Find usages',
                     ].includes(item.label)),
               },
           )}
           onClose={() => setMenu(null)}
+        />
+      )}
+      {usageTarget && (
+        <FrameUsages
+          {...usageTarget}
+          prepare={() => flush(false)}
+          onClose={() => setUsageTarget(null)}
+          onOpen={onOpenFrame}
         />
       )}
       {pdfExport && (

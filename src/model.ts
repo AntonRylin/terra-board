@@ -62,6 +62,7 @@ export interface HighlightStroke {
   size: number;
 }
 export interface CanvasObject {
+  frameLink?: { boardId: string; frameId: string };
   locked?: boolean;
   items?: ListItem[];
   listScale?: number;

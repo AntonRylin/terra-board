@@ -5,6 +5,8 @@ export const selectionToolLabels = {
   colors: 'Colors',
   'arrow-style': 'Arrow style',
   open: 'Open',
+  'copy-frame-link': 'Copy frame link',
+  'open-frame': 'Open original frame',
   youtube: 'Open on YouTube',
   group: 'Group selection',
   bold: 'Bold',

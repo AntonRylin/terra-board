@@ -41,7 +41,7 @@ export function stackingHierarchy(all: CanvasObject[]): Hierarchy {
   const sorted = [...all].sort((a, b) => a.z - b.z);
   const rank = new Map(sorted.map((o, i) => [o.id, i]));
   const frames = sorted.filter((o) => o.type === 'frame');
-  const containers = frames.filter((o) => !o.gallery && !o.pdfComposer);
+  const containers = frames.filter((o) => !o.gallery && !o.pdfComposer && !o.frameLink);
   const frameIds = new Set(frames.map((o) => o.id));
   const parent = new Map<string, string | null>();
   const children = new Map<string | null, CanvasObject[]>();

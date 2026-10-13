@@ -181,6 +181,14 @@ function objectValue(o) {
     height: o.height,
     z: o.z,
   };
+  if (o.frameLink !== undefined) {
+    if (o.type !== 'frame' || !o.frameLink || o.gallery !== undefined || o.pdfComposer !== undefined)
+      throw Error('Invalid frame link');
+    result.frameLink = {
+      boardId: idValue(o.frameLink.boardId),
+      frameId: idValue(o.frameLink.frameId),
+    };
+  }
   if (o.pdfComposer !== undefined) {
     if (o.type !== 'frame' || o.gallery !== undefined)
       throw Error('PDF composers must be non-gallery frames');
