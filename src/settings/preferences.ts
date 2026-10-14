@@ -15,6 +15,8 @@ export type Preferences = {
   wheel: WheelMode;
   zoomSpeed: ZoomSpeed;
   snapping: boolean;
+  // Play the entrance song of people who open the same shared board.
+  playJoinSongs: boolean;
   radial: ToolbarId[];
   shortcuts: ShortcutOverrides;
 };
@@ -27,6 +29,7 @@ export const defaultPreferences = (): Preferences => ({
   wheel: 'zoom',
   zoomSpeed: 'normal',
   snapping: true,
+  playJoinSongs: true,
   radial: defaultRadialLayout(),
   shortcuts: {},
 });
@@ -48,6 +51,7 @@ export function readPreferences(value: unknown, legacyRadial?: unknown): Prefere
     wheel: pick(raw.wheel, ['zoom', 'pan'] as const, d.wheel),
     zoomSpeed: pick(raw.zoomSpeed, ['slow', 'normal', 'fast'] as const, d.zoomSpeed),
     snapping: pick(raw.snapping, [true, false], d.snapping),
+    playJoinSongs: pick(raw.playJoinSongs, [true, false], d.playJoinSongs),
     radial: readRadialLayout(raw.radial !== undefined ? raw.radial : legacyRadial),
     shortcuts: cleanOverrides(raw.shortcuts),
   };

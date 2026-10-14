@@ -2,6 +2,7 @@ import {
   Cable,
   Cloud,
   CircleDot,
+  CircleUserRound,
   HardDrive,
   Info,
   Keyboard,
@@ -14,6 +15,7 @@ import {
 import { commands } from '../../shortcuts/commands';
 
 export type SectionId =
+  | 'profile'
   | 'general'
   | 'appearance'
   | 'panel'
@@ -34,6 +36,13 @@ export type Section = {
 };
 
 export const sections: Section[] = [
+  {
+    id: 'profile',
+    label: 'Profile',
+    group: 'App',
+    icon: CircleUserRound,
+    subtitle: 'How you appear to people you share boards with.',
+  },
   {
     id: 'general',
     label: 'General',
@@ -113,6 +122,35 @@ type RowInfo = { section: SectionId; title: string; description?: string; keywor
 // Every searchable row. Components read their title and description from here,
 // so search results always match what the page shows.
 export const rows = {
+  profileName: {
+    section: 'profile',
+    title: 'Name',
+    description: 'Shown next to your cursor and picture.',
+    keywords: 'nickname display account',
+  },
+  profilePicture: {
+    section: 'profile',
+    title: 'Picture',
+    description: 'Drag to position, then save.',
+    keywords: 'avatar photo image crop',
+  },
+  profileSong: {
+    section: 'profile',
+    title: 'Your song',
+    description: 'Plays for others when you open a board they are on, for up to 12 seconds.',
+    keywords: 'music sound entrance join audio',
+  },
+  publishSong: {
+    section: 'profile',
+    title: 'Play my song when I join a board',
+    keywords: 'music sound entrance',
+  },
+  playSongs: {
+    section: 'profile',
+    title: "Play other people's songs",
+    description: 'When someone opens the board you are on.',
+    keywords: 'music sound mute entrance',
+  },
   openLastBoard: {
     section: 'general',
     title: 'Open last board on start',

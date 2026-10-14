@@ -1429,6 +1429,21 @@ export class Engine {
     this.callbacks.camera({ ...this.camera });
     this.invalidate();
   }
+  // Show a world point at the centre of the view, at the given zoom.
+  lookAt(center: Point, zoom: number) {
+    this.stopCameraAnimation();
+    const z = Math.min(8, Math.max(0.025, Number.isFinite(zoom) ? zoom : this.camera.zoom));
+    this.camera = {
+      x: this.host.clientWidth / 2 - center.x * z,
+      y: this.host.clientHeight / 2 - center.y * z,
+      zoom: z,
+    };
+    this.callbacks.camera({ ...this.camera });
+    this.invalidate();
+  }
+  get viewSize() {
+    return { width: this.host.clientWidth, height: this.host.clientHeight };
+  }
   focusObject(id: string) {
     const object = this.objects.get(id);
     if (!object) return false;

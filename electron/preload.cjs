@@ -76,6 +76,20 @@ contextBridge.exposeInMainWorld('canvas', {
       ipcRenderer.invoke('canvas:cloud-remove-person', share, person),
     stopSharing: (share) => ipcRenderer.invoke('canvas:cloud-stop-sharing', share),
     leave: (share) => ipcRenderer.invoke('canvas:cloud-leave', share),
+    profile: () => ipcRenderer.invoke('canvas:cloud-profile'),
+    setAvatar: (asset) => ipcRenderer.invoke('canvas:cloud-set-avatar', asset),
+    setSong: (asset, name) => ipcRenderer.invoke('canvas:cloud-set-song', asset, name),
+    setPublishSong: (on) => ipcRenderer.invoke('canvas:cloud-set-publish-song', on),
+    profileMedia: (person, avatar, song) =>
+      ipcRenderer.invoke('canvas:cloud-profile-media', person, avatar, song),
+    joinBoard: (boardId) => ipcRenderer.invoke('canvas:cloud-join-board', boardId),
+    leaveBoard: () => ipcRenderer.invoke('canvas:cloud-leave-board'),
+    sendCursor: (data) => ipcRenderer.send('canvas:cloud-cursor', data),
+    onPresence: (callback) => {
+      const handler = (_event, message) => callback(message);
+      ipcRenderer.on('canvas:presence', handler);
+      return () => ipcRenderer.removeListener('canvas:presence', handler);
+    },
     disable: () => ipcRenderer.invoke('canvas:cloud-disable'),
     pairingCode: () => ipcRenderer.invoke('canvas:cloud-pairing-code'),
     devices: () => ipcRenderer.invoke('canvas:cloud-devices'),

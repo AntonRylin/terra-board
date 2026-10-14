@@ -581,6 +581,9 @@ app
       onStatus: (status) => {
         if (win && !win.isDestroyed()) win.webContents.send('canvas:cloud-status', status);
       },
+      onPresence: (event) => {
+        if (win && !win.isDestroyed()) win.webContents.send('canvas:presence', event);
+      },
     });
     const cloudAction = (name, handler) =>
       ipcMain.handle('canvas:cloud-' + name, async (e, ...args) => {
@@ -602,6 +605,19 @@ app
     cloudAction('remove-person', (share, person) => cloud.removePerson(share, person));
     cloudAction('stop-sharing', (share) => cloud.stopSharing(share));
     cloudAction('leave', (share) => cloud.leave(share));
+    cloudAction('profile', () => cloud.profile());
+    cloudAction('set-avatar', (asset) => cloud.setAvatar(asset || null));
+    cloudAction('set-song', (asset, name) => cloud.setSong(asset || null, String(name || '')));
+    cloudAction('set-publish-song', (on) => cloud.setPublishSong(on));
+    cloudAction('profile-media', (person, avatar, song) =>
+      cloud.profileMedia(person, Number(avatar) || 0, Number(song) || 0),
+    );
+    cloudAction('join-board', (boardId) => cloud.joinBoard(boardId));
+    cloudAction('leave-board', () => cloud.leaveBoard());
+    ipcMain.on('canvas:cloud-cursor', (e, data) => {
+      trusted(e);
+      cloud.sendCursor(data);
+    });
     cloudAction('disable', () => cloud.disable());
     cloudAction('pairing-code', () => cloud.pairingCode());
     cloudAction('devices', () => cloud.devices());

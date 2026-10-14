@@ -36,7 +36,29 @@ export interface CloudStatus {
   workspace?: string | null;
   shared: OwnShare[];
   sharedWithMe: ReceivedShare[];
+  profile?: CloudProfile;
 }
+export interface CloudProfile {
+  avatar: string | null;
+  avatarVersion: number;
+  song: string | null;
+  songName: string;
+  songVersion: number;
+  publishSong: boolean;
+}
+export type ViewRect = { x: number; y: number; width: number; height: number };
+export interface PresencePerson {
+  key: string;
+  person: string;
+  name: string;
+  avatar: number;
+  song: number;
+  role: 'view' | 'edit';
+  joined: number;
+}
+export type PresenceEvent =
+  | { type: 'people'; boardId: string; self: string; people: PresencePerson[] }
+  | { type: 'cursor'; boardId: string; key: string; x: number; y: number; view: ViewRect };
 export interface SharePerson {
   id: string;
   name: string;
@@ -149,6 +171,19 @@ interface DesktopBridge {
     removePerson(share: string, person: string): Promise<void>;
     stopSharing(share: string): Promise<void>;
     leave(share: string): Promise<void>;
+    profile(): Promise<CloudProfile>;
+    setAvatar(asset: string | null): Promise<CloudProfile>;
+    setSong(asset: string | null, name?: string): Promise<CloudProfile>;
+    setPublishSong(on: boolean): Promise<CloudProfile>;
+    profileMedia(
+      person: string,
+      avatar: number,
+      song: number,
+    ): Promise<{ avatar: string | null; song: string | null }>;
+    joinBoard(boardId: string): Promise<{ active: boolean }>;
+    leaveBoard(): Promise<void>;
+    sendCursor(data: { x: number; y: number; view: ViewRect }): void;
+    onPresence(callback: (event: PresenceEvent) => void): () => void;
     disable(): Promise<CloudStatus>;
     pairingCode(): Promise<string>;
     devices(): Promise<CloudDevice[]>;

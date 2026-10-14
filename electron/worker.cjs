@@ -31,6 +31,8 @@ const allowed = new Set([
   'syncReconcile',
   'syncCursor',
   'syncRename',
+  'syncProfile',
+  'syncSetProfile',
   'syncTake',
   'syncAck',
   'syncMissingAssets',

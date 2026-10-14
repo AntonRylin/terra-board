@@ -134,6 +134,7 @@ export function CloudSettings({
     <Row id="cloudName">
       <span className="cloud-join">
         <input
+          className="st-name-input"
           aria-label="Your name"
           placeholder="Your name"
           value={name}

@@ -14,6 +14,19 @@ const fail = (error, fallback) => {
   if (!error) return;
   throw Error(error.message || fallback);
 };
+const audioTypes = {
+  '.mp3': 'audio/mpeg',
+  '.m4a': 'audio/mp4',
+  '.ogg': 'audio/ogg',
+  '.wav': 'audio/wav',
+  '.webm': 'audio/webm',
+  '.aac': 'audio/aac',
+  '.flac': 'audio/flac',
+};
+const audioType = (name) =>
+  audioTypes[path.extname(String(name || '')).toLowerCase()] || 'audio/mpeg';
+const audioExtension = (type) =>
+  Object.entries(audioTypes).find(([, t]) => t === type)?.[0] || '.mp3';
 const chunks = (list, size) => {
   const out = [];
   for (let i = 0; i < list.length; i += size) out.push(list.slice(i, i + size));
@@ -58,11 +71,14 @@ function sessionStorage(file, safeStorage) {
 // on, and otherwise only what they share. Folders and boards other people
 // share are pulled from those people's workspaces with view or edit rights.
 class CloudSync {
-  constructor({ call, root, config, safeStorage, transaction, onStatus }) {
+  constructor({ call, root, config, safeStorage, transaction, onStatus, onPresence }) {
     this.call = call;
     this.config = config;
     this.transaction = transaction;
     this.onStatus = onStatus;
+    this.onPresence = onPresence;
+    this.media = new Map();
+    this.board = null;
     this.status = {
       configured: !!config,
       state: 'off',
@@ -122,6 +138,7 @@ class CloudSync {
       return this.emit({ state: 'error', error: 'Signed out. Turn sync on again.' });
     this.userId = data.session.user.id;
     this.listen(this.workspace);
+    void this.loadProfile().catch(() => {});
     clearInterval(this.poll);
     this.poll = setInterval(() => this.schedule(0), 30000);
     this.schedule(0);
@@ -271,6 +288,196 @@ class CloudSync {
     fail(error, 'Could not remove the device');
   }
 
+  // --- Profile -------------------------------------------------------------
+
+  async profile() {
+    return this.call('syncProfile');
+  }
+
+  // Bring this computer's copy of the picture and song in line with the server,
+  // for example after changing them on another computer.
+  async loadProfile() {
+    const { data, error } = await this.client.rpc('my_profile', { p_workspace: this.workspace });
+    if (error || !data?.length) return;
+    const remote = data[0];
+    const local = await this.profile();
+    const patch = {};
+    if (Number(remote.avatar_version) !== local.avatarVersion) {
+      patch.avatarVersion = Number(remote.avatar_version);
+      patch.avatar = remote.avatar_version
+        ? await this.fetchMedia(this.workspace, 'avatar', remote.avatar_version)
+        : null;
+    }
+    if (Number(remote.song_version) !== local.songVersion) {
+      patch.songVersion = Number(remote.song_version);
+      patch.song = remote.song_version
+        ? await this.fetchMedia(this.workspace, 'song', remote.song_version)
+        : null;
+    }
+    if (Object.keys(patch).length) await this.call('syncSetProfile', patch);
+    this.emit({ profile: await this.profile() });
+  }
+
+  async uploadMedia(kind, assetId) {
+    const asset = await this.call('asset', { id: assetId, variant: 'original' });
+    const { error } = await this.client.storage
+      .from('profiles')
+      .upload(`${this.workspace}/${kind}`, fs.readFileSync(asset.file), {
+        contentType: kind === 'song' ? audioType(asset.name) : asset.mime,
+        upsert: true,
+      });
+    fail(error, 'Could not upload your ' + (kind === 'song' ? 'song' : 'picture'));
+  }
+
+  async setAvatar(assetId) {
+    this.requireWorkspace();
+    const version = assetId ? Date.now() : 0;
+    if (assetId) await this.uploadMedia('avatar', assetId);
+    else await this.client.storage.from('profiles').remove([`${this.workspace}/avatar`]);
+    const { error } = await this.client.rpc('set_profile_media', {
+      p_workspace: this.workspace,
+      p_avatar: version,
+      p_song: null,
+    });
+    fail(error, 'Could not save your picture');
+    await this.call('syncSetProfile', { avatar: assetId, avatarVersion: version });
+    return this.announce();
+  }
+
+  async setSong(assetId, name) {
+    this.requireWorkspace();
+    const version = assetId ? Date.now() : 0;
+    if (assetId) {
+      const asset = await this.call('asset', { id: assetId, variant: 'original' });
+      if (asset.bytes > 10 * 1024 * 1024) throw Error('Choose a song up to 10 MB.');
+      await this.uploadMedia('song', assetId);
+    } else await this.client.storage.from('profiles').remove([`${this.workspace}/song`]);
+    const { error } = await this.client.rpc('set_profile_media', {
+      p_workspace: this.workspace,
+      p_avatar: null,
+      p_song: version,
+    });
+    fail(error, 'Could not save your song');
+    await this.call('syncSetProfile', {
+      song: assetId,
+      songName: assetId ? name : null,
+      songVersion: version,
+    });
+    return this.announce();
+  }
+
+  async setPublishSong(on) {
+    await this.call('syncSetProfile', { publishSong: !!on });
+    return this.announce();
+  }
+
+  async announce() {
+    const profile = await this.profile();
+    this.emit({ profile });
+    if (this.board?.channel) await this.board.channel.track(await this.presenceInfo());
+    return profile;
+  }
+
+  // Someone's picture or song as a local asset, downloaded once per version.
+  async fetchMedia(person, kind, version) {
+    const key = `${person}/${kind}/${version}`;
+    if (this.media.has(key)) return this.media.get(key);
+    const job = (async () => {
+      const { data, error } = await this.client.storage
+        .from('profiles')
+        .download(`${person}/${kind}`);
+      if (error) return null;
+      const bytes = new Uint8Array(await data.arrayBuffer());
+      const name =
+        kind === 'avatar' ? 'Profile picture.png' : 'Entrance song' + audioExtension(data.type);
+      const asset = await this.call('importAsset', { bytes, name });
+      return asset.id;
+    })();
+    this.media.set(key, job);
+    const id = await job;
+    if (!id) this.media.delete(key);
+    return id;
+  }
+
+  async profileMedia(person, avatarVersion, songVersion) {
+    if (!this.client || typeof person !== 'string') return { avatar: null, song: null };
+    const [avatar, song] = await Promise.all([
+      avatarVersion ? this.fetchMedia(person, 'avatar', avatarVersion) : null,
+      songVersion ? this.fetchMedia(person, 'song', songVersion) : null,
+    ]);
+    return { avatar, song };
+  }
+
+  // --- Presence on a board ---------------------------------------------------
+
+  async presenceInfo() {
+    const profile = await this.profile();
+    return {
+      person: this.workspace,
+      name: this.status.name || 'Someone',
+      avatar: profile.avatarVersion,
+      song: profile.publishSong ? profile.songVersion : 0,
+      role: this.board?.role || 'edit',
+      joined: this.board?.joined || Date.now(),
+    };
+  }
+
+  // Announce this person on a cloud board so others see them, their cursor and view.
+  async joinBoard(boardId) {
+    await this.leaveBoard();
+    if (!this.client || !this.workspace || typeof boardId !== 'string') return { active: false };
+    const lib = await this.call('library');
+    const board = lib.boards.find((b) => b.id === boardId);
+    const mark =
+      lib.sharing?.boards[boardId] || (board?.folderId && lib.sharing?.folders[board.folderId]);
+    if (!board || !(this.status.library || mark)) return { active: false };
+    const channel = this.client.channel('board:' + boardId, {
+      config: { presence: { key: this.userId }, broadcast: { self: false } },
+    });
+    const current = {
+      boardId,
+      channel,
+      role: mark && mark.shared !== 'owner' ? mark.shared : 'edit',
+      joined: Date.now(),
+    };
+    this.board = current;
+    const people = () =>
+      Object.entries(channel.presenceState()).map(([key, metas]) => ({ key, ...metas[0] }));
+    channel
+      .on('presence', { event: 'sync' }, () =>
+        this.onPresence?.({ type: 'people', boardId, self: this.userId, people: people() }),
+      )
+      .on('broadcast', { event: 'cursor' }, ({ payload }) =>
+        this.onPresence?.({ type: 'cursor', boardId, ...payload }),
+      )
+      .subscribe(async (state) => {
+        if (state === 'SUBSCRIBED' && this.board === current)
+          await channel.track(await this.presenceInfo());
+      });
+    return { active: true };
+  }
+
+  async leaveBoard() {
+    const current = this.board;
+    this.board = null;
+    if (!current) return;
+    try {
+      await current.channel.untrack();
+    } catch {}
+    this.client.removeChannel(current.channel);
+    this.onPresence?.({ type: 'people', boardId: current.boardId, self: this.userId, people: [] });
+  }
+
+  sendCursor(data) {
+    const current = this.board;
+    if (!current || !data || typeof data !== 'object') return;
+    void current.channel.send({
+      type: 'broadcast',
+      event: 'cursor',
+      payload: { key: this.userId, x: data.x, y: data.y, view: data.view },
+    });
+  }
+
   // --- Sharing ---------------------------------------------------------------
 
   shareFor(kind, targetId) {
@@ -372,6 +579,7 @@ class CloudSync {
   }
 
   stop() {
+    void this.leaveBoard();
     clearTimeout(this.timer);
     clearInterval(this.poll);
     this.timer = this.poll = null;

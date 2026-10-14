@@ -675,6 +675,21 @@
   font-size: 12.5px;
 }
 
+/* Profile */
+.cloud-join input.st-name-input {
+  width: 200px;
+  font: 13px/1 inherit;
+  font-family: inherit;
+  letter-spacing: normal;
+}
+.profile-picture {
+  margin-top: 12px;
+}
+.profile-picture .board-icon-upload {
+  margin: 0;
+  border-radius: 12px;
+}
+
 /* Cloud sync */
 .cloud-join {
   display: flex;

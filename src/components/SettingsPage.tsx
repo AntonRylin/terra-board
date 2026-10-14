@@ -10,6 +10,7 @@ import { CanvasSettings, RadialSettings } from './settings/CanvasSettings';
 import { ShortcutSettings } from './settings/ShortcutSettings';
 import { AboutSettings, StorageSettings } from './settings/StorageSettings';
 import { CloudSettings } from './settings/CloudSettings';
+import { ProfileSettings } from './settings/ProfileSettings';
 import './settings/settings.css';
 
 // Reopening Settings returns to the section used last in this session.
@@ -195,6 +196,7 @@ export default function SettingsPage({
             <>
               <h1>{current.label}</h1>
               <p className="st-subtitle">{current.subtitle}</p>
+              {section === 'profile' && <ProfileSettings />}
               {section === 'general' && <GeneralSettings />}
               {section === 'appearance' && (
                 <AppearanceSettings

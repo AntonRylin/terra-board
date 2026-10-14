@@ -462,6 +462,31 @@ function createSync(store, helpers) {
       });
       return { boards: [...touched.keys()], library };
     },
+    // This person's picture and entrance song as local assets, with the versions
+    // other people's apps use to notice changes.
+    profile() {
+      return {
+        avatar: state('avatar'),
+        avatarVersion: Number(state('avatarVersion') || 0),
+        song: state('song'),
+        songName: state('songName') || '',
+        songVersion: Number(state('songVersion') || 0),
+        publishSong: state('publishSong') !== '0',
+      };
+    },
+    setProfile(patch) {
+      const keys = ['avatar', 'avatarVersion', 'song', 'songName', 'songVersion', 'publishSong'];
+      store.transaction(() => {
+        for (const key of keys) {
+          if (!(key in patch)) continue;
+          const value = patch[key];
+          if (value === null || value === undefined || value === '')
+            db().prepare('DELETE FROM sync_state WHERE key=?').run(key);
+          else setState(key, typeof value === 'boolean' ? (value ? 1 : 0) : value);
+        }
+      });
+      return sync.profile();
+    },
     rename({ name }) {
       if (typeof name !== 'string' || !name.trim()) throw Error('Enter a name');
       setState('name', name.trim().slice(0, 60));

@@ -37,8 +37,10 @@ function device(name) {
     config,
     transaction: (job) => job(),
     onStatus: (s) => statuses.push(s),
+    onPresence: (e) => presence.push(e),
   });
-  const d = { name, root, store, sync, statuses };
+  const presence = [];
+  const d = { name, root, store, sync, statuses, presence };
   devices.push(d);
   return d;
 }
@@ -195,6 +197,41 @@ try {
     .eq('board_id', diary.id);
   assert.equal(peek.data.length, 0, 'private boards stay private');
   results.privateBoardHidden = true;
+
+  // Profiles and presence: the friend sees the owner's picture, presence and cursor.
+  await owner.sync.setAvatar(planImage.id);
+  const ownerProfile = await owner.sync.profile();
+  assert.ok(ownerProfile.avatarVersion > 0);
+  assert.deepEqual(await owner.sync.joinBoard(plan.id), { active: true });
+  assert.deepEqual(await friend.sync.joinBoard(plan.id), { active: true });
+  const seen = (d, person) => () =>
+    d.presence.some((e) => e.type === 'people' && e.people.some((p) => p.person === person));
+  await until(seen(owner, friend.sync.workspace), 'owner seeing the friend on the board');
+  await until(seen(friend, owner.sync.workspace), 'friend seeing the owner on the board');
+  const ownerSeen = friend.presence
+    .filter((e) => e.type === 'people')
+    .at(-1)
+    .people.find((p) => p.person === owner.sync.workspace);
+  assert.equal(ownerSeen.name, 'Anton');
+  assert.equal(ownerSeen.avatar, ownerProfile.avatarVersion);
+  const media = await friend.sync.profileMedia(ownerSeen.person, ownerSeen.avatar, 0);
+  assert.ok(media.avatar && friend.store.asset({ id: media.avatar, variant: 'original' }));
+  owner.sync.sendCursor({ x: 12, y: 34, view: { x: 0, y: 0, width: 800, height: 600 } });
+  await until(
+    () => friend.presence.some((e) => e.type === 'cursor' && e.x === 12 && e.y === 34),
+    'friend receiving the owner cursor',
+  );
+  await friend.sync.leaveBoard();
+  await until(
+    () =>
+      owner.presence
+        .filter((e) => e.type === 'people')
+        .at(-1)
+        ?.people.every((p) => p.person !== friend.sync.workspace),
+    'owner seeing the friend leave',
+  );
+  await owner.sync.leaveBoard();
+  results.presenceCursorsProfiles = true;
 
   // The friend edits; the owner sees it live.
   const planRevision = friend.store.loadBoard({ id: plan.id }).revision;

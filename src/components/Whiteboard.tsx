@@ -11,6 +11,7 @@ import { convertComposerInputs } from '../canvas/document-convert';
 import ListEditOutline from './ListEditOutline';
 import CanvasToolbar from './CanvasToolbar';
 import RadialMenu from './RadialMenu';
+import CollabLayer from './CollabLayer';
 import { activeCommand, isCommand, useShortcutLabels } from '../shortcuts/active';
 import type { CommandId } from '../shortcuts/commands';
 import { getPreferences, subscribePreferences } from '../settings/preferences';
@@ -2886,6 +2887,9 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           onApply={() => finishCrop()}
           onCancel={() => finishCrop(true)}
         />
+      )}
+      {!!window.canvas && (
+        <CollabLayer engine={engine} host={host} camera={camera} boardId={doc.board.id} />
       )}
       {!readOnly && (
         <RadialMenu

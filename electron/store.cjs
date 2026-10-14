@@ -550,6 +550,12 @@ class Store {
   syncRename(args) {
     return this.sync.rename(args);
   }
+  syncProfile() {
+    return this.sync.profile();
+  }
+  syncSetProfile(args) {
+    return this.sync.setProfile(args);
+  }
   syncTake(args) {
     return this.sync.take(args);
   }
