@@ -8,6 +8,13 @@ export interface McpStatus {
   codexConfig: string;
   claudeConfig: string;
 }
+export interface AppInfo {
+  version: string;
+  libraryPath: string;
+  backupsPath: string;
+  loginItemSupported: boolean;
+  openAtLogin: boolean;
+}
 interface DesktopBridge {
   assetDimensions(id: string): Promise<{ width: number; height: number }>;
   exportImage(args: {
@@ -51,6 +58,14 @@ interface DesktopBridge {
     linkIconId?: string;
   } | null>;
   dataDirectory(): Promise<string>;
+  appInfo(): Promise<AppInfo>;
+  setOpenAtLogin(enabled: boolean): Promise<boolean>;
+  openFolder(which: 'library' | 'backups'): Promise<void>;
+  exportLibrary(): Promise<{ count: number; folder: string } | null>;
+  licenses(): Promise<{ name: string; version: string; license: string }[]>;
+  setFullscreenKeys(
+    bindings: { code: string; ctrl?: boolean; shift?: boolean; alt?: boolean }[],
+  ): void;
   onClose(callback: () => void): () => void;
   closeReady(): void;
   rendererReady(): void;

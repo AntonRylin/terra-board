@@ -15,6 +15,7 @@ export type ToolbarAction = {
   id: ToolbarId;
   label: string;
   icon: LucideIcon;
+  shortcut?: string;
   active?: boolean;
   action: () => void;
 };
@@ -75,6 +76,8 @@ export default function CanvasToolbar({
           aria-pressed={item.active}
           aria-description="Drag to rearrange. Alt and arrow keys move this tool. Alt and Enter moves it between the toolbar and more tools."
           data-tool-label={zone === 'bar' ? name : undefined}
+          data-tool-shortcut={zone === 'bar' && item.shortcut ? item.shortcut : undefined}
+          aria-keyshortcuts={item.shortcut || undefined}
           draggable={false}
           onPointerDown={(event) => start(event, id)}
           onClick={() => {

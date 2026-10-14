@@ -5,13 +5,9 @@ import type { Engine } from '../canvas/engine';
 import type { Point } from '../canvas/geometry';
 import type { ToolbarAction } from './CanvasToolbar';
 import type { ToolbarId } from './toolbar-layout';
-import {
-  defaultRadialLayout,
-  radialSectors,
-  radialSlot,
-  radialStorageKey,
-  readRadialLayout,
-} from './radial-layout';
+import { defaultRadialLayout, radialSectors, radialSlot } from './radial-layout';
+import { updatePreferences, usePreferences } from '../settings/preferences';
+import { isCommand } from '../shortcuts/active';
 import './radial-menu.css';
 
 type Session = { center: Point; anchor: Point; editing: boolean; armed: boolean };
@@ -26,13 +22,7 @@ export default function RadialMenu({
   tools: ToolbarAction[];
   onChoose: (id: ToolbarId, anchor: Point, pointer: Point) => void;
 }) {
-  const [layout, setLayout] = useState(() => {
-    try {
-      return readRadialLayout(JSON.parse(localStorage.getItem(radialStorageKey) || 'null'));
-    } catch {
-      return defaultRadialLayout();
-    }
-  });
+  const layout = usePreferences().radial;
   const [session, setSession] = useState<Session | null>(null);
   const [slot, setSlot] = useState(5);
   const current = useRef(session);
@@ -54,12 +44,7 @@ export default function RadialMenu({
     close();
     latest.current.onChoose(latest.current.layout[index], s.anchor, point);
   };
-  const save = (value: ToolbarId[]) => {
-    setLayout(value);
-    try {
-      localStorage.setItem(radialStorageKey, JSON.stringify(value));
-    } catch {}
-  };
+  const save = (value: ToolbarId[]) => updatePreferences({ radial: value });
   useEffect(() => {
     const move = (event: PointerEvent) => {
       pointer.current = { x: event.clientX, y: event.clientY };
@@ -138,15 +123,7 @@ export default function RadialMenu({
         } else event.stopImmediatePropagation();
         return;
       }
-      if (
-        event.key !== 'Tab' ||
-        event.repeat ||
-        event.ctrlKey ||
-        event.metaKey ||
-        event.altKey ||
-        event.shiftKey
-      )
-        return;
+      if (event.repeat || !isCommand(event, 'view.radial')) return;
       const e = engine.current,
         p = pointer.current;
       if (!e?.canOpenQuickTools || !p) return;

@@ -11,6 +11,9 @@ import { convertComposerInputs } from '../canvas/document-convert';
 import ListEditOutline from './ListEditOutline';
 import CanvasToolbar from './CanvasToolbar';
 import RadialMenu from './RadialMenu';
+import { activeCommand, isCommand, useShortcutLabels } from '../shortcuts/active';
+import type { CommandId } from '../shortcuts/commands';
+import { getPreferences, subscribePreferences } from '../settings/preferences';
 import { BackgroundImage } from './BoardBackground';
 import type { BackgroundAppearance } from '../model';
 import SelectionToolbar from './SelectionToolbar';
@@ -137,16 +140,16 @@ interface Props {
   onSave: (state: SaveState, message?: string) => void;
   onError: (message: string) => void;
 }
-const tools: { id: Tool & ToolbarId; label: string; icon: typeof Type; key: string }[] = [
-  { id: 'select', label: 'Select', icon: MousePointer2, key: 'V' },
-  { id: 'hand', label: 'Pan', icon: Hand, key: 'H' },
-  { id: 'text', label: 'Text', icon: Type, key: 'T' },
-  { id: 'note', label: 'Note', icon: StickyNote, key: 'N' },
-  { id: 'rect', label: 'Shape', icon: Square, key: 'R' },
-  { id: 'arrow', label: 'Arrow', icon: MoveUpRight, key: 'A' },
-  { id: 'highlight', label: 'Highlighter', icon: Highlighter, key: 'M' },
-  { id: 'frame', label: 'Frame', icon: Frame, key: 'F' },
-  { id: 'link', label: 'Link', icon: Link2, key: 'L' },
+const tools: { id: Tool & ToolbarId; label: string; icon: typeof Type; command: CommandId }[] = [
+  { id: 'select', label: 'Select', icon: MousePointer2, command: 'tool.select' },
+  { id: 'hand', label: 'Pan', icon: Hand, command: 'tool.hand' },
+  { id: 'text', label: 'Text', icon: Type, command: 'tool.text' },
+  { id: 'note', label: 'Note', icon: StickyNote, command: 'tool.note' },
+  { id: 'rect', label: 'Shape', icon: Square, command: 'tool.rect' },
+  { id: 'arrow', label: 'Arrow', icon: MoveUpRight, command: 'tool.arrow' },
+  { id: 'highlight', label: 'Highlighter', icon: Highlighter, command: 'tool.highlight' },
+  { id: 'frame', label: 'Frame', icon: Frame, command: 'tool.frame' },
+  { id: 'link', label: 'Link', icon: Link2, command: 'tool.link' },
 ];
 const colors = ['#f8efd4', '#e4eee8', '#e4ecfa', '#efe5f1', '#f4e4e5', '#ffffff', '#000000'];
 const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
@@ -154,6 +157,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   ref,
 ) {
   const external = useRef(false);
+  const shortcutLabel = useShortcutLabels();
   const [usageTarget, setUsageTarget] = useState<{
     source: FrameReference;
     name: string;
@@ -1107,6 +1111,12 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       error: onError,
     });
     engine.current = e;
+    const applyInput = () => {
+      const { wheel, zoomSpeed, snapping } = getPreferences();
+      e.setInputPreferences({ wheel, zoomSpeed, snapping });
+    };
+    applyInput();
+    const stopInput = subscribePreferences(applyInput);
     e.setFrameBoard(doc.board.id, fitted, true);
     let frameRefresh: Promise<void> | null = null;
     let framesDisposed = false;
@@ -1167,6 +1177,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       refreshLinkedBoards.current = async () => {};
       window.removeEventListener('online', recoverPreviews);
       alive.current = false;
+      stopInput();
       documentAbort.current.abort();
       e.destroy();
       engine.current = null;
@@ -1676,12 +1687,12 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       if (typing()) return;
       const e = engine.current;
       if (!e) return;
-      const mod = event.ctrlKey || event.metaKey;
-      const k = event.key.toLowerCase();
-      if (window.canvas && mod && (k === 'c' || k === 'x') && e.selected.length) {
+      const mod = (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey;
+      const command = activeCommand(event, 'board');
+      if (window.canvas && mod && ['KeyC', 'KeyX'].includes(event.code) && e.selected.length) {
         event.preventDefault();
-        if (!event.repeat) void copyDesktop(e.selected, k === 'x');
-      } else if (window.canvas && mod && k === 'v' && clipboardTask.current) {
+        if (!event.repeat) void copyDesktop(e.selected, event.code === 'KeyX');
+      } else if (window.canvas && mod && event.code === 'KeyV' && clipboardTask.current) {
         // Chromium emits no paste event for an empty clipboard. A fast Ctrl+C,
         // Ctrl+V must still wait for an image that is currently being prepared.
         event.preventDefault();
@@ -1695,38 +1706,29 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
               pasteObjects(clipboardObjects(objects), target, point);
           })
           .catch(error);
-      } else if (mod && k === 'b') {
-        event.preventDefault();
-        toggleFormatting('bold');
-      } else if (mod && k === 'z') {
-        event.preventDefault();
-        event.shiftKey ? e.redo() : e.undo();
-      } else if (mod && k === 'y') {
-        event.preventDefault();
-        e.redo();
-      } else if (mod && k === 'a') {
-        event.preventDefault();
-        e.setSelection(e.all.map((o) => o.id));
-      } else if (mod && k === 'd') {
-        event.preventDefault();
-        e.duplicate();
-      } else if (mod && k === 'g') {
-        event.preventDefault();
-        event.shiftKey ? e.ungroup() : e.group();
-      } else if (mod && k === 's') {
-        event.preventDefault();
-        queue.current?.flush().catch(error);
-      } else if (event.key === 'Delete' || event.key === 'Backspace') {
-        event.preventDefault();
-        e.deleteSelected();
       } else if (event.key === 'Escape') {
         setMenu(null);
         e.setSelection([]);
         selectTool('select');
-      } else if (!mod && !event.altKey) {
-        const t = tools.find((t) => t.key.toLowerCase() === k);
-        if (t) selectTool(t.id);
-        if (k === '0') e.fit();
+      } else if (command) {
+        const tool = tools.find((t) => t.command === command);
+        // The radial menu owns its own trigger.
+        if (command === 'view.radial') return;
+        event.preventDefault();
+        if (tool) {
+          if (!event.repeat) selectTool(tool.id);
+          return;
+        }
+        if (command === 'edit.bold') toggleFormatting('bold');
+        else if (command === 'edit.undo') e.undo();
+        else if (command === 'edit.redo') e.redo();
+        else if (command === 'edit.selectAll') e.setSelection(e.all.map((o) => o.id));
+        else if (command === 'edit.duplicate') e.duplicate();
+        else if (command === 'edit.group') e.group();
+        else if (command === 'edit.ungroup') e.ungroup();
+        else if (command === 'edit.save') queue.current?.flush().catch(error);
+        else if (command === 'edit.delete') e.deleteSelected();
+        else if (command === 'view.fit' && !event.repeat) e.fit();
       }
     };
     window.addEventListener('paste', paste);
@@ -2807,7 +2809,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           onKeyDown={(e) => {
             e.stopPropagation();
             if (e.nativeEvent.isComposing) return;
-            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
+            if (isCommand(e.nativeEvent, 'edit.bold')) {
               e.preventDefault();
               toggleFormatting('bold');
             } else if (e.key === 'Escape') {
@@ -2893,10 +2895,11 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       />
       <CanvasToolbar
         tools={[
-          ...tools.map(({ id, label, icon }) => ({
+          ...tools.map(({ id, label, icon, command }) => ({
             id,
             label,
             icon,
+            shortcut: shortcutLabel(command),
             active: tool === id,
             action: () => selectTool(id),
           })),

@@ -209,6 +209,10 @@ const openSettings = async () => {
   );
   assert.ok(settings, 'Settings menu item');
   await click(settings.x, settings.y);
+  await until(() => read(`!!document.querySelector('.st-nav')`), 'settings sections');
+  await read(
+    `Array.from(document.querySelectorAll('.st-nav-item')).find(b=>b.textContent==='AI connections').click()`,
+  );
 };
 const key = async (key, code, modifiers = 0) => {
   const windowsVirtualKeyCode = code.startsWith('Key')

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Copy, Check, Cable } from 'lucide-react';
+import { Copy, Check } from 'lucide-react';
+import { Group, Row, Switch } from './settings/controls';
 import type { McpStatus } from '../bridge';
 // The configuration holds this computer's paths, so the prompt is only valid
 // when copied from the Terra Board installation it should connect to.
@@ -73,79 +74,72 @@ export default function McpSettings() {
   ];
   return (
     <div className="mcp-settings">
-      <div className="mcp-heading">
-        <span className="mcp-symbol">
-          <Cable size={24} />
-        </span>
-        <h3>Connect your AI</h3>
-      </div>
-      <div className="mcp-access">
-        <div>
-          <strong>AI access</strong>
-          <p>Let Codex or Claude read and edit your boards.</p>
-        </div>
-        <button
-          role="switch"
-          aria-label="Enable MCP server"
-          aria-checked={!!status?.enabled}
-          className="mcp-switch"
-          disabled={busy || !status}
-          onClick={() => update(!status?.enabled)}
+      <Group>
+        <Row
+          id="mcpAccess"
+          below={
+            <div className="mcp-state">
+              <span className={'mcp-dot ' + (status?.running ? 'running' : '')} />
+              {status?.running
+                ? 'On. Keep Terra Board open.'
+                : status?.enabled
+                  ? 'Could not start'
+                  : window.canvas
+                    ? 'Off'
+                    : 'Available in the desktop app.'}
+            </div>
+          }
         >
-          <span />
-        </button>
-      </div>
-      <div className="mcp-state">
-        <span className={'mcp-dot ' + (status?.running ? 'running' : '')} />
-        {status?.running
-          ? 'On. Keep Terra Board open.'
-          : status?.enabled
-            ? 'Could not start'
-            : 'Off'}
-      </div>
+          <Switch
+            label="Enable MCP server"
+            checked={!!status?.enabled}
+            disabled={busy || !status}
+            onChange={(enabled) => update(enabled)}
+          />
+        </Row>
+        <Row id="mcpPort">
+          <span className="mcp-port">
+            <input
+              aria-label="MCP port"
+              type="number"
+              min="1024"
+              max="65535"
+              value={port}
+              onChange={(e) => setPort(e.target.value)}
+            />
+            <button
+              type="button"
+              className="st-button"
+              disabled={busy || !status || Number(port) === status.port}
+              onClick={() => update(!!status?.enabled)}
+            >
+              Apply
+            </button>
+          </span>
+        </Row>
+      </Group>
       {(error || status?.error) && (
-        <p className="mcp-error" role="alert">
+        <p className="st-notice error mcp-error" role="alert">
           {error || status?.error}
         </p>
       )}
       {clients && (
-        <div className="mcp-clients">
+        <Group title="Connect an app">
           {clients.map((client) => (
-            <div className="mcp-client" key={client.name}>
-              <div>
-                <strong>{client.name}</strong>
-                <p>{client.hint}</p>
-              </div>
+            <Row key={client.name} title={client.name} description={client.hint}>
               <button
-                className="button"
+                type="button"
+                className="st-button"
                 aria-label={`Copy ${client.name} setup`}
                 onClick={() => copy(client.name, client.value)}
               >
                 <Copy size={15} />
                 Copy setup
               </button>
-            </div>
+            </Row>
           ))}
-        </div>
+        </Group>
       )}
-      <label className="mcp-port">
-        Port{' '}
-        <input
-          aria-label="MCP port"
-          type="number"
-          min="1024"
-          max="65535"
-          value={port}
-          onChange={(e) => setPort(e.target.value)}
-        />
-        <button
-          className="button"
-          disabled={busy || !status || Number(port) === status.port}
-          onClick={() => update(!!status?.enabled)}
-        >
-          Apply
-        </button>
-      </label>
       {copied && (
         <div className="toast" role="status">
           <Check size={15} />

@@ -216,7 +216,16 @@ test('undo while placing a radial arrow cancels only its unsaved preview', () =>
     deleted: [],
   });
   f.engine.beginQuickArrow({ x: 100, y: 120 }, { x: 140, y: 160 });
-  f.engine.keyDown({ key: 'z', ctrlKey: true, preventDefault() {}, stopImmediatePropagation() {} });
+  f.engine.keyDown({
+    key: 'z',
+    code: 'KeyZ',
+    ctrlKey: true,
+    shiftKey: false,
+    altKey: false,
+    metaKey: false,
+    preventDefault() {},
+    stopImmediatePropagation() {},
+  });
   assert.equal(f.engine.all.length, 1);
   assert.equal(f.engine.all[0].id, 'keep');
   assert.equal(f.edits.length, 1);
@@ -712,7 +721,14 @@ test('linked frames select on single click, open on double click, and move witho
   const f = fixture();
   f.engine.camera = { x: 0, y: 0, zoom: 1 };
   const original = { id: 'source', type: 'frame', x: 0, y: 400, width: 300, height: 200, z: 0 };
-  const linked = { ...original, id: 'linked', x: 100, y: 100, z: 2, frameLink: { boardId: 'board', frameId: 'source' } };
+  const linked = {
+    ...original,
+    id: 'linked',
+    x: 100,
+    y: 100,
+    z: 2,
+    frameLink: { boardId: 'board', frameId: 'source' },
+  };
   f.engine.apply({ upserts: [original, linked], deleted: [] });
   f.engine.down(f.event(180, 180, 0));
   f.engine.up(f.event(180, 180, 0));

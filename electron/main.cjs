@@ -39,6 +39,64 @@ protocol.registerSchemesAsPrivileged([
   },
 ]);
 const { McpService } = require('./mcp-server.cjs');
+
+// The renderer owns shortcut preferences; it sends the full-screen bindings here
+// because this handler sees keys before the page does.
+let fullscreenKeys = [{ code: 'F11' }];
+function cleanFullscreenKeys(value) {
+  if (!Array.isArray(value)) return fullscreenKeys;
+  return value
+    .filter((b) => b && typeof b.code === 'string' && b.code.length > 0 && b.code.length <= 40)
+    .slice(0, 2)
+    .map((b) => ({
+      code: b.code,
+      ctrl: b.ctrl === true,
+      shift: b.shift === true,
+      alt: b.alt === true,
+    }));
+}
+const matchesInput = (b, input) =>
+  b.code === input.code &&
+  !!b.ctrl === !!(input.control || input.meta) &&
+  !!b.shift === !!input.shift &&
+  !!b.alt === !!input.alt;
+
+let licenseList = null;
+// Production dependency tree with each package's declared license.
+function bundledLicenses() {
+  if (licenseList) return licenseList;
+  const base = app.getAppPath();
+  const readPackage = (dir) => {
+    try {
+      return JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
+    } catch {
+      return null;
+    }
+  };
+  const found = new Map();
+  const queue = Object.keys(readPackage(base)?.dependencies || {}).map((name) => ({
+    name,
+    from: base,
+  }));
+  while (queue.length) {
+    const { name, from } = queue.shift();
+    const dir = [path.join(from, 'node_modules', name), path.join(base, 'node_modules', name)].find(
+      (candidate) => fs.existsSync(path.join(candidate, 'package.json')),
+    );
+    if (!dir || found.has(dir)) continue;
+    const pkg = readPackage(dir);
+    if (!pkg) continue;
+    const license =
+      typeof pkg.license === 'string'
+        ? pkg.license
+        : pkg.license?.type || (Array.isArray(pkg.licenses) && pkg.licenses[0]?.type) || 'Unknown';
+    found.set(dir, { name: pkg.name || name, version: String(pkg.version || ''), license });
+    for (const dependency of Object.keys(pkg.dependencies || {}))
+      queue.push({ name: dependency, from: dir });
+  }
+  licenseList = [...found.values()].sort((a, b) => a.name.localeCompare(b.name));
+  return licenseList;
+}
 let mcp,
   externalPhase = null;
 const externalWaiters = new Map();
@@ -352,12 +410,14 @@ app
         event.preventDefault();
         return;
       }
-      if (input.type !== 'keyDown' || input.control || input.alt || input.meta || input.shift)
-        return;
-      if (input.key === 'F11') {
+      if (input.type !== 'keyDown') return;
+      if (fullscreenKeys.some((b) => matchesInput(b, input))) {
         event.preventDefault();
         if (!input.isAutoRepeat) win.setFullScreen(!win.isFullScreen());
-      } else if (input.key === 'Escape' && win.isFullScreen()) {
+        return;
+      }
+      if (input.control || input.alt || input.meta || input.shift) return;
+      if (input.key === 'Escape' && win.isFullScreen()) {
         // Consume this Escape so leaving fullscreen does not also cancel an edit.
         event.preventDefault();
         fullscreenEscapeHeld = true;
@@ -604,6 +664,64 @@ app
     ipcMain.handle('canvas:data-directory', (e) => {
       trusted(e);
       return root;
+    });
+    ipcMain.handle('canvas:app-info', (e) => {
+      trusted(e);
+      return {
+        version: app.getVersion(),
+        libraryPath: root,
+        backupsPath: path.join(root, 'backups'),
+        loginItemSupported: app.isPackaged,
+        openAtLogin: app.isPackaged && app.getLoginItemSettings().openAtLogin,
+      };
+    });
+    ipcMain.handle('canvas:set-open-at-login', (e, enabled) => {
+      trusted(e);
+      if (!app.isPackaged) throw Error('Launch at login is available in the installed app.');
+      app.setLoginItemSettings({ openAtLogin: enabled === true });
+      return app.getLoginItemSettings().openAtLogin;
+    });
+    ipcMain.handle('canvas:open-folder', async (e, which) => {
+      trusted(e);
+      const folder = { library: root, backups: path.join(root, 'backups') }[which];
+      if (!folder) throw Error('Unknown folder');
+      const failure = await shell.openPath(folder);
+      if (failure) throw Error(failure);
+    });
+    ipcMain.handle('canvas:export-library', async (e) => {
+      trusted(e);
+      const r = await dialog.showOpenDialog(win, {
+        title: 'Export all boards',
+        buttonLabel: 'Export here',
+        properties: ['openDirectory', 'createDirectory'],
+      });
+      if (r.canceled || !r.filePaths[0]) return null;
+      const folder = r.filePaths[0];
+      const { boards } = await call('library');
+      const used = new Set(fs.readdirSync(folder).map((name) => name.toLowerCase()));
+      let count = 0;
+      for (const board of boards.filter((b) => !b.trashed)) {
+        const base =
+          String(board.name)
+            .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '')
+            .replace(/[. ]+$/, '')
+            .trim()
+            .slice(0, 80) || 'Board';
+        let name = base + '.canvas';
+        for (let n = 2; used.has(name.toLowerCase()); n++) name = `${base} (${n}).canvas`;
+        used.add(name.toLowerCase());
+        await call('exportFile', { id: board.id, file: path.join(folder, name) });
+        count++;
+      }
+      return { count, folder };
+    });
+    ipcMain.handle('canvas:licenses', (e) => {
+      trusted(e);
+      return bundledLicenses();
+    });
+    ipcMain.on('canvas:fullscreen-keys', (e, bindings) => {
+      trusted(e);
+      fullscreenKeys = cleanFullscreenKeys(bindings);
     });
     ipcMain.on('canvas:renderer-ready', (e) => {
       trusted(e);

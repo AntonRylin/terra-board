@@ -85,6 +85,22 @@ import {
   linkCornerRadius,
   hasLinkImage,
 } from './link-preview';
+import { activeCommand } from '../shortcuts/active.ts';
+import type { CommandId } from '../shortcuts/commands';
+import type { WheelMode, ZoomSpeed } from '../settings/preferences';
+
+const zoomRates: Record<ZoomSpeed, number> = { slow: 0.0006, normal: 0.001, fast: 0.0017 };
+// Board commands that must not act on a floating click-to-place preview.
+const placementBlocked = new Set<CommandId>([
+  'edit.undo',
+  'edit.redo',
+  'edit.selectAll',
+  'edit.duplicate',
+  'edit.group',
+  'edit.ungroup',
+  'edit.delete',
+]);
+export type InputPreferences = { wheel: WheelMode; zoomSpeed: ZoomSpeed; snapping: boolean };
 interface Callbacks {
   lists?: (objects: CanvasObject[], camera: Camera) => void;
   composers?: (objects: CanvasObject[], camera: Camera) => void;
@@ -268,6 +284,7 @@ export class Engine {
   private world = new Container();
   private selectionLayer = new Graphics();
   private snapGuides: SnapGuide[] = [];
+  private input: InputPreferences = { wheel: 'zoom', zoomSpeed: 'normal', snapping: true };
   private views = new Map<string, { container: Container; signature: string; sharpness: string }>();
   private textures: TextureCache;
   private observer: ResizeObserver;
@@ -784,7 +801,7 @@ export class Engine {
           g.snap.targets,
           this.camera.zoom,
           g.snap.state,
-          e.altKey || !moved,
+          e.altKey || !moved || !this.input.snapping,
         );
         delta = result.delta;
         g.snap.state = result.state;
@@ -830,7 +847,7 @@ export class Engine {
             return objectBounds(resized);
           },
           g.snap.state,
-          e.altKey || !moved,
+          e.altKey || !moved || !this.input.snapping,
         );
         delta = result.delta;
         g.snap.state = result.state;
@@ -994,6 +1011,9 @@ export class Engine {
     this.space = false;
     this.cancel();
   };
+  setInputPreferences(input: InputPreferences) {
+    this.input = { ...input };
+  }
   // Freeze at the visible camera before a gesture, explicit camera action or save flush.
   stopCameraAnimation() {
     this.wheelZoom = null;
@@ -1013,8 +1033,21 @@ export class Engine {
   private wheel = (e: WheelEvent) => {
     if (e.target !== this.app.canvas) return;
     e.preventDefault();
-    if (this.gesture || !Number.isFinite(e.deltaY) || !e.deltaY) return;
+    if (this.gesture || !Number.isFinite(e.deltaY)) return;
     const units = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? this.host.clientHeight : 1;
+    if (this.input.wheel === 'pan' && !e.ctrlKey && !e.metaKey) {
+      // Pinch gestures arrive as Ctrl+wheel and keep zooming in pan mode.
+      let dx = (Number.isFinite(e.deltaX) ? e.deltaX : 0) * units,
+        dy = e.deltaY * units;
+      if (e.shiftKey && !dx) [dx, dy] = [dy, 0];
+      if (!dx && !dy) return;
+      this.stopCameraAnimation();
+      this.camera = { ...this.camera, x: this.camera.x - dx, y: this.camera.y - dy };
+      this.callbacks.camera({ ...this.camera });
+      this.invalidate();
+      return;
+    }
+    if (!e.deltaY) return;
     const delta = Math.max(-100, Math.min(100, e.deltaY * units));
     const point = this.point(e);
     const pending = this.wheelZoom;
@@ -1023,7 +1056,11 @@ export class Engine {
       pending && Math.sign(Math.log(pending.target / this.camera.zoom)) === -Math.sign(delta)
         ? pending.target
         : this.camera.zoom;
-    const target = zoomAt(this.camera, point, base * Math.exp(-delta * 0.001)).zoom;
+    const target = zoomAt(
+      this.camera,
+      point,
+      base * Math.exp(-delta * zoomRates[this.input.zoomSpeed]),
+    ).zoom;
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       this.stopCameraAnimation();
       this.camera = zoomAt(this.camera, point, target);
@@ -1050,19 +1087,28 @@ export class Engine {
       this.cancel();
       return;
     }
-    if (
-      this.gesture?.clickToPlace &&
-      (e.key === 'Delete' ||
+    if (this.gesture?.clickToPlace) {
+      const command = activeCommand(e, 'board');
+      const clipboard = (e.ctrlKey || e.metaKey) && !e.altKey && ['KeyC', 'KeyX'].includes(e.code);
+      if (
+        clipboard ||
+        e.key === 'Delete' ||
         e.key === 'Backspace' ||
-        ((e.ctrlKey || e.metaKey) &&
-          ['z', 'y', 'a', 'c', 'x', 'd', 'g'].includes(e.key.toLowerCase())))
-    ) {
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      // A floating preview is not yet a board object. Undo/Delete cancel it;
-      // clipboard and selection commands must not publish or transform it.
-      if (['z', 'Delete', 'Backspace'].includes(e.key)) this.cancel();
-      return;
+        (command && placementBlocked.has(command))
+      ) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        // A floating preview is not yet a board object. Undo/Delete cancel it;
+        // clipboard and selection commands must not publish or transform it.
+        if (
+          e.key === 'Delete' ||
+          e.key === 'Backspace' ||
+          command === 'edit.undo' ||
+          command === 'edit.delete'
+        )
+          this.cancel();
+        return;
+      }
     }
     if (e.code === 'Space') {
       e.preventDefault();

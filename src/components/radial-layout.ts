@@ -1,4 +1,4 @@
-import { toolbarIds, type ToolbarId } from './toolbar-layout';
+import { toolbarIds, type ToolbarId } from './toolbar-layout.ts';
 
 export const radialStorageKey = 'terra-board.radial-layout';
 // The downward sector stays clear so the customization button is always reachable.

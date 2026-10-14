@@ -38,6 +38,12 @@ contextBridge.exposeInMainWorld('canvas', {
   },
   mcpReady: (id, error) => ipcRenderer.send('canvas:mcp-ready', { id, error }),
   dataDirectory: () => ipcRenderer.invoke('canvas:data-directory'),
+  appInfo: () => ipcRenderer.invoke('canvas:app-info'),
+  setOpenAtLogin: (enabled) => ipcRenderer.invoke('canvas:set-open-at-login', enabled),
+  openFolder: (which) => ipcRenderer.invoke('canvas:open-folder', which),
+  exportLibrary: () => ipcRenderer.invoke('canvas:export-library'),
+  licenses: () => ipcRenderer.invoke('canvas:licenses'),
+  setFullscreenKeys: (bindings) => ipcRenderer.send('canvas:fullscreen-keys', bindings),
   onClose: (callback) => {
     const handler = () => callback();
     ipcRenderer.on('canvas:close-request', handler);

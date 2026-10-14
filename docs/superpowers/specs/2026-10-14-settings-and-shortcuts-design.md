@@ -1,6 +1,6 @@
 # Settings page and custom shortcuts
 
-Date: 2026-10-14. Status: approved in chat; implementation in progress.
+Date: 2026-10-14. Status: implemented.
 
 ## Goal
 

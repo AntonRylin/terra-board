@@ -176,6 +176,9 @@ body.toolbar-reordering * {
 .customizable-toolbar [data-tool-label] {
   position: relative;
 }
+.customizable-toolbar [data-tool-label][data-tool-shortcut]::after {
+  content: attr(data-tool-label) '\2003' attr(data-tool-shortcut);
+}
 .customizable-toolbar:not([data-reordering]) [data-tool-label]:is(:hover, :focus-visible)::after {
   opacity: 1;
   transform: translateX(-50%);

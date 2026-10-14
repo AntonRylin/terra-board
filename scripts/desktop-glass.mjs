@@ -276,6 +276,10 @@ try {
     await read(
       `Array.from(document.querySelectorAll('.context-menu button')).find(b=>b.textContent==='Settings').click()`,
     );
+    await until(() => read(`!!document.querySelector('.st-nav')`), 'settings sections');
+    await read(
+      `Array.from(document.querySelectorAll('.st-nav-item')).find(b=>b.textContent==='Appearance').click()`,
+    );
     await until(
       () => read(`!!document.querySelector('#panel-transparency')`),
       'appearance settings',

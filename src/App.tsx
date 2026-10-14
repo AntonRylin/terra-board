@@ -1,5 +1,9 @@
 import SettingsPage from './components/SettingsPage';
 import { finishStartup } from './startup';
+import { isCommand } from './shortcuts/active';
+import { bindingsFor, commands, fixedShortcuts } from './shortcuts/commands';
+import { formatBinding } from './shortcuts/keys';
+import { getPreferences, subscribePreferences, usePreferences } from './settings/preferences';
 import { useGlassAppearance } from './components/useGlassAppearance';
 import { useAppearance } from './components/useAppearance';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -64,6 +68,7 @@ type ModalState = {
     | 'search'
     | 'trash'
     | 'help'
+    | 'confirm-trash'
     | 'settings';
   id?: string;
   folderId?: string | null;
@@ -72,6 +77,13 @@ type ModalState = {
 export default function App() {
   const glass = useGlassAppearance();
   const appearance = useAppearance();
+  const preferences = usePreferences();
+  useEffect(() => {
+    const send = () =>
+      window.canvas?.setFullscreenKeys(bindingsFor('app.fullscreen', getPreferences().shortcuts));
+    send();
+    return subscribePreferences(send);
+  }, []);
   const [aiBusy, setAiBusy] = useState(false);
   const [canvasReady, setCanvasReady] = useState(false);
   const activeDocument = useRef<Document | null>(null);
@@ -221,8 +233,9 @@ export default function App() {
         event.stopImmediatePropagation();
         return;
       }
-      if (event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) return;
-      if (event.key !== 'F11' && !(event.key === 'Escape' && fullscreenNow.current)) return;
+      const plain = !event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey;
+      const exit = plain && event.key === 'Escape' && fullscreenNow.current;
+      if (!exit && !isCommand(event, 'app.fullscreen')) return;
       event.preventDefault();
       event.stopImmediatePropagation();
       if (event.key === 'Escape') fullscreenEscapeHeld.current = true;
@@ -277,9 +290,10 @@ export default function App() {
   useEffect(() => {
     run(async () => {
       const l = await refresh();
-      const first =
-        l.boards.find((b) => b.id === l.lastBoard && !b.trashed) ||
-        l.boards.find((b) => !b.trashed);
+      const remembered = getPreferences().openLastBoard
+        ? l.boards.find((b) => b.id === l.lastBoard && !b.trashed)
+        : undefined;
+      const first = remembered || l.boards.find((b) => !b.trashed);
       if (first) await openBoard(first.id);
       if (l.backupError)
         report('The automatic metadata snapshot could not be created: ' + l.backupError);
@@ -289,15 +303,17 @@ export default function App() {
     const key = (e: KeyboardEvent) => {
       if (document.querySelector('.pdf-workspace, .image-viewer, .frame-usages')) return;
       if (aiBusy || modal?.kind === 'settings' || e.isComposing || e.repeat) return;
-      if (
-        (e.ctrlKey || e.metaKey) &&
-        !e.altKey &&
-        !e.shiftKey &&
-        ['f', 'k'].includes(e.key.toLowerCase())
-      ) {
+      if (isCommand(e, 'app.search')) {
         e.preventDefault();
         e.stopPropagation();
         openSearch();
+      } else if (isCommand(e, 'app.settings')) {
+        e.preventDefault();
+        e.stopPropagation();
+        void flushInlineNames()
+          .then(() => whiteboard.current?.flush())
+          .then(() => ask({ kind: 'settings' }))
+          .catch((error) => report(String(error)));
       }
     };
     window.addEventListener('keydown', key, true);
@@ -456,16 +472,16 @@ export default function App() {
         setBusy(false);
       }
     });
+  const centerLauncher = (centered: boolean) => {
+    setLauncherCentered(centered);
+    try {
+      localStorage.setItem('terra-board.launcher-centered', String(centered));
+    } catch {}
+  };
   const launcherAlignmentItem: MenuItem = {
     label: launcherCentered ? 'Uncenter panel' : 'Center panel',
     icon: <AlignCenter />,
-    action: () => {
-      const centered = !launcherCentered;
-      setLauncherCentered(centered);
-      try {
-        localStorage.setItem('terra-board.launcher-centered', String(centered));
-      } catch {}
-    },
+    action: () => centerLauncher(!launcherCentered),
   };
   const launcherModeItem: MenuItem = {
     label: launcherMinimal ? 'Full panel' : 'Minimal mode',
@@ -560,7 +576,13 @@ export default function App() {
         launcherModeItem,
         hideLauncherItem,
         null,
-        { label: 'Move to Trash', icon: <Trash2 />, danger: true, action: () => trash(b.id) },
+        {
+          label: 'Move to Trash',
+          icon: <Trash2 />,
+          danger: true,
+          action: () =>
+            getPreferences().confirmTrash ? ask({ kind: 'confirm-trash', id: b.id }) : trash(b.id),
+        },
       ],
     });
   const folderMenu = (f: Folder, x: number, y: number) =>
@@ -694,6 +716,7 @@ export default function App() {
     search: 'Search',
     trash: 'Trash',
     help: 'Make yourself at home',
+    'confirm-trash': 'Move to Trash?',
     settings: 'Settings',
   };
   return (
@@ -1069,6 +1092,29 @@ export default function App() {
                     </button>
                   </div>
                 </form>
+              ) : modal.kind === 'confirm-trash' ? (
+                <>
+                  <p className="quiet">
+                    “{library.boards.find((b) => b.id === modal.id)?.name || 'This board'}” moves to
+                    Trash. You can restore it from Trash at any time.
+                  </p>
+                  <div className="dialog-actions">
+                    <button type="button" className="button" onClick={() => setModal(null)}>
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      className="button primary"
+                      onClick={() => {
+                        const id = modal.id!;
+                        setModal(null);
+                        trash(id);
+                      }}
+                    >
+                      Move to Trash
+                    </button>
+                  </div>
+                </>
               ) : modal.kind === 'search' ? (
                 <LibrarySearch
                   library={library}
@@ -1121,23 +1167,18 @@ export default function App() {
                   <p className="quiet">A private space, saved automatically on this computer.</p>
                   <dl className="shortcuts">
                     {[
-                      ['Paste images, text or links', 'Ctrl V'],
-                      ['Select everything', 'Ctrl A'],
-                      ['Duplicate selection', 'Ctrl D'],
-                      ['Undo / redo', 'Ctrl Z / Ctrl Shift Z'],
-                      ['Group / ungroup', 'Ctrl G / Ctrl Shift G'],
-                      ['Search boards and content', 'Ctrl F'],
-                      ['Toggle full screen', 'F11'],
-                      ['Exit full screen', 'Esc'],
-                      ['Pan around', 'Right-drag · Space + drag'],
-                      ['Move without snapping', 'Alt + drag'],
-                      ['Zoom toward pointer', 'Mouse wheel'],
-                      ['Fit your board', '0'],
-                      ['Draw an arrow', 'A + drag'],
-                      ['Arrow: horizontal / vertical', 'Shift / Ctrl'],
-                      ['Quick tools at cursor', 'Tab'],
+                      ...commands.flatMap((c) => {
+                        const keys = bindingsFor(c.id, preferences.shortcuts);
+                        return keys.length
+                          ? [[c.name, keys.map(formatBinding).join(' / ').replace(/\+/g, ' ')]]
+                          : [];
+                      }),
+                      ...fixedShortcuts.map((f) => [f.name, f.keys]),
+                      [
+                        preferences.wheel === 'pan' ? 'Pan / zoom' : 'Zoom toward pointer',
+                        preferences.wheel === 'pan' ? 'Mouse wheel / Ctrl + wheel' : 'Mouse wheel',
+                      ],
                       ['Edit text', 'Double-click'],
-                      ['Finish text editing', 'Ctrl Enter'],
                     ].map(([a, b]) => (
                       <div key={a}>
                         <dt>{a}</dt>
@@ -1164,6 +1205,14 @@ export default function App() {
           onClose={() => setModal(null)}
           transparency={glass.transparency}
           onTransparency={glass.setTransparency}
+          panel={{
+            hidden: launcherHidden,
+            minimal: launcherMinimal,
+            centered: launcherCentered,
+            setHidden: setLauncherHidden,
+            setMinimal: setLauncherMinimal,
+            setCentered: centerLauncher,
+          }}
         />
       )}
     </>
