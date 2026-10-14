@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.31.0",
+    "@supabase/supabase-js": "^2.117.3",
     "docx-preview": "0.4.1",
     "dompurify": "3.4.16",
     "fflate": "^0.8.2",
@@ -42,6 +43,7 @@
     "electron": "44.5.1",
     "electron-builder": "^26.0.12",
     "prettier": "^3.9.9",
+    "supabase": "^2.120.0",
     "typescript": "^5.9.3",
     "vite": "8.3.1"
   },
