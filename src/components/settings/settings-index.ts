@@ -190,17 +190,38 @@ export const rows = {
     description: 'Choose the tool for each direction.',
     keywords: 'quick tools tab',
   },
+  cloudName: {
+    section: 'cloud',
+    title: 'Your name',
+    description: 'Shown to the people you share folders and boards with.',
+    keywords: 'profile display name sharing',
+  },
   cloudEnable: {
     section: 'cloud',
-    title: 'Sync this computer',
+    title: 'Sync my whole library',
     description: 'Upload your boards and keep them in sync on every computer you add.',
     keywords: 'cloud backup supabase devices',
   },
   cloudJoin: {
     section: 'cloud',
-    title: 'Join from another computer',
-    description: 'Enter the code shown on a computer that already syncs.',
-    keywords: 'cloud pair code device',
+    title: 'Join with a code',
+    description: 'An invite someone sent you, or a code from another of your computers.',
+    keywords: 'cloud pair code device invite share',
+  },
+  cloudLibrary: {
+    section: 'cloud',
+    title: 'Sync my whole library',
+    keywords: 'cloud backup devices',
+  },
+  cloudShared: {
+    section: 'cloud',
+    title: 'Nothing shared yet',
+    keywords: 'share people access invite',
+  },
+  cloudReceived: {
+    section: 'cloud',
+    title: 'Nothing shared with you yet',
+    keywords: 'share invite friends',
   },
   cloudStatus: { section: 'cloud', title: 'Status', keywords: 'cloud sync' },
   cloudAddDevice: {

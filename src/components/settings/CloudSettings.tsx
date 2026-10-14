@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Copy, RefreshCw } from 'lucide-react';
 import type { CloudDevice, CloudStatus } from '../../bridge';
-import { Group, Notice, Row, useNotice } from './controls';
+import type { Library } from '../../model';
+import { Group, Notice, Row, Switch, useNotice } from './controls';
 
 const since = (time: number | null) => {
   if (!time) return '';
@@ -23,19 +24,32 @@ function describe(status: CloudStatus) {
   return `Up to date${status.lastSync ? ' · ' + since(status.lastSync) : ''}`;
 }
 
-export function CloudSettings() {
+const clean = (e: unknown) =>
+  String(e).replace(/^Error: (Error invoking remote method '[^']+': )?(Error: )?/, '');
+
+export function CloudSettings({
+  library,
+  onManageShare,
+}: {
+  library?: Library;
+  onManageShare?: (kind: 'folder' | 'board', id: string) => void;
+}) {
   const cloud = window.canvas?.cloud;
   const [status, setStatus] = useState<CloudStatus | null>(null);
   const [devices, setDevices] = useState<CloudDevice[]>([]);
   const [code, setCode] = useState('');
   const [joinCode, setJoinCode] = useState('');
+  const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useNotice();
   const [, tick] = useState(0);
 
   useEffect(() => {
     if (!cloud) return;
-    void cloud.status().then(setStatus);
+    void cloud.status().then((s) => {
+      setStatus(s);
+      setName(s.name || '');
+    });
     const stop = cloud.onStatus(setStatus);
     const timer = setInterval(() => tick((n) => n + 1), 15000);
     return () => {
@@ -44,14 +58,14 @@ export function CloudSettings() {
     };
   }, [cloud]);
 
-  const on = !!status && status.state !== 'off';
+  const identity = !!status?.identity;
   const loadDevices = useCallback(() => {
-    if (cloud && on)
+    if (cloud && identity)
       void cloud
         .devices()
         .then(setDevices)
         .catch(() => {});
-  }, [cloud, on]);
+  }, [cloud, identity]);
   useEffect(loadDevices, [loadDevices]);
 
   const act = async (job: () => Promise<unknown>, done?: string) => {
@@ -60,7 +74,7 @@ export function CloudSettings() {
       await job();
       if (done) setNotice({ text: done });
     } catch (error) {
-      setNotice({ text: String(error).replace(/^Error: /, ''), error: true });
+      setNotice({ text: clean(error), error: true });
     } finally {
       setBusy(false);
     }
@@ -82,46 +96,84 @@ export function CloudSettings() {
       </Group>
     );
 
-  if (!on)
+  const itemName = (kind: 'folder' | 'board', id: string) =>
+    (kind === 'folder'
+      ? library?.folders.find((f) => f.id === id)?.name
+      : library?.boards.find((b) => b.id === id)?.name) || 'Removed item';
+  const join = (
+    <Row id="cloudJoin">
+      <span className="cloud-join">
+        <input
+          aria-label="Code you were given"
+          placeholder="XXXXX-XXXXX"
+          value={joinCode}
+          maxLength={14}
+          onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+        />
+        <button
+          type="button"
+          className="st-button"
+          disabled={
+            busy ||
+            joinCode.replace(/[^0-9A-Z]/g, '').length < 10 ||
+            (!identity && joinCode.startsWith('S') && !name.trim())
+          }
+          onClick={() =>
+            act(async () => {
+              await cloud.join(joinCode, name.trim() || undefined);
+              setJoinCode('');
+            }, 'Joined.')
+          }
+        >
+          Join
+        </button>
+      </span>
+    </Row>
+  );
+  const nameRow = (
+    <Row id="cloudName">
+      <span className="cloud-join">
+        <input
+          aria-label="Your name"
+          placeholder="Your name"
+          value={name}
+          maxLength={60}
+          onChange={(e) => setName(e.target.value)}
+        />
+        {identity && name.trim() && name.trim() !== status.name && (
+          <button
+            type="button"
+            className="st-button"
+            disabled={busy}
+            onClick={() => act(() => cloud.rename(name.trim()), 'Name saved.')}
+          >
+            Save
+          </button>
+        )}
+      </span>
+    </Row>
+  );
+
+  if (!identity)
     return (
       <>
         <Group>
+          {nameRow}
           <Row id="cloudEnable">
             <button
               type="button"
               className="st-button primary"
-              disabled={busy}
-              onClick={() => act(() => cloud.enable(), 'Sync is on.')}
+              disabled={busy || !name.trim()}
+              onClick={() => act(() => cloud.enable(name.trim()), 'Sync is on.')}
             >
               {busy ? 'Turning on…' : 'Turn on'}
             </button>
           </Row>
-          <Row id="cloudJoin">
-            <span className="cloud-join">
-              <input
-                aria-label="Code from your other computer"
-                placeholder="XXXXX-XXXXX"
-                value={joinCode}
-                maxLength={11}
-                onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && joinCode.trim())
-                    void act(() => cloud.join(joinCode), 'Joined. Your boards are syncing.');
-                }}
-              />
-              <button
-                type="button"
-                className="st-button"
-                disabled={busy || joinCode.replace(/[^0-9A-Z]/g, '').length < 10}
-                onClick={() => act(() => cloud.join(joinCode), 'Joined. Your boards are syncing.')}
-              >
-                Join
-              </button>
-            </span>
-          </Row>
+          {join}
         </Group>
         <p className="st-hint cloud-hint">
-          No account needed. Boards already on this computer are added to the synced library.
+          No account needed. To share just one folder or board, choose Share… in its menu; the rest
+          of your library stays on this computer.
         </p>
         <Notice notice={notice} />
       </>
@@ -130,6 +182,22 @@ export function CloudSettings() {
   return (
     <>
       <Group>
+        {nameRow}
+        <Row
+          id="cloudLibrary"
+          description={
+            status.library
+              ? 'Every board is kept on all your computers.'
+              : 'Only folders and boards you share are uploaded.'
+          }
+        >
+          <Switch
+            label="Sync my whole library"
+            checked={status.library}
+            disabled={busy}
+            onChange={(on) => act(() => cloud.setLibrary(on))}
+          />
+        </Row>
         <Row
           id="cloudStatus"
           description={
@@ -149,6 +217,57 @@ export function CloudSettings() {
             Sync now
           </button>
         </Row>
+      </Group>
+
+      <Group title="Shared by you">
+        {status.shared.length ? (
+          status.shared.map((s) => (
+            <Row
+              key={s.shareId}
+              title={itemName(s.kind, s.targetId)}
+              description={`${s.kind === 'folder' ? 'Folder' : 'Board'} · ${
+                s.people === 1 ? '1 person' : `${s.people} people`
+              }`}
+            >
+              <button
+                type="button"
+                className="st-button"
+                onClick={() => onManageShare?.(s.kind, s.targetId)}
+              >
+                Manage
+              </button>
+            </Row>
+          ))
+        ) : (
+          <Row id="cloudShared" description="Choose Share… in a folder's or board's menu." />
+        )}
+      </Group>
+
+      <Group title="Shared with you">
+        {status.sharedWithMe.length ? (
+          status.sharedWithMe.map((s) => (
+            <Row
+              key={s.shareId}
+              title={itemName(s.kind, s.targetId)}
+              description={`From ${s.owner} · ${s.role === 'edit' ? 'Can edit' : 'View only'}`}
+            >
+              <button
+                type="button"
+                className="st-button"
+                disabled={busy}
+                onClick={() => act(() => cloud.leave(s.shareId), 'Left.')}
+              >
+                Leave
+              </button>
+            </Row>
+          ))
+        ) : (
+          <Row id="cloudReceived" description="Join with a code someone sent you." />
+        )}
+        {join}
+      </Group>
+
+      <Group title="Your computers">
         <Row
           id="cloudAddDevice"
           below={
@@ -168,7 +287,7 @@ export function CloudSettings() {
                   Copy
                 </button>
                 <span>
-                  Enter it on the other computer in Settings → Cloud sync. Works once, for 15
+                  Enter it on your other computer in Settings → Cloud sync. Works once, for 15
                   minutes.
                 </span>
               </div>
@@ -189,8 +308,6 @@ export function CloudSettings() {
             {code ? 'New code' : 'Create code'}
           </button>
         </Row>
-      </Group>
-      <Group title="Computers">
         {devices.map((d) => (
           <Row
             key={d.id}
@@ -219,8 +336,8 @@ export function CloudSettings() {
             )}
           </Row>
         ))}
-        {!devices.length && <Row title="Loading…" />}
       </Group>
+
       <Group>
         <Row id="cloudDisable">
           <button
@@ -234,8 +351,8 @@ export function CloudSettings() {
         </Row>
       </Group>
       <p className="st-hint cloud-hint">
-        Your synced library is tied to these computers, not to an email address. Keep at least one
-        of them, or the cloud copy cannot be recovered.
+        Your cloud identity is tied to these computers, not to an email address. Keep at least one
+        of them, or what is stored in the cloud cannot be recovered.
       </p>
       <Notice notice={notice} />
     </>

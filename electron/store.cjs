@@ -532,6 +532,24 @@ class Store {
   syncDisable() {
     return this.sync.disable();
   }
+  syncIdentity(args) {
+    return this.sync.identity(args);
+  }
+  syncLibrary(args) {
+    return this.sync.library(args);
+  }
+  syncOwned(args) {
+    return this.sync.owned(args);
+  }
+  syncReconcile(args) {
+    return this.sync.reconcile(args);
+  }
+  syncCursor(args) {
+    return this.sync.cursor(args);
+  }
+  syncRename(args) {
+    return this.sync.rename(args);
+  }
   syncTake(args) {
     return this.sync.take(args);
   }
@@ -581,6 +599,7 @@ class Store {
       lastBoard:
         this.db.prepare("SELECT value FROM settings WHERE key='lastBoard'").get()?.value || null,
       backupError: this.backupError || null,
+      sharing: this.sync.marks(),
     };
   }
   board(id) {

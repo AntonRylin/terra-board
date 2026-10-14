@@ -62,8 +62,20 @@ contextBridge.exposeInMainWorld('canvas', {
   },
   cloud: {
     status: () => ipcRenderer.invoke('canvas:cloud-status'),
-    enable: () => ipcRenderer.invoke('canvas:cloud-enable'),
-    join: (code) => ipcRenderer.invoke('canvas:cloud-join', code),
+    enable: (name) => ipcRenderer.invoke('canvas:cloud-enable', name),
+    join: (code, name) => ipcRenderer.invoke('canvas:cloud-join', code, name),
+    identify: (name) => ipcRenderer.invoke('canvas:cloud-identify', name),
+    rename: (name) => ipcRenderer.invoke('canvas:cloud-rename', name),
+    setLibrary: (on, name) => ipcRenderer.invoke('canvas:cloud-set-library', on, name),
+    sharePeople: (kind, id) => ipcRenderer.invoke('canvas:cloud-share-people', kind, id),
+    invite: (kind, id, role, name) =>
+      ipcRenderer.invoke('canvas:cloud-invite', kind, id, role, name),
+    setPersonRole: (share, person, role) =>
+      ipcRenderer.invoke('canvas:cloud-set-person-role', share, person, role),
+    removePerson: (share, person) =>
+      ipcRenderer.invoke('canvas:cloud-remove-person', share, person),
+    stopSharing: (share) => ipcRenderer.invoke('canvas:cloud-stop-sharing', share),
+    leave: (share) => ipcRenderer.invoke('canvas:cloud-leave', share),
     disable: () => ipcRenderer.invoke('canvas:cloud-disable'),
     pairingCode: () => ipcRenderer.invoke('canvas:cloud-pairing-code'),
     devices: () => ipcRenderer.invoke('canvas:cloud-devices'),

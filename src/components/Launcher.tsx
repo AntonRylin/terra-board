@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
-import { Plus, MoreHorizontal, X, Folder as FolderIcon } from 'lucide-react';
-import type { Board, Folder, Library } from '../model';
+import { Plus, MoreHorizontal, X, Folder as FolderIcon, Users } from 'lucide-react';
+import type { Board, Folder, Library, SharingMark } from '../model';
 import { Presence } from './Presence';
 import { BoardGlyph } from './Icon';
 import InlineName from './InlineName';
@@ -9,7 +9,19 @@ import { useLauncherDock, type DockEdge } from './useLauncherDock';
 import { useLauncherReorder } from './useLauncherReorder';
 import { useLauncherAlignment } from './useLauncherAlignment';
 import type { MenuPlacement } from './Dialogs';
-export function AppIcon({ board }: { board: Board }) {
+export function ShareBadge({ mark }: { mark?: SharingMark }) {
+  if (!mark) return null;
+  return (
+    <span
+      className="share-badge"
+      data-shared={mark.shared}
+      title={mark.shared === 'owner' ? 'Shared by you' : `Shared by ${mark.owner || 'someone'}`}
+    >
+      <Users size={9} strokeWidth={2.5} />
+    </span>
+  );
+}
+export function AppIcon({ board, shared }: { board: Board; shared?: SharingMark }) {
   return (
     <span className={'app-icon ' + board.color + ' shape-' + (board.iconShape || 'rounded')}>
       <BoardGlyph
@@ -17,6 +29,7 @@ export function AppIcon({ board }: { board: Board }) {
         boardName={board.name}
         showInitial={board.showInitial !== false}
       />
+      <ShareBadge mark={shared} />
     </span>
   );
 }
@@ -259,9 +272,10 @@ export default function Launcher(p: Props) {
                     ) : (
                       <FolderIcon size={18} />
                     )}
+                    <ShareBadge mark={p.library.sharing?.folders[item.id]} />
                   </span>
                 ) : (
-                  <AppIcon board={b} />
+                  <AppIcon board={b} shared={p.library.sharing?.boards[b.id]} />
                 )}
               </button>
             );
@@ -356,7 +370,7 @@ export default function Launcher(p: Props) {
                       aria-label={'Open board ' + b.name}
                       onClick={() => p.onOpen(b.id)}
                     >
-                      <AppIcon board={b} />
+                      <AppIcon board={b} shared={p.library.sharing?.boards[b.id]} />
                     </button>
                     <InlineName
                       value={b.name}

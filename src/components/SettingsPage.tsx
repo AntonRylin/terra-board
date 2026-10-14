@@ -3,6 +3,7 @@ import { ArrowLeft, ChevronRight, Search, X } from 'lucide-react';
 import McpSettings from './McpSettings';
 import AppearanceSettings from './AppearanceSettings';
 import type { Appearance } from './useAppearance';
+import type { Library } from '../model';
 import { searchSettings, sectionById, sections, type SectionId } from './settings/settings-index';
 import { GeneralSettings, PanelSettings, type PanelOptions } from './settings/GeneralSettings';
 import { CanvasSettings, RadialSettings } from './settings/CanvasSettings';
@@ -20,12 +21,16 @@ export default function SettingsPage({
   onTransparency,
   appearance,
   panel,
+  library,
+  onManageShare,
 }: {
   onClose: () => void;
   transparency: number;
   onTransparency: (value: number) => void;
   appearance: Appearance;
   panel: PanelOptions;
+  library?: Library;
+  onManageShare?: (kind: 'folder' | 'board', id: string) => void;
 }) {
   const page = useRef<HTMLElement>(null);
   const back = useRef<HTMLButtonElement>(null);
@@ -202,7 +207,9 @@ export default function SettingsPage({
               {section === 'canvas' && <CanvasSettings />}
               {section === 'radial' && <RadialSettings />}
               {section === 'shortcuts' && <ShortcutSettings />}
-              {section === 'cloud' && <CloudSettings />}
+              {section === 'cloud' && (
+                <CloudSettings library={library} onManageShare={onManageShare} />
+              )}
               {section === 'storage' && <StorageSettings />}
               {section === 'ai' && <McpSettings />}
               {section === 'about' && <AboutSettings />}

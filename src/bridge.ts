@@ -8,13 +8,39 @@ export interface McpStatus {
   codexConfig: string;
   claudeConfig: string;
 }
+export type ShareRole = 'view' | 'edit';
+export interface OwnShare {
+  shareId: string;
+  kind: 'folder' | 'board';
+  targetId: string;
+  people: number;
+}
+export interface ReceivedShare {
+  shareId: string;
+  workspace: string;
+  owner: string;
+  kind: 'folder' | 'board';
+  targetId: string;
+  role: ShareRole;
+  boards: string[];
+}
 export interface CloudStatus {
   configured: boolean;
   state: 'off' | 'syncing' | 'synced' | 'offline' | 'error';
+  identity: boolean;
+  library: boolean;
+  name: string;
   pending: number;
   lastSync: number | null;
   error: string | null;
   workspace?: string | null;
+  shared: OwnShare[];
+  sharedWithMe: ReceivedShare[];
+}
+export interface SharePerson {
+  id: string;
+  name: string;
+  role: ShareRole;
 }
 export type LivePermission = 'view' | 'edit';
 export interface LiveStatus {
@@ -109,8 +135,20 @@ interface DesktopBridge {
   };
   cloud: {
     status(): Promise<CloudStatus>;
-    enable(): Promise<CloudStatus>;
-    join(code: string): Promise<CloudStatus>;
+    enable(name?: string): Promise<CloudStatus>;
+    join(code: string, name?: string): Promise<CloudStatus>;
+    identify(name: string): Promise<CloudStatus>;
+    rename(name: string): Promise<CloudStatus>;
+    setLibrary(on: boolean, name?: string): Promise<CloudStatus>;
+    sharePeople(
+      kind: 'folder' | 'board',
+      id: string,
+    ): Promise<{ shareId: string | null; people: SharePerson[] }>;
+    invite(kind: 'folder' | 'board', id: string, role: ShareRole, name?: string): Promise<string>;
+    setPersonRole(share: string, person: string, role: ShareRole): Promise<void>;
+    removePerson(share: string, person: string): Promise<void>;
+    stopSharing(share: string): Promise<void>;
+    leave(share: string): Promise<void>;
     disable(): Promise<CloudStatus>;
     pairingCode(): Promise<string>;
     devices(): Promise<CloudDevice[]>;

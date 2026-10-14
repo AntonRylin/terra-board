@@ -589,8 +589,19 @@ app
         return handler(...args);
       });
     cloudAction('status', () => cloud.status);
-    cloudAction('enable', () => cloud.enable());
-    cloudAction('join', (code) => cloud.join(code));
+    cloudAction('enable', (name) => cloud.enable(name));
+    cloudAction('join', (code, name) => cloud.join(code, name));
+    cloudAction('identify', (name) => cloud.identify(name));
+    cloudAction('rename', (name) => cloud.rename(name));
+    cloudAction('set-library', (on, name) => cloud.setLibrary(on, name));
+    cloudAction('share-people', (kind, id) => cloud.sharePeople(kind, id));
+    cloudAction('invite', (kind, id, role, name) => cloud.invite(kind, id, role, name));
+    cloudAction('set-person-role', (share, person, role) =>
+      cloud.setPersonRole(share, person, role),
+    );
+    cloudAction('remove-person', (share, person) => cloud.removePerson(share, person));
+    cloudAction('stop-sharing', (share) => cloud.stopSharing(share));
+    cloudAction('leave', (share) => cloud.leave(share));
     cloudAction('disable', () => cloud.disable());
     cloudAction('pairing-code', () => cloud.pairingCode());
     cloudAction('devices', () => cloud.devices());

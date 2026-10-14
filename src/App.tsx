@@ -32,8 +32,11 @@ import {
   ImagePlus,
   Folder as FolderIcon,
   Radio,
+  Users,
+  KeyRound,
 } from 'lucide-react';
 import { LiveBadge, LiveRequests, LiveShareDialog, useLiveStatus } from './components/LiveShare';
+import { JoinDialog, ShareDialog, useCloudStatus } from './components/ShareDialog';
 import type { Board, Document, Folder, Library, BackgroundAppearance } from './model';
 import BoardBackgroundSettings, { defaultBackgroundAppearance } from './components/BoardBackground';
 import {
@@ -72,8 +75,11 @@ type ModalState = {
     | 'help'
     | 'confirm-trash'
     | 'live'
+    | 'share'
+    | 'join'
     | 'settings';
   id?: string;
+  shareKind?: 'folder' | 'board';
   folderId?: string | null;
   iconFile?: File;
 };
@@ -89,6 +95,15 @@ export default function App() {
   }, []);
   const [aiBusy, setAiBusy] = useState<false | 'ai' | 'cloud' | 'guest'>(false);
   const liveStatus = useLiveStatus();
+  const cloudStatus = useCloudStatus();
+  // What is shared, and with whom, changes the board panel's badges and menus.
+  const shareSignature = JSON.stringify([
+    cloudStatus?.shared.map((s) => s.shareId),
+    cloudStatus?.sharedWithMe.map((s) => [s.shareId, s.role, s.boards]),
+  ]);
+  useEffect(() => {
+    if (cloudStatus) void refresh().catch(() => {});
+  }, [shareSignature]);
   const [canvasReady, setCanvasReady] = useState(false);
   const activeDocument = useRef<Document | null>(null);
   const [dockEdge, setDockEdge] = useState(readDockEdge);
@@ -513,7 +528,31 @@ export default function App() {
       setOpened(null);
       setLauncherHidden((hidden) => !hidden);
     });
-  const boardMenu = (b: Board, x: number, y: number) =>
+  const sharingOf = (b: Board) =>
+    library.sharing?.boards[b.id] ||
+    (b.folderId ? library.sharing?.folders[b.folderId] : undefined);
+  const shareItem = (shareKind: 'folder' | 'board', id: string, received: boolean): MenuItem => ({
+    label: received ? 'Shared with you…' : 'Share…',
+    icon: <Users />,
+    action: () => ask({ kind: 'share', shareKind, id }),
+  });
+  const boardMenu = (b: Board, x: number, y: number) => {
+    const mark = sharingOf(b);
+    if (desktop && mark && mark.shared !== 'owner')
+      return setMenu({
+        x,
+        y,
+        items: [
+          { label: 'Open', action: () => openBoard(b.id) },
+          shareItem('board', b.id, true),
+          null,
+          { label: 'Export / share a copy…', icon: <Download />, action: () => exportBoard(b.id) },
+          null,
+          launcherAlignmentItem,
+          launcherModeItem,
+          hideLauncherItem,
+        ],
+      });
     setMenu({
       x,
       y,
@@ -580,6 +619,7 @@ export default function App() {
         },
         null,
         { label: 'Export / share a copy…', icon: <Download />, action: () => exportBoard(b.id) },
+        ...(desktop ? [shareItem('board', b.id, false)] : []),
         ...(desktop
           ? [
               {
@@ -606,7 +646,21 @@ export default function App() {
         },
       ],
     });
-  const folderMenu = (f: Folder, x: number, y: number) =>
+  };
+  const folderMenu = (f: Folder, x: number, y: number) => {
+    const mark = library.sharing?.folders[f.id];
+    if (desktop && mark && mark.shared !== 'owner')
+      return setMenu({
+        x,
+        y,
+        items: [
+          shareItem('folder', f.id, true),
+          null,
+          launcherAlignmentItem,
+          launcherModeItem,
+          hideLauncherItem,
+        ],
+      });
     setMenu({
       x,
       y,
@@ -621,6 +675,7 @@ export default function App() {
           icon: <Plus />,
           action: () => ask({ kind: 'new-board', folderId: f.id }, 'Untitled'),
         },
+        ...(desktop ? [shareItem('folder', f.id, false)] : []),
         null,
         launcherAlignmentItem,
         launcherModeItem,
@@ -639,6 +694,7 @@ export default function App() {
         },
       ],
     });
+  };
   const newMenu = (x: number, y: number) =>
     setMenu({
       x,
@@ -681,6 +737,15 @@ export default function App() {
           action: openSearch,
         },
         { label: 'Import board…', icon: <Upload />, action: importBoard },
+        ...(desktop
+          ? [
+              {
+                label: 'Join with a code…',
+                icon: <KeyRound />,
+                action: () => ask({ kind: 'join' }),
+              },
+            ]
+          : []),
         null,
         { label: 'Trash', icon: <Trash2 />, action: () => ask({ kind: 'trash' }) },
         launcherAlignmentItem,
@@ -739,6 +804,8 @@ export default function App() {
     help: 'Make yourself at home',
     'confirm-trash': 'Move to Trash?',
     live: 'Share live',
+    share: 'Share',
+    join: 'Join with a code',
     settings: 'Settings',
   };
   return (
@@ -890,6 +957,7 @@ export default function App() {
             <Whiteboard
               theme={appearance.theme}
               key={doc.board.id}
+              readOnly={sharingOf(doc.board)?.shared === 'view'}
               ref={whiteboard}
               document={doc}
               backgroundPreview={
@@ -1119,6 +1187,16 @@ export default function App() {
                     </button>
                   </div>
                 </form>
+              ) : modal.kind === 'share' ? (
+                <ShareDialog
+                  kind={modal.shareKind || 'board'}
+                  id={modal.id!}
+                  library={library}
+                  status={cloudStatus}
+                  onClose={() => setModal(null)}
+                />
+              ) : modal.kind === 'join' ? (
+                <JoinDialog status={cloudStatus} onClose={() => setModal(null)} />
               ) : modal.kind === 'live' ? (
                 <LiveShareDialog
                   boardId={modal.id!}
@@ -1248,6 +1326,8 @@ export default function App() {
             setMinimal: setLauncherMinimal,
             setCentered: centerLauncher,
           }}
+          library={library}
+          onManageShare={(shareKind, id) => ask({ kind: 'share', shareKind, id })}
         />
       )}
     </>

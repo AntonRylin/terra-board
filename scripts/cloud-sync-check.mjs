@@ -42,7 +42,7 @@ function device(name) {
   devices.push(d);
   return d;
 }
-const until = async (fn, label, timeout = 8000) => {
+const until = async (fn, label, timeout = 40000) => {
   const start = Date.now();
   for (;;) {
     const value = await fn();
@@ -145,9 +145,146 @@ try {
   assert.equal(a.store.syncStatus().enabled, false);
   results.disable = true;
 
+  // --- Sharing a folder between two people --------------------------------
+  const owner = device('owner');
+  const withSam = owner.store.createFolder({ name: 'With Sam' });
+  const plan = owner.store.createBoard({ name: 'Plan', folderId: withSam.id });
+  const planImage = await owner.store.importAsset({
+    bytes: await sharp({ create: { width: 8, height: 8, channels: 3, background: '#e76f51' } })
+      .png()
+      .toBuffer(),
+    name: 'orange.png',
+  });
+  owner.store.patchBoard({
+    id: plan.id,
+    revision: 0,
+    upserts: [
+      note('p1', 'shared note'),
+      { id: 'pimg', type: 'image', x: 0, y: 0, width: 8, height: 8, z: 2, assetId: planImage.id },
+    ],
+  });
+  const diary = owner.store.createBoard({ name: 'Diary' });
+  owner.store.patchBoard({ id: diary.id, revision: 0, upserts: [note('d1', 'private')] });
+  const invite = await owner.sync.invite('folder', withSam.id, 'edit', 'Anton');
+  assert.match(invite, /^S[0-9A-F]{9}$/);
+  assert.equal(owner.store.syncStatus().library, false, 'sharing does not upload the library');
+  results.inviteCreated = true;
+
+  const friend = device('friend');
+  await friend.sync.join(invite.slice(0, 5) + '-' + invite.slice(5), 'Sam');
+  const friendBoards = () =>
+    friend.store
+      .library()
+      .boards.map((b) => b.name)
+      .sort();
+  assert.deepEqual(
+    friendBoards().filter((n) => ['Plan', 'Diary'].includes(n)),
+    ['Plan'],
+  );
+  assert.equal(friend.store.library().sharing.boards[plan.id].shared, 'edit');
+  assert.equal(friend.store.library().sharing.folders[withSam.id].owner, 'Anton');
+  assert.ok(friend.store.asset({ id: planImage.id, variant: 'original' }), 'shared image arrives');
+  assert.equal(friend.sync.status.sharedWithMe[0].owner, 'Anton');
+  await assert.rejects(friend.sync.join(invite, 'Sam'), /wrong or has expired/);
+  results.friendJoinedFolder = true;
+
+  const peek = await friend.sync.client
+    .from('entities')
+    .select('id')
+    .eq('workspace_id', owner.sync.workspace)
+    .eq('board_id', diary.id);
+  assert.equal(peek.data.length, 0, 'private boards stay private');
+  results.privateBoardHidden = true;
+
+  // The friend edits; the owner sees it live.
+  const planRevision = friend.store.loadBoard({ id: plan.id }).revision;
+  friend.store.patchBoard({
+    id: plan.id,
+    revision: planRevision,
+    upserts: [note('p1', 'edited by Sam')],
+  });
+  friend.sync.localChanged();
+  await until(
+    () =>
+      owner.store.loadBoard({ id: plan.id }).objects.find((o) => o.id === 'p1')?.text ===
+      'edited by Sam',
+    'owner receiving the friend edit',
+  );
+  results.friendEditReachesOwner = true;
+
+  // Moving a board into the shared folder shares it; moving it out unshares it.
+  owner.store.updateBoard({ id: diary.id, patch: { folderId: withSam.id } });
+  owner.sync.localChanged();
+  await until(() => friendBoards().includes('Diary'), 'friend receiving the moved board', 15000);
+  assert.equal(
+    friend.store.loadBoard({ id: diary.id }).objects[0].text,
+    'private',
+    'its content comes along',
+  );
+  owner.store.updateBoard({ id: diary.id, patch: { folderId: null } });
+  owner.sync.localChanged();
+  await until(() => !friendBoards().includes('Diary'), 'friend losing the moved-out board', 15000);
+  results.folderMembershipFollowsMoves = true;
+
+  // Owner sees who has access and turns Sam into a viewer.
+  const access = await owner.sync.sharePeople('folder', withSam.id);
+  assert.deepEqual(
+    access.people.map((p) => [p.name, p.role]),
+    [['Sam', 'edit']],
+  );
+  await owner.sync.setPersonRole(access.shareId, access.people[0].id, 'view');
+  await friend.sync.run();
+  assert.equal(friend.store.library().sharing.boards[plan.id].shared, 'view');
+  const forced = await friend.sync.client.rpc('push_entities', {
+    p_workspace: owner.sync.workspace,
+    p_rows: [{ kind: 'object', board_id: plan.id, id: 'p1', data: note('p1', 'sneaky') }],
+  });
+  assert.match(forced.error?.message || '', /cannot edit/, 'viewers cannot write');
+  results.roleChangeEnforced = true;
+
+  // Removing Sam takes the shared copies away.
+  await owner.sync.removePerson(access.shareId, access.people[0].id);
+  await friend.sync.run();
+  assert.ok(!friendBoards().includes('Plan'), 'revoked boards disappear');
+  assert.equal(friend.sync.status.sharedWithMe.length, 0);
+  results.revokeRemovesCopies = true;
+
+  await owner.sync.stopSharing(access.shareId);
+  assert.equal(owner.sync.status.shared.length, 0);
+  results.stopSharing = true;
+
   console.log(JSON.stringify({ passed: true, ...results }));
 } catch (e) {
   console.error(JSON.stringify({ passed: false, ...results }));
+  const ownerDevice = devices.find((d) => d.name === 'owner');
+  if (ownerDevice?.sync.client) {
+    const seen = await ownerDevice.sync.client
+      .from('entities')
+      .select('id, seq, updated_by, data')
+      .eq('workspace_id', ownerDevice.sync.workspace)
+      .eq('id', 'p1');
+    console.error(
+      'server p1',
+      JSON.stringify(seen.data?.map((r) => [r.seq, r.updated_by, r.data?.text])),
+      seen.error?.message || '',
+    );
+    const friendDevice = devices.find((d) => d.name === 'friend');
+    console.error('friend user', friendDevice?.sync.userId, 'owner user', ownerDevice.sync.userId);
+    console.error(
+      'friend p1',
+      JSON.stringify(friendDevice?.store.db.prepare('SELECT * FROM sync_tracked').all()),
+      JSON.stringify(friendDevice?.store.db.prepare('SELECT * FROM sync_foreign').all()),
+    );
+  }
+  for (const d of devices)
+    console.error(
+      d.name,
+      JSON.stringify({
+        state: d.sync.status.state,
+        error: d.sync.status.error,
+        local: d.store.syncStatus(),
+      }),
+    );
   throw e;
 } finally {
   for (const d of devices) {

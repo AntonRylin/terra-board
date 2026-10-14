@@ -221,3 +221,29 @@
   color: #c2410c;
   font-size: 12px;
 }
+
+/* Sharing folders and boards */
+.share-code {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 8px 0;
+}
+.share-code code {
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: var(--gray);
+  font:
+    600 18px/1.3 Consolas,
+    'Cascadia Mono',
+    monospace;
+  letter-spacing: 1.5px;
+}
+.share-code .live-note {
+  flex-basis: 100%;
+  margin: 0;
+}
+.modal .share-name {
+  margin-bottom: 8px;
+}

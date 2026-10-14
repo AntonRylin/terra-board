@@ -226,3 +226,140 @@ test('malformed remote rows are skipped without blocking the batch', () =>
     );
     assert.equal(a.syncStatus().cursor, 2);
   }));
+
+const ownerWs = '11111111-2222-4333-8444-555555555555';
+const friendWs = '99999999-8888-4777-8666-555555555555';
+const entriesOf = (store) => store.syncTake({ limit: 500 });
+
+test('without whole-library sync only shared folders and their boards are queued', () =>
+  withStores((a) => {
+    const shared = a.createFolder({ name: 'With Sam' });
+    const inside = a.createBoard({ name: 'Plan', folderId: shared.id });
+    a.patchBoard({ id: inside.id, revision: 0, upserts: [note('n1', 'hi')] });
+    const secret = a.createBoard({ name: 'Diary' });
+    a.patchBoard({ id: secret.id, revision: 0, upserts: [note('n2', 'private')] });
+    a.syncIdentity({ workspace: ownerWs });
+    assert.equal(a.syncStatus().pending, 0, 'nothing uploads until something is shared');
+    a.syncOwned({ shares: [{ kind: 'folder', targetId: shared.id, shareId: 's1' }] });
+    const ids = entriesOf(a).entries.map((e) => e.kind + ':' + e.id);
+    assert.deepEqual(ids.sort(), ['board:' + inside.id, 'folder:' + shared.id, 'object:n1'].sort());
+    a.syncAck(entriesOf(a));
+    a.patchBoard({ id: secret.id, revision: 1, upserts: [note('n2', 'still private')] });
+    assert.equal(a.syncStatus().pending, 0, 'private boards stay local');
+    // Moving a board into the shared folder brings it and its content along.
+    a.updateBoard({ id: secret.id, patch: { folderId: shared.id } });
+    const moved = entriesOf(a).entries.map((e) => e.kind + ':' + e.id);
+    assert.ok(moved.includes('board:' + secret.id) && moved.includes('object:n2'));
+    a.syncAck(entriesOf(a));
+    // Moving it out again is pushed so the server stops sharing it.
+    a.updateBoard({ id: secret.id, patch: { folderId: null } });
+    assert.deepEqual(
+      entriesOf(a).entries.map((e) => [e.kind, e.data.folderId]),
+      [['board', null]],
+    );
+  }));
+
+test('shared boards arrive with their rights; edits go back only with edit rights', () =>
+  withStores((friend) => {
+    friend.syncIdentity({ workspace: friendWs });
+    const folder = {
+      kind: 'folder',
+      board_id: '',
+      id: 'f-shared',
+      data: { name: 'With Sam', position: 1 },
+      seq: 1,
+    };
+    const board = (id, name) => ({
+      kind: 'board',
+      board_id: '',
+      id,
+      data: {
+        name,
+        icon: 'none',
+        color: 'blue',
+        folderId: 'f-shared',
+        position: 1,
+        trashed: false,
+      },
+      seq: 2,
+    });
+    const object = (boardId, id, text) => ({
+      kind: 'object',
+      board_id: boardId,
+      id,
+      data: note(id, text),
+      seq: 3,
+    });
+    const roles = {
+      folders: { 'f-shared': { role: 'edit', owner: 'Anton' } },
+      boards: {
+        'b-edit': { role: 'edit', owner: 'Anton' },
+        'b-view': { role: 'view', owner: 'Anton' },
+      },
+    };
+    friend.syncApply({
+      workspace: ownerWs,
+      cursor: 3,
+      roles,
+      rows: [
+        folder,
+        board('b-edit', 'Editable'),
+        board('b-view', 'Read only'),
+        object('b-edit', 'e1', 'x'),
+        object('b-view', 'v1', 'y'),
+      ],
+    });
+    assert.equal(friend.syncStatus().pending, 0, 'received rows are not echoed');
+    const marks = friend.library().sharing;
+    assert.equal(marks.boards['b-edit'].shared, 'edit');
+    assert.equal(marks.boards['b-view'].shared, 'view');
+    assert.equal(marks.folders['f-shared'].owner, 'Anton');
+
+    friend.patchBoard({ id: 'b-edit', revision: 1, upserts: [note('e1', 'changed by friend')] });
+    friend.patchBoard({ id: 'b-view', revision: 1, upserts: [note('v1', 'should not leave')] });
+    friend.updateBoard({ id: 'b-edit', patch: { name: 'Renamed by friend' } });
+    const out = entriesOf(friend);
+    assert.deepEqual(
+      out.entries.map((e) => [e.kind, e.id, e.workspace]),
+      [['object', 'e1', ownerWs]],
+    );
+    assert.equal(out.dropped.length, 0, 'view-only edits and board renames are never queued');
+    assert.equal(friend.syncStatus().pending, 1);
+
+    // Access to the read-only board ends; its copy disappears.
+    const result = friend.syncReconcile({
+      shares: [
+        {
+          workspace: ownerWs,
+          kind: 'board',
+          targetId: 'b-edit',
+          role: 'edit',
+          boards: ['b-edit'],
+          owner: 'Anton',
+        },
+      ],
+    });
+    assert.ok(result.changed);
+    const left = friend.library().boards.map((b) => b.id);
+    assert.ok(left.includes('b-edit') && !left.includes('b-view'));
+  }));
+
+test('a board newly placed in a shared folder is reported for download', () =>
+  withStores((friend) => {
+    friend.syncIdentity({ workspace: friendWs });
+    const result = friend.syncReconcile({
+      shares: [
+        {
+          workspace: ownerWs,
+          kind: 'folder',
+          targetId: 'f1',
+          role: 'view',
+          boards: ['b1', 'b2'],
+          owner: 'Anton',
+        },
+      ],
+    });
+    assert.deepEqual(result.missing, [
+      { workspace: ownerWs, boards: ['b1', 'b2'], folders: ['f1'] },
+    ]);
+  }));

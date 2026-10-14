@@ -137,11 +137,14 @@ export interface Folder {
   name: string;
   position: number;
 }
+// 'owner': this person shares it; 'view' / 'edit': someone shared it with them.
+export type SharingMark = { shared: 'owner' | 'view' | 'edit'; owner?: string };
 export interface Library {
   boards: Board[];
   folders: Folder[];
   lastBoard: string | null;
   backupError?: string | null;
+  sharing?: { boards: Record<string, SharingMark>; folders: Record<string, SharingMark> };
 }
 export interface Document {
   board: Board;

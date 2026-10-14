@@ -2405,3 +2405,25 @@ kbd {
 .arrow-controls .arrow-font-size {
   margin: 0 0 3px;
 }
+
+/* Shared boards and folders carry a small people badge on their icon. */
+.app-icon {
+  position: relative;
+}
+.share-badge {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  display: grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  border: 1.5px solid var(--paper);
+  border-radius: 50%;
+  background: #3779cc;
+  color: #fff;
+}
+.share-badge[data-shared='view'],
+.share-badge[data-shared='edit'] {
+  background: #2f9e6a;
+}
