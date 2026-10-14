@@ -53,3 +53,13 @@ To try it in the app, start Terra Board with `TERRA_CLOUD_URL` and `TERRA_CLOUD_
 ## What syncs
 
 Boards (name, icon, colour, folder, order, background, trash state), folders, every object, and the media those reference. Board camera positions, the last opened board and app preferences stay per computer.
+
+## Live sharing on the same network
+
+Separate from cloud sync: **Share live…** in a board's menu lets people on the same Wi-Fi open that board in their browser, served directly by this computer (`electron/live-share.cjs`, guest page `src/GuestApp.tsx`).
+
+- The host approves each guest (unless "Ask me before someone joins" is off) and chooses View or Edit per guest; guests can be removed at any time.
+- Guests reach only the shared board and the media it uses. Requests from public internet addresses are refused; only private network ranges, Tailscale (100.64.0.0/10) and this computer are accepted.
+- Nothing is opened on the router. To share with someone elsewhere, both install Tailscale; the share window then shows a Tailscale link.
+- Windows asks once whether Terra Board may accept connections on private networks.
+- Traffic on the local network is plain HTTP; Tailscale encrypts it end to end.

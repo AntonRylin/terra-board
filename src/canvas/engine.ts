@@ -285,6 +285,7 @@ export class Engine {
   private selectionLayer = new Graphics();
   private snapGuides: SnapGuide[] = [];
   private input: InputPreferences = { wheel: 'zoom', zoomSpeed: 'normal', snapping: true };
+  private readOnly = false;
   private views = new Map<string, { container: Container; signature: string; sharpness: string }>();
   private textures: TextureCache;
   private observer: ResizeObserver;
@@ -1124,7 +1125,7 @@ export class Engine {
     }
   };
   private doubleClick = (e: MouseEvent) => {
-    if (this.editingId) return;
+    if (this.editingId || this.readOnly) return;
     // Pointer capture on the surface retargets Chromium's subsequent click /
     // dblclick to that surface, even when both presses began on the canvas.
     if (e.target !== this.app.canvas && e.target !== this.host) return;
@@ -1168,9 +1169,18 @@ export class Engine {
     if (o && !this.selection.has(o.id)) this.setSelection(this.members(o));
     this.callbacks.context({ x: e.clientX, y: e.clientY });
   }
+  // Visitors without edit rights can only pan, zoom and look.
+  setReadOnly(readOnly: boolean) {
+    this.readOnly = readOnly;
+    if (readOnly) {
+      this.cancel();
+      this.setSelection([]);
+      this.setTool('hand');
+    }
+  }
   setTool(tool: Tool) {
     if (this.gesture?.clickToPlace) this.cancel();
-    this.tool = tool;
+    this.tool = this.readOnly ? 'hand' : tool;
     this.pointer = null;
     this.updateCursor();
     this.invalidate();
@@ -1322,7 +1332,7 @@ export class Engine {
     this.applyEdit(edit, true);
   }
   apply(edit: Edit, record = true) {
-    if (editTouchesLocked(this.objects, edit)) return;
+    if (this.readOnly || editTouchesLocked(this.objects, edit)) return;
     edit = {
       ...edit,
       upserts: edit.upserts.map((o) => {

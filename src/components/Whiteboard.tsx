@@ -139,6 +139,8 @@ interface Props {
   document: Document;
   onSave: (state: SaveState, message?: string) => void;
   onError: (message: string) => void;
+  // Live-sharing visitors without edit rights.
+  readOnly?: boolean;
 }
 const tools: { id: Tool & ToolbarId; label: string; icon: typeof Type; command: CommandId }[] = [
   { id: 'select', label: 'Select', icon: MousePointer2, command: 'tool.select' },
@@ -153,10 +155,25 @@ const tools: { id: Tool & ToolbarId; label: string; icon: typeof Type; command: 
 ];
 const colors = ['#f8efd4', '#e4eee8', '#e4ecfa', '#efe5f1', '#f4e4e5', '#ffffff', '#000000'];
 const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
-  { document: doc, onSave, onError, onReady, theme, searchTarget, onOpenFrame, backgroundPreview },
+  {
+    document: doc,
+    onSave,
+    onError,
+    onReady,
+    theme,
+    searchTarget,
+    onOpenFrame,
+    backgroundPreview,
+    readOnly = false,
+  },
   ref,
 ) {
   const external = useRef(false);
+  const readOnlyRef = useRef(readOnly);
+  useEffect(() => {
+    readOnlyRef.current = readOnly;
+    engine.current?.setReadOnly(readOnly);
+  }, [readOnly]);
   const shortcutLabel = useShortcutLabels();
   const [usageTarget, setUsageTarget] = useState<{
     source: FrameReference;
@@ -1116,6 +1133,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       e.setInputPreferences({ wheel, zoomSpeed, snapping });
     };
     applyInput();
+    e.setReadOnly(readOnlyRef.current);
     const stopInput = subscribePreferences(applyInput);
     e.setFrameBoard(doc.board.id, fitted, true);
     let frameRefresh: Promise<void> | null = null;
@@ -1598,7 +1616,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         'input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role=dialog]',
       );
     const paste = async (event: ClipboardEvent) => {
-      if (typing()) return;
+      if (typing() || readOnlyRef.current) return;
       const e = engine.current;
       if (!e) return;
       const data = event.clipboardData;
@@ -1689,6 +1707,10 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       if (!e) return;
       const mod = (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey;
       const command = activeCommand(event, 'board');
+      if (readOnlyRef.current) {
+        if (command === 'view.fit' && !event.repeat) e.fit();
+        return;
+      }
       if (window.canvas && mod && ['KeyC', 'KeyX'].includes(event.code) && e.selected.length) {
         event.preventDefault();
         if (!event.repeat) void copyDesktop(e.selected, event.code === 'KeyX');
@@ -1735,7 +1757,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     window.addEventListener('pointermove', rememberPointer, true);
     window.addEventListener('copy', copyEvent);
     const cut = (event: ClipboardEvent) => {
-      if (typing()) {
+      if (typing() || readOnlyRef.current) {
         window.canvas?.cancelCopy();
         return;
       }
@@ -1759,6 +1781,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   }, []);
   async function drop(e: React.DragEvent) {
     e.preventDefault();
+    if (readOnlyRef.current) return;
     setPdfDropTarget(null);
     const files = [...e.dataTransfer.files];
     if (!files.length) return;
@@ -2864,95 +2887,99 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           onCancel={() => finishCrop(true)}
         />
       )}
-      <RadialMenu
-        engine={engine}
-        host={host}
-        tools={[
-          ...tools.map(({ id, label, icon }) => ({
-            id,
-            label,
-            icon,
-            action: () => selectTool(id),
-          })),
-          { id: 'list', label: 'List', icon: ListTodo, action: createList },
-          { id: 'media', label: 'Files', icon: ImagePlus, action: importMedia },
-          { id: 'gallery', label: 'Gallery', icon: Images, action: createGallery },
-        ]}
-        onChoose={(id, anchor, pointer) => {
-          const e = engine.current,
-            surface = host.current;
-          if (!e || !surface) return;
-          setMenu(null);
-          if (id === 'arrow') {
-            const rect = surface.getBoundingClientRect();
-            e.beginQuickArrow(anchor, { x: pointer.x - rect.left, y: pointer.y - rect.top });
-          } else if (id === 'list') createList(anchor);
-          else if (id === 'gallery') createGallery(anchor);
-          else if (id === 'media') void performImport(pickMedia, anchor);
-          else if (id === 'select' || id === 'hand' || id === 'highlight') selectTool(id);
-          else create(id, anchor);
-        }}
-      />
-      <CanvasToolbar
-        tools={[
-          ...tools.map(({ id, label, icon, command }) => ({
-            id,
-            label,
-            icon,
-            shortcut: shortcutLabel(command),
-            active: tool === id,
-            action: () => selectTool(id),
-          })),
-          { id: 'list', label: 'Add list', icon: ListTodo, action: createList },
-          { id: 'media', label: 'Add files', icon: ImagePlus, action: importMedia },
-          { id: 'gallery', label: 'Gallery', icon: Images, action: createGallery },
-        ]}
-        options={
-          tool === 'highlight' && (
-            <div
-              className="highlighter-options glass-surface"
-              role="group"
-              aria-label="Highlighter"
-            >
-              <div className="color-options">
-                {highlightColors.map((color) => (
-                  <button
-                    key={color}
-                    style={{ background: color }}
-                    aria-label={'Highlight color ' + color}
-                    aria-pressed={highlightStyle.color === color}
-                    onClick={() => setHighlightStyle((style) => ({ ...style, color }))}
-                  />
-                ))}
-                <label className="custom-color" title="Custom color">
-                  <Plus size={12} aria-hidden="true" />
-                  <input
-                    type="color"
-                    aria-label="Custom highlight color"
-                    value={highlightStyle.color}
-                    onChange={(event) =>
-                      setHighlightStyle((style) => ({ ...style, color: event.target.value }))
-                    }
-                  />
-                </label>
+      {!readOnly && (
+        <RadialMenu
+          engine={engine}
+          host={host}
+          tools={[
+            ...tools.map(({ id, label, icon }) => ({
+              id,
+              label,
+              icon,
+              action: () => selectTool(id),
+            })),
+            { id: 'list', label: 'List', icon: ListTodo, action: createList },
+            { id: 'media', label: 'Files', icon: ImagePlus, action: importMedia },
+            { id: 'gallery', label: 'Gallery', icon: Images, action: createGallery },
+          ]}
+          onChoose={(id, anchor, pointer) => {
+            const e = engine.current,
+              surface = host.current;
+            if (!e || !surface) return;
+            setMenu(null);
+            if (id === 'arrow') {
+              const rect = surface.getBoundingClientRect();
+              e.beginQuickArrow(anchor, { x: pointer.x - rect.left, y: pointer.y - rect.top });
+            } else if (id === 'list') createList(anchor);
+            else if (id === 'gallery') createGallery(anchor);
+            else if (id === 'media') void performImport(pickMedia, anchor);
+            else if (id === 'select' || id === 'hand' || id === 'highlight') selectTool(id);
+            else create(id, anchor);
+          }}
+        />
+      )}
+      {!readOnly && (
+        <CanvasToolbar
+          tools={[
+            ...tools.map(({ id, label, icon, command }) => ({
+              id,
+              label,
+              icon,
+              shortcut: shortcutLabel(command),
+              active: tool === id,
+              action: () => selectTool(id),
+            })),
+            { id: 'list', label: 'Add list', icon: ListTodo, action: createList },
+            { id: 'media', label: 'Add files', icon: ImagePlus, action: importMedia },
+            { id: 'gallery', label: 'Gallery', icon: Images, action: createGallery },
+          ]}
+          options={
+            tool === 'highlight' && (
+              <div
+                className="highlighter-options glass-surface"
+                role="group"
+                aria-label="Highlighter"
+              >
+                <div className="color-options">
+                  {highlightColors.map((color) => (
+                    <button
+                      key={color}
+                      style={{ background: color }}
+                      aria-label={'Highlight color ' + color}
+                      aria-pressed={highlightStyle.color === color}
+                      onClick={() => setHighlightStyle((style) => ({ ...style, color }))}
+                    />
+                  ))}
+                  <label className="custom-color" title="Custom color">
+                    <Plus size={12} aria-hidden="true" />
+                    <input
+                      type="color"
+                      aria-label="Custom highlight color"
+                      value={highlightStyle.color}
+                      onChange={(event) =>
+                        setHighlightStyle((style) => ({ ...style, color: event.target.value }))
+                      }
+                    />
+                  </label>
+                </div>
+                <input
+                  type="range"
+                  min={highlightSizeRange.min}
+                  max={highlightSizeRange.max}
+                  step="1"
+                  aria-label="Highlighter size"
+                  title="Size. Right-drag on the board: left is thinner, right is thicker"
+                  value={highlightStyle.size}
+                  onChange={(event) =>
+                    setHighlightStyle((style) => ({ ...style, size: Number(event.target.value) }))
+                  }
+                />
+                <output aria-hidden="true">{highlightStyle.size}</output>
               </div>
-              <input
-                type="range"
-                min={highlightSizeRange.min}
-                max={highlightSizeRange.max}
-                step="1"
-                aria-label="Highlighter size"
-                title="Size. Right-drag on the board: left is thinner, right is thicker"
-                value={highlightStyle.size}
-                onChange={(event) =>
-                  setHighlightStyle((style) => ({ ...style, size: Number(event.target.value) }))
-                }
-              />
-              <output aria-hidden="true">{highlightStyle.size}</output>
-            </div>
-          )
-        }
-      />
+            )
+          }
+        />
+      )}
       <div ref={zoomControls} className="canvas-zoom">
         <button
           className="icon-button"
@@ -2987,7 +3014,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           <MoreHorizontal size={17} />
         </button>
       </div>
-      {menu && (
+      {menu && !readOnly && (
         <ContextMenu
           {...menu}
           items={contextItems.map(

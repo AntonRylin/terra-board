@@ -31,7 +31,9 @@ import {
   LoaderCircle,
   ImagePlus,
   Folder as FolderIcon,
+  Radio,
 } from 'lucide-react';
+import { LiveBadge, LiveRequests, LiveShareDialog, useLiveStatus } from './components/LiveShare';
 import type { Board, Document, Folder, Library, BackgroundAppearance } from './model';
 import BoardBackgroundSettings, { defaultBackgroundAppearance } from './components/BoardBackground';
 import {
@@ -69,6 +71,7 @@ type ModalState = {
     | 'trash'
     | 'help'
     | 'confirm-trash'
+    | 'live'
     | 'settings';
   id?: string;
   folderId?: string | null;
@@ -84,7 +87,8 @@ export default function App() {
     send();
     return subscribePreferences(send);
   }, []);
-  const [aiBusy, setAiBusy] = useState<false | 'ai' | 'cloud'>(false);
+  const [aiBusy, setAiBusy] = useState<false | 'ai' | 'cloud' | 'guest'>(false);
+  const liveStatus = useLiveStatus();
   const [canvasReady, setCanvasReady] = useState(false);
   const activeDocument = useRef<Document | null>(null);
   const [dockEdge, setDockEdge] = useState(readDockEdge);
@@ -350,7 +354,9 @@ export default function App() {
       try {
         if (message.phase === 'prepare') {
           ++request.current;
-          setAiBusy(message.source === 'cloud' ? 'cloud' : 'ai');
+          setAiBusy(
+            message.source === 'cloud' || message.source === 'guest' ? message.source : 'ai',
+          );
           const root = window.document.getElementById('root');
           if (root) {
             root.dataset.mcpInert = 'true';
@@ -574,6 +580,18 @@ export default function App() {
         },
         null,
         { label: 'Export / share a copy…', icon: <Download />, action: () => exportBoard(b.id) },
+        ...(desktop
+          ? [
+              {
+                label:
+                  liveStatus.active && liveStatus.boardId === b.id
+                    ? 'Live sharing…'
+                    : 'Share live…',
+                icon: <Radio />,
+                action: () => ask({ kind: 'live', id: b.id }),
+              },
+            ]
+          : []),
         null,
         launcherAlignmentItem,
         launcherModeItem,
@@ -720,6 +738,7 @@ export default function App() {
     trash: 'Trash',
     help: 'Make yourself at home',
     'confirm-trash': 'Move to Trash?',
+    live: 'Share live',
     settings: 'Settings',
   };
   return (
@@ -911,7 +930,12 @@ export default function App() {
             </div>
           )}
         </main>
-        {aiBusy && (
+        <LiveBadge
+          status={liveStatus}
+          onOpen={() => liveStatus.boardId && ask({ kind: 'live', id: liveStatus.boardId })}
+        />
+        <LiveRequests status={liveStatus} />
+        {aiBusy && aiBusy !== 'guest' && (
           <div className="toast" role="status">
             <LoaderCircle size={15} />
             {aiBusy === 'cloud' ? 'Syncing changes…' : 'Syncing AI changes…'}
@@ -1095,6 +1119,14 @@ export default function App() {
                     </button>
                   </div>
                 </form>
+              ) : modal.kind === 'live' ? (
+                <LiveShareDialog
+                  boardId={modal.id!}
+                  boardName={library.boards.find((b) => b.id === modal.id)?.name || 'this board'}
+                  sharedName={library.boards.find((b) => b.id === liveStatus.boardId)?.name}
+                  status={liveStatus}
+                  onClose={() => setModal(null)}
+                />
               ) : modal.kind === 'confirm-trash' ? (
                 <>
                   <p className="quiet">
