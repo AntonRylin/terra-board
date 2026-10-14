@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -123,9 +123,7 @@ test('scaled list checkboxes and title edits retain card size and item state', (
   assert.equal(checked.height, 376);
   assert.equal(checked.items[0].checked, true);
   section = f.render(checked);
-  find(section, (node) => node.props?.['aria-label'] === 'List name').props.onChange({
-    target: { value: 'New title' },
-  });
+  find(section, (node) => node.props?.label === 'List name').props.onChange('New title');
   assert.equal(f.updates.at(-1).text, 'New title');
   assert.equal(f.updates.at(-1).width, 640);
   assert.equal(f.updates.at(-1).items[0].checked, true);
@@ -149,11 +147,12 @@ test('list exports use the same scaled logical geometry as the editable DOM card
   const card = view.children[0];
   assert.equal(card.scale.x, 2);
   assert.equal(card.scale.y, 2);
-  const title = card.children.find((child) => child.text === 'Trip');
-  const row = card.children.find((child) => child.text === 'Book train');
-  assert.equal(title.style.fontSize * card.scale.x, 30);
-  assert.equal(row.style.fontSize * card.scale.x, 32);
-  assert.equal(row.position.y * card.scale.y, 124);
+  const title = drawn(card, 'Trip');
+  const row = drawn(card, 'Book train');
+  assert.equal(title.size * card.scale.x, 30);
+  assert.equal(row.size * card.scale.x, 32);
+  // The row's 24px line box is centred on its 72px checkbox.
+  assert.equal(row.sprite.position.y * card.scale.y, 120);
 });
 
 test('legacy wide short lists retain their geometry and show every row in the DOM and export', () => {
@@ -166,7 +165,7 @@ test('legacy wide short lists retain their geometry and show every row in the DO
   assert.equal(section.props.style.height, 188);
   assert.equal(section.props.style.transform, 'scale(1) rotate(0deg)');
   assert.equal(
-    find(section, (node) => node.props?.['aria-label'] === 'List item 2').props.value,
+    find(section, (node) => node.props?.label === 'List item 2').props.value,
     'Pack bag',
   );
   const Engine = f.load('../src/canvas/engine.ts').Engine;
@@ -184,11 +183,9 @@ test('legacy wide short lists retain their geometry and show every row in the DO
   );
   const card = view.children[0];
   assert.equal(card.scale.x, 1);
-  const rows = card.children.filter(
-    (child) => child.text === 'Book train' || child.text === 'Pack bag',
-  );
-  assert.equal(rows.length, 2);
-  assert.ok(rows.every((row) => (row.position.y + 32) * card.scale.y <= 188));
+  const rows = [drawn(card, 'Book train'), drawn(card, 'Pack bag')];
+  assert.ok(rows.every(Boolean));
+  assert.ok(rows.every((row) => (row.sprite.position.y + 32) * card.scale.y <= 188));
   assert.deepEqual(legacy, original, 'rendering must not migrate saved geometry or content');
 });
 
@@ -223,6 +220,14 @@ test('legacy list row addition and removal preserve its effective text scale', (
   assert.equal(removed.height, 188);
   assert.equal(f.render(removed).props['data-list-scale'], 1);
 });
+
+// Labels are canvas sprites; the canvas stub records what was drawn in which font.
+function drawn(card, text) {
+  for (const sprite of card.children) {
+    const call = sprite.texture?.source.resource.ctx.calls.find((c) => c.text === text);
+    if (call) return { sprite, size: Number(/([\d.]+)px/.exec(call.font)[1]) };
+  }
+}
 
 function find(node, predicate) {
   if (!node || typeof node !== 'object') return;
@@ -261,15 +266,49 @@ function fixture() {
     Graphics.prototype[method] = function () {
       return this;
     };
-  class Text extends Container {
-    constructor(options) {
+  class Sprite extends Container {
+    constructor(texture) {
       super();
-      Object.assign(this, options);
-      this.width = this.text.length * this.style.fontSize * 0.5;
+      this.texture = texture;
+    }
+    once() {}
+  }
+  class Texture {
+    constructor({ source }) {
+      this.source = source;
     }
   }
-  const pixi = { Container, Graphics, Text };
-  const jsx = (type, props) => (typeof type === 'function' ? type(props) : { type, props });
+  class CanvasSource {
+    constructor(options) {
+      Object.assign(this, options);
+    }
+  }
+  const pixi = { Container, Graphics, Sprite, Texture, CanvasSource };
+  // Rich fields stay unexpanded so tests can drive their onChange like the DOM would.
+  const jsx = (type, props) =>
+    typeof type === 'function' && type.name !== 'RichTextField' ? type(props) : { type, props };
+  const canvas = () => {
+    const ctx = {
+      calls: [],
+      font: '',
+      measureText: (value) => ({ width: value.length * 6 }),
+      fillText(text, x, y) {
+        this.calls.push({ text, font: this.font, x, y });
+      },
+    };
+    for (const method of [
+      'scale',
+      'fillRect',
+      'save',
+      'restore',
+      'beginPath',
+      'roundRect',
+      'fill',
+      'arc',
+    ])
+      ctx[method] = () => {};
+    return { getContext: () => ctx, ctx };
+  };
   const sourceRoot = dirname(fileURLToPath(import.meta.url));
   function load(path) {
     const filename = resolve(sourceRoot, path);
@@ -287,11 +326,7 @@ function fixture() {
       exports,
       crypto,
       window: {},
-      document: {
-        createElement: () => ({
-          getContext: () => ({ measureText: (value) => ({ width: value.length * 6 }) }),
-        }),
-      },
+      document: { createElement: canvas },
       require(id) {
         if (id === 'react/jsx-runtime') return { jsx, jsxs: jsx };
         if (id === 'react')
@@ -299,6 +334,7 @@ function fixture() {
             useEffect() {},
             useLayoutEffect() {},
             useRef: (current) => ({ current }),
+            useState: (value) => [typeof value === 'function' ? value() : value, () => {}],
             useMemo: (fn) => fn(),
           };
         if (id === 'lucide-react') return { Check: 'Check', Plus: 'Plus', X: 'X' };
@@ -306,10 +342,9 @@ function fixture() {
         if (id === 'pixi.js') return pixi;
         if (id.startsWith('.'))
           return load(
-            resolve(
-              dirname(filename),
-              id + (/\.tsx?$/.test(id) ? '' : id === './ListEditOutline' ? '.tsx' : '.ts'),
-            ),
+            [id, id + '.ts', id + '.tsx']
+              .map((candidate) => resolve(dirname(filename), candidate))
+              .find((candidate) => /\.tsx?$/.test(candidate) && existsSync(candidate)),
           );
         return require(id);
       },

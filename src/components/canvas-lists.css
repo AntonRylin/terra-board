@@ -51,40 +51,24 @@
 .canvas-list-name-space {
   flex: 1;
 }
-.canvas-list textarea {
+.canvas-list .rt-field {
   min-width: 0;
   flex: 1;
   width: 100%;
-  background: transparent;
-  border: 0;
-  box-shadow: none;
-  outline: none;
+  min-height: 32px;
   color: inherit;
-  font: inherit;
+  font-family: 'Segoe UI', sans-serif;
   font-size: 16px;
   padding: 4px 0;
-  border-radius: 0;
-  resize: none;
-  overflow: hidden;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  line-height: 24px;
+  /* Unitless, so larger inline text grows its own line instead of overlapping. */
+  line-height: 1.5;
   display: block;
   box-sizing: border-box;
 }
-.canvas-list textarea:focus,
-.canvas-list textarea:focus-visible {
-  outline: none;
-  box-shadow: none;
-}
-.canvas-list textarea[readonly] {
-  pointer-events: none;
-}
-.canvas-list textarea.canvas-list-name {
-  font-family: 'Segoe UI', sans-serif;
+.canvas-list .rt-field.canvas-list-name {
   font-size: 15px;
   font-weight: 600;
-  line-height: 24px;
+  line-height: 1.6;
 }
 .canvas-list-items {
   min-height: 0;
@@ -150,7 +134,7 @@
   border-color: #729385;
   color: white;
 }
-.canvas-list-row[data-checked='true'] textarea {
+.canvas-list-row[data-checked='true'] .rt-field {
   text-decoration: line-through;
   opacity: 0.45;
 }

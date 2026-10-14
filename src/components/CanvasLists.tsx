@@ -1,10 +1,12 @@
-import { useEffect, useLayoutEffect, useRef, type PointerEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from 'react';
 import { Check, Plus, X } from 'lucide-react';
 import type { Camera, CanvasObject, ListItem } from '../model';
 import { uid } from '../model';
 import { localToWorld } from '../canvas/transform';
 import { fitListHeight, listLayout, withListItems } from '../canvas/list-layout';
 import ListEditOutline from './ListEditOutline';
+import RichTextField, { fieldRange, focusField } from './RichTextField';
+import RichFormatBar from './RichFormatBar';
 import './canvas-lists.css';
 
 export interface ListView {
@@ -32,8 +34,20 @@ function ListCard({
   editing: boolean;
   setEditing: (editing: boolean) => void;
 }) {
-  const inputs = useRef(new Map<string, HTMLTextAreaElement>());
-  const name = useRef<HTMLTextAreaElement>(null);
+  const inputs = useRef(new Map<string, HTMLDivElement>());
+  const name = useRef<HTMLDivElement | null>(null);
+  // Revealed spoilers are this viewer's own state: never saved or shared.
+  const [revealed, setRevealed] = useState<ReadonlySet<string>>(() => new Set());
+  const spoilerState = (field: string) => ({
+    revealed: (start: number) => revealed.has(`${field}:${start}`),
+    onSpoiler: (start: number) =>
+      setRevealed((current) => {
+        const next = new Set(current);
+        const key = `${field}:${start}`;
+        if (!next.delete(key)) next.add(key);
+        return next;
+      }),
+  });
   const card = useRef<HTMLElement>(null);
   const pendingFocus = useRef<string | null>(null);
   const items = o.items || [];
@@ -41,10 +55,6 @@ function ListCard({
   useLayoutEffect(() => {
     const element = card.current;
     if (!element) return;
-    for (const input of element.querySelectorAll('textarea')) {
-      input.style.height = '0px';
-      input.style.height = `${input.scrollHeight}px`;
-    }
     const header = element.querySelector<HTMLElement>('.canvas-list-header')!;
     const rows = element.querySelector<HTMLElement>('.canvas-list-items')!;
     // Reserve the add control even outside editing, so entering/leaving edit
@@ -61,20 +71,20 @@ function ListCard({
     }
   }, [active, editing]);
   useLayoutEffect(() => {
-    if (editing) name.current?.focus({ preventScroll: true });
+    if (editing && name.current) focusField(name.current, 'end');
   }, [editing]);
   useLayoutEffect(() => {
     if (!pendingFocus.current) return;
     const input = inputs.current.get(pendingFocus.current);
     if (input) {
-      input.focus();
+      focusField(input, 'end');
       pendingFocus.current = null;
     }
   });
   const changeItems = (next: ListItem[]) => update(withListItems(o, next));
-  const focus = (id: string) => {
+  const focus = (id: string, at: 'start' | 'end' = 'end') => {
     const input = inputs.current.get(id);
-    if (input) input.focus();
+    if (input) focusField(input, at);
     else pendingFocus.current = id;
   };
   const add = (after = items.length - 1) => {
@@ -110,7 +120,13 @@ function ListCard({
         transform: `scale(${camera.zoom * layout.scale}) rotate(${o.rotation || 0}deg)`,
       }}
       onPointerDown={(event) => {
-        if (event.button !== 0 || !(event.target as HTMLElement).closest('button,textarea'))
+        const target = event.target as HTMLElement;
+        // Peeking at a spoiler neither selects nor drags the list.
+        if (event.button === 0 && target.closest('.rt-spoiler[data-hidden]')) {
+          event.stopPropagation();
+          return;
+        }
+        if (event.button !== 0 || !target.closest('button,[contenteditable="true"]'))
           forward(event);
         else select(o.id);
       }}
@@ -127,7 +143,7 @@ function ListCard({
           (event.target as HTMLElement).blur();
         }
         if (
-          (event.target as HTMLElement).closest('textarea') ||
+          (event.target as HTMLElement).closest('[contenteditable="true"]') ||
           event.key === ' ' ||
           event.key === 'Enter'
         )
@@ -137,20 +153,22 @@ function ListCard({
       {editing && <ListEditOutline width={layout.width} height={layout.height} />}
       <header className="canvas-list-header">
         {o.text || editing ? (
-          <textarea
-            rows={1}
-            ref={name}
+          <RichTextField
+            fieldRef={(element) => {
+              name.current = element;
+            }}
             className="canvas-list-name"
-            aria-label="List name"
+            label="List name"
             value={o.text || ''}
+            marks={o.textMarks}
             maxLength={120}
-            readOnly={!editing}
-            tabIndex={editing ? 0 : -1}
+            multiline={false}
+            editable={editing}
             style={{
               fontWeight: o.bold ? 700 : 400,
               textDecoration: o.strikethrough ? 'line-through' : 'none',
             }}
-            onChange={(event) => update({ ...o, text: event.target.value })}
+            onChange={(text, textMarks) => update({ ...o, text, textMarks })}
             onKeyDown={(event) => {
               if (event.key === 'Enter' || event.key === 'Escape') {
                 event.preventDefault();
@@ -158,6 +176,7 @@ function ListCard({
                 if (event.key === 'Escape') setEditing(false);
               }
             }}
+            {...spoilerState('title')}
           />
         ) : (
           <span className="canvas-list-name-space" />
@@ -185,26 +204,30 @@ function ListCard({
             >
               {item.checked && <Check size={13} strokeWidth={2.3} />}
             </button>
-            <textarea
-              rows={1}
-              ref={(el) => {
+            <RichTextField
+              fieldRef={(el) => {
                 if (el) inputs.current.set(item.id, el);
                 else inputs.current.delete(item.id);
               }}
-              aria-label={`List item ${index + 1}`}
+              className="canvas-list-text"
+              label={`List item ${index + 1}`}
               value={item.text}
+              marks={item.marks}
               maxLength={10000}
-              readOnly={!editing}
-              tabIndex={editing ? 0 : -1}
-              onChange={(event) =>
+              editable={editing}
+              onChange={(text, marks) =>
                 changeItems(
-                  items.map((row) =>
-                    row.id === item.id ? { ...row, text: event.target.value } : row,
-                  ),
+                  items.map((row) => {
+                    if (row.id !== item.id) return row;
+                    const { marks: _, ...rest } = row;
+                    return marks ? { ...rest, text, marks } : { ...rest, text };
+                  }),
                 )
               }
               onKeyDown={(event) => {
                 if (!editing || event.nativeEvent.isComposing) return;
+                const range = fieldRange(event.currentTarget);
+                const collapsed = !!range && range.start === range.end;
                 if (event.key === 'Enter' && !event.shiftKey) {
                   event.preventDefault();
                   add(index);
@@ -217,23 +240,21 @@ function ListCard({
                   event.currentTarget.blur();
                   setEditing(false);
                 }
-                if (
-                  event.key === 'ArrowUp' &&
-                  index > 0 &&
-                  event.currentTarget.selectionStart === 0
-                ) {
+                if (event.key === 'ArrowUp' && index > 0 && collapsed && range.start === 0) {
                   event.preventDefault();
-                  focus(items[index - 1].id);
+                  focus(items[index - 1].id, 'end');
                 }
                 if (
                   event.key === 'ArrowDown' &&
                   index < items.length - 1 &&
-                  event.currentTarget.selectionStart === item.text.length
+                  collapsed &&
+                  range.end === item.text.length
                 ) {
                   event.preventDefault();
-                  focus(items[index + 1].id);
+                  focus(items[index + 1].id, 'start');
                 }
               }}
+              {...spoilerState(item.id)}
             />
             {editing && (
               <button
@@ -286,7 +307,7 @@ export default function CanvasLists({
     if (!editingId) return;
     const outside = (event: globalThis.PointerEvent) => {
       const target = event.target as HTMLElement;
-      if (target.closest('.selection-tools')) return;
+      if (target.closest('.selection-tools, .rich-format-bar')) return;
       if (target.closest<HTMLElement>('.canvas-list')?.dataset.listId !== editingId) onEdit(null);
     };
     const escape = (event: KeyboardEvent) => {
@@ -330,6 +351,7 @@ export default function CanvasLists({
         );
       }}
     >
+      <RichFormatBar revision={view} />
       {view.objects.map((o) => (
         <ListCard
           key={o.id}

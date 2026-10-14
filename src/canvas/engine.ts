@@ -33,13 +33,13 @@ import {
 import 'pixi.js/unsafe-eval';
 import {
   AlphaFilter,
+  CanvasSource,
   Application,
   Container,
   Graphics,
   Sprite,
   Rectangle,
   Texture,
-  Text,
 } from 'pixi.js';
 import type { CanvasObject, Camera, Edit, Tool, ImageCrop } from '../model';
 import { uid } from '../model';
@@ -53,7 +53,8 @@ import {
 } from './stacking';
 import { renderText, renderLinkCaption, textRegion } from './text-rendering';
 import { documentPreviewBox, renderDocumentCard } from './document-card';
-import { listLayout, wrapListText } from './list-layout';
+import { listLayout } from './list-layout';
+import { drawRichText, layoutRichText, richTextHeight } from './rich-text-canvas';
 import { TextureCache } from './textures';
 import { appearanceEvent, nightInk } from '../appearance';
 import { NightLighting } from './night-lighting';
@@ -1872,8 +1873,10 @@ export class Engine {
         .stroke({ color: '#d7e0e7', width: 1 });
       card.addChild(g);
       const measure = document.createElement('canvas').getContext('2d')!;
+      // Returns the label's height; formatted runs render through one canvas sprite.
       const label = (
         value: string,
+        marks: CanvasObject['textMarks'],
         x: number,
         y: number,
         size: number,
@@ -1881,32 +1884,35 @@ export class Engine {
         bold = false,
         strike = checked,
       ) => {
-        measure.font = `${bold ? 'bold' : 'normal'} ${size}px "Segoe UI", sans-serif`;
+        const base = {
+          size,
+          weight: bold ? 700 : 400,
+          family: '"Segoe UI", sans-serif',
+          lineHeight: 24 / size,
+        };
         const available = Math.max(1, o.width - x - (size === 16 ? 56 : 16));
-        const lines = wrapListText(value, available, (text) => measure.measureText(text).width);
-        lines.forEach((line, index) => {
-          const text = new Text({
-            text: line,
-            resolution,
-            style: {
-              fontFamily: 'Segoe UI',
-              fontSize: size,
-              fontWeight: bold ? 'bold' : 'normal',
-              fill: checked ? '#87928e' : '#29313b',
-            },
-          });
-          const lineY = y + index * 24;
-          text.position.set(x, lineY);
-          card.addChild(text);
-          if (strike)
-            g.moveTo(x, lineY + 10)
-              .lineTo(Math.min(o.width - 22, x + text.width), lineY + 10)
-              .stroke({ color: '#87928e', width: 1 });
+        const lines = layoutRichText(measure, value, marks, base, available);
+        const height = richTextHeight(lines);
+        const canvas = document.createElement('canvas');
+        const scale = Math.min(resolution, 8192 / available, 8192 / height);
+        canvas.width = Math.max(1, Math.ceil(available * scale));
+        canvas.height = Math.max(1, Math.ceil(height * scale));
+        const ctx = canvas.getContext('2d')!;
+        ctx.scale(scale, scale);
+        drawRichText(ctx, lines, base, 0, 0, checked ? '#87928e' : '#29313b', strike);
+        const texture = new Texture({
+          source: new CanvasSource({ resource: canvas, resolution: scale }),
         });
-        return lines.length;
+        const sprite = new Sprite(texture);
+        sprite.position.set(x, y);
+        sprite.once('destroyed', () => texture.destroy(true));
+        card.addChild(sprite);
+        return height;
       };
-      const titleLines = o.text ? label(o.text, 51, 20, 15, false, o.bold, o.strikethrough) : 1;
-      let y = 72 + (titleLines - 1) * 24;
+      const titleHeight = o.text
+        ? label(o.text, o.textMarks, 51, 18, 15, false, o.bold, o.strikethrough)
+        : 24;
+      let y = 72 + titleHeight - 24;
       (o.items || []).forEach((item) => {
         g.circle(28, y, 10).stroke({ color: item.checked ? '#729385' : '#a0aebb', width: 1.4 });
         if (item.checked) {
@@ -1916,8 +1922,8 @@ export class Engine {
             .lineTo(33, y - 4)
             .stroke({ color: '#ffffff', width: 1.5 });
         }
-        const lines = label(item.text, 51, y - 10, 16, item.checked);
-        y += Math.max(44, lines * 24 + 20);
+        const height = label(item.text, item.marks, 51, y - 12, 16, item.checked);
+        y += Math.max(44, height + 20);
       });
       return container;
     }

@@ -51,6 +51,34 @@ const nameValue = (value) => {
     throw Error('Names must contain 1–120 characters');
   return value.trim();
 };
+// Inline text formatting (src/canvas/rich-text.ts). Malformed ranges are
+// dropped and clamped rather than rejecting the object, so an external text
+// edit that shortens the string never makes a board unsavable.
+const markFlags = ['bold', 'italic', 'underline', 'strike', 'code', 'spoiler'];
+const markFonts = ['serif', 'mono', 'hand', 'condensed'];
+function marksValue(value, length) {
+  if (!Array.isArray(value)) return undefined;
+  const marks = [];
+  let at = 0;
+  for (const m of value.slice(0, 5000)) {
+    if (!m || !Number.isInteger(m.start) || !Number.isInteger(m.end)) continue;
+    const start = Math.max(at, m.start),
+      end = Math.min(length, m.end);
+    if (end <= start) continue;
+    const mark = { start, end };
+    for (const flag of markFlags) if (m[flag] === true) mark[flag] = true;
+    for (const key of ['color', 'highlight'])
+      if (typeof m[key] === 'string' && /^#[0-9a-f]{6}$/i.test(m[key])) mark[key] = m[key];
+    if (markFonts.includes(m.font)) mark.font = m.font;
+    if (typeof m.size === 'number' && m.size >= 0.5 && m.size <= 3 && m.size !== 1)
+      mark.size = m.size;
+    if (Object.keys(mark).length > 2) {
+      marks.push(mark);
+      at = end;
+    }
+  }
+  return marks.length ? marks : undefined;
+}
 const number = (value, min = -1e9, max = 1e9) =>
   typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max;
 function cameraValue(c) {
@@ -279,6 +307,8 @@ function objectValue(o) {
   if (o.text !== undefined) {
     if (typeof o.text !== 'string' || o.text.length > 100000) throw Error('Invalid text');
     result.text = o.text;
+    const textMarks = marksValue(o.textMarks, o.text.length);
+    if (textMarks) result.textMarks = textMarks;
   }
   if (o.type === 'list') {
     if (
@@ -296,7 +326,12 @@ function objectValue(o) {
       new Set(o.items.map((item) => item.id)).size !== o.items.length
     )
       throw Error('Invalid list items');
-    result.items = o.items.map(({ id, text, checked }) => ({ id, text, checked }));
+    result.items = o.items.map(({ id, text, checked, marks }) => {
+      const item = { id, text, checked };
+      const value = marksValue(marks, text.length);
+      if (value) item.marks = value;
+      return item;
+    });
     if (o.listScale !== undefined) {
       if (!number(o.listScale, 1e-6, 1e6)) throw Error('Invalid list scale');
       result.listScale = o.listScale;

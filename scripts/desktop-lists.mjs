@@ -157,17 +157,28 @@ try {
   );
   await click('.insert-menu [aria-label="Add list"]');
   await until(() => read(`document.querySelectorAll('.canvas-list').length===1`), 'new list');
-  assert.equal(await read(`document.querySelector('.canvas-list').innerText.trim()`), '');
-  assert.equal(await read(`document.querySelector('[aria-label="List name"]').value`), 'Title');
+  assert.equal(
+    await read(`(() => {
+      const card = document.querySelector('.canvas-list').cloneNode(true);
+      card.querySelectorAll('.rt-field').forEach((field) => field.remove());
+      return card.textContent.trim();
+    })()`),
+    '',
+    'no stray labels outside the text fields',
+  );
+  assert.equal(
+    await read(`document.querySelector('[aria-label="List name"]').textContent`),
+    'Title',
+  );
   assert.ok(
     await read(
-      `Math.abs(document.querySelector('[aria-label="List name"]').getBoundingClientRect().left - document.querySelector('.canvas-list-row textarea').getBoundingClientRect().left) < 1`,
+      `Math.abs(document.querySelector('[aria-label="List name"]').getBoundingClientRect().left - document.querySelector('.canvas-list-row .rt-field').getBoundingClientRect().left) < 1`,
     ),
     'title aligns with item text',
   );
   assert.deepEqual(
     await read(
-      `Array.from(document.querySelectorAll('.canvas-list-row textarea'), input=>input.value)`,
+      `Array.from(document.querySelectorAll('.canvas-list-row .rt-field'), input=>input.textContent)`,
     ),
     ['Item 1', 'Item 2'],
   );
@@ -268,7 +279,9 @@ try {
     'edit buttons are removed from the list',
   );
   await click('[aria-label="List name"]');
-  await read(`document.querySelector('[aria-label="List name"]').select()`);
+  await read(
+    `getSelection().selectAllChildren(document.querySelector('[aria-label="List name"]'))`,
+  );
   await send('Input.insertText', { text: 'Formatting while typing' });
   for (const [label, property, enabled, disabled] of [
     ['Bold', 'fontWeight', '700', '400'],
@@ -276,7 +289,9 @@ try {
   ]) {
     for (const expected of [enabled, disabled, enabled]) {
       await click('[aria-label="List name"]');
-      await read(`document.querySelector('[aria-label="List name"]').select()`);
+      await read(
+        `getSelection().selectAllChildren(document.querySelector('[aria-label="List name"]'))`,
+      );
       await click(`.selection-tools [aria-label="${label}"]`);
       await until(
         () =>
@@ -286,7 +301,7 @@ try {
         label + ' applies while title focused',
       );
       assert.equal(
-        await read(`document.querySelector('[aria-label="List name"]').value`),
+        await read(`document.querySelector('[aria-label="List name"]').textContent`),
         'Formatting while typing',
       );
     }
@@ -303,7 +318,7 @@ try {
   );
   assert.equal(
     await read(
-      `getComputedStyle(document.querySelector('.canvas-list-row textarea')).textDecorationLine`,
+      `getComputedStyle(document.querySelector('.canvas-list-row .rt-field')).textDecorationLine`,
     ),
     'none',
     'title format does not affect items',
@@ -339,6 +354,52 @@ try {
     'Enter adds next row',
   );
   await send('Input.insertText', { text: 'Book the train' });
+  // Inline formatting: select a word with the real mouse, format it from the bar.
+  const word = await read(`(() => {
+    const field = document.querySelector('[aria-label="List item 2"]');
+    const text = field.firstChild, range = document.createRange();
+    range.setStart(text, 9);
+    range.setEnd(text, 14);
+    const r = range.getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  })()`);
+  await mouse('mouseMoved', word.x, word.y);
+  for (const count of [1, 2]) {
+    await mouse('mousePressed', word.x, word.y, 1, count);
+    await mouse('mouseReleased', word.x, word.y, 0, count);
+  }
+  await until(() => read(`String(getSelection())==='train'`), 'word selected');
+  await click('.rich-format-bar [aria-label="Bold"]');
+  await click('.rich-format-bar [aria-label="Spoiler"]');
+  await until(
+    () =>
+      read(
+        `document.querySelector('[aria-label="List item 2"] .rt-spoiler')?.textContent==='train'`,
+      ),
+    'spoiler applied',
+  );
+  assert.equal(
+    await read(`String(getSelection())`),
+    'train',
+    'formatting keeps the selection for the next format',
+  );
+  assert.equal(
+    await read(
+      `getComputedStyle(document.querySelector('[aria-label="List item 2"] .rt-spoiler span')).fontWeight`,
+    ),
+    '700',
+  );
+  await screenshot('lists-format-bar.png');
+  // Native caret movement needs the virtual key code, unlike keys the app handles itself.
+  for (const type of ['rawKeyDown', 'keyUp'])
+    await send('Input.dispatchKeyEvent', {
+      type,
+      key: 'End',
+      code: 'End',
+      windowsVirtualKeyCode: 35,
+    });
+  await until(() => read(`getSelection().isCollapsed`), 'caret moved to the end');
+  await send('Input.insertText', { text: '!' });
   await click('.canvas-list-circle');
   assert.equal(
     await read(`document.querySelector('.canvas-list-circle').getAttribute('aria-checked')`),
@@ -355,7 +416,9 @@ try {
     () => read(`document.activeElement?.getAttribute('aria-label')==='List name'`),
     'name focus',
   );
-  await read(`document.querySelector('[aria-label="List name"]').select()`);
+  await read(
+    `getSelection().selectAllChildren(document.querySelector('[aria-label="List name"]'))`,
+  );
   await send('Input.insertText', { text: 'Weekend away' });
   await key('Enter');
   const saved = await until(async () => {
@@ -365,7 +428,9 @@ try {
       o.bold &&
       o.strikethrough &&
       o.items?.length === 2 &&
-      o.items[1].text === 'Book the train' &&
+      o.items[1].text === 'Book the train!' &&
+      JSON.stringify(o.items[1].marks) ===
+        JSON.stringify([{ start: 9, end: 15, bold: true, spoiler: true }]) &&
       o.items[0].checked &&
       o
     );
@@ -375,13 +440,39 @@ try {
   assert.equal(await read(`!!document.querySelector('[aria-label="Add list item"]')`), false);
   assert.equal(
     await read(
-      `Array.from(document.querySelectorAll('.canvas-list textarea')).every(input=>input.readOnly)`,
+      `Array.from(document.querySelectorAll('.canvas-list .rt-field')).every(input=>input.contentEditable==='false')`,
     ),
     true,
   );
   assert.equal(
     await read(`getComputedStyle(document.querySelector('.canvas-list')).borderTopColor`),
     'rgb(68, 134, 217)',
+  );
+  // Spoilers reveal and re-hide for this viewer only; nothing is saved.
+  const spoilerState = () =>
+    read(`document.querySelector('[aria-label="List item 2"] .rt-spoiler').dataset.hidden`);
+  assert.equal(await spoilerState(), 'true', 'spoiler is hidden outside edit mode');
+  const selectedBefore = await read(`document.querySelector('.canvas-list').dataset.selected`);
+  for (const expected of ['false', 'true']) {
+    await click('[aria-label="List item 2"] .rt-spoiler');
+    await until(async () => (await spoilerState()) === expected, 'spoiler toggles ' + expected);
+    assert.equal(
+      await read(`document.querySelector('.canvas-list').dataset.editing`),
+      'false',
+      'revealing does not start editing',
+    );
+    assert.equal(
+      await read(`document.querySelector('.canvas-list').dataset.selected`),
+      selectedBefore,
+      'revealing does not change selection',
+    );
+  }
+  await click('[aria-label="List item 2"] .rt-spoiler');
+  await until(async () => (await spoilerState()) === 'false', 'spoiler revealed before reload');
+  assert.deepEqual(
+    (await state()).objects[0].items[1],
+    { ...saved.items[1] },
+    'revealing is not saved',
   );
   await click('.canvas-list-circle');
   assert.equal(
@@ -448,11 +539,16 @@ try {
   await until(
     () =>
       read(
-        `!window.__beforeListReload && !document.getElementById('startup-screen') && document.querySelector('.canvas-list-name')?.value==='Weekend away'`,
+        `!window.__beforeListReload && !document.getElementById('startup-screen') && document.querySelector('.canvas-list-name')?.textContent==='Weekend away'`,
       ),
     'reload saved list',
   );
   assert.equal(await read(`document.querySelectorAll('.canvas-list-row').length`), 2);
+  assert.equal(
+    await read(`document.querySelector('[aria-label="List item 2"] .rt-spoiler').dataset.hidden`),
+    'true',
+    'spoilers are hidden again after reopening',
+  );
   assert.equal(
     await read(`getComputedStyle(document.querySelector('[aria-label="List name"]')).fontWeight`),
     '700',
@@ -498,7 +594,7 @@ try {
   await until(
     () =>
       read(
-        `document.activeElement?.closest('.canvas-list')===document.querySelector('.canvas-list:last-child') && document.activeElement?.tagName==='TEXTAREA'`,
+        `document.activeElement?.closest('.canvas-list')===document.querySelector('.canvas-list:last-child') && document.activeElement?.classList.contains('rt-field')`,
       ),
     'empty list row focus',
   );
@@ -535,6 +631,8 @@ try {
         'reload',
         'light/dark',
         'delete',
+        'format bar on selection',
+        'spoiler reveal is local and unsaved',
       ],
     }),
   );

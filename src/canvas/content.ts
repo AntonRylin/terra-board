@@ -1,5 +1,6 @@
 import type { CanvasObject } from '../model';
 import { pdfComposerValue } from './pdf-composer.ts';
+import { sanitizeMarks } from './rich-text.ts';
 export function pastedUrl(text: string): string | null {
   const value = text.trim();
   if (value.length > 8192 || !/^https?:\/\/\S+$/i.test(value)) return null;
@@ -272,7 +273,12 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
     return {
       ...(pdfComposer === undefined ? {} : { pdfComposer }),
       ...(o.type === 'list'
-        ? { items: o.items.map(({ id, text, checked }: any) => ({ id, text, checked })) }
+        ? {
+            items: o.items.map(({ id, text, checked, marks }: any) => {
+              const value = sanitizeMarks(marks, text.length);
+              return value ? { id, text, checked, marks: value } : { id, text, checked };
+            }),
+          }
         : {}),
       ...(o.type === 'arrow'
         ? { arrow: { ...o.arrow, points: o.arrow.points.map((p: any) => ({ x: p.x, y: p.y })) } }
@@ -293,6 +299,9 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
       height: o.height,
       z: o.z,
       ...(o.text === undefined ? {} : { text: o.text }),
+      ...(typeof o.text === 'string' && sanitizeMarks(o.textMarks, o.text.length)
+        ? { textMarks: sanitizeMarks(o.textMarks, o.text.length) }
+        : {}),
       ...(o.imageTitle === undefined ? {} : { imageTitle: o.imageTitle }),
       ...(o.frameLink
         ? { frameLink: { boardId: o.frameLink.boardId, frameId: o.frameLink.frameId } }

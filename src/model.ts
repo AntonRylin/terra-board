@@ -1,3 +1,4 @@
+import type { TextMark } from './canvas/rich-text';
 export type ObjectType =
   | 'text'
   | 'note'
@@ -15,6 +16,7 @@ export interface ListItem {
   id: string;
   text: string;
   checked: boolean;
+  marks?: TextMark[];
 }
 export interface ImageCrop {
   x: number;
@@ -82,6 +84,8 @@ export interface CanvasObject {
   height: number;
   z: number;
   text?: string;
+  // Inline formatting of `text`; currently edited on list titles.
+  textMarks?: TextMark[];
   imageTitle?: string;
   documentTitle?: string;
   documentMime?: string;

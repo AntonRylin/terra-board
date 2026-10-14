@@ -57,6 +57,31 @@ const pdfComposer = z
       .max(500),
   })
   .strict();
+// Inline formatting ranges over the matching text (see src/canvas/rich-text.ts).
+const textMarks = z
+  .array(
+    z.object({
+      start: z.number().int().min(0),
+      end: z.number().int().min(1),
+      bold: z.boolean().optional(),
+      italic: z.boolean().optional(),
+      underline: z.boolean().optional(),
+      strike: z.boolean().optional(),
+      code: z.boolean().optional(),
+      spoiler: z.boolean().optional(),
+      color: z
+        .string()
+        .regex(/^#[a-f\d]{6}$/i)
+        .optional(),
+      highlight: z
+        .string()
+        .regex(/^#[a-f\d]{6}$/i)
+        .optional(),
+      font: z.enum(['serif', 'mono', 'hand', 'condensed']).optional(),
+      size: z.number().min(0.5).max(3).optional(),
+    }),
+  )
+  .max(5000);
 const object = z
   .object({
     id,
@@ -75,7 +100,14 @@ const object = z
       'list',
     ]),
     items: z
-      .array(z.object({ id, text: z.string().max(10000), checked: z.boolean() }))
+      .array(
+        z.object({
+          id,
+          text: z.string().max(10000),
+          checked: z.boolean(),
+          marks: textMarks.optional(),
+        }),
+      )
       .max(1000)
       .optional(),
     x: number,
@@ -84,6 +116,7 @@ const object = z
     height: size,
     z: z.number().min(-1e7).max(1e7),
     text: z.string().max(100000).optional(),
+    textMarks: textMarks.optional(),
     imageTitle: z.string().max(100000).optional(),
     documentTitle: z.string().max(100000).optional(),
     documentMime: z.string().max(200).optional(),
@@ -259,7 +292,7 @@ function tools(call) {
   );
   add(
     'edit_board',
-    'Atomically create, replace or delete objects. Upserts are COMPLETE objects, not partial patches; preserve fields read earlier, including gallery layout, image membership, document metadata and pdfComposer. Coordinates are board units; z controls stacking. Images/videos/documents require imported assetId; document text retains its filename and documentTitle is an independent board title; arrows require normalized points; links require http(s) URL. Galleries are frames with gallery settings; member images use galleryId, galleryIndex, galleryRow and galleryColumn. PDF composers are non-gallery frames with sources and columns; page references use source IDs, zero-based pageIndex and 90-degree rotation deltas. Preserve original source asset IDs. This is undoable on the open board. Edits to separate objects merge automatically. If a target object changed or was deleted since your read, the whole edit is rejected with conflicting IDs; read again and preserve those changes.',
+    'Atomically create, replace or delete objects. Upserts are COMPLETE objects, not partial patches; preserve fields read earlier, including gallery layout, image membership, document metadata, pdfComposer and inline formatting (textMarks on text, marks on list items: non-overlapping {start,end,...style} ranges; spoiler ranges hide text until a viewer clicks). Coordinates are board units; z controls stacking. Images/videos/documents require imported assetId; document text retains its filename and documentTitle is an independent board title; arrows require normalized points; links require http(s) URL. Galleries are frames with gallery settings; member images use galleryId, galleryIndex, galleryRow and galleryColumn. PDF composers are non-gallery frames with sources and columns; page references use source IDs, zero-based pageIndex and 90-degree rotation deltas. Preserve original source asset IDs. This is undoable on the open board. Edits to separate objects merge automatically. If a target object changed or was deleted since your read, the whole edit is rejected with conflicting IDs; read again and preserve those changes.',
     {
       id,
       revision,
