@@ -14,6 +14,7 @@ const {
   safeStorage,
 } = require('electron');
 const { CloudSync, cloudConfig } = require('./cloud-sync.cjs');
+const { LiveShare } = require('./live-share.cjs');
 const { createImageClipboard } = require('./image-clipboard.cjs');
 const { createVisualExport } = require('./visual-export.cjs');
 const { createAssetDownload, assetResponse } = require('./document-assets.cjs');
@@ -161,6 +162,20 @@ const cloudTransaction = (job) =>
     'cloud',
   );
 let cloud = null;
+let liveShare = null;
+// Guests' edits are already saved; refresh the host's open board, batched.
+let guestRefresh = null;
+function refreshAfterGuestEdit(boardId) {
+  if (guestRefresh) return;
+  guestRefresh = setTimeout(() => {
+    guestRefresh = null;
+    void externalTransaction(
+      async () => ({ boards: [boardId] }),
+      (result) => ({ change: 'content', boards: result?.boards || [boardId] }),
+      'guest',
+    ).catch(() => {});
+  }, 400);
+}
 // Writes that change synced content; cloud sync pushes shortly after them.
 const syncedCommands = new Set([
   'createBoard',
@@ -226,7 +241,8 @@ function startWorker() {
     if (!quitting) fail(Error('Local storage stopped unexpectedly. Retry saving to restart it.'));
   });
 }
-function call(command, args = {}) {
+// `origin` is 'guest' for live-sharing visitors, whose edits are announced separately.
+function call(command, args = {}, origin = 'local') {
   if (workerFailed && !quitting) startWorker();
   const result = new Promise((resolve, reject) => {
     const id = ++counter;
@@ -235,7 +251,10 @@ function call(command, args = {}) {
   });
   if (syncedCommands.has(command))
     result.then(
-      () => cloud?.localChanged(),
+      () => {
+        cloud?.localChanged();
+        if (origin !== 'guest' && typeof args?.id === 'string') liveShare?.changed(args.id, 'host');
+      },
       () => {},
     );
   return result;
@@ -577,6 +596,29 @@ app
     cloudAction('devices', () => cloud.devices());
     cloudAction('remove-device', (id) => cloud.removeDevice(id));
     cloudAction('sync-now', () => cloud.run().then(() => cloud.status));
+    liveShare = new LiveShare({
+      call,
+      distDir: path.join(__dirname, '../dist'),
+      onStatus: (status) => {
+        if (win && !win.isDestroyed()) win.webContents.send('canvas:live-status', status);
+      },
+      onGuestEdit: refreshAfterGuestEdit,
+    });
+    const liveAction = (name, handler) =>
+      ipcMain.handle('canvas:live-' + name, async (e, ...args) => {
+        trusted(e);
+        await storageReady;
+        return handler(...args);
+      });
+    liveAction('status', () => liveShare.status());
+    liveAction('start', (options) => liveShare.start(options || {}));
+    liveAction('stop', () => liveShare.stop());
+    liveAction('configure', (options) => liveShare.configure(options || {}));
+    liveAction('answer', (id, allow, permission) => liveShare.answer(id, allow, permission));
+    liveAction('guest-permission', (id, permission) =>
+      liveShare.setGuestPermission(id, permission),
+    );
+    liveAction('remove-guest', (id) => liveShare.removeGuest(id));
     ipcMain.handle('canvas:mcp-status', (e) => {
       trusted(e);
       return mcp.status();
@@ -871,6 +913,7 @@ app.on('before-quit', (event) => {
   officeConverter?.dispose();
   void mcp?.stop();
   cloud?.stop();
+  void liveShare?.stop();
   if (workerFailed) {
     worker.terminate();
     app.quit();

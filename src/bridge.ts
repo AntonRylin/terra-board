@@ -16,6 +16,17 @@ export interface CloudStatus {
   error: string | null;
   workspace?: string | null;
 }
+export type LivePermission = 'view' | 'edit';
+export interface LiveStatus {
+  active: boolean;
+  boardId?: string;
+  permission?: LivePermission;
+  ask?: boolean;
+  port?: number;
+  links?: { label: string; url: string }[];
+  guests?: { id: string; name: string; permission: LivePermission; online: boolean }[];
+  requests?: { id: string; name: string }[];
+}
 export interface CloudDevice {
   id: string;
   name: string;
@@ -58,7 +69,7 @@ interface DesktopBridge {
       change?: string;
       idBoard?: string;
       boards?: string[];
-      source?: 'ai' | 'cloud';
+      source?: 'ai' | 'cloud' | 'guest';
     }) => void,
   ): () => void;
   mcpReady(id: number, error?: string): void;
@@ -82,6 +93,20 @@ interface DesktopBridge {
   setFullscreenKeys(
     bindings: { code: string; ctrl?: boolean; shift?: boolean; alt?: boolean }[],
   ): void;
+  live: {
+    status(): Promise<LiveStatus>;
+    start(options: {
+      boardId: string;
+      permission: LivePermission;
+      ask: boolean;
+    }): Promise<LiveStatus>;
+    stop(): Promise<LiveStatus>;
+    configure(options: { permission?: LivePermission; ask?: boolean }): Promise<LiveStatus>;
+    answer(id: string, allow: boolean, permission?: LivePermission): Promise<LiveStatus>;
+    setGuestPermission(id: string, permission: LivePermission): Promise<LiveStatus>;
+    removeGuest(id: string): Promise<LiveStatus>;
+    onStatus(callback: (status: LiveStatus) => void): () => void;
+  };
   cloud: {
     status(): Promise<CloudStatus>;
     enable(): Promise<CloudStatus>;
