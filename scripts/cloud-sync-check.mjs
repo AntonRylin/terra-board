@@ -256,26 +256,6 @@ try {
   console.log(JSON.stringify({ passed: true, ...results }));
 } catch (e) {
   console.error(JSON.stringify({ passed: false, ...results }));
-  const ownerDevice = devices.find((d) => d.name === 'owner');
-  if (ownerDevice?.sync.client) {
-    const seen = await ownerDevice.sync.client
-      .from('entities')
-      .select('id, seq, updated_by, data')
-      .eq('workspace_id', ownerDevice.sync.workspace)
-      .eq('id', 'p1');
-    console.error(
-      'server p1',
-      JSON.stringify(seen.data?.map((r) => [r.seq, r.updated_by, r.data?.text])),
-      seen.error?.message || '',
-    );
-    const friendDevice = devices.find((d) => d.name === 'friend');
-    console.error('friend user', friendDevice?.sync.userId, 'owner user', ownerDevice.sync.userId);
-    console.error(
-      'friend p1',
-      JSON.stringify(friendDevice?.store.db.prepare('SELECT * FROM sync_tracked').all()),
-      JSON.stringify(friendDevice?.store.db.prepare('SELECT * FROM sync_foreign').all()),
-    );
-  }
   for (const d of devices)
     console.error(
       d.name,

@@ -236,8 +236,10 @@ function createSync(store, helpers) {
       });
       return sync.status();
     },
-    // Folders and boards this person shares, as listed by the server.
-    owned({ shares }) {
+    // Folders and boards this person shares, as listed by the server. Only a share
+    // created here uploads its content (`upload`); learning about an existing share
+    // must not resend local copies over newer edits from the people it is shared with.
+    owned({ shares, upload = false }) {
       return store.transaction(() => {
         const before = new Set(
           db()
@@ -250,7 +252,7 @@ function createSync(store, helpers) {
         for (const s of shares) {
           helpers.idValue(s.targetId);
           add.run(s.kind, s.targetId, s.shareId);
-          if (!before.has(s.kind + ':' + s.targetId) && !state('library'))
+          if (upload && !before.has(s.kind + ':' + s.targetId) && !state('library'))
             queueOwned(s.kind, s.targetId);
         }
         return sync.status();

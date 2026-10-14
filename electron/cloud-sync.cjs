@@ -294,20 +294,25 @@ class CloudSync {
     await this.identify(name || this.status.name);
     let share = this.shareFor(kind, targetId);
     if (!share) {
-      const { data, error } = await this.client.rpc('create_share', {
-        p_workspace: this.workspace,
-        p_kind: kind,
-        p_target: targetId,
-      });
-      fail(error, 'Could not share this');
-      share = { shareId: data, kind, targetId, people: 0 };
-      this.emit({ shared: [...this.status.shared, share] });
-      await this.call('syncOwned', {
-        shares: this.status.shared.map((s) => ({
-          kind: s.kind,
-          targetId: s.targetId,
-          shareId: s.shareId,
-        })),
+      // No sync round may read a share list from before this share exists.
+      share = await this.exclusive(async () => {
+        const { data, error } = await this.client.rpc('create_share', {
+          p_workspace: this.workspace,
+          p_kind: kind,
+          p_target: targetId,
+        });
+        fail(error, 'Could not share this');
+        const created = { shareId: data, kind, targetId, people: 0 };
+        this.emit({ shared: [...this.status.shared.filter((s) => s.shareId !== data), created] });
+        await this.call('syncOwned', {
+          upload: true,
+          shares: this.status.shared.map((s) => ({
+            kind: s.kind,
+            targetId: s.targetId,
+            shareId: s.shareId,
+          })),
+        });
+        return created;
       });
       // Upload the shared content before the invite is used.
       await this.run();
@@ -399,6 +404,23 @@ class CloudSync {
       this.timer = null;
       void this.run();
     }, delay);
+  }
+
+  // Run a job while no sync round is in progress; rounds asked for meanwhile follow it.
+  async exclusive(job) {
+    while (this.running) await this.running.catch(() => {});
+    let release;
+    this.running = new Promise((resolve) => (release = resolve));
+    try {
+      return await job();
+    } finally {
+      this.running = null;
+      release();
+      if (this.again) {
+        this.again = false;
+        this.schedule(0);
+      }
+    }
   }
 
   async run() {

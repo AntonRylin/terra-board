@@ -240,7 +240,12 @@ test('without whole-library sync only shared folders and their boards are queued
     a.patchBoard({ id: secret.id, revision: 0, upserts: [note('n2', 'private')] });
     a.syncIdentity({ workspace: ownerWs });
     assert.equal(a.syncStatus().pending, 0, 'nothing uploads until something is shared');
+    // A share learned from the server (another computer created it) uploads nothing.
     a.syncOwned({ shares: [{ kind: 'folder', targetId: shared.id, shareId: 's1' }] });
+    assert.equal(a.syncStatus().pending, 0, 'known shares never resend local copies');
+    a.syncOwned({ shares: [] });
+    // Creating the share here uploads its content once.
+    a.syncOwned({ upload: true, shares: [{ kind: 'folder', targetId: shared.id, shareId: 's1' }] });
     const ids = entriesOf(a).entries.map((e) => e.kind + ':' + e.id);
     assert.deepEqual(ids.sort(), ['board:' + inside.id, 'folder:' + shared.id, 'object:n1'].sort());
     a.syncAck(entriesOf(a));
