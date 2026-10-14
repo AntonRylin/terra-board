@@ -12,11 +12,18 @@ function fakeRealtime() {
   const channels = [];
   const client = {
     channels,
-    channel(topic) {
+    authorized: 0,
+    realtime: {
+      async setAuth() {
+        client.authorized++;
+      },
+    },
+    channel(topic, options = {}) {
       const existing = channels.find((c) => c.topic === topic);
       if (existing) return existing;
       const c = {
         topic,
+        options,
         state: 'closed',
         tracked: null,
         handlers: [],
@@ -123,6 +130,19 @@ test('losing access to a board leaves its presence', async () => {
   assert.deepEqual(await s.joinBoard('b1'), { active: false });
   assert.equal(s.board, null);
   assert.equal(s.client.channels.length, 0);
+});
+
+test('board and workspace channels are private and carry the session token', async () => {
+  const s = sync();
+  await s.joinBoard('b1');
+  s.listen('ws-me');
+  await tick();
+  for (const topic of ['board:b1', 'terra:ws-me']) {
+    const c = s.client.channels.find((x) => x.topic === topic);
+    assert.equal(c.options.config?.private, true, topic);
+    assert.equal(c.state, 'joined', topic);
+  }
+  assert.ok(s.client.authorized >= 2);
 });
 
 test('presence says whether this person owns the board', async () => {

@@ -474,8 +474,9 @@ class CloudSync {
       return { active: true };
     }
     await this.exitBoard();
+    await this.authRealtime();
     const channel = this.client.channel('board:' + boardId, {
-      config: { presence: { key: this.userId }, broadcast: { self: false } },
+      config: { private: true, presence: { key: this.userId }, broadcast: { self: false } },
     });
     const next = {
       boardId,
@@ -673,10 +674,20 @@ class CloudSync {
   listen(workspace) {
     if (this.channels.has(workspace)) return;
     const channel = this.client
-      .channel('terra:' + workspace)
-      .on('broadcast', { event: 'pushed' }, () => this.schedule(200))
-      .subscribe();
+      .channel('terra:' + workspace, { config: { private: true } })
+      .on('broadcast', { event: 'pushed' }, () => this.schedule(200));
     this.channels.set(workspace, channel);
+    void this.authRealtime().then(() => {
+      if (this.channels.get(workspace) === channel) channel.subscribe();
+    });
+  }
+
+  // Board and workspace channels are private: the server lets someone join only
+  // while they belong to the workspace or a share, judged by the token sent on join.
+  async authRealtime() {
+    try {
+      await this.client.realtime.setAuth();
+    } catch {}
   }
 
   ping(workspace) {
@@ -830,6 +841,11 @@ class CloudSync {
     this.emit({ shared, sharedWithMe });
     this.foreign = [...new Set(sharedWithMe.map((s) => s.workspace))];
     for (const ws of this.foreign) this.listen(ws);
+    for (const [ws, channel] of this.channels)
+      if (ws !== this.workspace && !this.foreign.includes(ws)) {
+        this.channels.delete(ws);
+        void this.client.removeChannel(channel);
+      }
     const result = await this.call('syncReconcile', {
       shares: sharedWithMe.map((s) => ({
         workspace: s.workspace,

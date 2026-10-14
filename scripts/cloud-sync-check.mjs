@@ -53,6 +53,24 @@ const until = async (fn, label, timeout = 40000) => {
     await new Promise((r) => setTimeout(r, 150));
   }
 };
+// Joins a private channel as whoever holds the token, the way any client could
+// without going through the app; reports whether the server let them in.
+async function tryJoin(token, topic) {
+  const client = createClient(config.url, config.key, { accessToken: async () => token });
+  await client.realtime.setAuth();
+  const channel = client.channel(topic, { config: { private: true } });
+  const state = await new Promise((resolve) => {
+    const timer = setTimeout(() => resolve('TIMED_OUT'), 15000);
+    channel.subscribe((s) => {
+      if (s !== 'SUBSCRIBED' && s !== 'CHANNEL_ERROR') return;
+      clearTimeout(timer);
+      resolve(s);
+    });
+  });
+  await client.removeAllChannels();
+  return state;
+}
+const tokenOf = async (client) => (await client.auth.getSession()).data.session.access_token;
 const note = (id, text) => ({ id, type: 'note', x: 0, y: 0, width: 200, height: 160, text, z: 1 });
 const results = {};
 
@@ -233,6 +251,16 @@ try {
   await owner.sync.leaveBoard();
   results.presenceCursorsProfiles = true;
 
+  // Presence channels are private: only people with access may join them.
+  const friendToken = await tokenOf(friend.sync.client);
+  assert.equal(await tryJoin(friendToken, 'board:' + plan.id), 'SUBSCRIBED');
+  assert.equal(await tryJoin(friendToken, 'terra:' + owner.sync.workspace), 'SUBSCRIBED');
+  assert.equal(await tryJoin(friendToken, 'board:' + diary.id), 'CHANNEL_ERROR', 'unshared board');
+  const strangerToken = await tokenOf(stranger);
+  assert.equal(await tryJoin(strangerToken, 'board:' + plan.id), 'CHANNEL_ERROR');
+  assert.equal(await tryJoin(strangerToken, 'terra:' + owner.sync.workspace), 'CHANNEL_ERROR');
+  results.privatePresenceChannels = true;
+
   // The friend edits; the owner sees it live.
   const planRevision = friend.store.loadBoard({ id: plan.id }).revision;
   friend.store.patchBoard({
@@ -285,6 +313,12 @@ try {
   assert.ok(!friendBoards().includes('Plan'), 'revoked boards disappear');
   assert.equal(friend.sync.status.sharedWithMe.length, 0);
   results.revokeRemovesCopies = true;
+
+  // Even a client that ignores the app cannot rejoin the board's presence.
+  assert.equal(await tryJoin(friendToken, 'board:' + plan.id), 'CHANNEL_ERROR');
+  assert.equal(await tryJoin(friendToken, 'terra:' + owner.sync.workspace), 'CHANNEL_ERROR');
+  assert.ok(!friend.sync.channels.has(owner.sync.workspace), 'the app stops listening too');
+  results.revokedPresenceDenied = true;
 
   await owner.sync.stopSharing(access.shareId);
   assert.equal(owner.sync.status.shared.length, 0);
