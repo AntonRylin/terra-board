@@ -8,6 +8,7 @@ import { GeneralSettings, PanelSettings, type PanelOptions } from './settings/Ge
 import { CanvasSettings, RadialSettings } from './settings/CanvasSettings';
 import { ShortcutSettings } from './settings/ShortcutSettings';
 import { AboutSettings, StorageSettings } from './settings/StorageSettings';
+import { CloudSettings } from './settings/CloudSettings';
 import './settings/settings.css';
 
 // Reopening Settings returns to the section used last in this session.
@@ -201,6 +202,7 @@ export default function SettingsPage({
               {section === 'canvas' && <CanvasSettings />}
               {section === 'radial' && <RadialSettings />}
               {section === 'shortcuts' && <ShortcutSettings />}
+              {section === 'cloud' && <CloudSettings />}
               {section === 'storage' && <StorageSettings />}
               {section === 'ai' && <McpSettings />}
               {section === 'about' && <AboutSettings />}

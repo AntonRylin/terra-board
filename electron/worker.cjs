@@ -22,6 +22,14 @@ const allowed = new Set([
   'asset',
   'exportBoard',
   'importBoard',
+  'syncStatus',
+  'syncEnable',
+  'syncDisable',
+  'syncTake',
+  'syncAck',
+  'syncMissingAssets',
+  'syncApply',
+  'syncImportAsset',
 ]);
 let chain = Promise.resolve();
 const assetJobs = new Set();

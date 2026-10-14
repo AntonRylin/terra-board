@@ -1,5 +1,6 @@
 import {
   Cable,
+  Cloud,
   CircleDot,
   HardDrive,
   Info,
@@ -19,6 +20,7 @@ export type SectionId =
   | 'canvas'
   | 'radial'
   | 'shortcuts'
+  | 'cloud'
   | 'storage'
   | 'ai'
   | 'about';
@@ -73,6 +75,13 @@ export const sections: Section[] = [
     group: 'Board',
     icon: Keyboard,
     subtitle: 'Click a shortcut, then press the keys you want.',
+  },
+  {
+    id: 'cloud',
+    label: 'Cloud sync',
+    group: 'Data',
+    icon: Cloud,
+    subtitle: 'Your boards on every computer you use.',
   },
   {
     id: 'storage',
@@ -180,6 +189,31 @@ export const rows = {
     title: 'Tools in the wheel',
     description: 'Choose the tool for each direction.',
     keywords: 'quick tools tab',
+  },
+  cloudEnable: {
+    section: 'cloud',
+    title: 'Sync this computer',
+    description: 'Upload your boards and keep them in sync on every computer you add.',
+    keywords: 'cloud backup supabase devices',
+  },
+  cloudJoin: {
+    section: 'cloud',
+    title: 'Join from another computer',
+    description: 'Enter the code shown on a computer that already syncs.',
+    keywords: 'cloud pair code device',
+  },
+  cloudStatus: { section: 'cloud', title: 'Status', keywords: 'cloud sync' },
+  cloudAddDevice: {
+    section: 'cloud',
+    title: 'Add a computer',
+    description: 'Create a one-time code to enter on your other computer.',
+    keywords: 'cloud pair code device',
+  },
+  cloudDisable: {
+    section: 'cloud',
+    title: 'Turn off sync on this computer',
+    description: 'Boards stay here. Your other computers keep syncing.',
+    keywords: 'cloud stop leave',
   },
   libraryFolder: {
     section: 'storage',

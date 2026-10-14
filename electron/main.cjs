@@ -11,7 +11,9 @@ const {
   clipboard,
   ClipboardItem,
   nativeImage,
+  safeStorage,
 } = require('electron');
+const { CloudSync, cloudConfig } = require('./cloud-sync.cjs');
 const { createImageClipboard } = require('./image-clipboard.cjs');
 const { createVisualExport } = require('./visual-export.cjs');
 const { createAssetDownload, assetResponse } = require('./document-assets.cjs');
@@ -122,22 +124,55 @@ function syncRenderer(phase, detail = {}) {
     win.webContents.send('canvas:mcp-sync', { id, phase, ...detail });
   });
 }
-async function mcpTransaction(job, detail) {
-  await rendererReady;
-  externalPhase = 'prepare';
-  try {
-    await syncRenderer('prepare');
-    externalPhase = 'apply';
-    return await job();
-  } finally {
-    externalPhase = 'refresh';
+// Outside changes (AI edits, cloud sync) pause the board, apply, then refresh it.
+let externalTail = Promise.resolve();
+function externalTransaction(job, finishDetail, source) {
+  const run = async () => {
+    await rendererReady;
+    externalPhase = 'prepare';
+    let result;
     try {
-      await syncRenderer('finish', { change: detail.change, idBoard: detail.id });
+      await syncRenderer('prepare', { source });
+      externalPhase = 'apply';
+      result = await job();
+      return result;
     } finally {
-      externalPhase = null;
+      externalPhase = 'refresh';
+      try {
+        await syncRenderer('finish', { ...finishDetail(result), source });
+      } finally {
+        externalPhase = null;
+      }
     }
-  }
+  };
+  const next = externalTail.then(run, run);
+  externalTail = next.catch(() => {});
+  return next;
 }
+const mcpTransaction = (job, detail) =>
+  externalTransaction(job, () => ({ change: detail.change, idBoard: detail.id }), 'ai');
+const cloudTransaction = (job) =>
+  externalTransaction(
+    job,
+    (result) => ({
+      change: result?.boards?.length ? 'content' : result?.library ? 'library' : 'none',
+      boards: result?.boards || [],
+    }),
+    'cloud',
+  );
+let cloud = null;
+// Writes that change synced content; cloud sync pushes shortly after them.
+const syncedCommands = new Set([
+  'createBoard',
+  'createFolder',
+  'updateBoard',
+  'updateFolder',
+  'removeFolder',
+  'restoreBoard',
+  'duplicateBoard',
+  'patchBoard',
+  'importBoard',
+]);
 const smoke = process.argv.includes('--smoke-test');
 const launchStarted = performance.now();
 const root = libraryRoot({
@@ -193,11 +228,17 @@ function startWorker() {
 }
 function call(command, args = {}) {
   if (workerFailed && !quitting) startWorker();
-  return new Promise((resolve, reject) => {
+  const result = new Promise((resolve, reject) => {
     const id = ++counter;
     pending.set(id, { resolve, reject });
     worker.postMessage({ id, command, args });
   });
+  if (syncedCommands.has(command))
+    result.then(
+      () => cloud?.localChanged(),
+      () => {},
+    );
+  return result;
 }
 const commands = new Set([
   'library',
@@ -512,6 +553,30 @@ app
       }
     });
     mcp = new McpService({ root, call, transaction: mcpTransaction });
+    cloud = new CloudSync({
+      call,
+      root,
+      config: cloudConfig(require('../package.json')),
+      safeStorage,
+      transaction: cloudTransaction,
+      onStatus: (status) => {
+        if (win && !win.isDestroyed()) win.webContents.send('canvas:cloud-status', status);
+      },
+    });
+    const cloudAction = (name, handler) =>
+      ipcMain.handle('canvas:cloud-' + name, async (e, ...args) => {
+        trusted(e);
+        await storageReady;
+        return handler(...args);
+      });
+    cloudAction('status', () => cloud.status);
+    cloudAction('enable', () => cloud.enable());
+    cloudAction('join', (code) => cloud.join(code));
+    cloudAction('disable', () => cloud.disable());
+    cloudAction('pairing-code', () => cloud.pairingCode());
+    cloudAction('devices', () => cloud.devices());
+    cloudAction('remove-device', (id) => cloud.removeDevice(id));
+    cloudAction('sync-now', () => cloud.run().then(() => cloud.status));
     ipcMain.handle('canvas:mcp-status', (e) => {
       trusted(e);
       return mcp.status();
@@ -749,6 +814,10 @@ app
     });
     await Promise.all([storageReady, win.loadURL(dev || 'canvas-app://app/index.html')]);
     await mcp.start();
+    if (!smoke)
+      void cloud
+        .start()
+        .catch((e) => cloud.emit({ state: 'error', error: String(e.message || e) }));
     if (smoke) {
       await Promise.race([
         rendererReady,
@@ -801,6 +870,7 @@ app.on('before-quit', (event) => {
   documentPrint?.dispose();
   officeConverter?.dispose();
   void mcp?.stop();
+  cloud?.stop();
   if (workerFailed) {
     worker.terminate();
     app.quit();

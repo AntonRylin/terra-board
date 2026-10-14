@@ -8,6 +8,20 @@ export interface McpStatus {
   codexConfig: string;
   claudeConfig: string;
 }
+export interface CloudStatus {
+  configured: boolean;
+  state: 'off' | 'syncing' | 'synced' | 'offline' | 'error';
+  pending: number;
+  lastSync: number | null;
+  error: string | null;
+  workspace?: string | null;
+}
+export interface CloudDevice {
+  id: string;
+  name: string;
+  joined: string;
+  current: boolean;
+}
 export interface AppInfo {
   version: string;
   libraryPath: string;
@@ -43,6 +57,8 @@ interface DesktopBridge {
       phase: 'prepare' | 'finish';
       change?: string;
       idBoard?: string;
+      boards?: string[];
+      source?: 'ai' | 'cloud';
     }) => void,
   ): () => void;
   mcpReady(id: number, error?: string): void;
@@ -66,6 +82,17 @@ interface DesktopBridge {
   setFullscreenKeys(
     bindings: { code: string; ctrl?: boolean; shift?: boolean; alt?: boolean }[],
   ): void;
+  cloud: {
+    status(): Promise<CloudStatus>;
+    enable(): Promise<CloudStatus>;
+    join(code: string): Promise<CloudStatus>;
+    disable(): Promise<CloudStatus>;
+    pairingCode(): Promise<string>;
+    devices(): Promise<CloudDevice[]>;
+    removeDevice(id: string): Promise<void>;
+    syncNow(): Promise<CloudStatus>;
+    onStatus(callback: (status: CloudStatus) => void): () => void;
+  };
   onClose(callback: () => void): () => void;
   closeReady(): void;
   rendererReady(): void;

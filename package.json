@@ -16,7 +16,8 @@
     "prepackage": "node scripts/check-package-idle.mjs",
     "package": "npm run build && electron-builder --win dir",
     "installer": "npm run build && electron-builder --config electron-builder.installer.cjs --win nsis --x64 --publish never",
-    "test:desktop": "node scripts/desktop-check.mjs"
+    "test:desktop": "node scripts/desktop-check.mjs",
+    "test:cloud": "node scripts/cloud-sync-check.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.31.0",

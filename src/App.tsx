@@ -84,7 +84,7 @@ export default function App() {
     send();
     return subscribePreferences(send);
   }, []);
-  const [aiBusy, setAiBusy] = useState(false);
+  const [aiBusy, setAiBusy] = useState<false | 'ai' | 'cloud'>(false);
   const [canvasReady, setCanvasReady] = useState(false);
   const activeDocument = useRef<Document | null>(null);
   const [dockEdge, setDockEdge] = useState(readDockEdge);
@@ -350,7 +350,7 @@ export default function App() {
       try {
         if (message.phase === 'prepare') {
           ++request.current;
-          setAiBusy(true);
+          setAiBusy(message.source === 'cloud' ? 'cloud' : 'ai');
           const root = window.document.getElementById('root');
           if (root) {
             root.dataset.mcpInert = 'true';
@@ -370,7 +370,10 @@ export default function App() {
                 if (!board) {
                   whiteboard.current?.finishExternal();
                   setDoc(null);
-                } else if (message.change === 'content' && message.idBoard === board.id) {
+                } else if (
+                  message.change === 'content' &&
+                  (message.idBoard === board.id || message.boards?.includes(board.id))
+                ) {
                   const updated = await invoke<Document>('loadBoard', { id: board.id });
                   whiteboard.current?.finishExternal(updated);
                   setDoc({ ...updated, board });
@@ -911,7 +914,7 @@ export default function App() {
         {aiBusy && (
           <div className="toast" role="status">
             <LoaderCircle size={15} />
-            Syncing AI changes…
+            {aiBusy === 'cloud' ? 'Syncing changes…' : 'Syncing AI changes…'}
           </div>
         )}
         {notice && (

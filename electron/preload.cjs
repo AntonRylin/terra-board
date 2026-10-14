@@ -44,6 +44,21 @@ contextBridge.exposeInMainWorld('canvas', {
   exportLibrary: () => ipcRenderer.invoke('canvas:export-library'),
   licenses: () => ipcRenderer.invoke('canvas:licenses'),
   setFullscreenKeys: (bindings) => ipcRenderer.send('canvas:fullscreen-keys', bindings),
+  cloud: {
+    status: () => ipcRenderer.invoke('canvas:cloud-status'),
+    enable: () => ipcRenderer.invoke('canvas:cloud-enable'),
+    join: (code) => ipcRenderer.invoke('canvas:cloud-join', code),
+    disable: () => ipcRenderer.invoke('canvas:cloud-disable'),
+    pairingCode: () => ipcRenderer.invoke('canvas:cloud-pairing-code'),
+    devices: () => ipcRenderer.invoke('canvas:cloud-devices'),
+    removeDevice: (id) => ipcRenderer.invoke('canvas:cloud-remove-device', id),
+    syncNow: () => ipcRenderer.invoke('canvas:cloud-sync-now'),
+    onStatus: (callback) => {
+      const handler = (_event, status) => callback(status);
+      ipcRenderer.on('canvas:cloud-status', handler);
+      return () => ipcRenderer.removeListener('canvas:cloud-status', handler);
+    },
+  },
   onClose: (callback) => {
     const handler = () => callback();
     ipcRenderer.on('canvas:close-request', handler);

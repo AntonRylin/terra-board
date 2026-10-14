@@ -1,3 +1,4 @@
+const { createSync } = require('./store-sync.cjs');
 const { DatabaseSync } = require('node:sqlite');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -504,6 +505,15 @@ class Store {
         .some((column) => column.name === 'backgroundAppearance')
     )
       this.db.exec("ALTER TABLE boards ADD COLUMN backgroundAppearance TEXT NOT NULL DEFAULT '{}'");
+    this.sync = createSync(this, {
+      idValue,
+      nameValue,
+      validIcon,
+      iconAssetId,
+      backgroundAppearanceValue,
+      number,
+      objectValue,
+    });
     const backup = path.join(root, 'backups', new Date().toISOString().slice(0, 10) + '.sqlite');
     if (!fs.existsSync(backup) && this.db.prepare('SELECT count(*) AS n FROM boards').get().n) {
       try {
@@ -512,6 +522,30 @@ class Store {
         this.backupError = e.message;
       }
     }
+  }
+  syncStatus() {
+    return this.sync.status();
+  }
+  syncEnable(args) {
+    return this.sync.enable(args);
+  }
+  syncDisable() {
+    return this.sync.disable();
+  }
+  syncTake(args) {
+    return this.sync.take(args);
+  }
+  syncAck(args) {
+    return this.sync.ack(args);
+  }
+  syncMissingAssets(args) {
+    return this.sync.missingAssets(args);
+  }
+  syncApply(args) {
+    return this.sync.apply(args);
+  }
+  syncImportAsset(args) {
+    return this.sync.importAsset(args);
   }
   close() {
     if (this.db) {
