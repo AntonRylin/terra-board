@@ -603,6 +603,9 @@ app
       cloud.setPersonRole(share, person, role),
     );
     cloudAction('remove-person', (share, person) => cloud.removePerson(share, person));
+    cloudAction('set-board-access', (boardId, person, role) =>
+      cloud.setBoardAccess(boardId, person, role === 'view' || role === 'edit' ? role : null),
+    );
     cloudAction('stop-sharing', (share) => cloud.stopSharing(share));
     cloudAction('leave', (share) => cloud.leave(share));
     cloudAction('profile', () => cloud.profile());

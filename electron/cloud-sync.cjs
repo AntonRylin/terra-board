@@ -138,6 +138,7 @@ class CloudSync {
       return this.emit({ state: 'error', error: 'Signed out. Turn sync on again.' });
     this.userId = data.session.user.id;
     this.listen(this.workspace);
+    void this.rejoin().catch(() => {});
     void this.loadProfile().catch(() => {});
     clearInterval(this.poll);
     this.poll = setInterval(() => this.schedule(0), 30000);
@@ -417,54 +418,108 @@ class CloudSync {
       name: this.status.name || 'Someone',
       avatar: profile.avatarVersion,
       song: profile.publishSong ? profile.songVersion : 0,
+      device: os.hostname(),
       role: this.board?.role || 'edit',
       joined: this.board?.joined || Date.now(),
     };
   }
 
   // Announce this person on a cloud board so others see them, their cursor and view.
-  async joinBoard(boardId) {
-    await this.leaveBoard();
-    if (!this.client || !this.workspace || typeof boardId !== 'string') return { active: false };
+  // Joins and leaves run one at a time: Realtime keeps one channel per topic, so
+  // overlapping ones would share a channel and nobody would be announced.
+  joinBoard(boardId) {
+    this.wantedBoard = typeof boardId === 'string' ? boardId : null;
+    return this.presence(() => this.enterBoard(this.wantedBoard));
+  }
+
+  leaveBoard() {
+    this.wantedBoard = null;
+    return this.presence(() => this.exitBoard());
+  }
+
+  // The board asked for before sync was ready, now that it is.
+  rejoin() {
+    return this.wantedBoard ? this.joinBoard(this.wantedBoard) : Promise.resolve();
+  }
+
+  presence(job) {
+    const next = (this.presenceQueue || Promise.resolve()).then(job);
+    this.presenceQueue = next.catch(() => {});
+    return next;
+  }
+
+  async enterBoard(boardId) {
+    if (!this.client || !this.workspace || !this.userId || !boardId) {
+      await this.exitBoard();
+      return { active: false };
+    }
     const lib = await this.call('library');
     const board = lib.boards.find((b) => b.id === boardId);
     const mark =
       lib.sharing?.boards[boardId] || (board?.folderId && lib.sharing?.folders[board.folderId]);
-    if (!board || !(this.status.library || mark)) return { active: false };
+    if (!board || !(this.status.library || mark)) {
+      await this.exitBoard();
+      return { active: false };
+    }
+    const role = mark && mark.shared !== 'owner' ? mark.shared : 'edit';
+    const owner = !mark || mark.shared === 'owner';
+    const current = this.board;
+    if (current?.boardId === boardId) {
+      // Same board: only the announcement changes, for example a new role.
+      if (current.role === role && current.owner === owner) return { active: true };
+      current.role = role;
+      current.owner = owner;
+      current.folderId = board.folderId || null;
+      if (current.subscribed) await current.channel.track(await this.presenceInfo());
+      return { active: true };
+    }
+    await this.exitBoard();
     const channel = this.client.channel('board:' + boardId, {
       config: { presence: { key: this.userId }, broadcast: { self: false } },
     });
-    const current = {
+    const next = {
       boardId,
+      folderId: board.folderId || null,
       channel,
-      role: mark && mark.shared !== 'owner' ? mark.shared : 'edit',
+      role,
+      owner,
       joined: Date.now(),
+      subscribed: false,
     };
-    this.board = current;
+    this.board = next;
     const people = () =>
       Object.entries(channel.presenceState()).map(([key, metas]) => ({ key, ...metas[0] }));
     channel
       .on('presence', { event: 'sync' }, () =>
-        this.onPresence?.({ type: 'people', boardId, self: this.userId, people: people() }),
+        this.onPresence?.({
+          type: 'people',
+          boardId,
+          self: this.userId,
+          owner: next.owner,
+          people: people(),
+        }),
       )
       .on('broadcast', { event: 'cursor' }, ({ payload }) =>
         this.onPresence?.({ type: 'cursor', boardId, ...payload }),
       )
       .subscribe(async (state) => {
-        if (state === 'SUBSCRIBED' && this.board === current)
-          await channel.track(await this.presenceInfo());
+        if (state !== 'SUBSCRIBED' || this.board !== next) return;
+        next.subscribed = true;
+        await channel.track(await this.presenceInfo());
       });
     return { active: true };
   }
 
-  async leaveBoard() {
+  async exitBoard() {
     const current = this.board;
     this.board = null;
     if (!current) return;
     try {
       await current.channel.untrack();
     } catch {}
-    this.client.removeChannel(current.channel);
+    try {
+      await this.client.removeChannel(current.channel);
+    } catch {}
     this.onPresence?.({ type: 'people', boardId: current.boardId, self: this.userId, people: [] });
   }
 
@@ -542,6 +597,33 @@ class CloudSync {
     this.ping(this.workspace);
   }
 
+  // The shares that give people access to a board: its own and its folder's.
+  sharesCovering(board) {
+    return this.status.shared.filter(
+      (s) =>
+        (s.kind === 'board' && s.targetId === board.id) ||
+        (s.kind === 'folder' && board.folderId && s.targetId === board.folderId),
+    );
+  }
+
+  // Change what one person may do on a board, or (role null) take it away,
+  // through every share of this person that covers it.
+  async setBoardAccess(boardId, person, role) {
+    this.requireWorkspace();
+    const lib = await this.call('library');
+    const board = lib.boards.find((b) => b.id === boardId);
+    if (!board) throw Error('This board is gone.');
+    let found = false;
+    for (const share of this.sharesCovering(board)) {
+      const { people } = await this.sharePeople(share.kind, share.targetId);
+      if (!people.some((p) => p.id === person)) continue;
+      found = true;
+      if (role) await this.setPersonRole(share.shareId, person, role);
+      else await this.removePerson(share.shareId, person);
+    }
+    if (!found) throw Error('This person does not get access through your shares.');
+  }
+
   async removePerson(shareId, person) {
     const { error } = await this.client.rpc('remove_share_member', {
       p_share: shareId,
@@ -579,7 +661,7 @@ class CloudSync {
   }
 
   stop() {
-    void this.leaveBoard();
+    void this.presence(() => this.exitBoard());
     clearTimeout(this.timer);
     clearInterval(this.poll);
     this.timer = this.poll = null;
@@ -647,6 +729,8 @@ class CloudSync {
           for (const ws of this.foreign) await this.pull(ws);
           for (const ws of pushed) this.ping(ws);
         } while (this.again && this.workspace);
+        // Access to the open board may have changed: a new role, or none at all.
+        void this.rejoin().catch(() => {});
         this.emit({ state: 'synced', ...(await this.local()), lastSync: Date.now(), error: null });
       } catch (e) {
         const local = await this.local().catch(() => ({}));

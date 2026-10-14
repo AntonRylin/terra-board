@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
-import { Crosshair, Eye, LocateFixed, X } from 'lucide-react';
+import { Crosshair, Eye, LocateFixed, Pencil, UserMinus, X } from 'lucide-react';
 import type { Engine } from '../canvas/engine';
 import type { Camera } from '../model';
 import type { PresencePerson, ViewRect } from '../bridge';
@@ -9,7 +9,8 @@ import { useCloudStatus } from './ShareDialog';
 import './collab.css';
 
 type Cursor = { x: number; y: number; view: ViewRect; at: number };
-type Person = PresencePerson & { keys: string[] };
+// `id` is the person, or one computer when it belongs to this person's own workspace.
+type Person = PresencePerson & { id: string; own: boolean; keys: string[] };
 
 // One colour per person, stable across sessions and computers.
 const colorOf = (person: string) => {
@@ -71,19 +72,18 @@ export default function CollabLayer({
   const [cursors, setCursors] = useState<Record<string, Cursor>>({});
   const [avatars, setAvatars] = useState<Record<string, string | null>>({});
   const [menu, setMenu] = useState<string | null>(null);
+  const [owner, setOwner] = useState(false);
+  const [confirming, setConfirming] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [menuError, setMenuError] = useState('');
   const [following, setFollowing] = useState<string | null>(null);
   const followRef = useRef<string | null>(null);
   followRef.current = following;
   const known = useRef<Set<string> | null>(null);
   const me = status?.workspace;
-  const shareSignature = JSON.stringify([
-    status?.identity,
-    status?.library,
-    status?.shared.map((s) => s.shareId),
-    status?.sharedWithMe.map((s) => s.shareId),
-  ]);
 
-  // Join this board's presence while it is open; rejoin when sharing changes.
+  // Join this board's presence while it is open. Sync keeps the announcement in
+  // line with sharing changes (a new role, or access taken away).
   useEffect(() => {
     if (!cloud || !status?.identity) return;
     known.current = null;
@@ -98,7 +98,7 @@ export default function CollabLayer({
       clearTimeout(stopTimer);
       void cloud.leaveBoard();
     };
-  }, [cloud, boardId, shareSignature]);
+  }, [cloud, boardId, status?.identity]);
 
   useEffect(() => {
     if (!cloud) return;
@@ -111,22 +111,34 @@ export default function CollabLayer({
         }));
         return;
       }
+      setOwner(!!event.owner);
       const byPerson = new Map<string, Person>();
       for (const p of event.people) {
-        if (p.key === event.self || p.person === me) continue;
-        const prior = byPerson.get(p.person);
+        if (p.key === event.self) continue;
+        // Another computer signed in to this person's own workspace.
+        const own = p.person === me;
+        const id = own ? 'device:' + p.key : p.person;
+        const prior = byPerson.get(id);
         if (prior) prior.keys.push(p.key);
-        else byPerson.set(p.person, { ...p, keys: [p.key] });
+        else
+          byPerson.set(id, {
+            ...p,
+            id,
+            own,
+            name: own ? p.device || 'Your other computer' : p.name,
+            keys: [p.key],
+          });
       }
       const list = [...byPerson.values()].sort((a, b) => a.joined - b.joined);
       setPeople(list);
       if (!known.current) {
-        known.current = new Set(list.map((p) => p.person));
+        known.current = new Set(list.map((p) => p.id));
         return;
       }
       for (const p of list) {
-        if (known.current.has(p.person)) continue;
-        known.current.add(p.person);
+        if (known.current.has(p.id)) continue;
+        known.current.add(p.id);
+        if (p.own) continue;
         const last = songCooldown.get(p.person) || 0;
         if (!p.song || !getPreferences().playJoinSongs || Date.now() - last < 60000) continue;
         songCooldown.set(p.person, Date.now());
@@ -139,6 +151,7 @@ export default function CollabLayer({
       }
       for (const person of [...known.current])
         if (!byPerson.has(person)) known.current.delete(person);
+      setMenu((open) => (open && byPerson.has(open) ? open : null));
     });
   }, [cloud, boardId, me]);
 
@@ -243,7 +256,7 @@ export default function CollabLayer({
     );
     return true;
   };
-  const followed = people.find((p) => p.person === following);
+  const followed = people.find((p) => p.id === following);
   const followedView = followed && latestView(followed);
   useEffect(() => {
     if (followed && followedView) showView(followed);
@@ -258,6 +271,27 @@ export default function CollabLayer({
     return map;
   }, [people]);
 
+  const act = async (job: () => Promise<unknown>) => {
+    setBusy(true);
+    setMenuError('');
+    try {
+      await job();
+      setMenu(null);
+      setConfirming(null);
+    } catch (e) {
+      setMenuError(
+        String(e).replace(/^Error: (Error invoking remote method '[^']+': )?(Error: )?/, ''),
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+  const openMenu = (id: string | null) => {
+    setMenu(id);
+    setConfirming(null);
+    setMenuError('');
+  };
+
   if (!cloud || !people.length) return null;
   return (
     <>
@@ -265,7 +299,7 @@ export default function CollabLayer({
         {Object.entries(cursors).map(([key, c]) => {
           const p = byKey.get(key);
           if (!p) return null;
-          const color = colorOf(p.person);
+          const color = colorOf(p.id);
           return (
             <div
               key={key}
@@ -292,15 +326,15 @@ export default function CollabLayer({
         {people.map((p) => {
           const avatar = avatars[p.person + ':' + p.avatar];
           return (
-            <div className="collab-person" role="listitem" key={p.person}>
+            <div className="collab-person" role="listitem" key={p.id}>
               <button
                 type="button"
                 className="collab-avatar"
-                style={{ borderColor: colorOf(p.person), background: colorOf(p.person) }}
+                style={{ borderColor: colorOf(p.id), background: colorOf(p.id) }}
                 aria-label={`${p.name}${p.role === 'view' ? ', viewing' : ', editing'}`}
-                title={`${p.name} · ${p.role === 'view' ? 'viewing' : 'editing'}`}
-                data-following={following === p.person || undefined}
-                onClick={() => setMenu(menu === p.person ? null : p.person)}
+                title={`${p.name} · ${p.own ? 'your computer' : p.role === 'view' ? 'viewing' : 'editing'}`}
+                data-following={following === p.id || undefined}
+                onClick={() => openMenu(menu === p.id ? null : p.id)}
               >
                 {avatar ? <img src={mediaUrl(avatar, 'thumb')} alt="" /> : initials(p.name)}
                 {p.role === 'view' && (
@@ -309,7 +343,7 @@ export default function CollabLayer({
                   </span>
                 )}
               </button>
-              {menu === p.person && (
+              {menu === p.id && (
                 <div className="collab-menu glass-surface" role="menu">
                   <div className="collab-menu-name">{p.name}</div>
                   <button
@@ -328,13 +362,71 @@ export default function CollabLayer({
                     type="button"
                     role="menuitem"
                     onClick={() => {
-                      setFollowing(following === p.person ? null : p.person);
+                      setFollowing(following === p.id ? null : p.id);
                       setMenu(null);
                     }}
                   >
                     <Crosshair size={14} />
-                    {following === p.person ? 'Stop following' : `Follow ${p.name}`}
+                    {following === p.id ? 'Stop following' : `Follow ${p.name}`}
                   </button>
+                  {owner && !p.own && (
+                    <>
+                      <div className="collab-menu-divider" />
+                      {(['edit', 'view'] as const).map((role) => (
+                        <button
+                          key={role}
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked={p.role === role}
+                          disabled={busy}
+                          onClick={() =>
+                            p.role !== role &&
+                            act(() => cloud.setBoardAccess(boardId, p.person, role))
+                          }
+                        >
+                          {role === 'edit' ? <Pencil size={14} /> : <Eye size={14} />}
+                          {role === 'edit' ? 'Can edit' : 'View only'}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="collab-menu-danger"
+                        disabled={busy}
+                        onClick={() =>
+                          confirming === p.id
+                            ? act(() => cloud.setBoardAccess(boardId, p.person, null))
+                            : setConfirming(p.id)
+                        }
+                      >
+                        <UserMinus size={14} />
+                        {confirming === p.id ? 'Click again to remove' : 'Remove access'}
+                      </button>
+                    </>
+                  )}
+                  {p.own && (
+                    <>
+                      <div className="collab-menu-divider" />
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="collab-menu-danger"
+                        disabled={busy}
+                        onClick={() =>
+                          confirming === p.id
+                            ? act(() => cloud.removeDevice(p.key))
+                            : setConfirming(p.id)
+                        }
+                      >
+                        <UserMinus size={14} />
+                        {confirming === p.id ? 'Click again to remove' : 'Remove this computer'}
+                      </button>
+                      <p className="collab-menu-note">
+                        Signed in to your own account, so it sees everything you sync.
+                      </p>
+                    </>
+                  )}
+                  {menuError && <p className="collab-menu-error">{menuError}</p>}
                 </div>
               )}
             </div>
@@ -343,7 +435,7 @@ export default function CollabLayer({
       </div>
       {followed && (
         <div className="collab-following glass-surface" role="status">
-          <span style={{ background: colorOf(followed.person) }} />
+          <span style={{ background: colorOf(followed.id) }} />
           Following {followed.name}
           <button type="button" aria-label="Stop following" onClick={() => setFollowing(null)}>
             <X size={13} />

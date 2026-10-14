@@ -103,6 +103,32 @@
 .collab-menu button:hover:not(:disabled) {
   background: var(--hover, rgb(0 0 0 / 0.06));
 }
+.collab-menu button[aria-checked='true'] {
+  color: var(--accent);
+  font-weight: 600;
+}
+.collab-menu-divider {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--line);
+}
+.collab-menu .collab-menu-danger {
+  color: #b74242;
+}
+:root[data-theme='dark'] .collab-menu .collab-menu-danger,
+:root[data-theme='dark'] .collab-menu-error {
+  color: #f08c8c;
+}
+.collab-menu-note,
+.collab-menu-error {
+  max-width: 200px;
+  margin: 2px 8px 4px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.collab-menu-error {
+  color: #b74242;
+}
 .collab-following {
   position: absolute;
   top: 56px;

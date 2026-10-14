@@ -74,6 +74,8 @@ contextBridge.exposeInMainWorld('canvas', {
       ipcRenderer.invoke('canvas:cloud-set-person-role', share, person, role),
     removePerson: (share, person) =>
       ipcRenderer.invoke('canvas:cloud-remove-person', share, person),
+    setBoardAccess: (boardId, person, role) =>
+      ipcRenderer.invoke('canvas:cloud-set-board-access', boardId, person, role),
     stopSharing: (share) => ipcRenderer.invoke('canvas:cloud-stop-sharing', share),
     leave: (share) => ipcRenderer.invoke('canvas:cloud-leave', share),
     profile: () => ipcRenderer.invoke('canvas:cloud-profile'),

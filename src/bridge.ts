@@ -53,11 +53,18 @@ export interface PresencePerson {
   name: string;
   avatar: number;
   song: number;
+  device?: string;
   role: 'view' | 'edit';
   joined: number;
 }
 export type PresenceEvent =
-  | { type: 'people'; boardId: string; self: string; people: PresencePerson[] }
+  | {
+      type: 'people';
+      boardId: string;
+      self: string;
+      owner?: boolean;
+      people: PresencePerson[];
+    }
   | { type: 'cursor'; boardId: string; key: string; x: number; y: number; view: ViewRect };
 export interface SharePerson {
   id: string;
@@ -169,6 +176,7 @@ interface DesktopBridge {
     invite(kind: 'folder' | 'board', id: string, role: ShareRole, name?: string): Promise<string>;
     setPersonRole(share: string, person: string, role: ShareRole): Promise<void>;
     removePerson(share: string, person: string): Promise<void>;
+    setBoardAccess(boardId: string, person: string, role: ShareRole | null): Promise<void>;
     stopSharing(share: string): Promise<void>;
     leave(share: string): Promise<void>;
     profile(): Promise<CloudProfile>;

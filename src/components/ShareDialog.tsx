@@ -44,6 +44,43 @@ function RoleSwitch({
   );
 }
 
+function PeopleList({
+  title,
+  people,
+  busy,
+  onRole,
+  onRemove,
+}: {
+  title: string;
+  people: SharePerson[];
+  busy: boolean;
+  onRole: (person: SharePerson, role: ShareRole) => void;
+  onRemove: (person: SharePerson) => void;
+}) {
+  if (!people.length) return null;
+  return (
+    <div className="live-list">
+      <h3>{title}</h3>
+      {people.map((p) => (
+        <div className="live-person" key={p.id}>
+          <span className="live-name">{p.name}</span>
+          <RoleSwitch value={p.role} label={`${p.name} can`} onChange={(next) => onRole(p, next)} />
+          <button
+            type="button"
+            className="icon-button"
+            aria-label={`Remove ${p.name}`}
+            title="Remove access"
+            disabled={busy}
+            onClick={() => onRemove(p)}
+          >
+            <X size={15} />
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // Who can see a folder or board, invites for more people, and leaving things others shared.
 export function ShareDialog({
   kind,
@@ -61,6 +98,11 @@ export function ShareDialog({
   const cloud = window.canvas?.cloud;
   const [people, setPeople] = useState<SharePerson[]>([]);
   const [shareId, setShareId] = useState<string | null>(null);
+  // A board in a shared folder: the people who reach it through the folder.
+  const [folderAccess, setFolderAccess] = useState<{
+    shareId: string | null;
+    people: SharePerson[];
+  }>({ shareId: null, people: [] });
   const [role, setRole] = useState<ShareRole>('edit');
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
@@ -78,6 +120,12 @@ export function ShareDialog({
       : library.sharing?.boards[id] ||
         (board?.folderId ? library.sharing?.folders[board.folderId] : undefined);
   const received = mark && mark.shared !== 'owner';
+  const sharedFolder =
+    kind === 'board' &&
+    board?.folderId &&
+    library.sharing?.folders[board.folderId]?.shared === 'owner'
+      ? library.folders.find((f) => f.id === board.folderId)
+      : undefined;
 
   const load = useCallback(async () => {
     if (!cloud || !status?.identity || received) return;
@@ -85,10 +133,15 @@ export function ShareDialog({
       const result = await cloud.sharePeople(kind, id);
       setShareId(result.shareId);
       setPeople(result.people);
+      setFolderAccess(
+        sharedFolder
+          ? await cloud.sharePeople('folder', sharedFolder.id)
+          : { shareId: null, people: [] },
+      );
     } catch (e) {
       setError(message(e));
     }
-  }, [cloud, status?.identity, kind, id, received]);
+  }, [cloud, status?.identity, kind, id, received, sharedFolder?.id]);
   useEffect(() => {
     void load();
   }, [load, status?.shared.length]);
@@ -166,40 +219,40 @@ export function ShareDialog({
           />
         </label>
       )}
-      {people.length > 0 && (
-        <div className="live-list">
-          <h3>People with access</h3>
-          {people.map((p) => (
-            <div className="live-person" key={p.id}>
-              <span className="live-name">{p.name}</span>
-              <RoleSwitch
-                value={p.role}
-                label={`${p.name} can`}
-                onChange={(next) =>
-                  run(async () => {
-                    await cloud.setPersonRole(shareId!, p.id, next);
-                    await load();
-                  })
-                }
-              />
-              <button
-                type="button"
-                className="icon-button"
-                aria-label={`Remove ${p.name}`}
-                title="Remove access"
-                onClick={() =>
-                  run(async () => {
-                    await cloud.removePerson(shareId!, p.id);
-                    await load();
-                  })
-                }
-              >
-                <X size={15} />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
+      <PeopleList
+        title="People with access"
+        people={people}
+        busy={busy}
+        onRole={(p, next) =>
+          run(async () => {
+            await cloud.setPersonRole(shareId!, p.id, next);
+            await load();
+          })
+        }
+        onRemove={(p) =>
+          run(async () => {
+            await cloud.removePerson(shareId!, p.id);
+            await load();
+          })
+        }
+      />
+      <PeopleList
+        title={`Through the folder “${sharedFolder?.name || 'Folder'}”`}
+        people={folderAccess.people}
+        busy={busy}
+        onRole={(p, next) =>
+          run(async () => {
+            await cloud.setPersonRole(folderAccess.shareId!, p.id, next);
+            await load();
+          })
+        }
+        onRemove={(p) =>
+          run(async () => {
+            await cloud.removePerson(folderAccess.shareId!, p.id);
+            await load();
+          })
+        }
+      />
       <div className="live-row">
         <span>Invite someone who can</span>
         <RoleSwitch value={role} onChange={setRole} label="Invited person can" />
