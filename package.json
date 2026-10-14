@@ -7,6 +7,10 @@
   "license": "UNLICENSED",
   "type": "module",
   "main": "electron/main.cjs",
+  "terraCloud": {
+    "url": "https://iolkrvqpwbiwfahfcjcq.supabase.co",
+    "key": "sb_publishable_rblk19HUEG-TKNpssPf5bQ_0RrXAplo"
+  },
   "scripts": {
     "dev": "node scripts/prepare-documents.mjs && node scripts/prepare-background-model.mjs && node scripts/dev.mjs",
     "preview": "node scripts/prepare-documents.mjs && vite --host 127.0.0.1",
