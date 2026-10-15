@@ -730,12 +730,14 @@ export class Engine {
         } else if (
           !additive &&
           !this.selectionLocked &&
-          this.selection.size > 1 &&
-          bounds &&
-          w.x >= bounds.x &&
-          w.x <= bounds.x + bounds.width &&
-          w.y >= bounds.y &&
-          w.y <= bounds.y + bounds.height
+          ((this.selection.size > 1 &&
+            bounds &&
+            w.x >= bounds.x &&
+            w.x <= bounds.x + bounds.width &&
+            w.y >= bounds.y &&
+            w.y <= bounds.y + bounds.height) ||
+            // A selected frame drags from its empty interior too.
+            this.selection.has(this.frameAt(w)?.id ?? ''))
         ) {
           this.gesture = {
             mode: 'move',
