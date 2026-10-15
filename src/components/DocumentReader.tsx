@@ -9,6 +9,7 @@ import {
   Pencil,
   Minus,
   Plus,
+  ScanText,
   X,
 } from 'lucide-react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
@@ -22,6 +23,9 @@ import {
   type DecodedText,
 } from '../canvas/document-files';
 import { documentBytes, docxHtml, loadPdf, paintPdfPage } from '../canvas/document-preview';
+import { pdfPageText } from '../canvas/page-text';
+import { recognizedString, type RecognizedText } from '../canvas/recognized-text';
+import TextLayer, { selectLayerText } from './TextLayer';
 import './document-reader.css';
 
 export interface DocumentReaderHandle {
@@ -58,6 +62,10 @@ const DocumentReader = forwardRef<DocumentReaderHandle, Props>(function Document
     [pageLoading, setPageLoading] = useState(false);
   const [saving, setSaving] = useState(false),
     [message, setMessage] = useState('');
+  const [sheet, setSheet] = useState<{ width: number; height: number } | null>(null),
+    [pageText, setPageText] = useState<{ page: number; text: RecognizedText } | null>(null),
+    [copied, setCopied] = useState(false);
+  const textLayer = useRef<HTMLDivElement>(null);
   useEffect(() => {
     mounted.current = true;
     const controller = new AbortController();
@@ -127,6 +135,7 @@ const DocumentReader = forwardRef<DocumentReaderHandle, Props>(function Document
         canvas.style.width = `${width}px`;
         canvas.setAttribute('aria-label', `PDF page ${page} of ${pdf.numPages}`);
         pageHost.current?.replaceChildren(canvas);
+        setSheet({ width, height: (width * canvas.height) / canvas.width });
       } catch (error) {
         if (!cancelled)
           setMessage(error instanceof Error ? error.message : 'This page could not be rendered.');
@@ -139,6 +148,25 @@ const DocumentReader = forwardRef<DocumentReaderHandle, Props>(function Document
       controller.abort();
     };
   }, [pdf, page, zoom, o.width, camera.zoom]);
+
+  useEffect(() => {
+    if (!pdf) return;
+    let cancelled = false;
+    void pdfPageText(pdf, page - 1).then(
+      (text) => !cancelled && setPageText({ page, text }),
+      () => !cancelled && setPageText(null),
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [pdf, page]);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 1600);
+    return () => clearTimeout(timer);
+  }, [copied]);
+  const visibleText = pageText?.page === page ? pageText.text : null;
+  const visibleString = visibleText ? recognizedString(visibleText) : '';
 
   const commit = async () => {
     if (pending.current) return pending.current;
@@ -182,7 +210,10 @@ const DocumentReader = forwardRef<DocumentReaderHandle, Props>(function Document
       onKeyDown={(event) => {
         event.stopPropagation();
         if (event.nativeEvent.isComposing) return;
-        if (event.key === 'Escape') {
+        if (kind === 'pdf' && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') {
+          event.preventDefault();
+          selectLayerText(textLayer.current);
+        } else if (event.key === 'Escape') {
           event.preventDefault();
           if (!saving) onClose();
         } else if (
@@ -199,6 +230,20 @@ const DocumentReader = forwardRef<DocumentReaderHandle, Props>(function Document
         <span className="document-reader-name">{o.text || 'Document'}</span>
         {kind === 'pdf' && (
           <>
+            {window.canvas && (
+              <button
+                aria-label="Copy page text"
+                data-tooltip={
+                  copied ? 'Copied' : visibleString ? 'Copy page text' : 'No text on this page'
+                }
+                disabled={!visibleString}
+                onClick={() =>
+                  void window.canvas?.copyText(visibleString).then(() => setCopied(true))
+                }
+              >
+                {copied ? <Check size={15} /> : <ScanText size={15} />}
+              </button>
+            )}
             <button
               aria-label="Full PDF preview"
               data-tooltip="Full preview"
@@ -320,7 +365,19 @@ const DocumentReader = forwardRef<DocumentReaderHandle, Props>(function Document
           srcDoc={html}
         />
       ) : kind === 'pdf' ? (
-        <div className="document-pdf-page" aria-busy={pageLoading} ref={pageHost} />
+        <div className="document-pdf-page" aria-busy={pageLoading}>
+          <div className="document-pdf-sheet">
+            <div ref={pageHost} />
+            {sheet && visibleText && !pageLoading && (
+              <TextLayer
+                ref={textLayer}
+                text={visibleText}
+                width={sheet.width}
+                height={sheet.height}
+              />
+            )}
+          </div>
+        </div>
       ) : (
         <div className="document-reader-message">
           <FileText size={34} />

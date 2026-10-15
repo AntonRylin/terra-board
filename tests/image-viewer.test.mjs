@@ -23,6 +23,16 @@ function loadViewer() {
       if (id.endsWith('.css')) return {};
       if (id === '../bridge') return { mediaUrl: (asset, variant) => `/asset/${asset}/${variant}` };
       if (id === 'react-dom') return { createPortal: (content) => content };
+      if (id === '../canvas/page-text')
+        return { canRecognizeText: () => false, imageAssetText: async () => ({ lines: [] }) };
+      if (id === '../canvas/recognized-text') return { recognizedString: () => '' };
+      if (id === './TextLayer')
+        return {
+          default: () => null,
+          selectedLayerText: () => null,
+          selectLayerText: () => false,
+          startsTextSelection: () => false,
+        };
       return require(id);
     },
   });

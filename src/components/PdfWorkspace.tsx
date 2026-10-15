@@ -24,6 +24,7 @@ import {
   Plus,
   Redo2,
   RotateCw,
+  ScanText,
   Undo2,
   X,
   Trash2,
@@ -40,6 +41,9 @@ import {
 } from '../canvas/pdf-edit';
 import { assemblePdfLocal, inspectPdfSourceLocal } from '../canvas/pdf-edit-client';
 import { convertPdfPages, renderPdfSheet } from '../canvas/pdf-render';
+import { pdfPageText } from '../canvas/page-text';
+import { recognizedString, type RecognizedText } from '../canvas/recognized-text';
+import TextLayer, { selectLayerText } from './TextLayer';
 import './pdf-workspace.css';
 
 export interface PdfWorkspaceHandle {
@@ -207,6 +211,11 @@ const PdfWorkspace = forwardRef<PdfWorkspaceHandle, Props>(function PdfWorkspace
   const [size, setSize] = useState({ width: 900, height: 700 }),
     [dragOver, setDragOver] = useState('');
   const [historyVersion, setHistoryVersion] = useState(0);
+  const [sheet, setSheet] = useState<{ width: number; height: number } | null>(null),
+    [pageText, setPageText] = useState<{ page: PdfPageSpec; text: RecognizedText } | null>(null),
+    [readingText, setReadingText] = useState(false),
+    [copiedText, setCopiedText] = useState(false);
+  const textLayer = useRef<HTMLDivElement>(null);
   const drag = useRef<{ id: string; x: number; y: number; over: string; moved: boolean } | null>(
     null,
   );
@@ -406,6 +415,7 @@ const PdfWorkspace = forwardRef<PdfWorkspaceHandle, Props>(function PdfWorkspace
     const controller = new AbortController(),
       canvas = document.createElement('canvas');
     setPageLoading(true);
+    setSheet(null);
     pageHost.current?.replaceChildren();
     void (async () => {
       try {
@@ -436,6 +446,7 @@ const PdfWorkspace = forwardRef<PdfWorkspaceHandle, Props>(function PdfWorkspace
         canvas.style.height = `${natural.height * scale}px`;
         canvas.setAttribute('aria-label', `PDF page ${index + 1} of ${pages.length}`);
         pageHost.current?.replaceChildren(canvas);
+        setSheet({ width: natural.width * scale, height: natural.height * scale });
         setActualZoom(scale);
       } catch (e) {
         if (!controller.signal.aborted) showError(e);
@@ -448,6 +459,31 @@ const PdfWorkspace = forwardRef<PdfWorkspaceHandle, Props>(function PdfWorkspace
       canvas.width = canvas.height = 1;
     };
   }, [source, current, fit, zoom, size, index, pages.length]);
+  useEffect(() => {
+    if (!current || !source) return;
+    let cancelled = false;
+    setReadingText(true);
+    void pdfPageText(source.pdf, current.pageIndex, current.rotation)
+      .then(
+        (text) => !cancelled && setPageText({ page: current, text }),
+        () => !cancelled && setPageText(null),
+      )
+      .finally(() => !cancelled && setReadingText(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [source, current]);
+  useEffect(() => {
+    if (!copiedText) return;
+    const timer = setTimeout(() => setCopiedText(false), 1600);
+    return () => clearTimeout(timer);
+  }, [copiedText]);
+  const visibleText = pageText && pageText.page === current ? pageText.text : null;
+  const visibleString = visibleText ? recognizedString(visibleText) : '';
+  const copyPageText = () => {
+    if (!visibleText || !visibleString) return;
+    void window.canvas?.copyText(visibleString).then(() => setCopiedText(true));
+  };
   useEffect(() => {
     root.current
       ?.querySelector<HTMLElement>(`.pdf-page-tile[data-page-id="${selected}"]`)
@@ -646,6 +682,11 @@ const PdfWorkspace = forwardRef<PdfWorkspaceHandle, Props>(function PdfWorkspace
           }
         }
         if (disable || confirmClose || (e.target as HTMLElement).matches('input')) return;
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
+          e.preventDefault();
+          selectLayerText(textLayer.current);
+          return;
+        }
         if (
           ['ArrowLeft', 'ArrowUp', 'PageUp', 'ArrowRight', 'ArrowDown', 'PageDown'].includes(e.key)
         ) {
@@ -666,6 +707,25 @@ const PdfWorkspace = forwardRef<PdfWorkspaceHandle, Props>(function PdfWorkspace
           </span>
         </div>
         <div className="pdf-workspace-actions">
+          {window.canvas && (
+            <Tool
+              label={
+                copiedText
+                  ? 'Copied'
+                  : readingText && !visibleText
+                    ? 'Reading text…'
+                    : visibleString
+                      ? 'Copy page text'
+                      : 'No text on this page'
+              }
+              className="pdf-copy-text"
+              data-state={readingText && !visibleText ? 'reading' : undefined}
+              disabled={disable || !visibleString}
+              onClick={copyPageText}
+            >
+              {copiedText ? <Check size={16} /> : <ScanText size={17} />}
+            </Tool>
+          )}
           <Tool
             label="Edit PDF pages"
             aria-pressed={editing}
@@ -858,7 +918,17 @@ const PdfWorkspace = forwardRef<PdfWorkspaceHandle, Props>(function PdfWorkspace
             </div>
           )}
           <div ref={stage} className="pdf-workspace-stage">
-            <div ref={pageHost} className="pdf-workspace-page" aria-busy={pageLoading || loading} />
+            <div className="pdf-workspace-page" aria-busy={pageLoading || loading}>
+              <div ref={pageHost} />
+              {sheet && visibleText && !pageLoading && (
+                <TextLayer
+                  ref={textLayer}
+                  text={visibleText}
+                  width={sheet.width}
+                  height={sheet.height}
+                />
+              )}
+            </div>
             {(loading || (current && pageLoading)) && !error && (
               <div className="pdf-workspace-loading" role="status">
                 {loading ? 'Opening PDF…' : 'Loading page…'}

@@ -95,6 +95,14 @@
   gap: 8px;
   align-items: center;
 }
+.pdf-copy-text[data-state='reading'] svg {
+  animation: pdf-reading-text 1.1s ease-in-out infinite alternate;
+}
+@keyframes pdf-reading-text {
+  to {
+    opacity: 0.35;
+  }
+}
 .pdf-workspace .pdf-save-copy {
   background: var(--accent);
   color: #fff;
@@ -206,6 +214,7 @@
   padding: 24px;
 }
 .pdf-workspace-page {
+  position: relative;
   width: max-content;
   min-width: min(100%, 160px);
   min-height: 1px;

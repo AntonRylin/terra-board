@@ -256,7 +256,18 @@ export async function convertPdfPages(
         signal,
       );
       signal?.throwIfAborted();
-      const text = textFromPage(content);
+      let text = textFromPage(content);
+      // Scanned pages have no text of their own; read them with Windows text recognition.
+      if (!text.trim() && typeof window !== 'undefined' && window.canvas?.recognizeImage) {
+        const [{ pdfPageText }, { recognizedString }] = await Promise.all([
+          import('./page-text'),
+          import('./recognized-text'),
+        ]);
+        text = recognizedString(
+          await cancellable(pdfPageText(pdf, spec.pageIndex, spec.rotation), signal),
+        );
+        signal?.throwIfAborted();
+      }
       hasText ||= !!text.trim();
       const bytes = new TextEncoder().encode((index ? '\n\f\n' : '') + text);
       length += bytes.byteLength;
@@ -280,10 +291,7 @@ export async function convertPdfPages(
   }
   signal?.throwIfAborted();
   if (format === 'txt') {
-    if (!hasText)
-      throw Error(
-        'This PDF has no selectable text. Scanned pages need OCR before they can be exported as text.',
-      );
+    if (!hasText) throw Error('No selectable text was found in this PDF.');
     const bytes = new Uint8Array(length);
     let offset = 0;
     for (const chunk of chunks) {

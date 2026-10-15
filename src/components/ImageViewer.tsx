@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronLeft, Download, Maximize2, Minus, Plus, Scan } from 'lucide-react';
+import { Check, ChevronLeft, Download, Maximize2, Minus, Plus, Scan, ScanText } from 'lucide-react';
 import type { CanvasObject } from '../model';
 import { mediaUrl } from '../bridge';
+import { canRecognizeText, imageAssetText } from '../canvas/page-text';
+import { recognizedString, type RecognizedText } from '../canvas/recognized-text';
+import TextLayer, { selectLayerText, startsTextSelection } from './TextLayer';
 import './image-viewer.css';
 
 interface Size {
@@ -89,6 +92,12 @@ function ImageViewerSession({ object, onClose, onDownload }: Props) {
   const [downloading, setDownloading] = useState(false),
     [downloadError, setDownloadError] = useState('');
   const [panning, setPanning] = useState(false);
+  const [text, setText] = useState<RecognizedText | null>(null),
+    [textState, setTextState] = useState<'reading' | 'ready' | 'error' | 'off'>(
+      canRecognizeText() && object.assetId ? 'reading' : 'off',
+    ),
+    [copied, setCopied] = useState(false);
+  const textLayer = useRef<HTMLDivElement>(null);
   const drag = useRef<{ id: number; startX: number; startY: number; x: number; y: number } | null>(
     null,
   );
@@ -201,6 +210,34 @@ function ImageViewerSession({ object, onClose, onDownload }: Props) {
       root.current?.focus({ preventScroll: true });
   }, [state, view.zoom, downloading]);
 
+  useEffect(() => {
+    if (state !== 'ready' || textState !== 'reading' || !object.assetId) return;
+    let cancelled = false;
+    imageAssetText(object.assetId).then(
+      (value) => {
+        if (cancelled) return;
+        setText(value);
+        setTextState('ready');
+      },
+      () => !cancelled && setTextState('error'),
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [state]);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 1600);
+    return () => clearTimeout(timer);
+  }, [copied]);
+  const textCount = text ? recognizedString(text).length : 0;
+  const copyText = () => {
+    if (!text || !textCount) return;
+    void window.canvas
+      ?.copyText(recognizedString(text))
+      .then(() => alive.current && setCopied(true));
+  };
+
   return createPortal(
     <section
       ref={root}
@@ -213,7 +250,8 @@ function ImageViewerSession({ object, onClose, onDownload }: Props) {
       tabIndex={-1}
       onPointerDown={(event) => {
         event.stopPropagation();
-        if (!(event.target as HTMLElement).closest('button')) {
+        if (startsTextSelection(event.target)) root.current?.focus({ preventScroll: true });
+        else if (!(event.target as HTMLElement).closest('button')) {
           event.preventDefault();
           root.current?.focus({ preventScroll: true });
         }
@@ -257,6 +295,11 @@ function ImageViewerSession({ object, onClose, onDownload }: Props) {
           if (!event.repeat) void download();
           return;
         }
+        if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') {
+          event.preventDefault();
+          selectLayerText(textLayer.current);
+          return;
+        }
         if (event.altKey) return;
         if (['+', '=', '-', '_', '0', '1'].includes(event.key)) {
           event.preventDefault();
@@ -274,6 +317,27 @@ function ImageViewerSession({ object, onClose, onDownload }: Props) {
         <div className="image-viewer-title">
           <span>{title}</span>
         </div>
+        {textState !== 'off' && (
+          <Tool
+            label={
+              copied
+                ? 'Copied'
+                : textState === 'reading'
+                  ? 'Reading text…'
+                  : textState === 'error'
+                    ? 'Text could not be read'
+                    : textCount
+                      ? 'Copy text'
+                      : 'No text found'
+            }
+            className="image-viewer-copy-text"
+            data-state={textState}
+            disabled={!textCount}
+            onClick={copyText}
+          >
+            {copied ? <Check size={18} /> : <ScanText size={18} />}
+          </Tool>
+        )}
         <Tool label="Download image" disabled={downloading} onClick={() => void download()}>
           <Download size={18} />
         </Tool>
@@ -288,9 +352,10 @@ function ImageViewerSession({ object, onClose, onDownload }: Props) {
         data-panning={panning || undefined}
         aria-busy={state === 'loading'}
         onPointerDown={(event) => {
-          if (event.button !== 0) return;
+          if (event.button !== 0 || startsTextSelection(event.target)) return;
           event.preventDefault();
           root.current?.focus({ preventScroll: true });
+          getSelection()?.removeAllRanges();
           if (!pannable) return;
           event.currentTarget.setPointerCapture(event.pointerId);
           drag.current = {
@@ -357,6 +422,20 @@ function ImageViewerSession({ object, onClose, onDownload }: Props) {
               setState('ready');
             }}
             onError={() => setState('error')}
+          />
+        )}
+        {text && state === 'ready' && (
+          <TextLayer
+            ref={textLayer}
+            text={text}
+            width={natural.width}
+            height={natural.height}
+            style={{
+              left: '50%',
+              top: '50%',
+              transformOrigin: 'center',
+              transform: `translate(-50%, -50%) translate(${view.x}px, ${view.y}px) scale(${view.zoom})`,
+            }}
           />
         )}
         {state === 'loading' && (

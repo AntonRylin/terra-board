@@ -22,6 +22,7 @@ const { createDocumentPrint } = require('./document-print.cjs');
 const { createOfficeConverter } = require('./office-converter.cjs');
 const { attachWindowShadow } = require('./window-shadow.cjs');
 const { fetchPreview } = require('./link-preview.cjs');
+const { createOcr } = require('./ocr.cjs');
 const { Worker } = require('node:worker_threads');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -162,6 +163,7 @@ const cloudTransaction = (job) =>
     'cloud',
   );
 let cloud = null;
+let ocr = null;
 let liveShare = null;
 // Guests' edits are already saved; refresh the host's open board, batched.
 let guestRefresh = null;
@@ -656,7 +658,7 @@ app
     // The renderer is denied every web permission, including clipboard writes.
     ipcMain.handle('canvas:copy-text', (e, text) => {
       trusted(e);
-      if (typeof text !== 'string' || text.length > 100000) throw Error('Invalid text');
+      if (typeof text !== 'string' || text.length > 10000000) throw Error('Invalid text');
       return clipboard.writeText(text);
     });
     ipcMain.handle('canvas:mcp-update', (e, patch) => {
@@ -774,6 +776,16 @@ app
     ipcMain.handle('canvas:download-asset', (e, args) => {
       trusted(e);
       return assetDownload.save(args);
+    });
+    ocr = createOcr({ loadAsset: (id) => call('asset', { id, variant: 'original' }) });
+    ipcMain.handle('canvas:recognize-asset', (e, id) => {
+      trusted(e);
+      if (typeof id !== 'string' || !/^[a-f0-9]{64}$/.test(id)) throw Error('Invalid asset');
+      return ocr.recognizeAsset(id);
+    });
+    ipcMain.handle('canvas:recognize-image', (e, bytes) => {
+      trusted(e);
+      return ocr.recognizeImage(bytes);
     });
     ipcMain.handle('canvas:asset-dimensions', async (e, id) => {
       trusted(e);
@@ -941,6 +953,7 @@ app.on('before-quit', (event) => {
   quitting = true;
   documentPrint?.dispose();
   officeConverter?.dispose();
+  ocr?.dispose();
   void mcp?.stop();
   cloud?.stop();
   void liveShare?.stop();

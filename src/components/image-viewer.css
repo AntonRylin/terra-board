@@ -85,6 +85,19 @@
   right: 0;
   transform: none;
 }
+.image-viewer-header > .image-viewer-copy-text[data-tooltip]::after {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+.image-viewer-copy-text[data-state='reading'] svg {
+  animation: image-viewer-reading 1.1s ease-in-out infinite alternate;
+}
+@keyframes image-viewer-reading {
+  to {
+    opacity: 0.35;
+  }
+}
 .image-viewer-title {
   flex: 1;
   min-width: 0;

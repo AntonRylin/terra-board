@@ -1,0 +1,38 @@
+.text-layer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: hidden;
+  line-height: 1;
+  font-family: sans-serif;
+  color: transparent;
+  user-select: text;
+  -webkit-user-select: text;
+  pointer-events: none;
+  forced-color-adjust: none;
+}
+.text-layer-line {
+  position: absolute;
+  white-space: pre;
+  transform-origin: 0 0;
+}
+.text-layer-word,
+.text-layer-gap {
+  position: relative;
+  display: inline-block;
+  vertical-align: top;
+  height: 100%;
+  pointer-events: auto;
+  cursor: text;
+}
+.text-layer-word > span {
+  display: inline-block;
+  transform-origin: 0 0;
+}
+.text-layer-gap {
+  overflow: hidden;
+}
+.text-layer ::selection {
+  color: transparent;
+  background: color-mix(in srgb, var(--accent, #2f6fed) 34%, transparent);
+}

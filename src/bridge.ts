@@ -1,4 +1,5 @@
 import type { Asset, Board, CanvasObject } from './model';
+import type { RecognizedText } from './canvas/recognized-text';
 export interface McpStatus {
   enabled: boolean;
   running: boolean;
@@ -110,6 +111,8 @@ interface DesktopBridge {
   copyExport(id: string): Promise<void>;
   copyObjects(objects: CanvasObject[]): Promise<boolean>;
   copyText(text: string): Promise<void>;
+  recognizeAsset(id: string): Promise<RecognizedText>;
+  recognizeImage(bytes: Uint8Array): Promise<RecognizedText>;
   cancelCopy(): void;
   clipboardObjects(): Promise<CanvasObject[] | null>;
   fullscreenState(): Promise<boolean>;

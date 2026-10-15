@@ -123,6 +123,11 @@
   padding: 12px;
   background: #edf0f4;
 }
+.document-pdf-sheet {
+  position: relative;
+  width: max-content;
+  margin: 0 auto;
+}
 .document-pdf-page canvas {
   display: block;
   height: auto;

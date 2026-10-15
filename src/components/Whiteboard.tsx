@@ -75,6 +75,7 @@ import {
   ExternalLink,
   Crop,
   Eraser,
+  ScanText,
   AlignHorizontalJustifyCenter,
   AlignVerticalJustifyCenter,
   EyeOff,
@@ -119,7 +120,14 @@ import DocumentReader, { type DocumentReaderHandle } from './DocumentReader';
 import PdfWorkspace, { type PdfWorkspaceHandle } from './PdfWorkspace';
 import ImageViewer from './ImageViewer';
 import { documentKind, withDocumentTitle } from '../canvas/document-files';
-import { prepareDocumentPreview, type DocumentPreview } from '../canvas/document-preview';
+import {
+  documentBytes,
+  loadPdf,
+  prepareDocumentPreview,
+  type DocumentPreview,
+} from '../canvas/document-preview';
+import { imageAssetText, pdfPageText } from '../canvas/page-text';
+import { cropRecognizedText, recognizedString } from '../canvas/recognized-text';
 import { downloadAsset } from '../bridge';
 import { cropImage, uncroppedImage, fullCrop } from '../canvas/crop';
 import { selectionToolsPosition } from '../canvas/selection-tools';
@@ -1614,6 +1622,31 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     });
     return task;
   };
+  // Text in an image (Windows text recognition) or a PDF (its own text, or
+  // recognition for scanned pages), copied as plain text.
+  const copyObjectText = (o: CanvasObject) => {
+    const task = (async () => {
+      let value = '';
+      if (o.type === 'image' && o.assetId) {
+        value = recognizedString(cropRecognizedText(await imageAssetText(o.assetId), o.crop));
+        if (!value) throw Error('No text was found in this image.');
+      } else {
+        const pdf = await loadPdf(await documentBytes(o));
+        try {
+          const pages: string[] = [];
+          for (let index = 0; index < Math.min(pdf.numPages, 200); index++)
+            pages.push(recognizedString(await pdfPageText(pdf, index)));
+          value = pages.filter(Boolean).join('\n\n');
+        } finally {
+          void pdf.loadingTask.destroy();
+        }
+        if (!value) throw Error('No text was found in this PDF.');
+      }
+      await window.canvas!.copyText(value);
+    })();
+    setCopying(true);
+    void task.catch(error).finally(() => alive.current && setCopying(false));
+  };
   useEffect(() => {
     const rememberPointer = (event: PointerEvent) => {
       pointer.current = { x: event.clientX, y: event.clientY };
@@ -2022,6 +2055,16 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
                     void openPdfWorkspace(selected, 'edit').catch(error);
                   },
                 },
+                ...(window.canvas
+                  ? [
+                      {
+                        label: 'Copy text',
+                        icon: <ScanText />,
+                        action: () => copyObjectText(selected[0]),
+                        disabled: copying,
+                      },
+                    ]
+                  : []),
               ]
             : isPdfComposerInput(selected[0])
               ? [
@@ -2080,6 +2123,12 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
                   action: () => {
                     void copyDesktop([selected[0]]);
                   },
+                },
+                {
+                  label: 'Copy text',
+                  icon: <ScanText />,
+                  action: () => copyObjectText(selected[0]),
+                  disabled: copying,
                 },
               ]
             : []),
@@ -3160,6 +3209,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
                       'Full PDF preview',
                       'Full image preview',
                       'Copy as image',
+                      'Copy text',
                       'Find usages',
                     ].includes(item.label)),
               },
