@@ -124,3 +124,7 @@ See [verification notes](docs/verification.md) for evidence and open release gat
 Arrows: choose **Arrow (A)** and drag between two points. Drag an endpoint to reposition it; drag a small dot along the path to insert a bend. Double-click an interior bend to remove it. The selection toolbar provides straight, curved and elbow paths, solid/dashed/dotted strokes, thickness, color, independent start/end markers, a swap action and a text label. Labels save on Enter, blur or app close; Escape cancels the label draft. Arrows move and scale with selections and frames, and retain their shape through undo, clipboard, reopening and board export/import. Endpoints are freely positioned; they do not automatically attach to other objects.
 
 Highlighter: choose **Highlighter (M)** and drag to mark anything on the board; hold **Shift** for a straight line. The strip above the toolbar sets the colour and size. Right-drag on an empty spot to resize the marker in place: left makes it thinner, right thicker, and the ring under the pointer shows its exact footprint. The size is in screen pixels, so the marker feels the same at any zoom. Strokes are ordinary objects: click one to recolour, duplicate or delete it; double-clicking through a stroke still opens the object underneath. Lists and PDF workspaces are drawn above the canvas, so ink does not show on top of them.
+
+## License
+
+[MIT](LICENSE) © 2026 AntonRylin. Bundled third-party packages keep their own licenses; the app lists them under Settings → About → Open-source licenses.

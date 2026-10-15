@@ -4,7 +4,7 @@
   "version": "0.1.24",
   "description": "A private, local visual workspace",
   "author": "Terra Board",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "type": "module",
   "main": "electron/main.cjs",
   "terraCloud": {
