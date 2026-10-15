@@ -532,7 +532,7 @@ export default function App() {
     library.sharing?.boards[b.id] ||
     (b.folderId ? library.sharing?.folders[b.folderId] : undefined);
   const shareItem = (shareKind: 'folder' | 'board', id: string, received: boolean): MenuItem => ({
-    label: received ? 'Shared with you…' : 'Share…',
+    label: received ? 'Shared with you…' : 'Invite over cloud…',
     icon: <Users />,
     action: () => ask({ kind: 'share', shareKind, id }),
   });
@@ -625,8 +625,8 @@ export default function App() {
               {
                 label:
                   liveStatus.active && liveStatus.boardId === b.id
-                    ? 'Live sharing…'
-                    : 'Share live…',
+                    ? 'Sharing over Wi-Fi…'
+                    : 'Share over Wi-Fi…',
                 icon: <Radio />,
                 action: () => ask({ kind: 'live', id: b.id }),
               },
@@ -803,8 +803,8 @@ export default function App() {
     trash: 'Trash',
     help: 'Make yourself at home',
     'confirm-trash': 'Move to Trash?',
-    live: 'Share live',
-    share: 'Share',
+    live: 'Share over Wi-Fi',
+    share: 'Invite over cloud',
     join: 'Join with a code',
     settings: 'Settings',
   };

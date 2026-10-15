@@ -151,7 +151,12 @@ export interface Library {
   folders: Folder[];
   lastBoard: string | null;
   backupError?: string | null;
-  sharing?: { boards: Record<string, SharingMark>; folders: Record<string, SharingMark> };
+  sharing?: {
+    boards: Record<string, SharingMark>;
+    folders: Record<string, SharingMark>;
+    // Boards taken out of the cloud: kept here, never synced.
+    local?: string[];
+  };
 }
 export interface Document {
   board: Board;

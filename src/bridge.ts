@@ -181,6 +181,7 @@ interface DesktopBridge {
     removePerson(share: string, person: string): Promise<void>;
     setBoardAccess(boardId: string, person: string, role: ShareRole | null): Promise<void>;
     stopSharing(share: string): Promise<void>;
+    removeFromCloud(boardId: string): Promise<void>;
     leave(share: string): Promise<void>;
     profile(): Promise<CloudProfile>;
     setAvatar(asset: string | null): Promise<CloudProfile>;

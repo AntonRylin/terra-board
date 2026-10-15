@@ -324,6 +324,25 @@ try {
   assert.equal(owner.sync.status.shared.length, 0);
   results.stopSharing = true;
 
+  // Removing a board from the cloud takes it from the people it was shared with
+  // and wipes the server copy, but the owner keeps it.
+  const diaryInvite = await owner.sync.invite('board', diary.id, 'view');
+  await friend.sync.join(diaryInvite);
+  assert.ok(friendBoards().includes('Diary'), 'the shared board arrives');
+  await owner.sync.removeFromCloud(diary.id);
+  await friend.sync.run();
+  assert.ok(!friendBoards().includes('Diary'), 'the removed board disappears for guests');
+  const left = await owner.sync.client
+    .from('entities')
+    .select('id')
+    .eq('workspace_id', owner.sync.workspace)
+    .eq('board_id', diary.id)
+    .eq('deleted', false);
+  assert.equal(left.data.length, 0, 'no content stays on the server');
+  assert.equal(owner.store.loadBoard({ id: diary.id }).objects[0].text, 'private');
+  assert.deepEqual(owner.store.library().sharing.local, [diary.id]);
+  results.removeFromCloud = true;
+
   console.log(JSON.stringify({ passed: true, ...results }));
 } catch (e) {
   console.error(JSON.stringify({ passed: false, ...results }));

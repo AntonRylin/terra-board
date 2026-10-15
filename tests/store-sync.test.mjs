@@ -368,3 +368,58 @@ test('a board newly placed in a shared folder is reported for download', () =>
       { workspace: ownerWs, boards: ['b1', 'b2'], folders: ['f1'] },
     ]);
   }));
+
+test('a board taken out of the cloud stays local, and another computer keeps its copy', async () =>
+  withStores(async (a, b) => {
+    const server = fakeServer();
+    a.syncEnable({ workspace });
+    b.syncEnable({ workspace });
+    const board = a.createBoard({ name: 'Diary' });
+    a.patchBoard({ id: board.id, revision: 0, upserts: [note('d1', 'private')] });
+    server.push(a);
+    await server.pull(b);
+    assert.ok(b.library().boards.some((x) => x.id === board.id));
+
+    a.syncKeepLocal({ boardId: board.id });
+    assert.deepEqual(a.library().sharing.local, [board.id]);
+    // What the cloud side pushes: the marker, then the deletions.
+    let seq = Math.max(...[...server.rows.values()].map((r) => r.seq));
+    server.rows.set(`board::${board.id}`, {
+      kind: 'board',
+      board_id: '',
+      id: board.id,
+      data: { removed: true },
+      deleted: false,
+      seq: ++seq,
+    });
+    server.rows.set(`object:${board.id}:d1`, {
+      kind: 'object',
+      board_id: board.id,
+      id: 'd1',
+      data: null,
+      deleted: true,
+      seq: ++seq,
+    });
+    await server.pull(b);
+    assert.equal(
+      b.loadBoard({ id: board.id }).objects.length,
+      1,
+      'the other computer keeps the content',
+    );
+    assert.deepEqual(b.library().sharing.local, [board.id]);
+
+    // Edits to it are no longer sent from either computer.
+    const rev = a.loadBoard({ id: board.id }).revision;
+    a.patchBoard({ id: board.id, revision: rev, upserts: [note('d2', 'still private')] });
+    a.patchBoard({ id: board.id, revision: rev + 1, deletes: ['d1'] });
+    assert.equal(a.syncTake({ limit: 50 }).entries.length, 0);
+    a.syncLibrary({ on: false });
+    a.syncLibrary({ on: true });
+    assert.equal(a.syncTake({ limit: 50 }).entries.length, 0, 'library sync leaves it out');
+
+    // Sharing it again puts it back in the cloud.
+    a.syncOwned({ upload: true, shares: [{ kind: 'board', targetId: board.id, shareId: 's1' }] });
+    assert.deepEqual(a.library().sharing.local, []);
+    const kinds = a.syncTake({ limit: 50 }).entries.map((e) => e.kind + ':' + e.id);
+    assert.ok(kinds.includes('board:' + board.id) && kinds.includes('object:d2'));
+  }));

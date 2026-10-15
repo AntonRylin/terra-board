@@ -54,9 +54,17 @@ To try it in the app, start Terra Board with `TERRA_CLOUD_URL` and `TERRA_CLOUD_
 
 Boards (name, icon, colour, folder, order, background, trash state), folders, every object, and the media those reference. Board camera positions, the last opened board and app preferences stay per computer.
 
+## Offline edits
+
+Changes made without internet wait in a local outbox (`sync_outbox`) and upload when the connection is back; nothing is lost. Merging is per object: edits to different objects all survive, and for an object changed on two computers the one that syncs last wins. A pending local change is never overwritten by an incoming one.
+
+## Removing a board from the cloud
+
+**Remove from cloud** in the share dialog ends the board's share, deletes its objects from the server (a `{ removed: true }` marker row goes first) and keeps the board on this computer as a local board (`sync_local`) that never syncs, even with whole-library sync on. This person's other computers keep their copy and stop syncing it too. Media files stay in storage because other boards may use them. Creating an invite code for the board puts it back in the cloud.
+
 ## Live sharing on the same network
 
-Separate from cloud sync: **Share live…** in a board's menu lets people on the same Wi-Fi open that board in their browser, served directly by this computer (`electron/live-share.cjs`, guest page `src/GuestApp.tsx`).
+Separate from cloud sync: **Share over Wi-Fi…** in a board's menu lets people on the same Wi-Fi open that board in their browser, served directly by this computer (`electron/live-share.cjs`, guest page `src/GuestApp.tsx`).
 
 - The host approves each guest (unless "Ask me before someone joins" is off) and chooses View or Edit per guest; guests can be removed at any time.
 - Guests reach only the shared board and the media it uses. Requests from public internet addresses are refused; only private network ranges, Tailscale (100.64.0.0/10) and this computer are accepted.

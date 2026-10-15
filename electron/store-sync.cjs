@@ -8,6 +8,8 @@ const path = require('node:path');
 // belong to the sharer's workspace). Triggers record changes to tracked boards
 // in an outbox; the sync loop takes, pushes and acknowledges those entries.
 // Remote rows are applied under the `applying` flag so they never echo back.
+// Boards taken out of the cloud ("local" boards) are never tracked again until
+// they are shared anew.
 const notApplying = `NOT EXISTS (SELECT 1 FROM sync_state WHERE key='applying')`;
 const libraryOn = `EXISTS (SELECT 1 FROM sync_state WHERE key='library')`;
 const ownTracked = (id) =>
@@ -44,6 +46,7 @@ CREATE TABLE IF NOT EXISTS sync_owned(kind TEXT NOT NULL, targetId TEXT NOT NULL
 CREATE TABLE IF NOT EXISTS sync_foreign(kind TEXT NOT NULL, id TEXT NOT NULL,
   workspace TEXT NOT NULL, role TEXT NOT NULL, owner TEXT NOT NULL DEFAULT '',
   PRIMARY KEY(kind, id));
+CREATE TABLE IF NOT EXISTS sync_local(id TEXT PRIMARY KEY);
 DELETE FROM sync_state WHERE key='applying';
 ${triggerNames.map((name) => `DROP TRIGGER IF EXISTS ${name};`).join('\n')}
 DROP VIEW IF EXISTS sync_tracked;
@@ -53,9 +56,9 @@ CREATE VIEW sync_tracked AS
   FROM boards b
   LEFT JOIN sync_foreign fb ON fb.kind='board' AND fb.id=b.id
   LEFT JOIN sync_foreign ff ON ff.kind='folder' AND ff.id=b.folderId
-  WHERE fb.id IS NOT NULL OR ff.id IS NOT NULL OR ${libraryOn}
-    OR EXISTS (SELECT 1 FROM sync_owned o
-      WHERE (o.kind='board' AND o.targetId=b.id) OR (o.kind='folder' AND o.targetId=b.folderId));
+  WHERE b.id NOT IN (SELECT id FROM sync_local) AND (fb.id IS NOT NULL OR ff.id IS NOT NULL
+    OR ${libraryOn} OR EXISTS (SELECT 1 FROM sync_owned o
+      WHERE (o.kind='board' AND o.targetId=b.id) OR (o.kind='folder' AND o.targetId=b.folderId)));
 CREATE TRIGGER sync_object_insert AFTER INSERT ON objects
   WHEN ${notApplying} AND ${editable('NEW.boardId')}
   BEGIN ${enqueue('object', 'NEW.boardId', 'NEW.id')} END;
@@ -159,6 +162,10 @@ function createSync(store, helpers) {
         INSERT OR IGNORE INTO sync_outbox SELECT 'board', '', id, 0 FROM boards WHERE id=${quote(targetId)};
         INSERT OR IGNORE INTO sync_outbox SELECT 'object', boardId, id, 0 FROM objects WHERE boardId=${quote(targetId)};`);
   };
+  const forgetOutbox = (boardId) => {
+    db().prepare("DELETE FROM sync_outbox WHERE kind='board' AND id=?").run(boardId);
+    db().prepare("DELETE FROM sync_outbox WHERE kind='object' AND boardId=?").run(boardId);
+  };
   const quote = (value) => "'" + String(helpers.idValue(value)).replace(/'/g, "''") + "'";
   const withApplying = (fn) =>
     store.transaction(() => {
@@ -189,7 +196,9 @@ function createSync(store, helpers) {
       return store.transaction(() => {
         if (typeof name === 'string' && name.trim()) setState('name', name.trim().slice(0, 60));
         if (state('workspace') !== workspace) {
-          db().exec('DELETE FROM sync_outbox; DELETE FROM sync_uploaded; DELETE FROM sync_owned;');
+          db().exec(
+            'DELETE FROM sync_outbox; DELETE FROM sync_uploaded; DELETE FROM sync_owned; DELETE FROM sync_local;',
+          );
           setState('workspace', workspace);
           setState('cursor', 0);
         }
@@ -232,7 +241,8 @@ function createSync(store, helpers) {
             OR folderId IN (SELECT id FROM sync_foreign WHERE kind='folder');
           DELETE FROM folders WHERE id IN (SELECT id FROM sync_foreign WHERE kind='folder');
           DELETE FROM sync_outbox; DELETE FROM sync_uploaded; DELETE FROM sync_owned;
-          DELETE FROM sync_foreign; DELETE FROM sync_state WHERE key <> 'applying';`);
+          DELETE FROM sync_foreign; DELETE FROM sync_local;
+          DELETE FROM sync_state WHERE key <> 'applying';`);
       });
       return sync.status();
     },
@@ -252,11 +262,28 @@ function createSync(store, helpers) {
         for (const s of shares) {
           helpers.idValue(s.targetId);
           add.run(s.kind, s.targetId, s.shareId);
-          if (upload && !before.has(s.kind + ':' + s.targetId) && !state('library'))
-            queueOwned(s.kind, s.targetId);
+          if (!upload || before.has(s.kind + ':' + s.targetId)) continue;
+          // Sharing a board that was taken out of the cloud puts it back.
+          const local =
+            s.kind === 'board' &&
+            db().prepare('DELETE FROM sync_local WHERE id=?').run(s.targetId).changes > 0;
+          if (local || !state('library')) queueOwned(s.kind, s.targetId);
         }
         return sync.status();
       });
+    },
+    // Keep a board on this computer only: nothing of it is sent any more.
+    keepLocal({ boardId }) {
+      helpers.idValue(boardId);
+      store.transaction(() => {
+        if (!db().prepare('SELECT 1 FROM boards WHERE id=?').get(boardId))
+          throw Error('This board is gone.');
+        if (db().prepare('SELECT foreign_ws FROM sync_tracked WHERE id=?').get(boardId)?.foreign_ws)
+          throw Error('Only the person who shared this board can remove it from the cloud.');
+        db().prepare('INSERT OR IGNORE INTO sync_local VALUES(?)').run(boardId);
+        forgetOutbox(boardId);
+      });
+      return { library: true, boards: [] };
     },
     // Bring boards shared with this person in line with what the server allows:
     // drop copies whose access ended, update rights, and report what to download.
@@ -331,10 +358,15 @@ function createSync(store, helpers) {
       );
       const isUploaded = db().prepare('SELECT 1 FROM sync_uploaded WHERE workspace=? AND id=?');
       const asset = db().prepare('SELECT * FROM assets WHERE id=?');
+      const isLocal = db().prepare('SELECT 1 FROM sync_local WHERE id=?');
       const assets = new Map();
       const entries = [];
       const dropped = [];
       for (const r of rows) {
+        if (r.kind !== 'folder' && isLocal.get(r.kind === 'board' ? r.id : r.boardId)) {
+          dropped.push(r);
+          continue;
+        }
         let data = null;
         let workspace = personal;
         if (r.kind === 'folder') {
@@ -426,6 +458,7 @@ function createSync(store, helpers) {
         `SELECT 1 FROM boards b WHERE b.id=? AND (b.id IN (SELECT id FROM sync_foreign WHERE kind='board')
           OR b.folderId IN (SELECT id FROM sync_foreign WHERE kind='folder'))`,
       );
+      const isLocal = db().prepare('SELECT 1 FROM sync_local WHERE id=?');
       const touched = new Map();
       let library = false;
       withApplying(() => {
@@ -434,6 +467,19 @@ function createSync(store, helpers) {
           .sort((a, b) => kindOrder[a.kind] - kindOrder[b.kind] || a.seq - b.seq);
         for (const r of sorted) {
           if (pending.get(r.kind, r.board_id || '', r.id)) continue;
+          if (r.kind === 'board' && !r.deleted && r.data?.removed) {
+            // Taken out of the cloud on another computer: keep this copy, stop syncing it.
+            if (!foreign && db().prepare('SELECT 1 FROM boards WHERE id=?').get(r.id)) {
+              db().prepare('INSERT OR IGNORE INTO sync_local VALUES(?)').run(r.id);
+              forgetOutbox(r.id);
+              library = true;
+            }
+            continue;
+          }
+          if (r.kind === 'object' && isLocal.get(r.board_id)) continue;
+          // Shared again from another computer: it syncs again.
+          if (r.kind === 'board' && !foreign && !r.deleted)
+            db().prepare('DELETE FROM sync_local WHERE id=?').run(r.id);
           try {
             if (foreign) {
               if (r.kind === 'folder') {
@@ -506,11 +552,15 @@ function createSync(store, helpers) {
     },
     // How each board and folder is shared, for the board panel and menus.
     marks() {
-      const out = { boards: {}, folders: {} };
+      const out = { boards: {}, folders: {}, local: [] };
       for (const s of db().prepare('SELECT kind, targetId FROM sync_owned').all())
         (s.kind === 'board' ? out.boards : out.folders)[s.targetId] = { shared: 'owner' };
       for (const f of db().prepare('SELECT kind, id, role, owner FROM sync_foreign').all())
         (f.kind === 'board' ? out.boards : out.folders)[f.id] = { shared: f.role, owner: f.owner };
+      out.local = db()
+        .prepare('SELECT id FROM sync_local')
+        .all()
+        .map((r) => r.id);
       return out;
     },
   };

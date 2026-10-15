@@ -29,6 +29,7 @@ const allowed = new Set([
   'syncLibrary',
   'syncOwned',
   'syncReconcile',
+  'syncKeepLocal',
   'syncCursor',
   'syncRename',
   'syncProfile',

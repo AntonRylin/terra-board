@@ -642,6 +642,61 @@ class CloudSync {
     await this.run();
   }
 
+  // Take a board out of the cloud: its share ends, its content is wiped from the
+  // server, and this computer keeps the board without syncing it any more.
+  async removeFromCloud(boardId) {
+    this.requireWorkspace();
+    await this.exclusive(async () => {
+      const lib = await this.call('library');
+      const board = lib.boards.find((b) => b.id === boardId);
+      if (!board) throw Error('This board is gone.');
+      const mark =
+        lib.sharing?.boards[boardId] || (board.folderId && lib.sharing?.folders[board.folderId]);
+      if (mark && mark.shared !== 'owner')
+        throw Error('Only the person who shared this board can remove it from the cloud.');
+      const objects = [];
+      for (let from = 0; ; from += 1000) {
+        const { data, error } = await this.client
+          .from('entities')
+          .select('id')
+          .eq('workspace_id', this.workspace)
+          .eq('kind', 'object')
+          .eq('board_id', boardId)
+          .eq('deleted', false)
+          .order('id')
+          .range(from, from + 999);
+        fail(error, 'Could not reach the cloud copy');
+        objects.push(...data.map((r) => r.id));
+        if (data.length < 1000) break;
+      }
+      const share = this.shareFor('board', boardId);
+      if (share) {
+        const { error } = await this.client.rpc('delete_share', { p_share: share.shareId });
+        fail(error, 'Could not stop sharing');
+      }
+      // The marker goes first, so this person's other computers keep their copy
+      // instead of applying the deletions that follow.
+      const push = async (rows) => {
+        const { error } = await this.client.rpc('push_entities', {
+          p_workspace: this.workspace,
+          p_rows: rows,
+        });
+        fail(error, 'Could not remove the board from the cloud');
+      };
+      await push([{ kind: 'board', board_id: '', id: boardId, data: { removed: true } }]);
+      for (const part of chunks(objects, 400))
+        await push(part.map((id) => ({ kind: 'object', board_id: boardId, id, deleted: true })));
+      await this.transaction(() => this.call('syncKeepLocal', { boardId }));
+      const shared = this.status.shared.filter((s) => s !== share);
+      this.emit({ shared });
+      await this.call('syncOwned', {
+        shares: shared.map((s) => ({ kind: s.kind, targetId: s.targetId, shareId: s.shareId })),
+      });
+    });
+    this.ping(this.workspace);
+    await this.run();
+  }
+
   // Leave something another person shared; its copies disappear here.
   async leave(shareId) {
     this.requireWorkspace();

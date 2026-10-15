@@ -109,6 +109,7 @@ export function ShareDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
+  const [removing, setRemoving] = useState(false);
   const item =
     kind === 'folder'
       ? library.folders.find((f) => f.id === id)
@@ -120,6 +121,7 @@ export function ShareDialog({
       : library.sharing?.boards[id] ||
         (board?.folderId ? library.sharing?.folders[board.folderId] : undefined);
   const received = mark && mark.shared !== 'owner';
+  const localOnly = kind === 'board' && !!library.sharing?.local?.includes(id);
   const sharedFolder =
     kind === 'board' &&
     board?.folderId &&
@@ -199,6 +201,48 @@ export function ShareDialog({
     );
   }
 
+  if (removing)
+    return (
+      <>
+        <p className="quiet">
+          Remove “{item?.name || 'this board'}” from the cloud? People you shared it with lose it,
+          and its copy on the server is deleted. The board stays on this computer, and changes to it
+          are no longer synced.
+        </p>
+        {error && (
+          <p className="live-error" role="alert">
+            {error}
+          </p>
+        )}
+        <div className="dialog-actions">
+          <button
+            type="button"
+            className="button"
+            disabled={busy}
+            onClick={() => setRemoving(false)}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="button primary"
+            disabled={busy}
+            onClick={() =>
+              run(async () => {
+                await cloud.removeFromCloud(id);
+                setRemoving(false);
+                setShareId(null);
+                setPeople([]);
+                setCode('');
+              })
+            }
+          >
+            {busy ? 'Removing…' : 'Remove from cloud'}
+          </button>
+        </div>
+      </>
+    );
+
   const needsName = !status.identity;
   return (
     <>
@@ -207,6 +251,11 @@ export function ShareDialog({
           ? `Invite people to “${item?.name || 'this folder'}”. Boards you move into this folder are shared too; your other boards stay private.`
           : `Invite people to “${item?.name || 'this board'}”. Your other boards stay private.`}
       </p>
+      {localOnly && (
+        <p className="live-note">
+          This board is only on this computer. Creating an invite code puts it in the cloud again.
+        </p>
+      )}
       {needsName && (
         <label className="share-name">
           Your name, shown to the people you invite
@@ -285,6 +334,19 @@ export function ShareDialog({
         </p>
       )}
       <div className="dialog-actions">
+        {kind === 'board' && status.identity && !localOnly && (
+          <button
+            type="button"
+            className="button"
+            disabled={busy}
+            onClick={() => {
+              setError('');
+              setRemoving(true);
+            }}
+          >
+            Remove from cloud
+          </button>
+        )}
         {shareId && (
           <button
             type="button"

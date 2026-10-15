@@ -584,6 +584,9 @@ class Store {
   syncOwned(args) {
     return this.sync.owned(args);
   }
+  syncKeepLocal(args) {
+    return this.sync.keepLocal(args);
+  }
   syncReconcile(args) {
     return this.sync.reconcile(args);
   }
