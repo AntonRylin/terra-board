@@ -77,6 +77,26 @@ export default function Launcher(p: Props) {
     ...p.library.folders.map((f) => ({ kind: 'folder', item: f })),
   ].sort((a, b) => a.item.position - b.item.position);
   const folder = p.library.folders.find((f) => f.id === p.opened);
+  // A board inside a folder marks its folder on the rail.
+  const activeItem = boards.find((b) => b.id === p.active)?.folderId || p.active;
+  const markedItem = useRef(activeItem);
+  // Slide the selection marker from the previous item instead of jumping.
+  useLayoutEffect(() => {
+    const previous = markedItem.current;
+    markedItem.current = activeItem;
+    if (!previous || !activeItem || previous === activeItem || !rail.current) return;
+    const from = rail.current.querySelector(`[data-item="${previous}"]`),
+      to = rail.current.querySelector(`[data-item="${activeItem}"]`);
+    if (!from || !to || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const a = from.getBoundingClientRect(),
+      b = to.getBoundingClientRect();
+    const offset = horizontal ? `${a.left - b.left}px 0` : `0 ${a.top - b.top}px`;
+    to.animate([{ translate: offset }, { translate: '0 0' }], {
+      duration: 320,
+      easing: 'cubic-bezier(0.2, 0.85, 0.25, 1)',
+      pseudoElement: '::before',
+    });
+  }, [activeItem, horizontal]);
   useEffect(() => {
     const dismiss = (e: PointerEvent) => {
       if (
