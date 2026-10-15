@@ -66,6 +66,9 @@ export interface HighlightStroke {
 export interface CanvasObject {
   frameLink?: { boardId: string; frameId: string };
   locked?: boolean;
+  // Whole-object spoiler: media and documents blur under dust, frames hide
+  // what they hold, until a viewer clicks. Reveals are local to each viewer.
+  spoiler?: boolean;
   items?: ListItem[];
   listScale?: number;
   gallery?: { direction: 'right' | 'below'; size: number; gap: number };
@@ -84,7 +87,7 @@ export interface CanvasObject {
   height: number;
   z: number;
   text?: string;
-  // Inline formatting of `text`; currently edited on list titles.
+  // Inline formatting of `text`: edited on list titles, board text and notes.
   textMarks?: TextMark[];
   imageTitle?: string;
   documentTitle?: string;

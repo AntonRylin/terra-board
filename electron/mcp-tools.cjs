@@ -140,6 +140,7 @@ const object = z
       .optional(),
     bold: z.boolean().optional(),
     locked: z.boolean().optional(),
+    spoiler: z.boolean().optional(),
     strikethrough: z.boolean().optional(),
     centerX: z.boolean().optional(),
     centerY: z.boolean().optional(),
@@ -292,7 +293,7 @@ function tools(call) {
   );
   add(
     'edit_board',
-    'Atomically create, replace or delete objects. Upserts are COMPLETE objects, not partial patches; preserve fields read earlier, including gallery layout, image membership, document metadata, pdfComposer and inline formatting (textMarks on text, marks on list items: non-overlapping {start,end,...style} ranges; spoiler ranges hide text until a viewer clicks). Coordinates are board units; z controls stacking. Images/videos/documents require imported assetId; document text retains its filename and documentTitle is an independent board title; arrows require normalized points; links require http(s) URL. Galleries are frames with gallery settings; member images use galleryId, galleryIndex, galleryRow and galleryColumn. PDF composers are non-gallery frames with sources and columns; page references use source IDs, zero-based pageIndex and 90-degree rotation deltas. Preserve original source asset IDs. This is undoable on the open board. Edits to separate objects merge automatically. If a target object changed or was deleted since your read, the whole edit is rejected with conflicting IDs; read again and preserve those changes.',
+    'Atomically create, replace or delete objects. Upserts are COMPLETE objects, not partial patches; preserve fields read earlier, including gallery layout, image membership, document metadata, pdfComposer and inline formatting (textMarks on text, marks on list items: non-overlapping {start,end,...style} ranges; spoiler ranges hide text until a viewer clicks; spoiler: true on an image, video, document, link or frame hides the whole object, and a plain frame also hides what it holds). Coordinates are board units; z controls stacking. Images/videos/documents require imported assetId; document text retains its filename and documentTitle is an independent board title; arrows require normalized points; links require http(s) URL. Galleries are frames with gallery settings; member images use galleryId, galleryIndex, galleryRow and galleryColumn. PDF composers are non-gallery frames with sources and columns; page references use source IDs, zero-based pageIndex and 90-degree rotation deltas. Preserve original source asset IDs. This is undoable on the open board. Edits to separate objects merge automatically. If a target object changed or was deleted since your read, the whole edit is rejected with conflicting IDs; read again and preserve those changes.',
     {
       id,
       revision,

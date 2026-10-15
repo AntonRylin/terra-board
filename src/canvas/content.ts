@@ -322,6 +322,7 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
       ...(o.rotation === undefined ? {} : { rotation: o.rotation }),
       ...(o.textBox === undefined ? {} : { textBox: o.textBox }),
       ...(o.groupId ? { groupId: o.groupId } : {}),
+      ...(o.spoiler === true ? { spoiler: true } : {}),
       ...(o.gallery
         ? { gallery: { direction: o.gallery.direction, size: o.gallery.size, gap: o.gallery.gap } }
         : {}),

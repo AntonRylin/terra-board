@@ -6,6 +6,27 @@ import { localViewport } from './transform';
 import { frameLabel, hasExternalLabel } from './frame-label';
 import { linkLayout, hasLinkImage } from './link-preview';
 import { nightInk } from '../appearance';
+import { drawRichText, spoilerBoxes, type SpoilerBox } from './rich-text-canvas';
+
+export interface RichRenderOptions {
+  // Spoiler regions this viewer has revealed (never saved or shared).
+  revealed?: (start: number) => boolean;
+  // Exports paint still dust over hidden spoilers; on screen the engine
+  // animates dust above a faint veil.
+  exporting?: boolean;
+}
+
+// Hidden-text boxes in the object's local coordinates, for dust and clicks.
+export function textSpoilers(o: CanvasObject, text = o.text || ''): SpoilerBox[] {
+  const { appearance: a, metrics, rich } = textLayout(o, text);
+  if (!rich) return [];
+  const placement = textPlacement(o, a, metrics.lines.length, metrics.height);
+  return spoilerBoxes(rich.lines, {
+    x: o.centerX ? o.width / 2 : a.padding,
+    y: placement.top,
+    align: o.centerX ? 'center' : 'left',
+  });
+}
 
 export function renderLinkCaption(
   o: CanvasObject,
@@ -143,12 +164,14 @@ export function renderText(
   region: ReturnType<typeof textRegion>,
   dark = false,
   frameZoom?: number,
+  options: RichRenderOptions = {},
 ) {
-  const { appearance: a, metrics } = textLayout(o, text, frameZoom);
-  const placement = textPlacement(o, a, metrics.lines.length);
+  const { appearance: a, metrics, rich } = textLayout(o, text, frameZoom);
+  const placement = textPlacement(o, a, metrics.lines.length, rich ? metrics.height : undefined);
   const centered = o.type !== 'frame' && o.type !== 'image' && o.type !== 'document' && o.centerX;
   const anchor = centered ? o.width / 2 : a.padding;
-  const overhang = a.fontSize * 0.25 + 2;
+  const largest = rich ? Math.max(a.fontSize, ...rich.lines.map((line) => line.size)) : a.fontSize;
+  const overhang = largest * 0.25 + 2;
   const left = Math.max(region.x, anchor - (centered ? metrics.maxLineWidth / 2 : 0) - overhang);
   const top = Math.max(region.y, placement.top - overhang);
   const right = Math.min(
@@ -163,6 +186,20 @@ export function renderText(
   const ctx = canvas.getContext('2d')!;
   ctx.scale(resolution, resolution);
   ctx.translate(-left, -top);
+  if (rich) {
+    drawRichText(ctx, rich.lines, rich.base, {
+      x: anchor,
+      y: placement.top,
+      align: centered ? 'center' : 'left',
+      color: dark ? nightInk(o, a.color) : a.color,
+      strikeAll: o.strikethrough,
+      dark,
+      revealed: options.exporting ? undefined : options.revealed,
+      hidden: options.exporting ? 'dust' : 'veil',
+      visible: { top, bottom },
+    });
+    return textSprite(canvas, resolution, left, top);
+  }
   ctx.font = `${a.fontWeight} ${a.fontSize}px ${a.fontFamily}`;
   ctx.fillStyle = dark ? nightInk(o, a.color) : a.color;
   ctx.textAlign = centered ? 'center' : 'left';
@@ -189,6 +226,9 @@ export function renderText(
       );
     }
   }
+  return textSprite(canvas, resolution, left, top);
+}
+function textSprite(canvas: HTMLCanvasElement, resolution: number, left: number, top: number) {
   const texture = new Texture({ source: new CanvasSource({ resource: canvas, resolution }) });
   const sprite = new Sprite(texture);
   sprite.label = 'board-text';

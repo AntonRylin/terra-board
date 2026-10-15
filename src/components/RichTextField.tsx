@@ -1,4 +1,11 @@
-import { useEffect, useLayoutEffect, useRef, type CSSProperties, type KeyboardEvent } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  type CSSProperties,
+  type FocusEvent,
+  type KeyboardEvent,
+} from 'react';
 import {
   applyStyle,
   commonStyle,
@@ -203,6 +210,9 @@ export default function RichTextField({
   fieldRef,
   revealed,
   onSpoiler,
+  onShortcut,
+  onPaste,
+  onBlur,
 }: {
   value: string;
   marks?: TextMark[];
@@ -217,6 +227,11 @@ export default function RichTextField({
   fieldRef?: (element: HTMLDivElement | null) => void;
   revealed?: (start: number) => boolean;
   onSpoiler?: (start: number) => void;
+  // Lets the host take a formatting shortcut first (e.g. object-wide bold with no selection).
+  onShortcut?: (flag: TextFlag, range: FieldRange | null) => boolean;
+  // Called before the change a paste makes.
+  onPaste?: () => void;
+  onBlur?: (event: FocusEvent<HTMLDivElement>) => void;
 }) {
   const element = useRef<HTMLDivElement | null>(null);
   const painted = useRef<{ text: string; marks?: TextMark[]; editable: boolean } | null>(null);
@@ -224,8 +239,17 @@ export default function RichTextField({
   const pending = useRef<StylePatch | null>(null);
   const before = useRef<Caret | null>(null);
   const history = useRef({ undo: [] as Snapshot[], redo: [] as Snapshot[], kind: '', at: 0 });
-  const props = useRef({ value, marks, onChange, maxLength, multiline, editable, revealed });
-  props.current = { value, marks, onChange, maxLength, multiline, editable, revealed };
+  const props = useRef({
+    value,
+    marks,
+    onChange,
+    maxLength,
+    multiline,
+    editable,
+    revealed,
+    onPaste,
+  });
+  props.current = { value, marks, onChange, maxLength, multiline, editable, revealed, onPaste };
 
   useLayoutEffect(() => {
     const root = element.current!;
@@ -330,6 +354,7 @@ export default function RichTextField({
         if (props.current.multiline) insert('\n');
       } else if (type === 'insertFromPaste' || type === 'insertFromPasteAsQuotation') {
         event.preventDefault();
+        props.current.onPaste?.();
         insert(event.dataTransfer?.getData('text/plain') || '');
       } else if (type === 'insertFromDrop' || type === 'deleteByDrag') event.preventDefault();
     };
@@ -423,7 +448,8 @@ export default function RichTextField({
           const key = (event.shiftKey ? 'shift+' : '') + event.key.toLowerCase();
           const flag = shortcutFlags[key];
           let handled = true;
-          if (flag) api.toggle(flag);
+          if (flag && onShortcut?.(flag, api.range())) handled = true;
+          else if (flag) api.toggle(flag);
           else if (key === 'shift+n') api.apply(clearPatch);
           else if (event.shiftKey && (event.code === 'Period' || event.key === '>')) api.resize(1);
           else if (event.shiftKey && (event.code === 'Comma' || event.key === '<')) api.resize(-1);
@@ -436,6 +462,7 @@ export default function RichTextField({
         }
         onKeyDown?.(event);
       }}
+      onBlur={onBlur}
       onClick={(event) => {
         if (editable) return;
         const spoiler = (event.target as HTMLElement).closest<HTMLElement>('.rt-spoiler');

@@ -6,6 +6,25 @@ import ts from 'typescript';
 import { textAppearance } from '../src/canvas/text-style.ts';
 import { localToWorld } from '../src/canvas/transform.ts';
 import { frameTitleSize } from '../src/canvas/frame-title-size.ts';
+import * as richCanvas from '../src/canvas/rich-text-canvas.ts';
+import { hasRichText } from '../src/canvas/rich-text.ts';
+
+// A 2D context whose characters are half an em wide in whatever font is set.
+function halfEmContext() {
+  return {
+    font: '10px sans-serif',
+    measureText(text) {
+      const size = parseFloat(/([\d.e-]+)px/.exec(this.font)[1]);
+      return {
+        width: [...text].length * size * 0.5,
+        fontBoundingBoxAscent: size * 0.9,
+        fontBoundingBoxDescent: size * 0.25,
+        actualBoundingBoxAscent: size * 0.7,
+        actualBoundingBoxDescent: size * 0.2,
+      };
+    },
+  };
+}
 
 // The real fitting and caching code with a deterministic stand-in for the font
 // engine: every character is half an em wide. `measured` counts layout passes.
@@ -55,9 +74,7 @@ function fixture() {
       document: {
         body: { appendChild() {} },
         createElement: (tag) =>
-          tag === 'textarea'
-            ? probe
-            : { getContext: () => ({ measureText: (line) => ({ width: line.length }) }) },
+          tag === 'textarea' ? probe : { getContext: () => halfEmContext() },
       },
       require: (id) =>
         id === 'pixi.js'
@@ -68,7 +85,11 @@ function fixture() {
               ? { localToWorld }
               : id === './frame-title-size'
                 ? { frameTitleSize }
-                : { textInkBounds: () => ({ top: 0, height: 10 }) },
+                : id === './rich-text-canvas'
+                  ? richCanvas
+                  : id === './rich-text'
+                    ? { hasRichText }
+                    : { textInkBounds: () => ({ top: 0, height: 10 }) },
     },
   );
   return {
@@ -146,4 +167,28 @@ test('typing reuses the previous fitted size and still matches a full search', (
   assert.ok(warm.measured() - before > 16);
   assert.equal(typed.appearance.fontSize, fixture().textLayout(o, longer).appearance.fontSize);
   assert.ok(typed.appearance.fontSize < warm.textLayout(o).appearance.fontSize);
+});
+
+test('formatted notes lay out their own lines and shrink until they fit', () => {
+  const { textLayout } = fixture();
+  const text = words.repeat(6);
+  const plain = note(0, text);
+  const formatted = { ...plain, textMarks: [{ start: 0, end: 30, size: 2, bold: true }] };
+  const layout = textLayout(formatted);
+  assert.ok(layout.rich, 'formatted text has its own layout');
+  assert.equal(layout.metrics.lines.join(''), text, 'every character is on a line');
+  const box = formatted.height - layout.appearance.padding * 2;
+  assert.ok(layout.metrics.height <= box - 1, 'the lines fit the note');
+  assert.equal(layout.editorContentHeight, layout.metrics.height);
+  // The doubled run makes its lines taller, so the text needs a smaller base size.
+  assert.ok(layout.rich.lines[0].height > layout.rich.lines.at(-1).height);
+  assert.ok(layout.appearance.fontSize <= textLayout(plain).appearance.fontSize);
+  // New formatting is a new layout; the same formatting is the cached one.
+  assert.equal(textLayout({ ...formatted }), layout);
+  assert.notEqual(
+    textLayout({ ...formatted, textMarks: [{ start: 0, end: 30, italic: true }] }),
+    layout,
+  );
+  // Frames and other titles stay plain even if marks arrive from outside.
+  assert.equal(textLayout({ ...frame, textMarks: formatted.textMarks }).rich, undefined);
 });

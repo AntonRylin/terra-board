@@ -4,6 +4,15 @@ import { textAppearance } from './text-style';
 import { localToWorld } from './transform';
 import { frameTitleSize } from './frame-title-size';
 import { textInkBounds } from './text-ink';
+import { hasRichText } from './rich-text';
+import {
+  layoutRichText,
+  richInkBounds,
+  richTextHeight,
+  richTextWidth,
+  type RichBase,
+  type RichLine,
+} from './rich-text-canvas';
 
 type Layout = {
   appearance: ReturnType<typeof textAppearance> & {
@@ -12,8 +21,10 @@ type Layout = {
     inkTop?: number;
     inkHeight?: number;
   };
-  metrics: CanvasTextMetrics;
+  metrics: Pick<CanvasTextMetrics, 'lines' | 'width' | 'height' | 'maxLineWidth'>;
   editorContentHeight?: number;
+  // Formatted text lays out its own lines, which the renderer then draws as is.
+  rich?: { lines: RichLine[]; base: RichBase };
 };
 const cache = new Map<string, Layout>();
 // Frame titles are sized per zoom level, so an animated zoom makes new entries
@@ -34,6 +45,7 @@ function remember<T>(map: Map<string, T>, key: string, value: T, limit: number) 
 }
 let probe: HTMLTextAreaElement | undefined;
 let inkProbe: CanvasRenderingContext2D | undefined;
+const measureContext = () => (inkProbe ??= document.createElement('canvas').getContext('2d')!);
 
 // Use the browser's own line-breaking rules too (notably emoji and mixed
 // scripts). One hidden probe is reused only on layout cache misses. Measuring
@@ -73,6 +85,7 @@ export function textLayout(
     o.bold,
     text,
     titleSize,
+    hasRichText(o) ? o.textMarks : null,
   ]);
   const store = titleSize && frameZoom !== undefined ? titleCache : cache;
   const cached = store.get(key);
@@ -83,6 +96,7 @@ export function textLayout(
   }
   const base = { ...textAppearance(o), ...titleSize };
   const fittedBox = o.type === 'note' || (o.type === 'text' && !!o.textBox);
+  const rich = hasRichText(o);
   const measure = (fontSize: number): Layout => {
     const padding = o.type === 'text' ? fontSize * 0.14 : base.padding;
     // Leave room for the handwriting font's ink overhang at a wrapped edge.
@@ -101,6 +115,32 @@ export function textLayout(
     };
     if (o.type === 'frame' && frameZoom !== undefined)
       appearance.labelGap = Math.min(base.labelGap!, fontSize * 0.4);
+    if (rich) {
+      const richBase = {
+        size: fontSize,
+        weight: appearance.fontWeight,
+        family: appearance.fontFamily,
+        lineHeight: appearance.lineHeight / fontSize,
+      };
+      const lines = layoutRichText(
+        measureContext(),
+        text,
+        o.textMarks,
+        richBase,
+        o.type !== 'text' || o.textBox ? wrapWidth : Infinity,
+      );
+      const width = richTextWidth(lines);
+      return {
+        appearance,
+        metrics: {
+          lines: lines.map((line) => text.slice(line.start, line.end)),
+          width,
+          maxLineWidth: width,
+          height: richTextHeight(lines),
+        },
+        rich: { lines, base: richBase },
+      };
+    }
     // Pixi drops a trailing empty line; the native editor needs it for the caret.
     const measuredText = /[\r\n][\t ]*$/.test(text) ? text + '\u200b' : text;
     // No style here has letter spacing. On its fallback path Pixi still segments
@@ -152,6 +192,9 @@ export function textLayout(
       // than its limit. Counting that as overflow rejects sizes that fit, and the search
       // below then settles on needlessly small type. Notes already wrap this much short.
       const slack = o.type === 'text' ? layout.appearance.fontSize * 0.25 + 1 : 0;
+      // Formatted lines are already laid out the way the editor's spans wrap.
+      if (layout.rich)
+        return layout.metrics.maxLineWidth <= width + slack && layout.metrics.height <= height - 1;
       return (
         layout.metrics.maxLineWidth <= width + slack &&
         Math.max(
@@ -164,7 +207,15 @@ export function textLayout(
     };
     if (!fits(result)) {
       // The search below ends on the largest of its 2^16 steps that fits.
-      const shape = JSON.stringify([o.type, o.width, o.height, base.fontSize, o.textBox, o.bold]);
+      const shape = JSON.stringify([
+        o.type,
+        o.width,
+        o.height,
+        base.fontSize,
+        o.textBox,
+        o.bold,
+        rich,
+      ]);
       const step = (base.fontSize - 0.0001) / 65536;
       const hint = fitHints.get(o.id);
       let found = false;
@@ -191,11 +242,17 @@ export function textLayout(
       }
     }
   }
-  result.editorContentHeight = Math.max(
-    Math.max(1, result.metrics.lines.length) * result.appearance.lineHeight,
-    fittedBox ? editorHeight(text, result.appearance) : 0,
-  );
-  if (o.type === 'text' && !o.textBox) {
+  result.editorContentHeight = result.rich
+    ? result.metrics.height
+    : Math.max(
+        Math.max(1, result.metrics.lines.length) * result.appearance.lineHeight,
+        fittedBox ? editorHeight(text, result.appearance) : 0,
+      );
+  if (o.type === 'text' && !o.textBox && result.rich) {
+    const ink = richInkBounds(measureContext(), result.rich.lines, result.rich.base);
+    result.appearance.inkTop = ink.top;
+    result.appearance.inkHeight = ink.height;
+  } else if (o.type === 'text' && !o.textBox) {
     inkProbe ??= document.createElement('canvas').getContext('2d')!;
     const a = result.appearance;
     inkProbe.font = `${a.fontWeight} ${a.fontSize}px ${a.fontFamily}`;

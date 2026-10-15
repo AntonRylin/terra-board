@@ -51,7 +51,19 @@ import {
   stackingSelection,
   bringToFrontEdit,
 } from './stacking';
-import { renderText, renderLinkCaption, textRegion } from './text-rendering';
+import { renderText, renderLinkCaption, textRegion, textSpoilers } from './text-rendering';
+import { hasRichText } from './rich-text';
+import { dustLayer, hideDuration, revealDuration, updateDust } from './spoiler-dust';
+import {
+  canBeSpoiler,
+  concealedBy,
+  coverSpoiler,
+  hidesContents,
+  isSpoiler,
+  spoilerContent,
+  updateSpoilerCover,
+  wholeObject,
+} from './object-spoiler';
 import { documentPreviewBox, renderDocumentCard } from './document-card';
 import { listLayout } from './list-layout';
 import { drawRichText, layoutRichText, richTextHeight } from './rich-text-canvas';
@@ -154,6 +166,8 @@ type Gesture = {
   dragged?: boolean;
   snap?: { bounds: Bounds; targets: SnapTargets; state: SnapState };
 };
+const composerPreviewKey = (o: CanvasObject) =>
+  `composer:${JSON.stringify(o.pdfComposer)}:${o.width}:${o.height}`;
 export class Engine {
   private frameBoardId = '';
   private frameBoards: FrameBoards = new Map();
@@ -174,7 +188,7 @@ export class Engine {
     return linkedFrameScene(o, this.frameBoards);
   }
   private composerTexture(o: CanvasObject, wanted: Set<string>) {
-    const key = `composer:${JSON.stringify(o.pdfComposer)}:${o.width}:${o.height}`;
+    const key = composerPreviewKey(o);
     wanted.add(key);
     if (!this.composerPreviews.has(key)) {
       this.composerPreviews.set(key, null);
@@ -309,6 +323,15 @@ export class Engine {
   };
   private editingPreview: CanvasObject | null = null;
   private cropPreview: CanvasObject | null = null;
+  // Spoilers this viewer has revealed, by object and region start. Local only:
+  // never saved, synced or exported.
+  private spoilers = new Map<string, Map<number, { revealed: boolean; at: number }>>();
+  private dustViews: { id: string; layer: Container }[] = [];
+  // Spoiler frames on screen that still hide their contents, from the last draw.
+  private coveringFrames: CanvasObject[] = [];
+  private lastObjectReveal = -Infinity;
+  private dustFrame = 0;
+  private dustDrawn = 0;
   constructor(
     private host: HTMLDivElement,
     objects: CanvasObject[],
@@ -444,6 +467,7 @@ export class Engine {
       })
       .sort((a, b) => b.z - a.z)
       .find((o) => {
+        if (this.coveringFrames.length && concealedBy(o, this.coveringFrames)) return false;
         const q = worldToLocal(o, p);
         if (o.type === 'highlight') return ink && hitsHighlight(o, q, 2 / this.camera.zoom);
         if (o.type === 'arrow') {
@@ -570,6 +594,23 @@ export class Engine {
       w = this.screenPoint(p);
     this.secondaryContextHandled = e.button === 2;
     this.pointer = p;
+    if (
+      e.button === 0 &&
+      !this.space &&
+      !e.shiftKey &&
+      !e.ctrlKey &&
+      !e.metaKey &&
+      (this.tool === 'hand' || (this.tool === 'select' && !this.resizeCorner(p)))
+    ) {
+      // Peeking at a spoiler neither selects nor drags.
+      const spoiler = this.spoilerAt(w);
+      if (spoiler) {
+        this.toggleSpoiler(spoiler.id, spoiler.start);
+        return;
+      }
+      // Nor does the second press of a double-click that revealed an object.
+      if (performance.now() - this.lastObjectReveal < 400) return;
+    }
     if (this.tool === 'highlight' && e.button === 2 && !this.space && !this.hit(w)) {
       // Right-drag on empty canvas sizes the marker: left shrinks it, right grows it.
       this.gesture = {
@@ -753,6 +794,13 @@ export class Engine {
       this.updateCursor(
         e.target === this.app.canvas ? this.resizeCorner(this.point(e)) : undefined,
       );
+      if (
+        !this.space &&
+        (this.tool === 'select' || this.tool === 'hand') &&
+        e.target === this.app.canvas &&
+        this.spoilerAt(this.screenPoint(this.point(e)))
+      )
+        this.host.style.cursor = 'pointer';
       if (
         !this.space &&
         this.tool === 'select' &&
@@ -1127,6 +1175,7 @@ export class Engine {
   };
   private doubleClick = (e: MouseEvent) => {
     if (this.editingId || this.readOnly) return;
+    if (performance.now() - this.lastObjectReveal < 600) return;
     // Pointer capture on the surface retargets Chromium's subsequent click /
     // dblclick to that surface, even when both presses began on the canvas.
     if (e.target !== this.app.canvas && e.target !== this.host) return;
@@ -1189,6 +1238,121 @@ export class Engine {
   setHighlightStyle(style: { color: string; size: number }) {
     this.highlightStyle = { color: style.color, size: clampHighlightSize(style.size) };
     this.invalidate();
+  }
+  private spoilerAt(w: Point) {
+    const hit = this.hit(w, false);
+    const inside = (o: CanvasObject) => {
+      const q = worldToLocal(o, w);
+      return q.x >= 0 && q.y >= 0 && q.x <= o.width && q.y <= o.height;
+    };
+    // Hidden whole objects reveal on a click anywhere on their body; a
+    // frame's title still selects it so it can be moved while hidden.
+    if (
+      hit &&
+      hit.id !== this.editingId &&
+      isSpoiler(hit) &&
+      !this.spoilerRevealed(hit.id, wholeObject) &&
+      inside(hit)
+    )
+      return { id: hit.id, start: wholeObject };
+    const frame = this.coveringFrames
+      .filter((f) => !this.spoilerRevealed(f.id, wholeObject) && inside(f))
+      .sort((a, b) => b.z - a.z)[0];
+    if (frame && (!hit || hit.z <= frame.z)) return { id: frame.id, start: wholeObject };
+    if (!hit || hit.id === this.editingId || !hasRichText(hit)) return null;
+    const q = worldToLocal(hit, w);
+    const box = textSpoilers(hit).find(
+      (b) => q.x >= b.x && q.x <= b.x + b.width && q.y >= b.y && q.y <= b.y + b.height,
+    );
+    return box ? { id: hit.id, start: box.start } : null;
+  }
+  private toggleSpoiler(id: string, start: number) {
+    const regions = this.spoilers.get(id) || new Map();
+    const current = regions.get(start);
+    const now = performance.now();
+    // The second press of a double-click (which edits) must not hide it again.
+    if (current && now - current.at < 400) return;
+    regions.set(start, { revealed: !current?.revealed, at: now });
+    this.spoilers.set(id, regions);
+    if (start === wholeObject) this.lastObjectReveal = now;
+    this.invalidate();
+  }
+  /** Marks or unmarks the selected media, documents, links and frames as spoilers. */
+  setSelectionSpoiler(on: boolean) {
+    const now = performance.now();
+    const upserts = this.selected
+      .filter((o) => canBeSpoiler(o) && !o.locked && !!o.spoiler !== on)
+      .map((o) => {
+        const { spoiler: _spoiler, ...rest } = o;
+        return on ? { ...rest, spoiler: true } : rest;
+      });
+    if (!upserts.length) return;
+    // A new spoiler dusts over at once, even for the person who set it.
+    for (const o of upserts)
+      if (on)
+        this.spoilers.set(
+          o.id,
+          new Map([
+            ...(this.spoilers.get(o.id) || []),
+            [wholeObject, { revealed: false, at: now }],
+          ]),
+        );
+    this.apply({ upserts, deleted: [] });
+    this.callbacks.selection(this.selected);
+  }
+  /** Covers the selected spoilers this viewer has revealed again. */
+  hideSelectionSpoilers() {
+    const now = performance.now();
+    for (const o of this.selected)
+      if (isSpoiler(o) && this.spoilerRevealed(o.id, wholeObject))
+        this.spoilers.get(o.id)!.set(wholeObject, { revealed: false, at: now });
+    this.callbacks.selection(this.selected);
+    this.invalidate();
+  }
+  get selectionSpoilerRevealed() {
+    return this.selected.some((o) => isSpoiler(o) && this.spoilerRevealed(o.id, wholeObject));
+  }
+  private spoilerRevealed(id: string, start: number) {
+    return !!this.spoilers.get(id)?.get(start)?.revealed;
+  }
+  private spoilerVisibility(id: string, start: number, now: number) {
+    const state = this.spoilers.get(id)?.get(start);
+    if (!state) return { value: 1, moving: false };
+    const elapsed = now - state.at;
+    if (state.revealed) {
+      const t = Math.min(1, elapsed / revealDuration);
+      return { value: (1 - t) ** 2, moving: t < 1 };
+    }
+    const t = Math.min(1, elapsed / hideDuration);
+    return { value: t, moving: t < 1 };
+  }
+  private animateDust(full: boolean) {
+    const now = performance.now();
+    const still = !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    let animating = false;
+    for (const { id, layer } of this.dustViews)
+      if (!layer.destroyed)
+        animating =
+          updateDust(
+            layer,
+            this.camera.zoom,
+            now,
+            (start) => this.spoilerVisibility(id, start, now),
+            still,
+          ) || animating;
+    if (!full) this.app.render();
+    this.dustDrawn = now;
+    if (animating && !this.dustFrame && !this.disposed) {
+      // About 40 frames a second is plenty for drifting dust. A full draw
+      // updates it too, so a pending one takes over.
+      const tick = () => {
+        this.dustFrame = 0;
+        if (this.frame || this.disposed) return;
+        if (performance.now() - this.dustDrawn < 24) this.dustFrame = requestAnimationFrame(tick);
+        else this.animateDust(false);
+      };
+      this.dustFrame = requestAnimationFrame(tick);
+    }
   }
   setEditing(id: string | null) {
     this.stopCameraAnimation();
@@ -1531,12 +1695,25 @@ export class Engine {
       if (index !== -1) visible.splice(index, 1);
       visible.push(this.cropPreview);
     }
+    // Spoiler frames contain whatever lies inside them, so those frames are
+    // on screen whenever anything they hide is.
+    const now = performance.now();
+    const spoilerHidden = (o: CanvasObject) =>
+      this.spoilerVisibility(o.id, wholeObject, now).value > 0.001;
+    this.coveringFrames = visible.filter(
+      (o) => isSpoiler(o) && hidesContents(o) && spoilerHidden(o),
+    );
+    const concealed = (o: CanvasObject) =>
+      !!this.coveringFrames.length && !!concealedBy(o, this.coveringFrames);
+    // A hidden PDF workspace is drawn here from a snapshot until revealed.
+    const snapshotComposer = (o: CanvasObject) =>
+      !!o.pdfComposer && isSpoiler(o) && spoilerHidden(o);
     this.callbacks.lists?.(
-      visible.filter((o) => o.type === 'list'),
+      visible.filter((o) => o.type === 'list' && !concealed(o)),
       c,
     );
     this.callbacks.composers?.(
-      visible.filter((o) => !!o.pdfComposer),
+      visible.filter((o) => !!o.pdfComposer && !snapshotComposer(o) && !concealed(o)),
       c,
     );
     const lightMargin = 600;
@@ -1638,7 +1815,7 @@ export class Engine {
           if (child.linkIconId) requestLinkedMedia(`${child.linkIconId}/thumb`);
           if (child.pdfComposer) this.composerTexture(child, composerKeys);
         }
-      }
+      } else if (snapshotComposer(o)) this.composerTexture(o, composerKeys);
     for (const [key, texture] of this.composerPreviews)
       if (!composerKeys.has(key)) {
         texture?.destroy(true);
@@ -1648,9 +1825,16 @@ export class Engine {
     const linkedTextureIds = [...wanted].map((key) => [key, this.textures.get(key)?.uid]);
     let animateLoading = false;
     const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    this.dustViews = [];
+    let spoilerMoving = false;
     visible.forEach((o, i) => {
       const key = variants.get(o.id),
-        texture = key ? this.textures.get(key) : null;
+        snapshot = snapshotComposer(o),
+        texture = snapshot
+          ? this.composerPreviews.get(composerPreviewKey(o)) || null
+          : key
+            ? this.textures.get(key)
+            : null;
       const iconKey = icons.get(o.id),
         iconTexture = iconKey ? this.textures.get(iconKey) : null;
       const detailTiles = (tiles.get(o.id) || []).map((tile) => ({
@@ -1699,12 +1883,22 @@ export class Engine {
         o.textBox,
         o.bold,
         o.strikethrough,
+        hasRichText(o)
+          ? [
+              o.textMarks,
+              [...(this.spoilers.get(o.id) || [])].filter(
+                ([start, s]) => s.revealed && start !== wholeObject,
+              ),
+            ]
+          : null,
         o.centerX,
         o.centerY,
         o.type,
         o.crop,
         o.arrow,
         o.highlight,
+        isSpoiler(o),
+        snapshot,
         // Tiny strokes skip the flattening pass; their overlaps are invisible.
         o.type === 'highlight' && highlightSize(o) * c.zoom >= 3,
         key,
@@ -1754,14 +1948,15 @@ export class Engine {
           false,
           linkedScenes.get(o.id),
         );
+        const content = spoilerContent(container);
         const loadedTiles = detailTiles.filter((tile) => tile.texture);
         if (texture && loadedTiles.length) {
           // Cut detailed regions out of the preview so transparent pixels are
           // composited once, including while only some detail tiles are loaded.
           const mask = new Graphics().rect(0, 0, o.width, o.height).fill('#ffffff');
           for (const tile of loadedTiles) mask.rect(tile.x, tile.y, tile.width, tile.height).cut();
-          container.children[0].mask = mask;
-          container.addChild(mask);
+          content.children[0].mask = mask;
+          content.addChild(mask);
         }
         for (const tile of detailTiles)
           if (tile.texture) {
@@ -1769,7 +1964,7 @@ export class Engine {
             sprite.position.set(tile.x, tile.y);
             sprite.width = tile.width;
             sprite.height = tile.height;
-            container.addChild(sprite);
+            content.addChild(sprite);
           }
         view = { container, signature, sharpness };
         this.views.set(o.id, view);
@@ -1778,6 +1973,27 @@ export class Engine {
       view.container.pivot.set(o.width / 2, o.height / 2);
       view.container.position.set(o.x + o.width / 2, o.y + o.height / 2);
       view.container.rotation = ((o.rotation || 0) * Math.PI) / 180;
+      if (isSpoiler(o)) {
+        const state = this.spoilerVisibility(o.id, wholeObject, now);
+        updateSpoilerCover(view.container, o, state.value, c.zoom);
+        spoilerMoving ||= state.moving;
+      }
+      // Objects inside a hidden spoiler frame fade in as it reveals.
+      const frame = this.coveringFrames.length ? concealedBy(o, this.coveringFrames) : undefined;
+      const cover = frame ? this.spoilerVisibility(frame.id, wholeObject, now) : null;
+      view.container.alpha = cover ? 1 - cover.value : 1;
+      view.container.visible = !cover || cover.value < 0.999;
+      spoilerMoving ||= !!cover?.moving;
+      if (view.container.visible)
+        for (const layer of [
+          view.container,
+          spoilerContent(view.container),
+          view.container.getChildByLabel('spoiler-cover'),
+        ]) {
+          const dust = layer?.getChildByLabel('spoiler-dust');
+          if (dust && !this.dustViews.some((d) => d.layer === dust))
+            this.dustViews.push({ id: o.id, layer: dust });
+        }
       const spinner = view.container.getChildByLabel('link-loading');
       if (spinner && loading && !reducedMotion) {
         spinner.rotation = performance.now() / 180;
@@ -1789,14 +2005,24 @@ export class Engine {
     const gap = 24 * c.zoom;
     this.host.style.backgroundSize = `${Math.max(8, gap)}px ${Math.max(8, gap)}px`;
     this.host.style.backgroundPosition = `${c.x}px ${c.y}px`;
+    if (this.dustViews.length) this.animateDust(true);
     this.app.render();
-    if (animateLoading || refinePending) this.invalidate();
+    if (animateLoading || refinePending || spoilerMoving) this.invalidate();
     if (!this.rendered) {
       this.rendered = true;
       this.callbacks.ready();
     }
   }
-  private makeView(
+  private makeView(...args: Parameters<Engine['makeObjectView']>): Container {
+    const view = this.makeObjectView(...args);
+    const [o, , , resolution, , , , exporting] = args;
+    if (!isSpoiler(o)) return view;
+    coverSpoiler(view, o, this.dark && !exporting, hasExternalLabel(o));
+    // Exports and linked previews keep the cover still; the board updates it every draw.
+    updateSpoilerCover(view, o, this.spoilerRevealed(o.id, wholeObject) ? 0 : 1, resolution);
+    return view;
+  }
+  private makeObjectView(
     o: CanvasObject,
     texture: any,
     detail: boolean,
@@ -1843,7 +2069,7 @@ export class Engine {
     const dark = this.dark && !exporting;
     container.eventMode = 'none';
     if (o.pdfComposer) {
-      if ((exporting || staticPreview) && texture) {
+      if ((exporting || staticPreview || isSpoiler(o)) && texture) {
         const sprite = new Sprite(texture);
         sprite.width = o.width;
         sprite.height = o.height;
@@ -1899,7 +2125,13 @@ export class Engine {
         canvas.height = Math.max(1, Math.ceil(height * scale));
         const ctx = canvas.getContext('2d')!;
         ctx.scale(scale, scale);
-        drawRichText(ctx, lines, base, 0, 0, checked ? '#87928e' : '#29313b', strike);
+        drawRichText(ctx, lines, base, {
+          x: 0,
+          y: 0,
+          color: checked ? '#87928e' : '#29313b',
+          strikeAll: strike,
+          hidden: 'dust',
+        });
         const texture = new Texture({
           source: new CanvasSource({ resource: canvas, resolution: scale }),
         });
@@ -2141,6 +2373,7 @@ export class Engine {
       if (o.type === 'image') text = o.imageTitle?.trim() ? o.imageTitle : 'Image';
       if (o.type === 'video') text = o.text || 'Play video';
       if (text) {
+        const still = exporting || staticPreview;
         const label = renderText(
           o.type === 'image' && !o.imageTitle?.trim() ? { ...o, type: 'rect' } : o,
           text,
@@ -2148,8 +2381,13 @@ export class Engine {
           region,
           dark,
           exporting ? undefined : this.camera?.zoom,
+          { exporting: still, revealed: (start) => this.spoilerRevealed(o.id, start) },
         );
         if (label) container.addChild(label);
+        if (!still && hasRichText(o)) {
+          const boxes = textSpoilers(o, text);
+          if (boxes.length) container.addChild(dustLayer(boxes, dark));
+        }
       }
     }
     return container;
@@ -2360,6 +2598,12 @@ export class Engine {
       { width: this.host.clientWidth, height: this.host.clientHeight },
       getBounds,
     );
+    // Exports show spoilers as this viewer sees them: hidden frames keep their contents out.
+    const hiddenFrames = plan.objects.filter(
+      (o) => isSpoiler(o) && hidesContents(o) && !this.spoilerRevealed(o.id, wholeObject),
+    );
+    if (hiddenFrames.length)
+      plan.objects = plan.objects.filter((o) => !concealedBy(o, hiddenFrames));
     let sourceScale = 1;
     const images = plan.objects.flatMap((object) => {
       const id =
@@ -2598,6 +2842,7 @@ export class Engine {
     this.stopCameraAnimation();
     this.disposed = true;
     cancelAnimationFrame(this.frame);
+    cancelAnimationFrame(this.dustFrame);
     this.observer.disconnect();
     window.removeEventListener(appearanceEvent, this.appearanceChanged);
     this.lighting.destroy();

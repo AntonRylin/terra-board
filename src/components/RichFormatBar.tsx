@@ -165,6 +165,13 @@ export default function RichFormatBar({ revision }: { revision?: unknown }) {
   }, [target, menu]);
   if (!target) return null;
   const { api, range, style } = target;
+  // "No font" is the field's own: sans on lists and text, handwriting on notes.
+  const own = getComputedStyle(target.field).fontFamily;
+  const choices = fonts.map((font) =>
+    font.id === null && !/^"?Segoe UI"?,/.test(own)
+      ? { ...font, label: 'Default', family: own }
+      : font,
+  );
   const apply = (patch: StylePatch) => {
     api.apply(patch, range);
     setTarget(currentTarget());
@@ -215,8 +222,8 @@ export default function RichFormatBar({ revision }: { revision?: unknown }) {
           aria-expanded={menu === 'font'}
           onClick={() => setMenu(menu === 'font' ? null : 'font')}
         >
-          <span style={{ fontFamily: fontFamilies[style.font || 'sans'] }}>
-            {fonts.find((f) => f.id === (style.font || null))?.label || 'Font'}
+          <span style={{ fontFamily: style.font ? fontFamilies[style.font] : own }}>
+            {choices.find((f) => f.id === (style.font || null))?.label || 'Font'}
           </span>
           <ChevronDown size={12} />
         </button>
@@ -275,7 +282,7 @@ export default function RichFormatBar({ revision }: { revision?: unknown }) {
       </div>
       {menu === 'font' && (
         <div className="rich-format-menu rich-format-fonts" role="menu">
-          {fonts.map((font) => (
+          {choices.map((font) => (
             <button
               key={font.label}
               role="menuitemradio"

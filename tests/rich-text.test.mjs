@@ -119,3 +119,141 @@ test('formatting survives storage and clipboard validation, malformed ranges are
     assert.deepEqual(value.textMarks, [{ start: 0, end: 4, highlight: '#ffd43b', font: 'hand' }]);
   }
 });
+
+// A context whose characters are half an em wide, with fixed font metrics.
+function halfEm() {
+  return {
+    font: '10px sans-serif',
+    measureText(text) {
+      const size = parseFloat(/([\d.e-]+)px/.exec(this.font)[1]);
+      return {
+        width: [...text].length * size * 0.5,
+        fontBoundingBoxAscent: size * 0.9,
+        fontBoundingBoxDescent: size * 0.25,
+        actualBoundingBoxAscent: size * 0.7,
+        actualBoundingBoxDescent: size * 0.2,
+      };
+    },
+  };
+}
+const base = { size: 10, weight: 400, family: 'sans-serif', lineHeight: 1.5 };
+const lineText = (text, lines) => lines.map((line) => text.slice(line.start, line.end));
+
+test('canvas lines wrap like the pre-wrap editor', async () => {
+  const { layoutRichText } = await import('../src/canvas/rich-text-canvas.ts');
+  // Five characters fit. The space after a word hangs instead of pushing it down.
+  let text = 'abcde fghij';
+  let lines = layoutRichText(halfEm(), text, [], base, 25);
+  assert.deepEqual(lineText(text, lines), ['abcde ', 'fghij']);
+  assert.equal(lines[0].width, 25, 'hanging space is not counted');
+  // An over-long word moves to its own line, then breaks between characters.
+  text = 'ab cdefghijkl';
+  lines = layoutRichText(halfEm(), text, [], base, 25);
+  assert.deepEqual(lineText(text, lines), ['ab ', 'cdefg', 'hijkl']);
+  // Explicit and trailing line breaks keep their (empty) lines for the caret.
+  text = 'one\n\ntwo\n';
+  assert.deepEqual(lineText(text, layoutRichText(halfEm(), text, [], base, 100)), [
+    'one',
+    '',
+    'two',
+    '',
+  ]);
+  // Unwrapped free text keeps each paragraph on one line.
+  text = 'a long line of free text';
+  assert.equal(layoutRichText(halfEm(), text, [], base, Infinity).length, 1);
+});
+
+test('formatted runs size their pieces and lines', async () => {
+  const { layoutRichText, richTextHeight, placeRichText } =
+    await import('../src/canvas/rich-text-canvas.ts');
+  const text = 'big small';
+  const lines = layoutRichText(
+    halfEm(),
+    text,
+    [
+      { start: 0, end: 3, size: 2 },
+      { start: 4, end: 9, code: true },
+    ],
+    base,
+    1000,
+  );
+  assert.equal(lines.length, 1);
+  const [big, space, code] = lines[0].pieces;
+  assert.equal(big.text, 'big');
+  assert.equal(big.width, 30);
+  assert.equal(space.width, 5);
+  // Monospace is 0.92em with 0.18em padding on both sides, like .rt-code.
+  const size = 10 * 0.92;
+  assert.ok(Math.abs(code.width - (5 * size * 0.5 + 2 * size * 0.18)) < 1e-9);
+  assert.ok(Math.abs(code.lead - size * 0.18) < 1e-9);
+  // The doubled run sets the line box: 20px at 1.5 line height.
+  assert.ok(Math.abs(lines[0].height - 30) < 1e-9);
+  assert.ok(Math.abs(richTextHeight(lines) - 30) < 1e-9);
+  // Shared baseline: the big run's half leading sits above it.
+  assert.ok(Math.abs(lines[0].baseline - (18 + (30 - 23) / 2)) < 1e-9);
+  // Centred lines sit around their anchor.
+  const placed = placeRichText(lines, { x: 100, y: 0, align: 'center' });
+  assert.ok(Math.abs(placed[0].left - (100 - lines[0].width / 2)) < 1e-9);
+});
+
+test('spoiler boxes cover each hidden region, keyed by where it starts', async () => {
+  const { layoutRichText, spoilerBoxes } = await import('../src/canvas/rich-text-canvas.ts');
+  const text = 'see secret\nending here';
+  const lines = layoutRichText(
+    halfEm(),
+    text,
+    [
+      { start: 4, end: 17, spoiler: true },
+      { start: 19, end: 23, spoiler: true },
+    ],
+    base,
+    1000,
+  );
+  const boxes = spoilerBoxes(lines, { x: 10, y: 20 });
+  // One region across the line break reveals as one; the second is separate.
+  assert.deepEqual(
+    boxes.map((b) => b.start),
+    [4, 4, 19],
+  );
+  assert.equal(boxes[0].x, 10 + 4 * 5);
+  assert.equal(boxes[0].width, 6 * 5);
+  assert.equal(boxes[1].x, 10);
+  assert.ok(boxes[1].y > boxes[0].y);
+});
+
+test('drawing hides unrevealed spoilers and paints revealed ones', async () => {
+  const { layoutRichText, drawRichText } = await import('../src/canvas/rich-text-canvas.ts');
+  const text = 'open shut';
+  const marks = [
+    { start: 0, end: 4, spoiler: true },
+    { start: 5, end: 9, spoiler: true, bold: true },
+  ];
+  const drawn = [];
+  const ctx = {
+    ...halfEm(),
+    fillStyle: '',
+    globalAlpha: 1,
+    textBaseline: '',
+    textAlign: '',
+    save() {},
+    restore() {},
+    beginPath() {},
+    roundRect() {},
+    arc() {},
+    fill() {},
+    fillRect() {},
+    fillText(value) {
+      if (value.trim()) drawn.push(value);
+    },
+  };
+  const lines = layoutRichText(ctx, text, marks, base, 1000);
+  drawRichText(ctx, lines, base, { x: 0, y: 0, color: '#000000', hidden: 'veil' });
+  assert.deepEqual(drawn, [], 'nothing readable before a click');
+  drawRichText(ctx, lines, base, {
+    x: 0,
+    y: 0,
+    color: '#000000',
+    revealed: (start) => start === 0,
+  });
+  assert.deepEqual(drawn, ['open'], 'only the clicked region shows');
+});

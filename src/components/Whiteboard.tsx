@@ -9,6 +9,8 @@ import { isPdfComposerInput, pdfComposerTargetAt } from '../canvas/pdf-drop';
 import { convertibleFile, needsOfficeConversion } from '../canvas/pdf-conversion-formats';
 import { convertComposerInputs } from '../canvas/document-convert';
 import ListEditOutline from './ListEditOutline';
+import RichTextField, { focusField } from './RichTextField';
+import RichFormatBar, { SpoilerGlyph } from './RichFormatBar';
 import CanvasToolbar from './CanvasToolbar';
 import RadialMenu from './RadialMenu';
 import CollabLayer from './CollabLayer';
@@ -75,6 +77,7 @@ import {
   Eraser,
   AlignHorizontalJustifyCenter,
   AlignVerticalJustifyCenter,
+  EyeOff,
 } from 'lucide-react';
 import type { Asset, CanvasObject, Document, Edit, Tool, ImageCrop as CropBounds } from '../model';
 import { uid } from '../model';
@@ -88,6 +91,7 @@ import {
 } from '../canvas/link-preview';
 import { loadLinkPreview } from '../canvas/load-link-preview';
 import { Engine } from '../canvas/engine';
+import { canBeSpoiler } from '../canvas/spoiler-objects';
 import {
   defaultGallery,
   galleryMembers,
@@ -289,7 +293,9 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     queue = useRef<SaveQueue | null>(null),
     cameraQueue = useRef<CameraSaveQueue | null>(null),
     alive = useRef(true),
-    editorRef = useRef<HTMLTextAreaElement>(null),
+    // The in-place editor: a rich field for text and notes, a textarea for titles.
+    editorRef = useRef<HTMLElement | null>(null),
+    pasting = useRef(false),
     editingSession = useRef<{ object: CanvasObject; draft: string } | null>(null),
     clipboardTask = useRef<Promise<boolean> | null>(null),
     imports = useRef(new Set<Promise<void>>());
@@ -1227,8 +1233,10 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   useEffect(() => {
     if (editing) {
       const editor = editorRef.current;
-      editor?.focus();
-      editor?.setSelectionRange(editor.value.length, editor.value.length);
+      if (editor instanceof HTMLTextAreaElement) {
+        editor.focus();
+        editor.setSelectionRange(editor.value.length, editor.value.length);
+      } else if (editor) focusField(editor, 'end');
     }
   }, [editing?.id]);
   useLayoutEffect(() => {
@@ -1850,6 +1858,24 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     });
   }
   const selectionLocked = !!engine.current?.selectionLocked;
+  const spoilerSelection = selected.length > 0 && selected.every(canBeSpoiler);
+  const selectionSpoiler = spoilerSelection && selected.every((o) => o.spoiler);
+  const toggleSpoiler = () => {
+    finishEdit();
+    engine.current?.setSelectionSpoiler(!selectionSpoiler);
+  };
+  const spoilerButton = spoilerSelection && (
+    <button
+      key="spoiler"
+      className="icon-button"
+      aria-label={selectionSpoiler ? 'Remove spoiler' : 'Mark as spoiler'}
+      aria-pressed={selectionSpoiler}
+      title={selectionSpoiler ? 'Remove spoiler' : 'Mark as spoiler'}
+      onClick={toggleSpoiler}
+    >
+      <SpoilerGlyph />
+    </button>
+  );
   const lockButton = (
     <ObjectLockButton
       key="lock"
@@ -2072,6 +2098,25 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           null,
         ]
       : []),
+    ...(spoilerSelection
+      ? [
+          {
+            label: selectionSpoiler ? 'Remove spoiler' : 'Mark as spoiler',
+            icon: <SpoilerGlyph />,
+            action: toggleSpoiler,
+          },
+          ...(selectionSpoiler && engine.current?.selectionSpoilerRevealed
+            ? [
+                {
+                  label: 'Hide spoiler again',
+                  icon: <EyeOff />,
+                  action: () => engine.current?.hideSelectionSpoilers(),
+                },
+              ]
+            : []),
+          null,
+        ]
+      : []),
     {
       label: 'Undo',
       icon: <Undo2 />,
@@ -2210,6 +2255,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         onRedo={() => engine.current?.redo()}
         onError={error}
       />
+      <RichFormatBar revision={[listView, camera]} />
       <CanvasLists
         view={listView}
         editingId={editingListId}
@@ -2385,6 +2431,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             contextKey={activeGallery.id}
           >
             {lockButton}
+            {spoilerButton}
             {selected.length === 1 && selected[0].type === 'frame' && (
               <button
                 key="copy-frame-link"
@@ -2485,6 +2532,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             contextKey={selected.map((object) => object.id).join(',')}
           >
             {lockButton}
+            {spoilerButton}
             {selected.length === 1 && selected[0].type === 'frame' && (
               <button
                 key="copy-frame-link"
@@ -2777,10 +2825,102 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           </SelectionToolbar>
         </div>
       )}
-      {editing && editingAppearance && (
-        <textarea
-          ref={editorRef}
+      {editing && editingAppearance && (editing.type === 'text' || editing.type === 'note') && (
+        <RichTextField
+          fieldRef={(element) => {
+            editorRef.current = element;
+          }}
           className={'text-editor ' + (editing.type === 'note' ? 'note-editor' : '')}
+          label="Edit canvas text"
+          maxLength={100000}
+          value={draft}
+          marks={editing.textMarks}
+          editable
+          onChange={(value, marks) => {
+            const session = editingSession.current;
+            if (session) {
+              session.draft = value;
+              if (marks !== session.object.textMarks) {
+                const { textMarks: _, ...rest } = session.object;
+                session.object = marks ? { ...rest, textMarks: marks } : rest;
+                setEditing(session.object);
+              }
+              // Text pasted into free text can run far off screen on one line;
+              // wrap it into view the way a paste onto the board is.
+              if (
+                pasting.current &&
+                engine.current &&
+                session.object.type === 'text' &&
+                !session.object.textBox
+              ) {
+                const fitted = fitTextToView(
+                  { ...session.object, text: value },
+                  visibleBoardArea(engine.current),
+                  true,
+                );
+                if (fitted.textBox) {
+                  session.object = { ...fitted, text: session.object.text };
+                  setEditing(session.object);
+                }
+              }
+            }
+            pasting.current = false;
+            setDraft(value);
+          }}
+          onPaste={() => {
+            pasting.current = true;
+          }}
+          onShortcut={(flag, range) => {
+            // With nothing selected, bold stays the object-wide toggle it always was.
+            if (flag !== 'bold' || (range && range.start !== range.end)) return false;
+            toggleFormatting('bold');
+            return true;
+          }}
+          onBlur={(event) => {
+            if (!toolsRef.current?.contains(event.relatedTarget)) finishEdit();
+          }}
+          onKeyDown={(e) => {
+            e.stopPropagation();
+            if (e.nativeEvent.isComposing) return;
+            if (isCommand(e.nativeEvent, 'edit.bold')) {
+              e.preventDefault();
+              toggleFormatting('bold');
+            } else if (e.key === 'Escape') {
+              e.preventDefault();
+              finishEdit(true);
+            } else if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+              e.preventDefault();
+              finishEdit();
+            }
+          }}
+          style={{
+            whiteSpace: editing.type === 'text' && !editing.textBox ? 'pre' : 'pre-wrap',
+            overflowWrap: editing.type === 'text' && !editing.textBox ? 'normal' : 'break-word',
+            left: (editorOrigin?.x ?? editing.x) * camera.zoom + camera.x,
+            top: (editorOrigin?.y ?? editing.y) * camera.zoom + camera.y,
+            transform: `rotate(${editing.rotation || 0}deg)`,
+            transformOrigin: '0 0',
+            textAlign: editing.centerX ? 'center' : 'left',
+            width: editingAppearance.wrapWidth * camera.zoom,
+            fontSize: editingAppearance.fontSize * camera.zoom,
+            // Unitless, so larger formatted runs grow their own line like on the canvas.
+            lineHeight: editingAppearance.lineHeight / editingAppearance.fontSize,
+            fontFamily: editingAppearance.fontFamily,
+            fontWeight: editingAppearance.fontWeight,
+            textDecoration: editing.strikethrough ? 'line-through' : 'none',
+            color:
+              theme === 'dark'
+                ? nightInk(editing, editingAppearance.color)
+                : editingAppearance.color,
+          }}
+        />
+      )}
+      {editing && editingAppearance && editing.type !== 'text' && editing.type !== 'note' && (
+        <textarea
+          ref={(element) => {
+            editorRef.current = element;
+          }}
+          className="text-editor"
           aria-label={
             editing.type === 'document'
               ? 'Edit document title'
@@ -2804,27 +2944,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           onChange={(e) => {
             const session = editingSession.current,
               value = e.target.value;
-            if (session) {
-              session.draft = value;
-              // Text pasted into free text can run far off screen on one line;
-              // wrap it into view the way a paste onto the board is.
-              if (
-                engine.current &&
-                session.object.type === 'text' &&
-                !session.object.textBox &&
-                (e.nativeEvent as InputEvent).inputType === 'insertFromPaste'
-              ) {
-                const fitted = fitTextToView(
-                  { ...session.object, text: value },
-                  visibleBoardArea(engine.current),
-                  true,
-                );
-                if (fitted.textBox) {
-                  session.object = { ...fitted, text: session.object.text };
-                  setEditing(session.object);
-                }
-              }
-            }
+            if (session) session.draft = value;
             setDraft(value);
           }}
           onBlur={(event) => {
@@ -2850,8 +2970,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             }
           }}
           style={{
-            whiteSpace: editing.type === 'text' && !editing.textBox ? 'pre' : 'pre-wrap',
-            overflowWrap: editing.type === 'text' && !editing.textBox ? 'normal' : 'break-word',
+            whiteSpace: 'pre-wrap',
+            overflowWrap: 'break-word',
             left: (editorOrigin?.x ?? editing.x) * camera.zoom + camera.x,
             top: (editorOrigin?.y ?? editing.y) * camera.zoom + camera.y,
             transform: `rotate(${editing.rotation || 0}deg)`,

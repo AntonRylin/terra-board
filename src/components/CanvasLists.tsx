@@ -6,7 +6,6 @@ import { localToWorld } from '../canvas/transform';
 import { fitListHeight, listLayout, withListItems } from '../canvas/list-layout';
 import ListEditOutline from './ListEditOutline';
 import RichTextField, { fieldRange, focusField } from './RichTextField';
-import RichFormatBar from './RichFormatBar';
 import './canvas-lists.css';
 
 export interface ListView {
@@ -351,7 +350,6 @@ export default function CanvasLists({
         );
       }}
     >
-      <RichFormatBar revision={view} />
       {view.objects.map((o) => (
         <ListCard
           key={o.id}

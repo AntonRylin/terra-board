@@ -2,6 +2,7 @@ export const selectionToolbarStorageKey = 'terra-board.selection-toolbar-hidden'
 export const selectionToolbarLayoutKey = 'terra-board.selection-toolbar-layout';
 export const selectionToolLabels = {
   lock: 'Lock selection',
+  spoiler: 'Spoiler',
   colors: 'Colors',
   'arrow-style': 'Arrow style',
   open: 'Open',

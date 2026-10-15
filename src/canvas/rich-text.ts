@@ -1,5 +1,10 @@
 // Inline formatting is stored beside plain text as non-overlapping style ranges.
 // The text itself stays a plain string, so search, sync and MCP keep working.
+import type { CanvasObject } from '../model';
+
+// Board text and notes render their formatting; titles stay plain.
+export const hasRichText = (o: CanvasObject) =>
+  (o.type === 'text' || o.type === 'note') && !!o.textMarks?.length;
 
 export const textFonts = ['serif', 'mono', 'hand', 'condensed'] as const;
 export type TextFont = (typeof textFonts)[number];
