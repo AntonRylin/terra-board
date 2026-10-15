@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { Music, Play } from 'lucide-react';
+import { Link, Music, Play } from 'lucide-react';
 import { chooseFiles, importFiles } from '../../bridge';
 import { updatePreferences, usePreferences } from '../../settings/preferences';
 import BoardIconImage, { type BoardIconImageHandle } from '../BoardIconImage';
-import { playSong } from '../CollabLayer';
+import { playSong } from '../JoinToasts';
 import { useCloudStatus } from '../ShareDialog';
 import { Group, Notice, Row, Switch, useNotice } from './controls';
+import { SongClipEditor } from './SongClipEditor';
 
 const clean = (e: unknown) =>
   String(e).replace(/^Error: (Error invoking remote method '[^']+': )?(Error: )?/, '');
@@ -20,6 +21,10 @@ export function ProfileSettings() {
   const [icon, setIcon] = useState('none');
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useNotice();
+  // A song being trimmed to the part that plays, and the link it may come from.
+  const [clip, setClip] = useState<{ bytes: ArrayBuffer; name: string } | null>(null);
+  const [link, setLink] = useState<string | null>(null);
+  const [fetching, setFetching] = useState(false);
   const profile = status?.profile;
   useEffect(() => {
     if (status) setName((n) => n || status.name || '');
@@ -50,6 +55,61 @@ export function ProfileSettings() {
     if (!name.trim()) throw Error('Enter your name first.');
     await cloud.identify(name.trim());
   };
+  const fromLink = async () => {
+    if (!link?.trim() || !window.canvas) return;
+    setFetching(true);
+    try {
+      const song = await window.canvas.songFromLink(link.trim());
+      setClip({ bytes: song.bytes.slice().buffer, name: song.name });
+      setLink(null);
+    } catch (e) {
+      setNotice({ text: clean(e), error: true });
+    } finally {
+      setFetching(false);
+    }
+  };
+  const songEditor = clip ? (
+    <SongClipEditor
+      bytes={clip.bytes}
+      name={clip.name}
+      busy={busy}
+      onCancel={() => setClip(null)}
+      onSave={(part, title) =>
+        act(async () => {
+          await ensureIdentity();
+          const [asset] = await importFiles([
+            new File([part], title + '.wav', { type: 'audio/wav' }),
+          ]);
+          await cloud.setSong(asset.id, title);
+          setClip(null);
+        }, 'Song saved.')
+      }
+    />
+  ) : link !== null ? (
+    <form
+      className="song-link"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void fromLink();
+      }}
+    >
+      <input
+        className="st-name-input"
+        aria-label="Song link"
+        placeholder="https://www.youtube.com/watch?v=…"
+        value={link}
+        autoFocus
+        disabled={fetching}
+        onChange={(e) => setLink(e.target.value)}
+      />
+      <button type="button" className="st-button" disabled={fetching} onClick={() => setLink(null)}>
+        Cancel
+      </button>
+      <button className="st-button primary" disabled={fetching || !link.trim()}>
+        {fetching ? 'Getting the song…' : 'Get song'}
+      </button>
+    </form>
+  ) : null;
 
   return (
     <>
@@ -106,6 +166,7 @@ export function ProfileSettings() {
       <Group title="Entrance song">
         <Row
           id="profileSong"
+          below={songEditor}
           description={
             profile?.song ? (
               <span className="cloud-status">
@@ -115,11 +176,7 @@ export function ProfileSettings() {
           }
         >
           {profile?.song && (
-            <button
-              type="button"
-              className="st-button"
-              onClick={() => void playSong(profile.song!).catch(() => {})}
-            >
+            <button type="button" className="st-button" onClick={() => playSong(profile.song!)}>
               <Play size={13} /> Play
             </button>
           )}
@@ -139,29 +196,46 @@ export function ProfileSettings() {
             disabled={busy || !name.trim()}
             onClick={() =>
               act(async () => {
-                const [file] = await chooseFiles('audio/*,.mp3,.m4a,.ogg,.wav');
+                const [file] = await chooseFiles('audio/*,.mp3,.m4a,.ogg,.wav,.flac,.aac,.webm');
                 if (!file) return;
-                if (file.size > 10 * 1024 * 1024) throw Error('Choose a song up to 10 MB.');
-                await ensureIdentity();
-                const [asset] = await importFiles([file]);
-                await cloud.setSong(asset.id, file.name);
-              }, 'Song saved.')
+                if (file.size > 60 * 1024 * 1024) throw Error('Choose a song up to 60 MB.');
+                setLink(null);
+                setClip({ bytes: await file.arrayBuffer(), name: file.name });
+              })
             }
           >
-            {profile?.song ? 'Change…' : 'Choose song…'}
+            Choose file…
+          </button>
+          <button
+            type="button"
+            className="st-button"
+            disabled={busy || fetching || !window.canvas?.songFromLink}
+            onClick={() => {
+              setClip(null);
+              setLink('');
+            }}
+          >
+            <Link size={13} /> From link…
           </button>
         </Row>
         <Row id="publishSong">
           <Switch
-            label="Play my song when I join a board"
+            label="Let others hear my song when I join"
             checked={profile?.publishSong ?? true}
             disabled={busy || !status.identity}
             onChange={(on) => act(() => cloud.setPublishSong(on))}
           />
         </Row>
+        <Row id="hearOwnSong">
+          <Switch
+            label="Hear my song when I join a board"
+            checked={preferences.hearOwnSong}
+            onChange={(hearOwnSong) => updatePreferences({ hearOwnSong })}
+          />
+        </Row>
         <Row id="playSongs">
           <Switch
-            label="Play other people's songs"
+            label="Hear other people's songs"
             checked={preferences.playJoinSongs}
             onChange={(playJoinSongs) => updatePreferences({ playJoinSongs })}
           />

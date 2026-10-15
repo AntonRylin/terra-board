@@ -137,17 +137,23 @@ export const rows = {
   profileSong: {
     section: 'profile',
     title: 'Your song',
-    description: 'Plays for others when you open a board they are on, for up to 12 seconds.',
+    description: 'Plays for a few seconds when you open a shared board.',
     keywords: 'music sound entrance join audio',
   },
   publishSong: {
     section: 'profile',
-    title: 'Play my song when I join a board',
+    title: 'Let others hear my song when I join',
     keywords: 'music sound entrance',
+  },
+  hearOwnSong: {
+    section: 'profile',
+    title: 'Hear my song when I join a board',
+    description: 'Only on boards shared with other people.',
+    keywords: 'music sound entrance mute own',
   },
   playSongs: {
     section: 'profile',
-    title: "Play other people's songs",
+    title: "Hear other people's songs",
     description: 'When someone opens the board you are on.',
     keywords: 'music sound mute entrance',
   },

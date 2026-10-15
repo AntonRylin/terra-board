@@ -6,6 +6,7 @@ import type { PresencePerson, ViewRect } from '../bridge';
 import { mediaUrl } from '../bridge';
 import { getPreferences } from '../settings/preferences';
 import { useCloudStatus } from './ShareDialog';
+import { JoinToasts, useJoinToasts } from './JoinToasts';
 import './collab.css';
 
 type Cursor = { x: number; y: number; view: ViewRect; at: number };
@@ -26,33 +27,8 @@ const initials = (name: string) =>
     .map((w) => w[0]!.toUpperCase())
     .join('') || '?';
 
+// Each person's entrance song plays at most once a minute.
 const songCooldown = new Map<string, number>();
-export async function playSong(assetId: string) {
-  const response = await fetch(mediaUrl(assetId, 'original'));
-  const bytes = await response.arrayBuffer();
-  const url = URL.createObjectURL(new Blob([bytes], { type: 'audio/mpeg' }));
-  const audio = new Audio(url);
-  audio.volume = 0.6;
-  // An entrance is short: play at most 12 seconds and fade out over the last one.
-  const stop = () => {
-    audio.pause();
-    URL.revokeObjectURL(url);
-  };
-  const fade = setTimeout(() => {
-    const step = setInterval(() => {
-      audio.volume = Math.max(0, audio.volume - 0.06);
-      if (audio.volume <= 0.01) {
-        clearInterval(step);
-        stop();
-      }
-    }, 100);
-  }, 11000);
-  audio.onended = () => {
-    clearTimeout(fade);
-    stop();
-  };
-  await audio.play().catch(stop);
-}
 
 // People on the same cloud board: their pictures, cursors and where they look.
 export default function CollabLayer({
@@ -80,6 +56,7 @@ export default function CollabLayer({
   const followRef = useRef<string | null>(null);
   followRef.current = following;
   const known = useRef<Set<string> | null>(null);
+  const joins = useJoinToasts();
   const me = status?.workspace;
 
   // Join this board's presence while it is open. Sync keeps the announcement in
@@ -89,7 +66,29 @@ export default function CollabLayer({
     known.current = null;
     setPeople([]);
     setCursors({});
-    void cloud.joinBoard(boardId);
+    void cloud.joinBoard(boardId).then(async ({ shared }) => {
+      // This person's own song, on boards shared with other people.
+      if (!shared || !getPreferences().hearOwnSong) return;
+      const self = 'self:' + boardId;
+      if (Date.now() - (songCooldown.get(self) || 0) < 60000) return;
+      const profile = await cloud.profile();
+      if (!profile.song) return;
+      songCooldown.set(self, Date.now());
+      const name = status?.name || 'You';
+      joins.announce(
+        {
+          person: me || 'self',
+          name: 'You',
+          role: 'edit',
+          avatar: profile.avatarVersion,
+          avatarAsset: profile.avatar,
+          songName: profile.songName,
+          color: colorOf(me || name),
+          initials: initials(name),
+        },
+        Promise.resolve(profile.song),
+      );
+    });
     const stopTimer = setTimeout(() => {
       // Whoever is here when this person arrives does not get an entrance song.
       known.current ??= new Set();
@@ -140,17 +139,16 @@ export default function CollabLayer({
         known.current.add(p.id);
         if (p.own) continue;
         const last = songCooldown.get(p.person) || 0;
-        if (!p.song || !getPreferences().playJoinSongs || Date.now() - last < 60000) continue;
-        songCooldown.set(p.person, Date.now());
-        void cloud
-          .profileMedia(p.person, 0, p.song)
-          .then((m) => {
-            if (m.song) void playSong(m.song);
-          })
-          .catch(() => {});
+        const withSong = !!p.song && getPreferences().playJoinSongs && Date.now() - last > 60000;
+        if (withSong) songCooldown.set(p.person, Date.now());
+        joins.announce(
+          { ...p, color: colorOf(p.id), initials: initials(p.name) },
+          withSong ? cloud.profileMedia(p.person, 0, p.song).then((m) => m.song) : null,
+        );
       }
       for (const person of [...known.current])
         if (!byPerson.has(person)) known.current.delete(person);
+      joins.left(new Set([me || 'self', ...list.map((p) => p.person)]));
       setMenu((open) => (open && byPerson.has(open) ? open : null));
     });
   }, [cloud, boardId, me]);
@@ -292,9 +290,18 @@ export default function CollabLayer({
     setMenuError('');
   };
 
-  if (!cloud || !people.length) return null;
+  const toasts = (
+    <JoinToasts
+      toasts={joins.toasts}
+      avatars={avatars}
+      onStop={joins.stopSong}
+      onDismiss={joins.dismiss}
+    />
+  );
+  if (!cloud || !people.length) return toasts;
   return (
     <>
+      {toasts}
       <div className="collab-cursors" aria-hidden="true">
         {Object.entries(cursors).map(([key, c]) => {
           const p = byKey.get(key);

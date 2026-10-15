@@ -418,6 +418,7 @@ class CloudSync {
       name: this.status.name || 'Someone',
       avatar: profile.avatarVersion,
       song: profile.publishSong ? profile.songVersion : 0,
+      songName: profile.publishSong && profile.songVersion ? profile.songName : '',
       device: os.hostname(),
       role: this.board?.role || 'edit',
       joined: this.board?.joined || Date.now(),
@@ -464,14 +465,16 @@ class CloudSync {
     const role = mark && mark.shared !== 'owner' ? mark.shared : 'edit';
     const owner = !mark || mark.shared === 'owner';
     const current = this.board;
+    // Shared with other people, not only synced between this person's computers.
+    const shared = !!mark;
     if (current?.boardId === boardId) {
       // Same board: only the announcement changes, for example a new role.
-      if (current.role === role && current.owner === owner) return { active: true };
+      if (current.role === role && current.owner === owner) return { active: true, shared };
       current.role = role;
       current.owner = owner;
       current.folderId = board.folderId || null;
       if (current.subscribed) await current.channel.track(await this.presenceInfo());
-      return { active: true };
+      return { active: true, shared };
     }
     await this.exitBoard();
     await this.authRealtime();
@@ -508,7 +511,7 @@ class CloudSync {
         next.subscribed = true;
         await channel.track(await this.presenceInfo());
       });
-    return { active: true };
+    return { active: true, shared };
   }
 
   async exitBoard() {

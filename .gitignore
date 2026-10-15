@@ -63,3 +63,4 @@ Thumbs.db
 desktop.ini
 .DS_Store
 build/vc-runtime/
+build/yt-dlp/

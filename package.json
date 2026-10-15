@@ -14,7 +14,7 @@
   "scripts": {
     "dev": "node scripts/prepare-documents.mjs && node scripts/prepare-background-model.mjs && node scripts/dev.mjs",
     "preview": "node scripts/prepare-documents.mjs && vite --host 127.0.0.1",
-    "build": "node scripts/prepare-documents.mjs && node scripts/prepare-background-model.mjs && tsc --noEmit && vite build",
+    "build": "node scripts/prepare-documents.mjs && node scripts/prepare-background-model.mjs && node scripts/prepare-yt-dlp.mjs && tsc --noEmit && vite build",
     "start": "electron .",
     "test": "node scripts/prepare-background-model.mjs && node --test tests/*.test.mjs",
     "prepackage": "node scripts/check-package-idle.mjs",
@@ -78,6 +78,13 @@
       "icon": "assets/icon.ico"
     },
     "extraResources": [
+      {
+        "from": "build/yt-dlp",
+        "to": "yt-dlp",
+        "filter": [
+          "yt-dlp.exe"
+        ]
+      },
       {
         "from": "build/vc-runtime",
         "to": "app.asar.unpacked/node_modules/onnxruntime-node/bin/napi-v6/win32/x64",

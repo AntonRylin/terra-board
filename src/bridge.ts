@@ -54,6 +54,7 @@ export interface PresencePerson {
   name: string;
   avatar: number;
   song: number;
+  songName?: string;
   device?: string;
   role: 'view' | 'edit';
   joined: number;
@@ -111,6 +112,8 @@ interface DesktopBridge {
   copyExport(id: string): Promise<void>;
   copyObjects(objects: CanvasObject[]): Promise<boolean>;
   copyText(text: string): Promise<void>;
+  // The audio of a song link (YouTube and other sites), for an entrance song.
+  songFromLink(url: string): Promise<{ bytes: Uint8Array; name: string }>;
   recognizeAsset(id: string): Promise<RecognizedText>;
   recognizeImage(bytes: Uint8Array): Promise<RecognizedText>;
   cancelCopy(): void;
@@ -192,7 +195,7 @@ interface DesktopBridge {
       avatar: number,
       song: number,
     ): Promise<{ avatar: string | null; song: string | null }>;
-    joinBoard(boardId: string): Promise<{ active: boolean }>;
+    joinBoard(boardId: string): Promise<{ active: boolean; shared?: boolean }>;
     leaveBoard(): Promise<void>;
     sendCursor(data: { x: number; y: number; view: ViewRect }): void;
     onPresence(callback: (event: PresenceEvent) => void): () => void;

@@ -22,6 +22,7 @@ const { createDocumentPrint } = require('./document-print.cjs');
 const { createOfficeConverter } = require('./office-converter.cjs');
 const { attachWindowShadow } = require('./window-shadow.cjs');
 const { fetchPreview } = require('./link-preview.cjs');
+const { downloadSongLink } = require('./song-link.cjs');
 const { createOcr } = require('./ocr.cjs');
 const { Worker } = require('node:worker_threads');
 const path = require('node:path');
@@ -657,6 +658,10 @@ app
       return mcp.status();
     });
     // The renderer is denied every web permission, including clipboard writes.
+    ipcMain.handle('canvas:song-from-link', (e, url) => {
+      trusted(e);
+      return downloadSongLink(app, url);
+    });
     ipcMain.handle('canvas:copy-text', (e, text) => {
       trusted(e);
       if (typeof text !== 'string' || text.length > 10000000) throw Error('Invalid text');

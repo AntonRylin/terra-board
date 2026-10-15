@@ -3,6 +3,7 @@ contextBridge.exposeInMainWorld('canvas', {
   copyObjects: (objects) => ipcRenderer.invoke('canvas:copy-objects', objects),
   cancelCopy: () => ipcRenderer.send('canvas:cancel-copy'),
   copyText: (text) => ipcRenderer.invoke('canvas:copy-text', text),
+  songFromLink: (url) => ipcRenderer.invoke('canvas:song-from-link', url),
   clipboardObjects: () => ipcRenderer.invoke('canvas:clipboard-objects'),
   fullscreenState: () => ipcRenderer.invoke('canvas:fullscreen-state'),
   toggleFullscreen: () => ipcRenderer.invoke('canvas:toggle-fullscreen'),

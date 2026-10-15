@@ -17,6 +17,8 @@ export type Preferences = {
   snapping: boolean;
   // Play the entrance song of people who open the same shared board.
   playJoinSongs: boolean;
+  // Play this person's own entrance song when they open a shared board.
+  hearOwnSong: boolean;
   radial: ToolbarId[];
   shortcuts: ShortcutOverrides;
 };
@@ -30,6 +32,7 @@ export const defaultPreferences = (): Preferences => ({
   zoomSpeed: 'normal',
   snapping: true,
   playJoinSongs: true,
+  hearOwnSong: true,
   radial: defaultRadialLayout(),
   shortcuts: {},
 });
@@ -52,6 +55,7 @@ export function readPreferences(value: unknown, legacyRadial?: unknown): Prefere
     zoomSpeed: pick(raw.zoomSpeed, ['slow', 'normal', 'fast'] as const, d.zoomSpeed),
     snapping: pick(raw.snapping, [true, false], d.snapping),
     playJoinSongs: pick(raw.playJoinSongs, [true, false], d.playJoinSongs),
+    hearOwnSong: pick(raw.hearOwnSong, [true, false], d.hearOwnSong),
     radial: readRadialLayout(raw.radial !== undefined ? raw.radial : legacyRadial),
     shortcuts: cleanOverrides(raw.shortcuts),
   };
