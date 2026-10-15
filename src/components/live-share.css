@@ -247,3 +247,17 @@
 .modal .share-name {
   margin-bottom: 8px;
 }
+
+/* New version downloaded */
+.update-prompt {
+  position: fixed;
+  right: 18px;
+  bottom: 70px;
+  z-index: 940;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  font-size: 13px;
+}

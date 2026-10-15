@@ -46,6 +46,16 @@ contextBridge.exposeInMainWorld('canvas', {
   openFolder: (which) => ipcRenderer.invoke('canvas:open-folder', which),
   exportLibrary: () => ipcRenderer.invoke('canvas:export-library'),
   licenses: () => ipcRenderer.invoke('canvas:licenses'),
+  updates: {
+    status: () => ipcRenderer.invoke('canvas:update-status'),
+    check: () => ipcRenderer.invoke('canvas:update-check'),
+    install: () => ipcRenderer.invoke('canvas:update-install'),
+    onStatus: (callback) => {
+      const handler = (_event, status) => callback(status);
+      ipcRenderer.on('canvas:update-status', handler);
+      return () => ipcRenderer.removeListener('canvas:update-status', handler);
+    },
+  },
   setFullscreenKeys: (bindings) => ipcRenderer.send('canvas:fullscreen-keys', bindings),
   live: {
     status: () => ipcRenderer.invoke('canvas:live-status'),

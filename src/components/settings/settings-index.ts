@@ -311,6 +311,12 @@ export const rows = {
     keywords: 'mcp',
   },
   version: { section: 'about', title: 'Version' },
+  updates: {
+    section: 'about',
+    title: 'Updates',
+    description: 'Terra Board checks for new versions and installs them when you close it.',
+    keywords: 'update upgrade new version release download',
+  },
   licenses: {
     section: 'about',
     title: 'Open-source licenses',

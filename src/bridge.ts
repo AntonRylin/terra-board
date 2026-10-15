@@ -97,6 +97,15 @@ export interface AppInfo {
   loginItemSupported: boolean;
   openAtLogin: boolean;
 }
+export interface UpdateStatus {
+  supported: boolean;
+  state: 'idle' | 'checking' | 'current' | 'downloading' | 'ready' | 'error';
+  version: string;
+  available?: string;
+  percent?: number;
+  checkedAt?: number;
+  error?: string;
+}
 interface DesktopBridge {
   assetDimensions(id: string): Promise<{ width: number; height: number }>;
   exportImage(args: {
@@ -151,6 +160,12 @@ interface DesktopBridge {
   openFolder(which: 'library' | 'backups'): Promise<void>;
   exportLibrary(): Promise<{ count: number; folder: string } | null>;
   licenses(): Promise<{ name: string; version: string; license: string }[]>;
+  updates: {
+    status(): Promise<UpdateStatus>;
+    check(): Promise<UpdateStatus>;
+    install(): Promise<boolean>;
+    onStatus(callback: (status: UpdateStatus) => void): () => void;
+  };
   setFullscreenKeys(
     bindings: { code: string; ctrl?: boolean; shift?: boolean; alt?: boolean }[],
   ): void;

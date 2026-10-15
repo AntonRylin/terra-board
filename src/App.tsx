@@ -1,4 +1,5 @@
 import SettingsPage from './components/SettingsPage';
+import { UpdatePrompt } from './components/UpdatePrompt';
 import { finishStartup } from './startup';
 import { isCommand } from './shortcuts/active';
 import { bindingsFor, commands, fixedShortcuts } from './shortcuts/commands';
@@ -1003,6 +1004,7 @@ export default function App() {
           onOpen={() => liveStatus.boardId && ask({ kind: 'live', id: liveStatus.boardId })}
         />
         <LiveRequests status={liveStatus} />
+        <UpdatePrompt />
         {aiBusy && aiBusy !== 'guest' && (
           <div className="toast" role="status">
             <LoaderCircle size={15} />

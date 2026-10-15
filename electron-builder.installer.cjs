@@ -6,6 +6,11 @@ module.exports = {
   directories: { ...build.directories, output: 'release/installer' },
   extraMetadata: { terraDistribution: 'installed' },
   win: { ...build.win, target: [{ target: 'nsis', arch: ['x64'] }] },
+  // Installed apps check this repository's GitHub Releases for updates (see
+  // electron/app-updater.cjs). `npm run release` uploads the installer there.
+  publish: [
+    { provider: 'github', owner: 'AntonRylin', repo: 'terra-board', releaseType: 'release' },
+  ],
   nsis: {
     oneClick: false,
     perMachine: false,

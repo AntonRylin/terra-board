@@ -30,6 +30,7 @@ const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
 const { createHash, randomUUID } = require('node:crypto');
 const { libraryRoot } = require('./storage-paths.cjs');
+const { createAppUpdater } = require('./app-updater.cjs');
 protocol.registerSchemesAsPrivileged([
   { scheme: 'canvas-app', privileges: { standard: true, secure: true, supportFetchAPI: true } },
   {
@@ -218,6 +219,8 @@ let win,
   worker,
   closed = false,
   quitting = false,
+  updater,
+  installUpdate = false,
   counter = 0,
   workerFailed = false;
 let readyResolve;
@@ -588,6 +591,31 @@ app
         if (win && !win.isDestroyed()) win.webContents.send('canvas:presence', event);
       },
     });
+    updater = createAppUpdater({
+      app,
+      enabled:
+        app.isPackaged && require('../package.json').terraDistribution === 'installed' && !smoke,
+      onStatus: (status) => {
+        if (win && !win.isDestroyed()) win.webContents.send('canvas:update-status', status);
+      },
+    });
+    ipcMain.handle('canvas:update-status', (e) => {
+      trusted(e);
+      return updater.status();
+    });
+    ipcMain.handle('canvas:update-check', (e) => {
+      trusted(e);
+      updater.check();
+      return updater.status();
+    });
+    // Saves and closes like a normal quit, then installs once the library is closed.
+    ipcMain.handle('canvas:update-install', (e) => {
+      trusted(e);
+      if (updater.status().state !== 'ready') return false;
+      installUpdate = true;
+      win.close();
+      return true;
+    });
     const cloudAction = (name, handler) =>
       ipcMain.handle('canvas:cloud-' + name, async (e, ...args) => {
         trusted(e);
@@ -957,6 +985,10 @@ app.on('before-quit', (event) => {
   }
   event.preventDefault();
   quitting = true;
+  updater?.stop();
+  const finish = () => {
+    if (!(installUpdate && updater?.install())) app.quit();
+  };
   documentPrint?.dispose();
   officeConverter?.dispose();
   ocr?.dispose();
@@ -965,11 +997,11 @@ app.on('before-quit', (event) => {
   void liveShare?.stop();
   if (workerFailed) {
     worker.terminate();
-    app.quit();
+    finish();
     return;
   }
   call('close').finally(() => {
     worker.terminate();
-    app.quit();
+    finish();
   });
 });

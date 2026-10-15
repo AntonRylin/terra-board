@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { FolderOpen } from 'lucide-react';
 import type { AppInfo } from '../../bridge';
 import { Group, Notice, Row, useNotice } from './controls';
+import { installUpdate, useUpdateStatus } from '../../updates';
+import type { UpdateStatus } from '../../bridge';
 
 function useAppInfo() {
   const [info, setInfo] = useState<AppInfo | null>(null);
@@ -93,6 +95,7 @@ export function AboutSettings() {
         <Row id="version" description={info ? undefined : 'Development preview'}>
           <span className="st-value">{info?.version ?? '—'}</span>
         </Row>
+        <UpdateRow />
         <Row
           id="licenses"
           below={
@@ -138,5 +141,46 @@ export function AboutSettings() {
       </Group>
       <Notice notice={notice} />
     </>
+  );
+}
+
+function updateText(status: UpdateStatus | null) {
+  if (!status?.supported) return 'Available in the installed app.';
+  switch (status.state) {
+    case 'checking':
+    case 'idle':
+      return 'Checking for updates…';
+    case 'current':
+      return 'Terra Board is up to date.';
+    case 'downloading':
+      return `Downloading version ${status.available}… ${status.percent ?? 0}%`;
+    case 'ready':
+      return `Version ${status.available} is ready. It installs when you close Terra Board.`;
+    case 'error':
+      return `Could not check for updates. ${status.error ?? ''}`.trim();
+  }
+}
+
+function UpdateRow() {
+  const status = useUpdateStatus();
+  const ready = status?.state === 'ready';
+  const busy = status?.state === 'checking' || status?.state === 'downloading';
+  return (
+    <Row id="updates" description={updateText(status)}>
+      {ready ? (
+        <button type="button" className="st-button primary" onClick={() => void installUpdate()}>
+          Restart to update
+        </button>
+      ) : (
+        <button
+          type="button"
+          className="st-button"
+          disabled={!status?.supported || busy}
+          onClick={() => void window.canvas?.updates.check()}
+        >
+          Check now
+        </button>
+      )}
+    </Row>
   );
 }
