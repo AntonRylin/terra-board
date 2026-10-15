@@ -1203,8 +1203,24 @@ export class Engine {
           ? 'title'
           : undefined,
       );
-    else this.callbacks.create('text', world);
+    else {
+      // A frame's empty interior is not a hit target, but a double click there
+      // means the frame itself. Empty board does nothing; text comes from the tool.
+      const frame = this.frameAt(world);
+      if (frame) this.setSelection(this.members(frame));
+    }
   };
+  private frameAt(p: Point) {
+    return this.index
+      .search({ x: p.x, y: p.y, width: 0, height: 0 })
+      .filter((o) => {
+        if (o.type !== 'frame') return false;
+        if (this.coveringFrames.length && concealedBy(o, this.coveringFrames)) return false;
+        const q = worldToLocal(o, p);
+        return q.x >= 0 && q.y >= 0 && q.x <= o.width && q.y <= o.height;
+      })
+      .sort((a, b) => b.z - a.z)[0];
+  }
   private context = (e: MouseEvent) => {
     if (e.target !== this.app.canvas && e.target !== this.host) return;
     e.preventDefault();
