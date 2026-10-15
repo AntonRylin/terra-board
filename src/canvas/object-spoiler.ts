@@ -1,14 +1,51 @@
-import { BlurFilter, Container, Graphics } from 'pixi.js';
+import {
+  BlurFilter,
+  Container,
+  Graphics,
+  Matrix,
+  RenderTexture,
+  Sprite,
+  type Renderer,
+} from 'pixi.js';
 import type { CanvasObject } from '../model';
 import { dustLayer } from './spoiler-dust.ts';
 import { hidesContents, wholeObject } from './spoiler-objects.ts';
 
 export * from './spoiler-objects.ts';
 
+// Hidden content is blurred once, in board space, into a small texture that is
+// stretched over the object. Unlike a screen-space filter it cannot shimmer
+// while the board zooms, and the dust animation does not re-blur every frame.
+const veilSize = 64; // texture pixels along the object's longer side
+
+function blurredSnapshot(content: Container, o: CanvasObject, renderer: Renderer) {
+  const scale = veilSize / Math.max(o.width, o.height);
+  const width = Math.max(2, Math.round(o.width * scale)),
+    height = Math.max(2, Math.round(o.height * scale));
+  const texture = RenderTexture.create({ width, height, resolution: 1 });
+  const blur = new BlurFilter({
+    strength: Math.max(1.5, Math.min(width, height) * 0.08),
+    quality: 4,
+    resolution: 1,
+  });
+  // The object fills the texture exactly, so clamped edges stay opaque.
+  blur.repeatEdgePixels = true;
+  content.filters = [blur];
+  renderer.render({
+    container: content,
+    target: texture,
+    clear: true,
+    transform: new Matrix(width / o.width, 0, 0, height / o.height, 0, 0),
+  });
+  content.filters = null;
+  blur.destroy();
+  return texture;
+}
+
 /**
  * Wraps a finished object view so its spoiler can be shown and revealed
- * without rebuilding it: the content goes into a blur container and a cover
- * with dust goes on top. Titles drawn outside the object stay readable.
+ * without rebuilding it: a blurred copy of the content and a cover with dust
+ * go on top. Titles drawn outside the object stay readable.
  */
 export function coverSpoiler(
   view: Container,
@@ -16,6 +53,7 @@ export function coverSpoiler(
   dark: boolean,
   // Titles drawn outside the object, which stay readable over the blur.
   external: boolean,
+  renderer: Renderer,
 ) {
   const frame = hidesContents(o);
   const cover = new Container({ label: 'spoiler-cover' });
@@ -43,49 +81,37 @@ export function coverSpoiler(
     view.addChildAt(cover, title === -1 ? children.length : title);
     return view;
   }
-  const blur = new Container({ label: 'spoiler-blur' });
+  const content = new Container({ label: 'spoiler-content' });
   for (const child of children)
-    if (!(external && child.label === 'board-text')) blur.addChild(child);
-  view.addChildAt(blur, 0);
-  view.addChildAt(cover, 1);
+    if (!(external && child.label === 'board-text')) content.addChild(child);
+  const texture = blurredSnapshot(content, o, renderer);
+  const veil = new Sprite({ texture, label: 'spoiler-veil' });
+  veil.width = o.width;
+  veil.height = o.height;
+  veil.once('destroyed', () => texture.destroy(true));
+  view.addChildAt(content, 0);
+  view.addChildAt(veil, 1);
+  view.addChildAt(cover, 2);
   return view;
 }
 
-/** The container that holds the object's own drawing, blurred while hidden. */
+/** The container that holds the object's own drawing. */
 export function spoilerContent(view: Container) {
-  return view.getChildByLabel('spoiler-blur') || view;
+  return view.getChildByLabel('spoiler-content') || view;
 }
 
-/**
- * hidden: 1 = fully covered, 0 = revealed. scale: screen pixels per board
- * unit, so the blur hides about the same share of the object at every zoom.
- */
-export function updateSpoilerCover(
-  view: Container,
-  o: CanvasObject,
-  hidden: number,
-  scale: number,
-) {
+/** hidden: 1 = fully covered, 0 = revealed. */
+export function updateSpoilerCover(view: Container, hidden: number) {
   const cover = view.getChildByLabel('spoiler-cover');
   if (!cover) return;
   cover.visible = hidden > 0.001;
   const shade = cover.getChildByLabel('spoiler-shade');
   if (shade) shade.alpha = hidden;
-  const blur = view.getChildByLabel('spoiler-blur');
-  if (!blur) return;
-  const size = Math.min(o.width, o.height) * scale;
-  const strength = hidden * Math.max(6, Math.min(48, size * 0.07));
-  if (strength < 0.25) {
-    blur.filters = null;
-    return;
-  }
-  let filter = (blur.filters as BlurFilter[] | null)?.[0];
-  if (!filter) {
-    filter = new BlurFilter({ strength, quality: 4, resolution: 0.5 });
-    // Clamp at the edges so the blur stays inside the object and its border
-    // does not fade into the board.
-    filter.repeatEdgePixels = true;
-    blur.filters = [filter];
-  }
-  filter.strength = strength;
+  const veil = view.getChildByLabel('spoiler-veil');
+  if (!veil) return;
+  veil.visible = hidden > 0.001;
+  veil.alpha = hidden;
+  // While fully covered, the sharp content stays hidden so nothing shows
+  // through the veil's softer edges or transparent areas.
+  spoilerContent(view).visible = hidden < 0.999;
 }

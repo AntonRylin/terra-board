@@ -1975,7 +1975,7 @@ export class Engine {
       view.container.rotation = ((o.rotation || 0) * Math.PI) / 180;
       if (isSpoiler(o)) {
         const state = this.spoilerVisibility(o.id, wholeObject, now);
-        updateSpoilerCover(view.container, o, state.value, c.zoom);
+        updateSpoilerCover(view.container, state.value);
         spoilerMoving ||= state.moving;
       }
       // Objects inside a hidden spoiler frame fade in as it reveals.
@@ -2015,11 +2015,11 @@ export class Engine {
   }
   private makeView(...args: Parameters<Engine['makeObjectView']>): Container {
     const view = this.makeObjectView(...args);
-    const [o, , , resolution, , , , exporting] = args;
+    const [o, , , , , , , exporting] = args;
     if (!isSpoiler(o)) return view;
-    coverSpoiler(view, o, this.dark && !exporting, hasExternalLabel(o));
+    coverSpoiler(view, o, this.dark && !exporting, hasExternalLabel(o), this.app.renderer);
     // Exports and linked previews keep the cover still; the board updates it every draw.
-    updateSpoilerCover(view, o, this.spoilerRevealed(o.id, wholeObject) ? 0 : 1, resolution);
+    updateSpoilerCover(view, this.spoilerRevealed(o.id, wholeObject) ? 0 : 1);
     return view;
   }
   private makeObjectView(
