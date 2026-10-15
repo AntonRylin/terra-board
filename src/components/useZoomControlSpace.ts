@@ -54,7 +54,12 @@ export function useZoomControlSpace() {
       attributes: true,
       attributeFilter: ['class', 'style', 'data-centered', 'data-minimal'],
     });
+    // The board remounts this control on every switch. Place it before the
+    // first paint without animating from the dock fallback position.
+    element.style.transition = 'none';
     measure();
+    void element.offsetWidth;
+    element.style.transition = '';
     return () => {
       resize.disconnect();
       changes.disconnect();
