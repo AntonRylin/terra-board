@@ -78,7 +78,10 @@ test('storage accepts documents with formatted text', () => {
     ...paper(2),
     text: 'Bold start',
     textMarks: [{ start: 0, end: 4, bold: true }],
+    documentTitle: 'Meeting notes',
   });
   assert.equal(saved.type, 'paper');
+  assert.equal(saved.documentTitle, 'Meeting notes');
+  assert.throws(() => objectValue({ ...paper(1), documentMime: 'text/plain' }));
   assert.deepEqual(saved.textMarks, [{ start: 0, end: 4, bold: true }]);
 });

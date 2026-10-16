@@ -47,8 +47,88 @@ type Press = { x: number; y: number; at: number } | null;
 const handles = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 const pinHandles = ['e', 's', 'w', 'se', 'sw'];
 export const pinMinimum = { width: 260, height: 180 };
-const pinHeader = 36;
-const pinPadding = 14;
+const pinHeader = 34;
+// Room beside the pages for their shadow and the scrollbar.
+const pinInset = 22;
+
+// A document's name. Pressing it does what pressing the document does (select,
+// drag); a double-click renames it. An empty name removes it.
+function PaperName({
+  object: o,
+  update,
+  onPress,
+  className,
+}: {
+  object: CanvasObject;
+  update: (o: CanvasObject) => void;
+  onPress: (event: PointerEvent<HTMLSpanElement>) => void;
+  className: string;
+}) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [renaming, setRenaming] = useState(false);
+  const lastPress = useRef(0);
+  const name = o.documentTitle?.trim() || '';
+  useLayoutEffect(() => {
+    const element = ref.current!;
+    if (!renaming) {
+      element.textContent = name || 'Untitled';
+      return;
+    }
+    element.textContent = name;
+    element.focus();
+    document.getSelection()?.selectAllChildren(element);
+  }, [renaming, name]);
+  const finish = (save: boolean) => {
+    if (!renaming) return;
+    setRenaming(false);
+    if (!save) return;
+    const next = (ref.current?.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+    if (next === name) return;
+    const { documentTitle: _, ...rest } = o;
+    update(next ? { ...rest, documentTitle: next } : rest);
+  };
+  return (
+    <span
+      ref={ref}
+      className={className}
+      data-empty={!name && !renaming}
+      data-renaming={renaming}
+      role={renaming ? 'textbox' : undefined}
+      aria-label="Document name"
+      title={renaming ? undefined : 'Double-click to rename'}
+      contentEditable={renaming ? 'plaintext-only' : false}
+      suppressContentEditableWarning
+      spellCheck={false}
+      onPointerDown={(event) => {
+        if (renaming) {
+          event.stopPropagation();
+          return;
+        }
+        // The first press may hand the pointer to the board, which then
+        // receives the dblclick, so a second quick press counts here.
+        const now = performance.now(),
+          second = event.button === 0 && now - lastPress.current < 450;
+        lastPress.current = event.button === 0 ? now : 0;
+        if (second && !o.locked) {
+          event.preventDefault();
+          event.stopPropagation();
+          lastPress.current = 0;
+          setRenaming(true);
+        } else onPress(event);
+      }}
+      onDoubleClick={(event) => event.stopPropagation()}
+      onBlur={() => finish(true)}
+      onKeyDown={(event) => {
+        if (!renaming) return;
+        event.stopPropagation();
+        if (event.key === 'Enter' || event.key === 'Escape') {
+          event.preventDefault();
+          finish(event.key === 'Enter');
+        }
+      }}
+    />
+  );
+}
 
 // Puts the caret at a screen point inside the text, or at the end when the
 // point is below the last line.
@@ -264,6 +344,16 @@ function PaperCard({
         field={field}
         press={press}
       />
+      <PaperName
+        object={o}
+        update={update}
+        className="canvas-paper-name"
+        onPress={(event) => {
+          if (editing && event.button === 0) setEditing(false);
+          event.stopPropagation();
+          forward(event);
+        }}
+      />
       {active &&
         handles.map((handle) => (
           <i key={handle} className="canvas-paper-handle" data-handle={handle} />
@@ -307,9 +397,9 @@ function PinnedPaper({
   const field = useRef<HTMLDivElement | null>(null);
   const press = useRef<Press>(null);
   const writing = writingHandlers(editing, setEditing, field);
-  const scale = (pin.width - pinPadding * 2) / paperWidth;
+  const scale = (pin.width - pinInset) / paperWidth;
   const pages = paperPages(o);
-  const title = (o.text || '').split('\n', 1)[0].trim() || 'Document';
+  const title = o.documentTitle?.trim() || 'Untitled';
   // Moving and resizing change the panel on screen, never the board.
   const drag = (event: PointerEvent<HTMLElement>, handle: string | null) => {
     if (event.button !== 0) return;
@@ -346,7 +436,7 @@ function PinnedPaper({
   };
   return (
     <section
-      className="canvas-paper-pinned glass-surface"
+      className="canvas-paper-pinned"
       data-paper-id={o.id}
       data-editing={editing}
       aria-label={`Pinned document: ${title}`}
@@ -354,7 +444,13 @@ function PinnedPaper({
       onKeyDown={writing.onKeyDown}
     >
       <header className="canvas-paper-pin-bar" onPointerDown={(event) => drag(event, null)}>
-        <span className="canvas-paper-pin-title">{title}</span>
+        <PaperName
+          object={o}
+          update={update}
+          className="canvas-paper-pin-title"
+          onPress={(event) => drag(event, null)}
+        />
+        <span className="canvas-paper-pin-space" />
         <button
           className="icon-button"
           aria-label="Unpin from view"

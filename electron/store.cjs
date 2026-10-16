@@ -349,7 +349,11 @@ function objectValue(o) {
     ['documentExcerpt', 10000],
   ]) {
     if (o[key] !== undefined) {
-      if (o.type !== 'document' || typeof o[key] !== 'string' || o[key].length > limit)
+      if (
+        (o.type !== 'document' && !(o.type === 'paper' && key === 'documentTitle')) ||
+        typeof o[key] !== 'string' ||
+        o[key].length > limit
+      )
         throw Error('Invalid document metadata');
       result[key] = o[key];
     }

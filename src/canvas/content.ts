@@ -154,7 +154,9 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
     ] as const)
       if (
         o[key] !== undefined &&
-        (o.type !== 'document' || typeof o[key] !== 'string' || o[key].length > limit)
+        ((o.type !== 'document' && !(o.type === 'paper' && key === 'documentTitle')) ||
+          typeof o[key] !== 'string' ||
+          o[key].length > limit)
       )
         throw Error('Invalid document metadata');
     for (const [key, min, max] of [
