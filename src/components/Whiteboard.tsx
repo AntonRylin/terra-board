@@ -1,5 +1,7 @@
 import ArrowControls from './ArrowControls';
 import CanvasLists, { listHeight, type ListView } from './CanvasLists';
+import CanvasPapers, { type PaperView } from './CanvasPapers';
+import { paperHeight, paperWidth } from '../canvas/paper-layout';
 import CanvasPdfComposers from './CanvasPdfComposers';
 import PdfExportDialog from './PdfExportDialog';
 import type { PdfComposer } from '../model';
@@ -55,6 +57,7 @@ import {
   ImagePlus,
   FileText,
   ListTodo,
+  NotebookPen,
   Images,
   ArrowRight,
   ArrowDown,
@@ -468,6 +471,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     [count, setCount] = useState(doc.objects.length);
   const activeGallery = selected.length === 1 && selected[0].gallery ? selected[0] : null;
   const [editingListId, setEditingListId] = useState<string | null>(null);
+  const [editingPaperId, setEditingPaperId] = useState<string | null>(null);
+  const [paperView, setPaperView] = useState<PaperView>({ objects: [], camera: doc.camera });
   const [listView, setListView] = useState<ListView>({ objects: [], camera: doc.camera });
   const [composerView, setComposerView] = useState<ListView>({ objects: [], camera: doc.camera });
   const [editingComposerId, setEditingComposerId] = useState<string | null>(null);
@@ -661,6 +666,31 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     refreshDocument(e.objects.get(id) || copy, e);
   };
   const listViewKey = useRef('');
+  const createPaper = (point?: { x: number; y: number }) => {
+    finishEdit();
+    const e = engine.current;
+    if (!e) return;
+    const p = e.center();
+    // A page fills about two thirds of the view height when it appears.
+    const scale = Math.min(
+      4,
+      Math.max(0.05, (window.innerHeight * 0.66) / e.camera.zoom / paperHeight(1)),
+    );
+    const o: CanvasObject = {
+      id: uid(),
+      type: 'paper',
+      text: '',
+      x: point?.x ?? p.x - (paperWidth * scale) / 2,
+      y: point?.y ?? p.y - paperHeight(1, scale) / 2,
+      width: paperWidth * scale,
+      height: paperHeight(1, scale),
+      z: e.topZ() + 1,
+    };
+    e.apply({ upserts: [o], deleted: [] });
+    e.setSelection([o.id]);
+    selectTool('select');
+    setEditingPaperId(o.id);
+  };
   const createList = (point?: { x: number; y: number }) => {
     finishEdit();
     const e = engine.current;
@@ -799,7 +829,10 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     }
   };
   const alignmentSelection = (editingObject ? [editingObject] : selected).filter(
-    (o) => !['image', 'document', 'frame', 'link', 'arrow', 'highlight', 'list'].includes(o.type),
+    (o) =>
+      !['image', 'document', 'frame', 'link', 'arrow', 'highlight', 'list', 'paper'].includes(
+        o.type,
+      ),
   );
   const editorOrigin =
     editingObject && editingPlacement
@@ -841,6 +874,10 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   const startEdit = (o: CanvasObject) => {
     if (o.frameLink) return;
     if (engine.current?.objects.get(o.id)?.locked || o.type === 'highlight') return;
+    if (o.type === 'paper') {
+      setEditingPaperId(o.id);
+      return;
+    }
     if (o.type === 'list') {
       (
         window.document.querySelector(
@@ -896,6 +933,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     else if (o.type === 'document') void openDocument(o).catch(error);
     else if (o.type === 'image') void openImageViewer(o).catch(error);
     else if (o.type === 'list') setEditingListId(o.id);
+    else if (o.type === 'paper') setEditingPaperId(o.id);
     else if (o.type === 'link' && o.linkCompact) openLink(o.url!).catch(error);
     else if (o.type === 'link') openObject(o);
     else startEdit(o);
@@ -1069,6 +1107,18 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         if (!target) return false;
         void addToComposer(target.id, () => Promise.resolve(objects)).catch(error);
         return true;
+      },
+      papers: (objects, camera) => {
+        // Documents can hold a lot of text: compare by identity, not by content.
+        setPaperView((view) =>
+          view.objects.length === objects.length &&
+          view.objects.every((o, i) => o === objects[i]) &&
+          view.camera.x === camera.x &&
+          view.camera.y === camera.y &&
+          view.camera.zoom === camera.zoom
+            ? view
+            : { objects, camera: { ...camera } },
+        );
       },
       lists: (objects, camera) => {
         const key = objects.length ? JSON.stringify([objects, camera]) : '';
@@ -1921,6 +1971,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         finishEdit();
         arrowDraft.current?.flush();
         setEditingListId(null);
+        setEditingPaperId(null);
         setEditingComposerId(null);
         const e = engine.current;
         if (!e) return;
@@ -2304,7 +2355,35 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         onRedo={() => engine.current?.redo()}
         onError={error}
       />
-      <RichFormatBar revision={[listView, camera]} />
+      <RichFormatBar revision={[listView, paperView, camera]} />
+      <CanvasPapers
+        view={paperView}
+        editingId={editingPaperId}
+        onEdit={setEditingPaperId}
+        host={host.current}
+        interactive={tool === 'select'}
+        beginPointer={(event) => engine.current?.beginOverlayPointer(event)}
+        selected={selected.map((o) => o.id)}
+        select={(id) => {
+          finishEdit();
+          if (!engine.current?.selection.has(id) || engine.current.selection.size > 1)
+            engine.current?.setSelection([id]);
+        }}
+        update={(o) => {
+          if (engine.current?.objects.get(o.id)?.locked) return;
+          engine.current?.apply({ upserts: [o], deleted: [] });
+          setPaperView((view) => ({
+            ...view,
+            objects: view.objects.map((item) => (item.id === o.id ? o : item)),
+          }));
+        }}
+        fit={(o) => {
+          const current = engine.current?.objects.get(o.id);
+          if (!current || current.locked || current.text !== o.text) return;
+          // Page count follows the text; it is not an undo step of its own.
+          engine.current?.apply({ upserts: [o], deleted: [] }, false);
+        }}
+      />
       <CanvasLists
         view={listView}
         editingId={editingListId}
@@ -2641,7 +2720,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
               </div>
             )}
             {selected.every(
-              (o) => !['image', 'video', 'link', 'frame', 'arrow', 'list'].includes(o.type),
+              (o) =>
+                !['image', 'video', 'link', 'frame', 'arrow', 'list', 'paper'].includes(o.type),
             ) && (
               <div key="colors" className="color-options">
                 {(selected.every((o) => o.type === 'highlight') ? highlightColors : colors).map(
@@ -3072,6 +3152,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
               action: () => selectTool(id),
             })),
             { id: 'list', label: 'List', icon: ListTodo, action: createList },
+            { id: 'paper', label: 'Document', icon: NotebookPen, action: createPaper },
             { id: 'media', label: 'Files', icon: ImagePlus, action: importMedia },
             { id: 'gallery', label: 'Gallery', icon: Images, action: createGallery },
           ]}
@@ -3084,6 +3165,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
               const rect = surface.getBoundingClientRect();
               e.beginQuickArrow(anchor, { x: pointer.x - rect.left, y: pointer.y - rect.top });
             } else if (id === 'list') createList(anchor);
+            else if (id === 'paper') createPaper(anchor);
             else if (id === 'gallery') createGallery(anchor);
             else if (id === 'media') void performImport(pickMedia, anchor);
             else if (id === 'select' || id === 'hand' || id === 'highlight') selectTool(id);
@@ -3103,6 +3185,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
               action: () => selectTool(id),
             })),
             { id: 'list', label: 'Add list', icon: ListTodo, action: createList },
+            { id: 'paper', label: 'Add document', icon: NotebookPen, action: createPaper },
             { id: 'media', label: 'Add files', icon: ImagePlus, action: importMedia },
             { id: 'gallery', label: 'Gallery', icon: Images, action: createGallery },
           ]}

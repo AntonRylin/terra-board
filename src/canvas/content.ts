@@ -31,6 +31,7 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
         'arrow',
         'highlight',
         'list',
+        'paper',
       ].includes(o.type)
     )
       throw Error('Invalid clipboard object');

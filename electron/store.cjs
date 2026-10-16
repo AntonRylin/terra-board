@@ -35,6 +35,7 @@ const types = new Set([
   'arrow',
   'highlight',
   'list',
+  'paper',
 ]);
 const idValue = (value) => {
   if (typeof value !== 'string' || !value || value.length > 100 || !/^[\w-]+$/.test(value))

@@ -66,6 +66,19 @@ import {
 } from './object-spoiler';
 import { documentPreviewBox, renderDocumentCard } from './document-card';
 import { listLayout } from './list-layout';
+import {
+  paginateLines,
+  paperContentHeight,
+  paperContentWidth,
+  paperFontSize,
+  paperLineHeight,
+  paperMargin,
+  paperPageHeight,
+  paperPageTop,
+  paperPages,
+  paperScale,
+  paperWidth,
+} from './paper-layout';
 import { drawRichText, layoutRichText, richTextHeight } from './rich-text-canvas';
 import { TextureCache } from './textures';
 import { appearanceEvent, nightInk } from '../appearance';
@@ -116,6 +129,7 @@ const placementBlocked = new Set<CommandId>([
 export type InputPreferences = { wheel: WheelMode; zoomSpeed: ZoomSpeed; snapping: boolean };
 interface Callbacks {
   lists?: (objects: CanvasObject[], camera: Camera) => void;
+  papers?: (objects: CanvasObject[], camera: Camera) => void;
   composers?: (objects: CanvasObject[], camera: Camera) => void;
   objectDrag?: (objects: CanvasObject[], point: Point | null) => void;
   objectDrop?: (objects: CanvasObject[], point: Point) => boolean;
@@ -1730,6 +1744,10 @@ export class Engine {
       visible.filter((o) => o.type === 'list' && !concealed(o)),
       c,
     );
+    this.callbacks.papers?.(
+      visible.filter((o) => o.type === 'paper' && !concealed(o)),
+      c,
+    );
     this.callbacks.composers?.(
       visible.filter((o) => !!o.pdfComposer && !snapshotComposer(o) && !concealed(o)),
       c,
@@ -2101,6 +2119,52 @@ export class Engine {
         const label = renderText(o, o.documentTitle, resolution, region, dark);
         if (label) container.addChild(label);
       }
+      return container;
+    }
+    if (o.type === 'paper') {
+      // Interactive pages are rendered in the DOM; exports draw the same sheets.
+      if (!exporting && !staticPreview) return container;
+      const scale = paperScale(o),
+        pages = paperPages(o);
+      const sheets = new Container();
+      sheets.scale.set(scale);
+      container.addChild(sheets);
+      for (let index = 0; index < pages; index++)
+        g.rect(0, paperPageTop(index), paperWidth, paperPageHeight)
+          .fill('#ffffff')
+          .stroke({ color: '#dfe3e8', width: 1 });
+      sheets.addChild(g);
+      const base = {
+        size: paperFontSize,
+        weight: 400,
+        family: '"Segoe UI", sans-serif',
+        lineHeight: paperLineHeight,
+      };
+      const measure = document.createElement('canvas').getContext('2d')!;
+      const lines = layoutRichText(measure, o.text || '', o.textMarks, base, paperContentWidth);
+      const pixels = Math.min(
+        resolution * scale,
+        8192 / paperContentWidth,
+        8192 / paperContentHeight,
+      );
+      paginateLines(lines)
+        .slice(0, pages)
+        .forEach((page, index) => {
+          if (!page.length) return;
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.max(1, Math.ceil(paperContentWidth * pixels));
+          canvas.height = Math.max(1, Math.ceil(paperContentHeight * pixels));
+          const ctx = canvas.getContext('2d')!;
+          ctx.scale(pixels, pixels);
+          drawRichText(ctx, page, base, { x: 0, y: 0, color: '#1f2328', hidden: 'dust' });
+          const texture = new Texture({
+            source: new CanvasSource({ resource: canvas, resolution: pixels }),
+          });
+          const sprite = new Sprite(texture);
+          sprite.position.set(paperMargin, paperPageTop(index) + paperMargin);
+          sprite.once('destroyed', () => texture.destroy(true));
+          sheets.addChild(sprite);
+        });
       return container;
     }
     if (o.type === 'list') {
@@ -2549,7 +2613,8 @@ export class Engine {
             .roundRect(0, 0, o.width * c.zoom, o.height * c.zoom, linkCornerRadius * c.zoom)
             .stroke({ color: '#4486d9', width: 1.5 })
             .restore();
-        } else if (o.type !== 'list') g.poly(outline).stroke({ color: '#4486d9', width: 1.5 });
+        } else if (o.type !== 'list' && o.type !== 'paper')
+          g.poly(outline).stroke({ color: '#4486d9', width: 1.5 });
         for (const handle of resizeHandles) {
           const p = screen(handlePoint(o, handle));
           if (o.type === 'link') g.circle(p.x, p.y, 3.5);

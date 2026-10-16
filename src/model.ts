@@ -11,7 +11,9 @@ export type ObjectType =
   | 'link'
   | 'arrow'
   | 'highlight'
-  | 'list';
+  | 'list'
+  // A written document of A4 pages; 'document' is an attached file.
+  | 'paper';
 export interface ListItem {
   id: string;
   text: string;

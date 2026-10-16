@@ -10,6 +10,7 @@ import {
   Video,
   Shapes,
   ListTodo,
+  NotebookPen,
 } from 'lucide-react';
 import type { ContentSearchResponse, Library, ObjectType } from '../model';
 import { invoke } from '../bridge';
@@ -27,6 +28,7 @@ interface Props {
 }
 const kinds: Record<ObjectType, { label: string; icon: typeof Search }> = {
   list: { label: 'List', icon: ListTodo },
+  paper: { label: 'Document', icon: NotebookPen },
   text: { label: 'Text', icon: FileText },
   note: { label: 'Note', icon: StickyNote },
   frame: { label: 'Frame', icon: Frame },

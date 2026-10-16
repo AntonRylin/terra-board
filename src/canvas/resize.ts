@@ -2,6 +2,7 @@ import type { Bounds } from './geometry';
 import type { CanvasObject } from '../model';
 import { rotatePoint } from './transform.ts';
 import { listLayout } from './list-layout.ts';
+import { paperWidth } from './paper-layout.ts';
 
 export type Corner = 'nw' | 'ne' | 'sw' | 'se';
 export const corners: Corner[] = ['nw', 'ne', 'sw', 'se'];
@@ -32,7 +33,20 @@ export function resizeObject(
   let width: number,
     height: number,
     fontSize = o.fontSize;
-  if (
+  if (o.type === 'paper') {
+    // Documents keep the A4 proportions: every handle scales the whole stack of pages.
+    const requested = edge
+      ? /[ew]/.test(corner)
+        ? 1 + dw / o.width
+        : 1 + dh / o.height
+      : 1 + (dw * o.width + dh * o.height) / (o.width ** 2 + o.height ** 2);
+    const scale = Math.max(
+      (paperWidth * 0.15) / o.width,
+      Math.min(1e6 / o.width, 1e6 / o.height, requested),
+    );
+    width = o.width * scale;
+    height = o.height * scale;
+  } else if (
     !edge &&
     (o.type === 'text' ||
       o.type === 'list' ||
@@ -114,6 +128,7 @@ export function resizeSelection(
       o.type === 'arrow' || o.type === 'highlight' ? 0 : 1 / o.height,
       size ? 8 / size : 0,
       o.type === 'list' ? 240 / o.width : 0,
+      o.type === 'paper' ? (paperWidth * 0.15) / o.width : 0,
     );
     maximum = Math.min(
       maximum,

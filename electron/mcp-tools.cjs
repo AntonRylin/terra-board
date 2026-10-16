@@ -98,6 +98,7 @@ const object = z
       'arrow',
       'highlight',
       'list',
+      'paper',
     ]),
     items: z
       .array(

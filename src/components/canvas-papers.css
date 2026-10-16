@@ -1,0 +1,124 @@
+.canvas-papers {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.canvas-paper {
+  position: absolute;
+  transform-origin: 0 0;
+  pointer-events: auto;
+  cursor: default;
+}
+.canvas-papers[data-interactive='false'] .canvas-paper {
+  pointer-events: none;
+}
+.canvas-paper[data-editing='true'] {
+  cursor: text;
+}
+.canvas-paper-sheet {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  background: #ffffff;
+  border-radius: 2px;
+  box-shadow:
+    0 0 0 1px rgb(30 40 55 / 0.08),
+    0 2px 10px rgb(30 40 55 / 0.1);
+}
+[data-theme='dark'] .canvas-paper-sheet {
+  box-shadow:
+    0 0 0 1px rgb(0 0 0 / 0.35),
+    0 3px 14px rgb(0 0 0 / 0.4);
+}
+.canvas-paper-number {
+  position: absolute;
+  right: 40px;
+  bottom: 28px;
+  font:
+    12px 'Segoe UI',
+    sans-serif;
+  color: #9aa3ad;
+  user-select: none;
+}
+/* A block formatting context, so the break floats below shape every line of
+   the text that follows them. */
+.canvas-paper-flow {
+  position: absolute;
+  display: flow-root;
+}
+.canvas-paper-space,
+.canvas-paper-break {
+  float: left;
+  clear: left;
+  pointer-events: none;
+}
+.canvas-paper-space {
+  width: 0;
+}
+.canvas-paper-break {
+  width: 100%;
+}
+.canvas-paper .rt-field.canvas-paper-text {
+  display: block;
+  min-height: 24px;
+  color: #1f2328;
+  font-family: 'Segoe UI', sans-serif;
+  font-size: 16px;
+  /* Unitless, so larger inline text grows its own line. */
+  line-height: 1.5;
+  caret-color: #1f2328;
+}
+.canvas-paper .rt-field.canvas-paper-text::selection,
+.canvas-paper .rt-field.canvas-paper-text *::selection {
+  background: rgb(68 134 217 / 0.28);
+}
+.canvas-paper-placeholder {
+  position: absolute;
+  left: 0;
+  top: 0;
+  font:
+    16px/1.5 'Segoe UI',
+    sans-serif;
+  color: #a7afb8;
+  pointer-events: none;
+  user-select: none;
+}
+.canvas-paper[data-selected='true']::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: calc(var(--paper-px) * 1.5) solid #4486d9;
+  pointer-events: none;
+}
+.canvas-paper-handle {
+  position: absolute;
+  width: calc(var(--paper-px) * 8);
+  height: calc(var(--paper-px) * 8);
+  margin: calc(var(--paper-px) * -4);
+  box-sizing: border-box;
+  background: #ffffff;
+  border: calc(var(--paper-px) * 1.5) solid #4486d9;
+  pointer-events: none;
+  z-index: 1;
+}
+.canvas-paper-handle[data-handle*='n'] {
+  top: 0;
+}
+.canvas-paper-handle[data-handle*='s'] {
+  top: 100%;
+}
+.canvas-paper-handle[data-handle='e'],
+.canvas-paper-handle[data-handle='w'] {
+  top: 50%;
+}
+.canvas-paper-handle[data-handle*='w'] {
+  left: 0;
+}
+.canvas-paper-handle[data-handle*='e'] {
+  left: 100%;
+}
+.canvas-paper-handle[data-handle='n'],
+.canvas-paper-handle[data-handle='s'] {
+  left: 50%;
+}

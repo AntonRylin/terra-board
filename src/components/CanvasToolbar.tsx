@@ -61,7 +61,14 @@ export default function CanvasToolbar({
   const toolsById = new Map(tools.map((tool) => [tool.id, tool]));
   const renderTool = (id: ToolbarId, zone: ToolbarZone) => {
     const item = toolsById.get(id)!;
-    const name = id === 'list' ? 'List' : id === 'media' ? 'Images and video' : item.label;
+    const name =
+      id === 'list'
+        ? 'List'
+        : id === 'paper'
+          ? 'Document'
+          : id === 'media'
+            ? 'Images and video'
+            : item.label;
     const Icon = item.icon;
     return (
       <div
