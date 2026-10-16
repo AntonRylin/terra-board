@@ -595,6 +595,9 @@ app
       app,
       enabled:
         app.isPackaged && require('../package.json').terraDistribution === 'installed' && !smoke,
+      // Every packaged copy, including ones built from source, hears about new versions.
+      notify: app.isPackaged && !smoke,
+      fetch: (url, options) => net.fetch(url, options),
       onStatus: (status) => {
         if (win && !win.isDestroyed()) win.webContents.send('canvas:update-status', status);
       },
