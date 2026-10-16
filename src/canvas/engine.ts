@@ -463,8 +463,15 @@ export class Engine {
         this.groupMembers.get(o.groupId)!.add(o.id);
       }
   }
+  // Objects shown somewhere else for now (a document pinned to the view) keep
+  // their place on the board, but are neither drawn, hit nor selected there.
+  private detached = new Set<string>();
+  setDetached(ids: string[]) {
+    this.detached = new Set(ids);
+    this.setSelection([...this.selection]);
+  }
   setSelection(ids: string[]) {
-    this.selection = new Set(ids.filter((id) => this.objects.has(id)));
+    this.selection = new Set(ids.filter((id) => this.objects.has(id) && !this.detached.has(id)));
     this.callbacks.selection(this.selected);
     this.invalidate();
   }
@@ -481,6 +488,7 @@ export class Engine {
       })
       .sort((a, b) => b.z - a.z)
       .find((o) => {
+        if (this.detached.has(o.id)) return false;
         if (this.coveringFrames.length && concealedBy(o, this.coveringFrames)) return false;
         const q = worldToLocal(o, p);
         if (o.type === 'highlight') return ink && hitsHighlight(o, q, 2 / this.camera.zoom);
@@ -1745,7 +1753,7 @@ export class Engine {
       c,
     );
     this.callbacks.papers?.(
-      visible.filter((o) => o.type === 'paper' && !concealed(o)),
+      visible.filter((o) => o.type === 'paper' && !this.detached.has(o.id) && !concealed(o)),
       c,
     );
     this.callbacks.composers?.(

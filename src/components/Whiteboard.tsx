@@ -1,6 +1,12 @@
 import ArrowControls from './ArrowControls';
 import CanvasLists, { listHeight, type ListView } from './CanvasLists';
-import CanvasPapers, { type PaperView } from './CanvasPapers';
+import CanvasPapers, {
+  PinnedPapers,
+  clampPin,
+  pinMinimum,
+  type PaperPin,
+  type PaperView,
+} from './CanvasPapers';
 import { paperHeight, paperWidth } from '../canvas/paper-layout';
 import CanvasPdfComposers from './CanvasPdfComposers';
 import PdfExportDialog from './PdfExportDialog';
@@ -54,6 +60,7 @@ import {
   Square,
   Frame,
   Link2,
+  Pin,
   ImagePlus,
   FileText,
   ListTodo,
@@ -473,6 +480,12 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   const [editingListId, setEditingListId] = useState<string | null>(null);
   const [editingPaperId, setEditingPaperId] = useState<string | null>(null);
   const [paperView, setPaperView] = useState<PaperView>({ objects: [], camera: doc.camera });
+  // Documents pinned to the view. Local to this window and this visit to the
+  // board: the documents themselves never move, so leaving the board or closing
+  // the app without unpinning finds them where they were.
+  const [pins, setPins] = useState<PaperPin[]>([]);
+  const pinIds = useRef(new Set<string>());
+  const [, setPinRevision] = useState(0);
   const [listView, setListView] = useState<ListView>({ objects: [], camera: doc.camera });
   const [composerView, setComposerView] = useState<ListView>({ objects: [], camera: doc.camera });
   const [editingComposerId, setEditingComposerId] = useState<string | null>(null);
@@ -666,6 +679,46 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     refreshDocument(e.objects.get(id) || copy, e);
   };
   const listViewKey = useRef('');
+  useEffect(() => {
+    pinIds.current = new Set(pins.map((pin) => pin.id));
+    engine.current?.setDetached(pins.map((pin) => pin.id));
+  }, [pins]);
+  const pinPaper = (o: CanvasObject) => {
+    const e = engine.current,
+      surface = host.current;
+    if (!e || !surface || pins.some((pin) => pin.id === o.id)) return;
+    const c = e.camera,
+      origin = localToWorld(o, { x: 0, y: 0 });
+    const view = { width: surface.clientWidth, height: surface.clientHeight };
+    // The panel starts where the document is on screen, at a usable size.
+    const width = Math.max(pinMinimum.width, Math.min(view.width * 0.6, 720, o.width * c.zoom));
+    const height = Math.min(view.height - 16, o.height * c.zoom + 36, view.height * 0.85);
+    setPins((current) => [
+      ...current,
+      clampPin(
+        { id: o.id, left: origin.x * c.zoom + c.x, top: origin.y * c.zoom + c.y, width, height },
+        view,
+      ),
+    ]);
+  };
+  const unpinPaper = (id: string) => {
+    if (editingPaperId === id) setEditingPaperId(null);
+    setPins((current) => current.filter((pin) => pin.id !== id));
+  };
+  const updatePaper = (o: CanvasObject) => {
+    if (engine.current?.objects.get(o.id)?.locked) return;
+    engine.current?.apply({ upserts: [o], deleted: [] });
+    setPaperView((view) => ({
+      ...view,
+      objects: view.objects.map((item) => (item.id === o.id ? o : item)),
+    }));
+  };
+  const fitPaper = (o: CanvasObject) => {
+    const current = engine.current?.objects.get(o.id);
+    if (!current || current.locked || current.text !== o.text) return;
+    // Page count follows the text; it is not an undo step of its own.
+    engine.current?.apply({ upserts: [o], deleted: [] }, false);
+  };
   const createPaper = (point?: { x: number; y: number }) => {
     finishEdit();
     const e = engine.current;
@@ -1129,6 +1182,12 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       },
       edit: (edit) => {
         if (!syncingExternal.current) queue.current!.enqueue(edit);
+        if (pinIds.current.size) {
+          const gone = edit.deleted.filter((id) => pinIds.current.has(id));
+          if (gone.length) setPins((current) => current.filter((pin) => !gone.includes(pin.id)));
+          if (gone.length || edit.upserts.some((o) => pinIds.current.has(o.id)))
+            setPinRevision((revision) => revision + 1);
+        }
         setCount(e.objects.size);
         syncDocumentView();
         void refreshLinkedBoards.current();
@@ -2369,20 +2428,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           if (!engine.current?.selection.has(id) || engine.current.selection.size > 1)
             engine.current?.setSelection([id]);
         }}
-        update={(o) => {
-          if (engine.current?.objects.get(o.id)?.locked) return;
-          engine.current?.apply({ upserts: [o], deleted: [] });
-          setPaperView((view) => ({
-            ...view,
-            objects: view.objects.map((item) => (item.id === o.id ? o : item)),
-          }));
-        }}
-        fit={(o) => {
-          const current = engine.current?.objects.get(o.id);
-          if (!current || current.locked || current.text !== o.text) return;
-          // Page count follows the text; it is not an undo step of its own.
-          engine.current?.apply({ upserts: [o], deleted: [] }, false);
-        }}
+        update={updatePaper}
+        fit={fitPaper}
       />
       <CanvasLists
         view={listView}
@@ -2405,6 +2452,20 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           }));
         }}
       />
+      {!!pins.length && engine.current && (
+        <PinnedPapers
+          pins={pins}
+          objects={engine.current.objects}
+          update={updatePaper}
+          fit={fitPaper}
+          move={(next) =>
+            setPins((current) => current.map((pin) => (pin.id === next.id ? next : pin)))
+          }
+          unpin={unpinPaper}
+          editingId={editingPaperId}
+          onEdit={setEditingPaperId}
+        />
+      )}
       {readingDocument && (
         <DocumentReader
           key={`${readingDocument.id}:${readingDocument.assetId}`}
@@ -2661,6 +2722,17 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           >
             {lockButton}
             {spoilerButton}
+            {selected.length === 1 && selected[0].type === 'paper' && (
+              <button
+                key="pin"
+                className="icon-button"
+                aria-label="Pin to view"
+                title="Pin to view"
+                onClick={() => pinPaper(selected[0])}
+              >
+                <Pin size={16} />
+              </button>
+            )}
             {selected.length === 1 && selected[0].type === 'frame' && (
               <button
                 key="copy-frame-link"

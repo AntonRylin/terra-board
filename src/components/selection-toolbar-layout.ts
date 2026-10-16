@@ -3,6 +3,7 @@ export const selectionToolbarLayoutKey = 'terra-board.selection-toolbar-layout';
 export const selectionToolLabels = {
   lock: 'Lock selection',
   spoiler: 'Spoiler',
+  pin: 'Pin to view',
   colors: 'Colors',
   'arrow-style': 'Arrow style',
   open: 'Open',
