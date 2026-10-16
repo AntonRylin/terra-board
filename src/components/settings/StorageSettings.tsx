@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { FolderOpen } from 'lucide-react';
 import type { AppInfo } from '../../bridge';
 import { Group, Notice, Row, useNotice } from './controls';
-import { installUpdate, useUpdateStatus } from '../../updates';
+import { installUpdate, newerOnGitHub, openUpdatePage, useUpdateStatus } from '../../updates';
 import type { UpdateStatus } from '../../bridge';
 
 function useAppInfo() {
@@ -145,7 +145,9 @@ export function AboutSettings() {
 }
 
 function updateText(status: UpdateStatus | null) {
-  if (!status?.supported) return 'Available in the installed app.';
+  if (!status?.supported && !status?.notify) return 'Available in the installed app.';
+  const latest = newerOnGitHub(status);
+  if (latest) return `Version ${latest} is available on GitHub.`;
   switch (status.state) {
     case 'checking':
     case 'idle':
@@ -156,6 +158,8 @@ function updateText(status: UpdateStatus | null) {
       return `Downloading version ${status.available}… ${status.percent ?? 0}%`;
     case 'ready':
       return `Version ${status.available} is ready. It installs when you close Terra Board.`;
+    case 'available':
+      return 'A newer version is available on GitHub.';
     case 'error':
       return `Could not check for updates. ${status.error ?? ''}`.trim();
   }
@@ -164,6 +168,7 @@ function updateText(status: UpdateStatus | null) {
 function UpdateRow() {
   const status = useUpdateStatus();
   const ready = status?.state === 'ready';
+  const latest = newerOnGitHub(status);
   const busy = status?.state === 'checking' || status?.state === 'downloading';
   return (
     <Row id="updates" description={updateText(status)}>
@@ -171,11 +176,19 @@ function UpdateRow() {
         <button type="button" className="st-button primary" onClick={() => void installUpdate()}>
           Restart to update
         </button>
+      ) : latest ? (
+        <button
+          type="button"
+          className="st-button primary"
+          onClick={() => void openUpdatePage(status).catch(() => {})}
+        >
+          Get it
+        </button>
       ) : (
         <button
           type="button"
           className="st-button"
-          disabled={!status?.supported || busy}
+          disabled={!(status?.supported || status?.notify) || busy}
           onClick={() => void window.canvas?.updates.check()}
         >
           Check now

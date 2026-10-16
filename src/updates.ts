@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { UpdateStatus } from './bridge';
+import { openLink, type UpdateStatus } from './bridge';
 
 // Live update state from the desktop app; null in the web preview.
 export function useUpdateStatus() {
@@ -23,4 +23,15 @@ export function useUpdateStatus() {
 
 export function installUpdate() {
   return window.canvas?.updates.install();
+}
+
+// A newer version on GitHub that this build will not install by itself: either it
+// was built from source, or no installer for it is downloading.
+export function newerOnGitHub(status: UpdateStatus | null) {
+  if (!status?.latest || status.state === 'ready' || status.state === 'downloading') return null;
+  return status.latest;
+}
+
+export function openUpdatePage(status: UpdateStatus | null) {
+  return openLink(status?.page || 'https://github.com/AntonRylin/terra-board');
 }
