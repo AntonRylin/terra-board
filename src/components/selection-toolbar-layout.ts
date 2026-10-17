@@ -20,6 +20,8 @@ export const selectionToolLabels = {
   'preview-document': 'Preview document',
   'preview-pdf': 'Full PDF preview',
   'edit-pdf': 'Edit PDF',
+  'pages-to-images': 'Pages to images',
+  'merge-pdf': 'Merge as PDF',
   download: 'Download document',
   front: 'Bring to front',
   duplicate: 'Duplicate selection',

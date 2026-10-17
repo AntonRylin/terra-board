@@ -10,6 +10,16 @@ import CanvasPapers, {
 import { paperHeight, paperWidth } from '../canvas/paper-layout';
 import CanvasPdfComposers from './CanvasPdfComposers';
 import PdfExportDialog from './PdfExportDialog';
+import PdfPagesDialog from './PdfPagesDialog';
+import {
+  mergedName,
+  pageImageSize,
+  pageOffset,
+  readingOrder,
+  stackPages,
+  type PageStack,
+} from '../canvas/pdf-pages';
+import { canMergeToPdf, mergeToPdf, renderPageImages } from '../canvas/pdf-pages-files';
 import type { PdfComposer } from '../model';
 import { createPdfComposer, appendPdfComposer } from '../canvas/pdf-composer';
 import { prepareComposerSources, exportComposerColumn } from '../canvas/pdf-composer-files';
@@ -73,6 +83,8 @@ import {
   Maximize2,
   Pencil,
   Files,
+  FileStack,
+  GalleryVerticalEnd,
   Undo2,
   Redo2,
   Trash2,
@@ -497,6 +509,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     columnId: string;
     name: string;
   } | null>(null);
+  const [pdfPages, setPdfPages] = useState<CanvasObject | null>(null);
   useEffect(() => window.canvas?.onOfficeProgress(setOfficeProgress), []);
   const composerViewKey = useRef('');
   const composerTail = useRef<Promise<void>>(Promise.resolve());
@@ -677,6 +690,98 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       e.apply({ upserts: [{ ...copy, assetId: asset.id }], deleted: [] });
     await queue.current?.flush();
     refreshDocument(e.objects.get(id) || copy, e);
+  };
+  const createPageImages = async (
+    source: CanvasObject,
+    stack: PageStack,
+    gap: number,
+    signal: AbortSignal,
+    progress: (done: number, total: number) => void,
+  ) => {
+    const e = engine.current;
+    if (!e || !alive.current) throw Error('This board is no longer open.');
+    const scope = AbortSignal.any([signal, documentAbort.current.signal]);
+    const pages = await renderPageImages(source, scope, progress);
+    scope.throwIfAborted();
+    if (!alive.current || engine.current !== e) throw Error('This board is no longer open.');
+    const anchor = e.objects.get(source.id) || source;
+    const bounds = objectBounds(anchor);
+    const origin =
+      stack === 'vertical'
+        ? { x: bounds.x + bounds.width + pageOffset, y: bounds.y }
+        : { x: bounds.x, y: bounds.y + bounds.height + pageOffset };
+    const places = stackPages(
+      origin,
+      pages.map((page) => pageImageSize(page.width, page.height)),
+      stack,
+      gap,
+    );
+    const top = e.topZ();
+    const images: CanvasObject[] = pages.map((page, index) => ({
+      id: uid(),
+      type: 'image',
+      assetId: page.asset.id,
+      text: page.asset.name,
+      ...places[index],
+      z: top + index + 1,
+    }));
+    // One undo step adds every page.
+    e.apply({ upserts: images, deleted: [] });
+    e.setSelection(images.map((o) => o.id));
+    e.fit([anchor, ...images.slice(0, 3)]);
+    await queue.current?.flush();
+  };
+  const [merging, setMerging] = useState(false);
+  const mergeSelectionToPdf = async () => {
+    const e = engine.current;
+    if (!e || merging) return;
+    if (editingSession.current) finishEdit();
+    const objects = readingOrder(selected.map((o) => e.objects.get(o.id)).filter((o) => !!o));
+    if (!canMergeToPdf(objects)) return;
+    setMerging(true);
+    try {
+      const signal = documentAbort.current.signal;
+      const { bytes, pageCount } = await mergeToPdf(objects, signal);
+      const name = mergedName(objects);
+      const asset = await invoke<Asset>('importAsset', { name, bytes });
+      signal.throwIfAborted();
+      if (!alive.current || engine.current !== e) return;
+      const area = boundsOf(objects)!;
+      const merged: CanvasObject = {
+        id: uid(),
+        type: 'document',
+        text: name,
+        assetId: asset.id,
+        x: area.x + area.width + pageOffset,
+        y: area.y,
+        width: 320,
+        height: 400,
+        z: e.topZ() + 1,
+        documentMime: 'application/pdf',
+        documentBytes: asset.bytes,
+        documentPageCount: pageCount,
+      };
+      e.apply({ upserts: [merged], deleted: [] });
+      e.setSelection([merged.id]);
+      refreshDocument(merged, e);
+      // Bring the new PDF into view without changing the zoom.
+      const c = e.camera,
+        view = host.current;
+      const left = merged.x * c.zoom + c.x,
+        top = merged.y * c.zoom + c.y;
+      if (
+        view &&
+        (left < 0 ||
+          top < 0 ||
+          left + merged.width * c.zoom > view.clientWidth ||
+          top + merged.height * c.zoom > view.clientHeight)
+      )
+        e.lookAt({ x: merged.x + merged.width / 2, y: merged.y + merged.height / 2 }, c.zoom);
+    } catch (e) {
+      if (alive.current && !documentAbort.current.signal.aborted) error(e);
+    } finally {
+      if (alive.current) setMerging(false);
+    }
   };
   const listViewKey = useRef('');
   useEffect(() => {
@@ -2165,6 +2270,11 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
                     void openPdfWorkspace(selected, 'edit').catch(error);
                   },
                 },
+                {
+                  label: 'Pages to images…',
+                  icon: <GalleryVerticalEnd />,
+                  action: () => setPdfPages(selected[0]),
+                },
                 ...(window.canvas
                   ? [
                       {
@@ -2243,6 +2353,16 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
               ]
             : []),
           null,
+        ]
+      : []),
+    ...(canMergeToPdf(selected)
+      ? [
+          {
+            label: merging ? 'Merging as PDF…' : 'Merge as PDF',
+            icon: <FileStack />,
+            action: () => void mergeSelectionToPdf(),
+            disabled: merging,
+          },
         ]
       : []),
     ...(selected.length > 1 && selected.every(isPdfComposerInput)
@@ -2987,6 +3107,15 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
                     >
                       <Pencil size={16} />
                     </button>
+                    <button
+                      key="pages-to-images"
+                      className="icon-button"
+                      aria-label="Pages to images"
+                      title="Pages to images"
+                      onClick={() => setPdfPages(selected[0])}
+                    >
+                      <GalleryVerticalEnd size={16} />
+                    </button>
                   </>
                 )}
                 <button
@@ -2999,6 +3128,18 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
                   <Download size={16} />
                 </button>
               </>
+            )}
+            {canMergeToPdf(selected) && (
+              <button
+                key="merge-pdf"
+                className="icon-button"
+                aria-label="Merge as PDF"
+                title="Merge as PDF"
+                disabled={merging}
+                onClick={() => void mergeSelectionToPdf()}
+              >
+                <FileStack size={16} />
+              </button>
             )}
             {bringToFrontButton}
             <button
@@ -3378,6 +3519,16 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           prepare={() => flush(false)}
           onClose={() => setUsageTarget(null)}
           onOpen={onOpenFrame}
+        />
+      )}
+      {pdfPages && (
+        <PdfPagesDialog
+          name={pdfPages.documentTitle?.trim() || pdfPages.text || 'Document.pdf'}
+          pageCount={pdfPages.documentPageCount}
+          onClose={() => setPdfPages(null)}
+          onConvert={(stack, gap, signal, progress) =>
+            createPageImages(pdfPages, stack, gap, signal, progress)
+          }
         />
       )}
       {pdfExport && (
