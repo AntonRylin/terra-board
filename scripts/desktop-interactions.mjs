@@ -99,8 +99,7 @@ const server = createServer();
 await new Promise((r) => server.listen(0, '127.0.0.1', r));
 const port = server.address().port;
 await new Promise((r) => server.close(r));
-const executable =
-  process.env.CANVAS_EXECUTABLE || resolve('release/win-unpacked/Terra Board.exe');
+const executable = process.env.CANVAS_EXECUTABLE || resolve('release/win-unpacked/Terra Board.exe');
 const env = { ...process.env, CANVAS_DATA_DIR: root };
 delete env.ELECTRON_RUN_AS_NODE;
 delete env.CANVAS_DEV_URL;
@@ -313,7 +312,7 @@ try {
     await sleep(800);
     await click(host.x + x, host.y + y);
     const editor = await read(
-      `(()=>{const e=document.querySelector('.text-editor');return e?{value:e.value,focused:e===document.activeElement,start:e.selectionStart,end:e.selectionEnd}:null;})()`,
+      `(()=>{const e=document.querySelector('.text-editor');if(!e)return null;const value=e.value??e.textContent;if(e.value!==undefined)return{value,focused:e===document.activeElement,start:e.selectionStart,end:e.selectionEnd};const s=getSelection(),at=(n,o)=>{const r=document.createRange();r.selectNodeContents(e);r.setEnd(n,o);return r.toString().length;};return{value,focused:e===document.activeElement,start:at(s.anchorNode,s.anchorOffset),end:at(s.focusNode,s.focusOffset)};})()`,
     );
     assert.ok(
       editor?.focused,
@@ -323,7 +322,7 @@ try {
     assert.equal(editor.end, editor.value.length, `${id} existing text selected`);
     await send('Input.insertText', { text: ' appended' });
     assert.equal(
-      await read(`document.querySelector('.text-editor').value`),
+      await read(`(e=>e.value??e.textContent)(document.querySelector('.text-editor'))`),
       editor.value + ' appended',
       `${id} typing replaced existing text`,
     );
@@ -739,7 +738,7 @@ try {
   await sleep(100);
   const tight = await rect('.text-editor');
   const inkWidth = await read(
-    `(()=>{const e=document.querySelector('.text-editor'),c=document.createElement('canvas').getContext('2d');c.font=getComputedStyle(e).font;return c.measureText(e.value).width;})()`,
+    `(()=>{const e=document.querySelector('.text-editor'),c=document.createElement('canvas').getContext('2d');c.font=getComputedStyle(e).font;return c.measureText(e.value??e.textContent).width;})()`,
   );
   assert.ok(
     tight.width >= inkWidth && tight.width < inkWidth + 10,
@@ -769,7 +768,7 @@ try {
     'toolbar click interrupted editing',
   );
   assert.equal(
-    await read(`document.querySelector('.text-editor').value`),
+    await read(`(e=>e.value??e.textContent)(document.querySelector('.text-editor'))`),
     'Flightline',
     'toolbar lost draft',
   );

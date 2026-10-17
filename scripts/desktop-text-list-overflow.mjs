@@ -187,7 +187,9 @@ try {
   const failures = [];
   await doubleClick('.canvas-list-header');
   await click('[aria-label="List item 1"]');
-  await read(`document.querySelector('[aria-label="List item 1"]').select()`);
+  await read(
+    `getSelection().selectAllChildren(document.querySelector('[aria-label="List item 1"]'))`,
+  );
   const long =
     'Read every word of this list item including the final ending. ' + 'qdwqedqwdqwdwqd'.repeat(8);
   await send('Input.insertText', { text: long });
@@ -207,7 +209,9 @@ try {
   await mouse('mousePressed', 450, 665, 1, 2);
   await mouse('mouseReleased', 450, 665, 0, 2);
   await until(() => read(`!!document.querySelector('.text-editor')`), 'text editor');
-  await read(`document.querySelector('.text-editor').select()`);
+  await read(
+    `(e=>e.select?e.select():getSelection().selectAllChildren(e))(document.querySelector('.text-editor'))`,
+  );
   const typed =
     'This plain text must wrap inside the chosen width so the complete ending stays visible.';
   await send('Input.insertText', { text: typed });
@@ -268,13 +272,15 @@ try {
     await mouse('mouseReleased', object.x + object.width / 2, object.y + object.height / 2);
     await until(() => read(`!!document.querySelector('.text-editor')`), 'resized text editor');
     if (text !== undefined) {
-      await read(`document.querySelector('.text-editor').select()`);
+      await read(
+        `(e=>e.select?e.select():getSelection().selectAllChildren(e))(document.querySelector('.text-editor'))`,
+      );
       await send('Input.insertText', { text });
     }
     const metrics = await read(`(() => {
       const e = document.querySelector('.text-editor'), s = getComputedStyle(e);
       return { w: e.clientWidth, sw: e.scrollWidth, h: e.clientHeight, sh: e.scrollHeight,
-        font: parseFloat(s.fontSize), value: e.value };
+        font: parseFloat(s.fontSize), value: e.value ?? e.textContent };
     })()`);
     assert.ok(metrics.w <= object.width && metrics.h <= object.height, JSON.stringify(metrics));
     assert.ok(metrics.sw <= metrics.w + 1 && metrics.sh <= metrics.h + 1, JSON.stringify(metrics));
@@ -292,7 +298,9 @@ try {
   await screenshot('text-narrowed.png');
   await doubleClick('.canvas-list-header');
   await click('[aria-label="List item 1"]');
-  await read(`document.querySelector('[aria-label="List item 1"]').select()`);
+  await read(
+    `getSelection().selectAllChildren(document.querySelector('[aria-label="List item 1"]'))`,
+  );
   const sentence = 'A wider list shows this entire sentence on one readable line.';
   await send('Input.insertText', { text: sentence });
   await key('Escape');
@@ -347,7 +355,7 @@ try {
   await until(
     () =>
       read(
-        `!window.__beforeOverflowReload && !document.getElementById('startup-screen') && document.querySelector('[aria-label="List item 1"]')?.value===${JSON.stringify(sentence)}`,
+        `!window.__beforeOverflowReload && !document.getElementById('startup-screen') && document.querySelector('[aria-label="List item 1"]')?.textContent===${JSON.stringify(sentence)}`,
       ),
     'reload',
   );

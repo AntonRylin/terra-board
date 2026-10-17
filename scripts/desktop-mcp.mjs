@@ -440,7 +440,10 @@ try {
     upserts: [{ ...original, text: 'AI edit with undo', bold: true }],
   });
   await doubleClick(host.x + 160, host.y + 440);
-  assert.equal(await read(`document.querySelector('.text-editor').value`), 'AI edit with undo');
+  assert.equal(
+    await read(`(e=>e.value??e.textContent)(document.querySelector('.text-editor'))`),
+    'AI edit with undo',
+  );
   await key('Escape', 'Escape');
   await key('z', 'KeyZ', 2);
   await until(

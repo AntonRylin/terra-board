@@ -284,7 +284,10 @@ try {
   await send('Input.insertText', { text: 'Edited bold text' });
   await clickSelector('[aria-label="Bold"]');
   assert.equal(await read(`document.activeElement.classList.contains('text-editor')`), true);
-  assert.equal(await read(`document.querySelector('.text-editor').value`), 'Edited bold text');
+  assert.equal(
+    await read(`(e=>e.value??e.textContent)(document.querySelector('.text-editor'))`),
+    'Edited bold text',
+  );
   assert.equal(
     await read(`getComputedStyle(document.querySelector('.text-editor')).fontWeight`),
     '400',
