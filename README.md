@@ -1,12 +1,12 @@
 # Terra Board
 
-A Windows-first local whiteboard with a minimal, iOS-inspired board launcher. Version 0.1.24 is a working preview release; the original product roadmap is broader than this implementation.
+A Windows-first local whiteboard with a minimal, iOS-inspired board launcher. Version 0.1.26 is a working preview release; the original product roadmap is broader than this implementation.
 
 **For coding agents:** read [LLM session memory and working guide](LLM_MEMORY.md) for the verified build/test/reopen workflow, delivery preferences, implementation lessons and important limitations.
 
 ## Run
 
-To share the app with other people, run `npm run installer` and send `release/installer/Terra-Board-Setup-0.1.24-x64.exe`. This is a standalone Windows x64 installer with the app and its offline resources included. It offers an installation directory and creates Start menu and desktop shortcuts. Installed copies keep each user's boards in `%LOCALAPPDATA%\Terra Board\Library`, outside the installation directory, so upgrading or uninstalling the app preserves the library. No boards or personal settings from this repository are included. The installer is unsigned unless a signing certificate is configured.
+To share the app with other people, send them the installer from the [latest GitHub release](https://github.com/AntonRylin/terra-board/releases/latest) (`Terra-Board-Setup-<version>-x64.exe`), or build one with `npm run installer`. Installed copies check GitHub Releases for updates, download them in the background and install them when the app closes; `npm run release` (with `GH_TOKEN` set) publishes a new version. This is a standalone Windows x64 installer with the app and its offline resources included. It offers an installation directory and creates Start menu and desktop shortcuts. Installed copies keep each user's boards in `%LOCALAPPDATA%\Terra Board\Library`, outside the installation directory, so upgrading or uninstalling the app preserves the library. No boards or personal settings from this repository are included. The installer is unsigned unless a signing certificate is configured.
 
 The project lives at `D:\Projects\terra`. Double-click `Open Terra Board.cmd` in that folder, or open `D:\Projects\terra\release\win-unpacked\Terra Board.exe`. Keep the executable's support files alongside it.
 
@@ -100,7 +100,7 @@ A daily SQLite metadata snapshot is created on startup under `Library\backups`. 
 - Videos use a generic board card and decode only in the player. Playback depends on Chromium's supported codecs; a generated VP9 WebM clip was tested. Animated images currently display a static preview.
 - Dragging a frame carries all objects fully inside its border, including nested frames. Membership follows placement: move an object out to release it. Contents are captured at drag start, and the whole move undoes in one step. Resizing or rotating a frame changes the region without transforming its contents. Nested folders, connectors, freehand ink, rich text, PDF export and editable Miro import are not implemented.
 - The canvas is not yet fully screen-reader navigable. Reduced-motion behavior and keyboard-operable controls are implemented, but a full accessibility audit remains open.
-- The build is unsigned and has no installer or automatic updater. The large-board startup test is not a certification of sustained 60 FPS, 10,000 distinct high-resolution photos, 4K displays, or long editing sessions.
+- The build is unsigned, so Windows SmartScreen may warn before the installer runs. Only installed copies update themselves; the repository build in `release/win-unpacked` does not. The large-board startup test is not a certification of sustained 60 FPS, 10,000 distinct high-resolution photos, 4K displays, or long editing sessions.
 
 ## Development and verification
 
