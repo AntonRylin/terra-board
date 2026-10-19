@@ -216,3 +216,45 @@
     padding: 10px;
   }
 }
+/* An album's line over the picture: a missing linked original, and what to do. */
+.image-viewer-notice {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(720px, calc(100% - 32px));
+  padding: 8px 8px 8px 14px;
+  border-radius: 10px;
+  transform: translateX(-50%);
+  background: #fff4e0;
+  color: #6b4300;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 12%);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.image-viewer-notice span {
+  overflow-wrap: anywhere;
+}
+.image-viewer .image-viewer-notice button {
+  width: auto;
+  height: 28px;
+  padding: 0 10px;
+  background: #6b4300;
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.image-viewer .image-viewer-notice button:not(:disabled):hover {
+  background: #8a5800;
+}
+.image-viewer-position {
+  min-width: 56px;
+}
+
+.image-viewer[data-flipped] {
+  animation: none;
+}

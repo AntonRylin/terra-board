@@ -1,6 +1,16 @@
 import { useEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronLeft, Download, Maximize2, Minus, Plus, Scan, ScanText } from 'lucide-react';
+import {
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  Maximize2,
+  Minus,
+  Plus,
+  Scan,
+  ScanText,
+} from 'lucide-react';
 import type { CanvasObject } from '../model';
 import { mediaUrl } from '../bridge';
 import { canRecognizeText, imageAssetText } from '../canvas/page-text';
@@ -21,6 +31,12 @@ interface Props {
   object: CanvasObject;
   onClose: () => void;
   onDownload: () => Promise<void>;
+  // An album flips through its images: arrows, Left/Right keys, "3 / 12".
+  // `flipped`: the viewer was already open on another image; no open animation.
+  nav?: { index: number; count: number; go: (delta: number) => void; flipped?: boolean };
+  // Extra header buttons and a line over the picture (an album's warnings).
+  tools?: ReactNode;
+  notice?: ReactNode;
 }
 
 export function fitImageZoom(image: Size, viewport: Size): number {
@@ -78,7 +94,7 @@ function Tool({
   );
 }
 
-function ImageViewerSession({ object, onClose, onDownload }: Props) {
+function ImageViewerSession({ object, onClose, onDownload, nav, tools, notice }: Props) {
   const root = useRef<HTMLElement>(null),
     stage = useRef<HTMLDivElement>(null);
   const alive = useRef(false),
@@ -242,6 +258,7 @@ function ImageViewerSession({ object, onClose, onDownload }: Props) {
     <section
       ref={root}
       className="image-viewer"
+      data-flipped={nav?.flipped || undefined}
       role="dialog"
       aria-modal="true"
       aria-label="Image preview"
@@ -288,6 +305,12 @@ function ImageViewerSession({ object, onClose, onDownload }: Props) {
         if (event.key === 'Escape') {
           event.preventDefault();
           onClose();
+          return;
+        }
+        if (nav && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+          if (startsTextSelection(document.activeElement)) return;
+          event.preventDefault();
+          nav.go(event.key === 'ArrowLeft' ? -1 : 1);
           return;
         }
         if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
@@ -338,6 +361,7 @@ function ImageViewerSession({ object, onClose, onDownload }: Props) {
             {copied ? <Check size={18} /> : <ScanText size={18} />}
           </Tool>
         )}
+        {tools}
         <Tool label="Download image" disabled={downloading} onClick={() => void download()}>
           <Download size={18} />
         </Tool>
@@ -438,6 +462,7 @@ function ImageViewerSession({ object, onClose, onDownload }: Props) {
             }}
           />
         )}
+        {notice && <div className="image-viewer-notice">{notice}</div>}
         {state === 'loading' && (
           <div className="image-viewer-message" role="status">
             Opening image…
@@ -450,6 +475,24 @@ function ImageViewerSession({ object, onClose, onDownload }: Props) {
         )}
       </div>
       <footer className="image-viewer-controls" aria-label="Image view">
+        {nav && (
+          <>
+            <Tool
+              label="Previous image"
+              disabled={nav.count < 2}
+              onClick={() => nav.go(-1)}
+            >
+              <ChevronLeft size={17} />
+            </Tool>
+            <span className="image-viewer-zoom image-viewer-position">
+              {nav.index + 1} / {nav.count}
+            </span>
+            <Tool label="Next image" disabled={nav.count < 2} onClick={() => nav.go(1)}>
+              <ChevronRight size={17} />
+            </Tool>
+            <span className="image-viewer-divider" />
+          </>
+        )}
         <Tool
           label="Zoom image out"
           disabled={

@@ -38,6 +38,8 @@ export default defineConfig({
           'removeBackground',
           'importBoard',
           'exportBoard',
+          'assetLinks',
+          'boardSyncs',
         ]);
         server.middlewares.use('/__local', async (req, res) => {
           try {

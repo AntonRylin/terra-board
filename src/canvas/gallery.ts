@@ -134,8 +134,9 @@ export function insertGalleryImages(
       ? Math.max(-1, ...members.map((o) => o.galleryColumn!)) + 1
       : 0;
   const copiedGalleries = new Set(incoming.filter((o) => o.gallery).map((o) => o.id));
+  // An album stays a card of its own: it never joins a gallery.
   const images = incoming.filter(
-    (o) => o.type === 'image' && !copiedGalleries.has(o.galleryId || ''),
+    (o) => o.type === 'image' && !o.album && !copiedGalleries.has(o.galleryId || ''),
   );
   if (!images.length) return { upserts: incoming, deleted: [] };
   const moved = members

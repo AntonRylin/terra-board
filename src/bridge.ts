@@ -155,6 +155,9 @@ interface DesktopBridge {
   mcpReady(id: number, error?: string): void;
   invoke(command: string, args?: unknown): Promise<any>;
   pickMedia(): Promise<Asset[]>;
+  importAlbumFiles(args: { paths?: string[]; link: boolean }): Promise<Asset[]>;
+  locateAsset(args: { id: string; name: string }): Promise<AssetLink | null>;
+  filePath(file: File): string;
   importPortable(): Promise<Board | null>;
   exportPortable(id: string): Promise<boolean>;
   openExternal(url: string): Promise<void>;
@@ -300,6 +303,36 @@ export function chooseFiles(accept: string, multiple = false): Promise<File[]> {
 export async function pickMedia() {
   return window.canvas ? window.canvas.pickMedia() : importFiles(await chooseFiles('', true));
 }
+// A linked album image: its original stays at `path` on this computer.
+export interface AssetLink {
+  id: string;
+  path: string;
+  state: 'ok' | 'missing' | 'changed';
+}
+// Images for an album, in order. Linking needs the desktop app and a file
+// with a place on disk; anything else (the browser harness, an image dragged
+// from a web page) is copied, and `copied` counts those that wanted a link.
+export async function importAlbumFiles(
+  files: File[] | null,
+  link: boolean,
+): Promise<{ assets: Asset[]; copied: number }> {
+  if (window.canvas && !files)
+    return { assets: await window.canvas.importAlbumFiles({ link }), copied: 0 };
+  const assets: Asset[] = [];
+  let copied = 0;
+  for (const file of files || (await chooseFiles('image/*', true))) {
+    const path = window.canvas?.filePath(file);
+    if (path) assets.push(...(await window.canvas!.importAlbumFiles({ paths: [path], link })));
+    else {
+      if (link) copied++;
+      assets.push(...(await importFiles([file])));
+    }
+  }
+  return { assets, copied };
+}
+export const assetLinks = (ids: string[]) =>
+  ids.length ? invoke<AssetLink[]>('assetLinks', { ids }) : Promise.resolve([]);
+export const boardSyncs = (id: string) => invoke<boolean>('boardSyncs', { id });
 export async function importPortable() {
   if (window.canvas) return window.canvas.importPortable();
   const [file] = await chooseFiles('.canvas');

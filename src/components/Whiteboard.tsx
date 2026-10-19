@@ -112,6 +112,8 @@ import {
   AlignHorizontalJustifyCenter,
   AlignVerticalJustifyCenter,
   EyeOff,
+  BookImage,
+  Settings2,
 } from 'lucide-react';
 import type { Asset, CanvasObject, Document, Edit, Tool, ImageCrop as CropBounds } from '../model';
 import { uid } from '../model';
@@ -146,7 +148,22 @@ import {
   assetDimensions,
   download,
   invoke,
+  importAlbumFiles,
+  assetLinks,
+  boardSyncs,
 } from '../bridge';
+import AlbumViewer from './AlbumViewer';
+import AlbumSettings from './AlbumSettings';
+import {
+  addToAlbum,
+  albumCountLabel,
+  canMakeAlbum,
+  isAlbum,
+  makeAlbum,
+  releaseAlbum,
+  removeFromAlbum,
+  setAlbumCover,
+} from '../canvas/album';
 import { ContextMenu, Modal, type MenuItem } from './Dialogs';
 import ImageCrop from './ImageCrop';
 import DocumentReader, { type DocumentReaderHandle } from './DocumentReader';
@@ -425,6 +442,23 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     overlay.style.height = `${b.height * c.zoom}px`;
   };
   useLayoutEffect(positionGalleryTargets, [hoverImageId]);
+  useEffect(() => {
+    const album = hoverImageId ? engine.current?.objects.get(hoverImageId) : null;
+    if (!isAlbum(album)) return;
+    let live = true;
+    assetLinks(album.album.images.map((i) => i.assetId)).then(
+      (links) =>
+        live &&
+        setHoverAlbumBroken({
+          id: album.id,
+          count: links.filter((l) => l.state !== 'ok').length,
+        }),
+      () => {},
+    );
+    return () => {
+      live = false;
+    };
+  }, [hoverImageId]);
   const angleRef = useRef<HTMLDivElement>(null);
   const toolsSize = useRef({ width: 0, height: 0 });
   const selectionView = useRef<{
@@ -563,6 +597,17 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     session: number;
   } | null>(null);
   const [previewingImage, setPreviewingImage] = useState<CanvasObject | null>(null);
+  // The album open in the viewer, and the one whose settings are open. Both
+  // read the card from the engine, so `albumRevision` redraws them after an edit.
+  const [previewingAlbum, setPreviewingAlbum] = useState<{ id: string; index: number } | null>(
+    null,
+  );
+  const [albumSettingsId, setAlbumSettingsId] = useState<string | null>(null);
+  const [, setAlbumRevision] = useState(0);
+  // Broken links of the hovered album, shown beside its count.
+  const [hoverAlbumBroken, setHoverAlbumBroken] = useState<{ id: string; count: number } | null>(
+    null,
+  );
   const documentRequests = useRef(new Map<string, string>());
   const documentAbort = useRef(new AbortController());
   const deferredDocumentPreviews = useRef(
@@ -685,7 +730,60 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     if (!current?.assetId || current.type !== 'image') return;
     closeDocument();
     engine.current.setSelection([current.id]);
+    if (isAlbum(current)) {
+      const cover = current.album.images.findIndex((i) => i.assetId === current.assetId);
+      setPreviewingAlbum({ id: current.id, index: Math.max(0, cover) });
+      return;
+    }
     setPreviewingImage({ ...current });
+  };
+  const applyAlbumEdit = (edit: Edit) => {
+    if (!edit.upserts.length && !edit.deleted.length) return;
+    engine.current?.apply(edit);
+    setAlbumRevision((n) => n + 1);
+  };
+  const makeAlbumFromSelection = () => {
+    const e = engine.current;
+    if (!e || readOnlyRef.current) return;
+    if (editingSession.current) finishEdit();
+    const selected = e.selected;
+    if (!canMakeAlbum(selected)) return;
+    const { id, upserts, deleted } = makeAlbum(selected);
+    e.apply({ upserts, deleted });
+    e.setSelection([id]);
+  };
+  // New images join an album as copies or, when the album links files and the
+  // board stays on this computer, as links to where the files are.
+  const addImagesToAlbum = async (albumId: string, files: File[] | null) => {
+    const e = engine.current,
+      album = e?.objects.get(albumId);
+    if (!e || !isAlbum(album) || album.locked || readOnlyRef.current) return;
+    setBusy((n) => n + 1);
+    try {
+      const wantsLink = album.album.storage === 'link' && !!window.canvas;
+      const syncs = wantsLink && (await boardSyncs(doc.board.id));
+      const { assets, copied } = await importAlbumFiles(files, wantsLink && !syncs);
+      const current = engine.current?.objects.get(albumId);
+      if (!alive.current || engine.current !== e || !isAlbum(current)) return;
+      const images = assets.filter((a) => a.mime.startsWith('image/'));
+      applyAlbumEdit({ upserts: images.length ? [addToAlbum(current, images)] : [], deleted: [] });
+      const notes = [
+        assets.length > images.length
+          ? `${assets.length - images.length} of the files were not images and were left out of the album.`
+          : '',
+        syncs && assets.length
+          ? 'This board syncs to the cloud, so the images were copied into it instead of linked.'
+          : '',
+        copied
+          ? `${copied === 1 ? 'One image has' : `${copied} images have`} no file on this computer (pasted or dragged from a web page), so ${copied === 1 ? 'it was' : 'they were'} copied into the board.`
+          : '',
+      ].filter(Boolean);
+      if (notes.length) error(notes.join(' '));
+    } catch (err) {
+      error(err);
+    } finally {
+      if (alive.current) setBusy((n) => n - 1);
+    }
   };
   const savePdfCopy = async (
     source: CanvasObject,
@@ -1099,6 +1197,11 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   const startEdit = (o: CanvasObject) => {
     if (o.frameLink) return;
     if (engine.current?.objects.get(o.id)?.locked || o.type === 'highlight') return;
+    // An album's name is its title; it is edited with its other settings.
+    if (isAlbum(o)) {
+      setAlbumSettingsId(o.id);
+      return;
+    }
     if (o.type === 'paper') {
       setEditingPaperId(o.id);
       return;
@@ -2176,6 +2279,11 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     if (!files.length) return;
     const r = host.current!.getBoundingClientRect(),
       point = engine.current!.screenPoint({ x: e.clientX - r.left, y: e.clientY - r.top });
+    const album = engine.current!.albumAt(point);
+    if (album) {
+      await addImagesToAlbum(album, files);
+      return;
+    }
     const target = pdfComposerTargetAt(engine.current!.all, point);
     if (target && files.every(convertibleFile)) {
       await composerFiles(target.id, files).catch(error);
@@ -2453,7 +2561,48 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           null,
         ]
       : []),
-    ...(selected.length === 1 && selected[0].type === 'image'
+    ...(canMakeAlbum(selected) && !readOnly
+      ? [{ label: 'Make album', icon: <BookImage />, action: makeAlbumFromSelection }, null]
+      : []),
+    ...(selected.length === 1 && isAlbum(selected[0])
+      ? [
+          {
+            label: 'Open album',
+            icon: <Maximize2 />,
+            action: () => {
+              void openImageViewer(selected[0]).catch(error);
+            },
+          },
+          ...(readOnly
+            ? []
+            : [
+                {
+                  label: 'Add images…',
+                  icon: <ImagePlus />,
+                  disabled: !!selected[0].locked,
+                  action: () => void addImagesToAlbum(selected[0].id, null),
+                },
+                {
+                  label: 'Album settings…',
+                  icon: <Settings2 />,
+                  disabled: !!selected[0].locked,
+                  action: () => setAlbumSettingsId(selected[0].id),
+                },
+                {
+                  label: 'Release images',
+                  icon: <Ungroup />,
+                  disabled: !!selected[0].locked,
+                  action: () => {
+                    const edit = releaseAlbum(selected[0]);
+                    applyAlbumEdit(edit);
+                    engine.current?.setSelection(edit.upserts.map((o) => o.id));
+                  },
+                },
+              ]),
+          null,
+        ]
+      : []),
+    ...(selected.length === 1 && selected[0].type === 'image' && !selected[0].album
       ? [
           {
             label: selected[0].imageTitle?.trim() ? 'Edit title' : 'Add title',
@@ -2764,6 +2913,52 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           }}
         />
       )}
+      {previewingAlbum &&
+        (() => {
+          const album = engine.current?.objects.get(previewingAlbum.id);
+          if (!isAlbum(album)) return null;
+          return (
+            <AlbumViewer
+              album={album}
+              index={previewingAlbum.index}
+              readOnly={readOnly || !!album.locked}
+              onIndex={(index) => setPreviewingAlbum({ id: album.id, index })}
+              onClose={() => {
+                setPreviewingAlbum(null);
+                host.current?.focus();
+              }}
+              onSetCover={(imageId) =>
+                applyAlbumEdit({ upserts: [setAlbumCover(album, imageId)], deleted: [] })
+              }
+              onRemove={(imageId) => applyAlbumEdit(removeFromAlbum(album, imageId))}
+              onAddImages={() => void addImagesToAlbum(album.id, null)}
+              onSettings={() => setAlbumSettingsId(album.id)}
+              onError={error}
+            />
+          );
+        })()}
+      {albumSettingsId &&
+        (() => {
+          const album = engine.current?.objects.get(albumSettingsId);
+          if (!isAlbum(album)) return null;
+          return (
+            <AlbumSettings
+              album={album}
+              boardId={doc.board.id}
+              onClose={() => setAlbumSettingsId(null)}
+              onError={error}
+              onSave={(name, storage) => {
+                const current = engine.current?.objects.get(album.id);
+                if (isAlbum(current))
+                  applyAlbumEdit({
+                    upserts: [{ ...current, album: { ...current.album, name, storage } }],
+                    deleted: [],
+                  });
+                setAlbumSettingsId(null);
+              }}
+            />
+          );
+        })()}
       {previewingImage && (
         <ImageViewer
           key={`${previewingImage.id}:${previewingImage.assetId}`}
@@ -2819,6 +3014,25 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           </div>
         </div>
       )}
+      {hoverImageId &&
+        isAlbum(engine.current?.objects.get(hoverImageId)) &&
+        !editing &&
+        !cropping && (
+          <div className="album-hover" ref={galleryTargetsRef} aria-hidden="true">
+            <div className="album-hover-count">
+              <span>
+                {albumCountLabel(engine.current!.objects.get(hoverImageId)!.album!.images.length)}
+              </span>
+              {hoverAlbumBroken?.id === hoverImageId && hoverAlbumBroken.count > 0 && (
+                <span className="album-hover-warning">
+                  {hoverAlbumBroken.count === 1
+                    ? '1 original file missing'
+                    : `${hoverAlbumBroken.count} original files missing`}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
       {hoverImageId &&
         engine.current?.objects.get(hoverImageId)?.galleryId &&
         !editing &&
@@ -3227,31 +3441,45 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
                 </button>
               </>
             )}
-            {selected.length === 1 && ['image', 'document'].includes(selected[0].type) && (
+            {selected.length === 1 && isAlbum(selected[0]) && !readOnly && (
               <button
-                key="title"
+                key="album-settings"
                 className="icon-button"
-                aria-label={
-                  (selected[0].type === 'document'
-                    ? selected[0].documentTitle
-                    : selected[0].imageTitle
-                  )?.trim()
-                    ? 'Edit title'
-                    : 'Add title'
-                }
-                title={
-                  (selected[0].type === 'document'
-                    ? selected[0].documentTitle
-                    : selected[0].imageTitle
-                  )?.trim()
-                    ? 'Edit title'
-                    : 'Add title'
-                }
-                onClick={() => startEdit(selected[0])}
+                aria-label="Album settings"
+                title="Album settings"
+                disabled={!!selected[0].locked}
+                onClick={() => setAlbumSettingsId(selected[0].id)}
               >
-                <Type size={17} />
+                <Settings2 size={17} />
               </button>
             )}
+            {selected.length === 1 &&
+              ['image', 'document'].includes(selected[0].type) &&
+              !selected[0].album && (
+                <button
+                  key="title"
+                  className="icon-button"
+                  aria-label={
+                    (selected[0].type === 'document'
+                      ? selected[0].documentTitle
+                      : selected[0].imageTitle
+                    )?.trim()
+                      ? 'Edit title'
+                      : 'Add title'
+                  }
+                  title={
+                    (selected[0].type === 'document'
+                      ? selected[0].documentTitle
+                      : selected[0].imageTitle
+                    )?.trim()
+                      ? 'Edit title'
+                      : 'Add title'
+                  }
+                  onClick={() => startEdit(selected[0])}
+                >
+                  <Type size={17} />
+                </button>
+              )}
             {canExportFromSelectionBar && exportSelectionButton}
             {selected.length === 1 && selected[0].type === 'document' && (
               <>

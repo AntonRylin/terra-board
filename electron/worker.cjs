@@ -20,6 +20,9 @@ const allowed = new Set([
   'setLastBoard',
   'importAsset',
   'asset',
+  'assetLinks',
+  'relinkAsset',
+  'boardSyncs',
   'exportBoard',
   'importBoard',
   'syncStatus',
@@ -73,7 +76,11 @@ parentPort.on('message', (message) => {
         const bytes = fs.readFileSync(file);
         result = portable
           ? await store.importBoard({ bytes })
-          : await store.importAsset({ bytes, name: path.basename(file) });
+          : await store.importAsset({
+              bytes,
+              name: path.basename(file),
+              ...(message.args.link === true ? { link: { file, modified: stat.mtimeMs } } : {}),
+            });
       } else if (message.command === 'exportFile') {
         const bytes = await store.exportBoard({ id: message.args.id });
         const file = message.args.file,

@@ -6,6 +6,7 @@ import { convertibleDocument } from './pdf-conversion-formats';
 export function isPdfComposerInput(object: CanvasObject) {
   return (
     !!object.assetId &&
+    !object.album &&
     (object.type === 'image' ||
       (object.type === 'document' && convertibleDocument(object.text || '', object.documentMime)))
   );
