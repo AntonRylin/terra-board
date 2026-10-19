@@ -65,9 +65,9 @@ import {
   wholeObject,
 } from './object-spoiler';
 import { documentPreviewBox, renderDocumentCard } from './document-card';
-import { renderHtmlCard } from './html-card-rendering';
+import { renderBrowserCard, renderHtmlCard } from './html-card-rendering';
 import { renderAlbumName } from './album-rendering';
-import { htmlSnapshotKey } from './html-card';
+import { isWebCard, snapshotKey } from './html-card';
 import { listLayout } from './list-layout';
 import {
   paginateLines,
@@ -300,24 +300,23 @@ export class Engine {
       this.invalidate();
     } else this.apply({ upserts: [object], deleted: [] }, false);
   }
-  // A captured picture of an HTML embed. It belongs to the source and size it
-  // was captured from; a picture for an older version is dropped.
-  hydrateHtml(id: string, key: string, assetId: string) {
+  // A captured picture of a web card. It belongs to the page and size it was
+  // captured from; a picture for an older version is dropped.
+  hydrateSnapshot(id: string, key: string, assetId: string) {
     const object = this.objects.get(id);
-    if (this.disposed || object?.type !== 'html' || htmlSnapshotKey(object) !== key) return;
-    if (object.assetId === assetId && object.htmlSnapshotKey === key) return;
+    if (this.disposed || !object || !isWebCard(object) || snapshotKey(object) !== key) return;
+    if (object.assetId === assetId && object.snapshotKey === key) return;
     const original = this.gesture?.original.find((o) => o.id === id);
     if (original) {
       // Keep the committed geometry on disk if the gesture is cancelled.
-      this.preview({ ...object, assetId, htmlSnapshotKey: key });
-      if (htmlSnapshotKey(original) === key)
+      this.preview({ ...object, assetId, snapshotKey: key });
+      if (snapshotKey(original) === key)
         this.callbacks.edit({
-          upserts: [{ ...original, assetId, htmlSnapshotKey: key }],
+          upserts: [{ ...original, assetId, snapshotKey: key }],
           deleted: [],
         });
       this.invalidate();
-    } else
-      this.apply({ upserts: [{ ...object, assetId, htmlSnapshotKey: key }], deleted: [] }, false);
+    } else this.apply({ upserts: [{ ...object, assetId, snapshotKey: key }], deleted: [] }, false);
   }
   app = new Application();
   camera: Camera;
@@ -1819,9 +1818,9 @@ export class Engine {
     const icons = new Map<string, string>();
     const tiles = new Map<string, ReturnType<typeof imageTiles>>();
     for (const o of [...visible].reverse()) {
-      if (!['image', 'link', 'document', 'html'].includes(o.type)) continue;
+      if (!['image', 'link', 'document', 'html', 'browser'].includes(o.type)) continue;
       const showImage =
-        o.type === 'image' || o.type === 'document' || o.type === 'html' || hasLinkImage(o);
+        o.type === 'image' || o.type === 'document' || isWebCard(o) || hasLinkImage(o);
       const mediaId =
         o.type === 'document' ? o.documentPreviewId : showImage ? o.assetId : o.linkIconId;
       if (!mediaId) continue;
@@ -1925,7 +1924,11 @@ export class Engine {
         (this.editingId !== o.id &&
           (o.type === 'image'
             ? !!o.imageTitle?.trim() || !texture
-            : o.type === 'frame' || o.type === 'video' || o.type === 'link' || !!o.text));
+            : o.type === 'frame' ||
+              o.type === 'video' ||
+              o.type === 'link' ||
+              o.type === 'browser' ||
+              !!o.text));
       const resolution = 2 ** Math.ceil(Math.log2(c.zoom * devicePixelRatio));
       const region = textRegion(o, c, w, h, c.zoom);
       const signature = JSON.stringify([
@@ -2421,6 +2424,10 @@ export class Engine {
       container.addChild(renderHtmlCard(o, texture, dark));
       return container;
     }
+    if (o.type === 'browser') {
+      container.addChild(renderBrowserCard(o, texture, dark, resolution));
+      return container;
+    }
     if (o.type === 'image' && texture) {
       const sprite = this.imageSprite(texture, o.crop);
       sprite.width = o.width;
@@ -2737,7 +2744,7 @@ export class Engine {
         object.type === 'document'
           ? object.documentPreviewId
           : object.type === 'image' ||
-              object.type === 'html' ||
+              isWebCard(object) ||
               (object.type === 'link' && hasLinkImage(object))
             ? object.assetId
             : undefined;
@@ -2752,7 +2759,7 @@ export class Engine {
           try {
             sizes.set(id, await dimensions(id));
           } catch (error) {
-            if (o.type !== 'document' && o.type !== 'html') throw error;
+            if (o.type !== 'document' && !isWebCard(o)) throw error;
             // A derived document thumbnail is optional. Its file card still
             // exports when the thumbnail is missing or cannot be decoded.
             continue;
@@ -2880,7 +2887,7 @@ export class Engine {
         const imageId =
           o.type === 'document'
             ? o.documentPreviewId
-            : o.type === 'image' || o.type === 'html' || (o.type === 'link' && hasLinkImage(o))
+            : o.type === 'image' || isWebCard(o) || (o.type === 'link' && hasLinkImage(o))
               ? o.assetId
               : o.type === 'link'
                 ? o.linkIconId
@@ -2896,8 +2903,8 @@ export class Engine {
           try {
             texture = await load(imageId, o.type === 'link' && !hasLinkImage(o));
           } catch (error) {
-            // Document thumbnails and embed pictures are derived; the card still exports.
-            if (o.type !== 'document' && o.type !== 'html') throw error;
+            // Document thumbnails and page pictures are derived; the card still exports.
+            if (o.type !== 'document' && !isWebCard(o)) throw error;
           }
         }
         const icon =

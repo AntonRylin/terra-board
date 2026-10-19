@@ -10,11 +10,15 @@ import CanvasPapers, {
 import { paperHeight, paperWidth } from '../canvas/paper-layout';
 import CanvasPdfComposers from './CanvasPdfComposers';
 import { HtmlEmbedEditor, HtmlEmbedFrame } from './HtmlEmbed';
+import { BrowserFrame, type BrowserView } from './BrowserFrame';
 import {
+  browserCardSize,
+  browserHome,
+  isWebCard,
   htmlCardSize,
-  htmlSnapshotCurrent,
-  htmlSnapshotKey,
-  htmlViewport,
+  snapshotCurrent,
+  snapshotKey,
+  pageViewport,
   pastedHtml,
   starterHtml,
 } from '../canvas/html-card';
@@ -85,6 +89,7 @@ import {
   ListTodo,
   NotebookPen,
   CodeXml,
+  Globe,
   MousePointerClick,
   Images,
   ArrowRight,
@@ -538,6 +543,37 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     liveHtmlId.current = liveHtml?.id || null;
     positionLiveHtml();
   }, [liveHtml]);
+  // The browser frame running over the board. While closing it stays on screen
+  // until its picture is captured.
+  type LiveBrowser = { id: string; url: string; focus: boolean; closing?: boolean };
+  const [liveBrowser, setLiveBrowser] = useState<LiveBrowser | null>(null);
+  const liveBrowserState = useRef<LiveBrowser | null>(null);
+  const liveBrowserRef = useRef<HTMLDivElement>(null);
+  const browserView = useRef<BrowserView | null>(null);
+  const updateLiveBrowser = (next: LiveBrowser | null) => {
+    liveBrowserState.current = next;
+    setLiveBrowser(next);
+  };
+  const positionLiveBrowser = () => {
+    const el = liveBrowserRef.current,
+      e = engine.current,
+      id = liveBrowserState.current?.id;
+    if (!el || !e || !id) return;
+    const o = e.objects.get(id);
+    if (o?.type !== 'browser') {
+      updateLiveBrowser(null);
+      return;
+    }
+    const origin = localToWorld(o, { x: 0, y: 0 });
+    el.style.left = `${origin.x * e.camera.zoom + e.camera.x}px`;
+    el.style.top = `${origin.y * e.camera.zoom + e.camera.y}px`;
+    el.style.width = `${o.width}px`;
+    el.style.height = `${o.height}px`;
+    el.style.transform = `rotate(${o.rotation || 0}deg) scale(${e.camera.zoom})`;
+  };
+  useLayoutEffect(() => {
+    positionLiveBrowser();
+  }, [liveBrowser]);
   useLayoutEffect(() => {
     playerId.current = player?.id || null;
     positionPlayer();
@@ -1029,6 +1065,18 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     if (html === undefined) setCodeHtmlId(o.id);
   };
   const codeHtml = codeHtmlId ? engine.current?.objects.get(codeHtmlId) : undefined;
+  const webLive =
+    selected.length === 1 &&
+    (selected[0].type === 'html'
+      ? liveHtml?.id === selected[0].id
+      : selected[0].type === 'browser' &&
+        liveBrowser?.id === selected[0].id &&
+        !liveBrowser.closing);
+  const toggleWebLive = (o: CanvasObject) => {
+    if (o.type === 'html') liveHtml?.id === o.id ? setLiveHtml(null) : interactHtml(o);
+    else if (liveBrowserState.current?.id === o.id) void endBrowser();
+    else void openBrowser(o);
+  };
   const canExportFromSelectionBar =
     selected.some((object) => object.type === 'frame') ||
     selected.filter((object) => object.type === 'image').length > 1;
@@ -1155,6 +1203,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         'list',
         'paper',
         'html',
+        'browser',
       ].includes(o.type),
   );
   const editorOrigin =
@@ -1211,6 +1260,10 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       setCodeHtmlId(o.id);
       return;
     }
+    if (o.type === 'browser') {
+      void openBrowser(o, true);
+      return;
+    }
     if (o.type === 'list') {
       (
         window.document.querySelector(
@@ -1260,37 +1313,109 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     engine.current?.setSelection([o.id]);
     setLiveHtml({ id: o.id, html: o.html || '' });
   };
-  // Pictures of HTML embeds are captured after their source or size settles.
-  const htmlCaptures = useRef(new Map<string, string>());
-  const htmlTimer = useRef(0);
-  const captureHtml = () => {
+  const openBrowser = async (o: CanvasObject, focus = false) => {
+    if (editingSession.current) finishEdit();
+    setLiveHtml(null);
+    const current = liveBrowserState.current;
+    if (current?.id === o.id && !current.closing) return;
+    if (current) await endBrowser();
+    engine.current?.setSelection([o.id]);
+    updateLiveBrowser({ id: o.id, url: o.url || browserHome, focus });
+  };
+  // Stops a running browser frame, keeping a picture of how it looks now.
+  const endBrowser = async () => {
+    const live = liveBrowserState.current;
+    if (!live || live.closing) return;
+    updateLiveBrowser({ ...live, closing: true });
     const e = engine.current;
-    if (!e || !alive.current || readOnlyRef.current || !window.canvas?.htmlSnapshot) return;
+    let contents = 0;
+    try {
+      contents = browserView.current?.getWebContentsId() || 0;
+    } catch {
+      /* The page never finished attaching. */
+    }
+    if (e && contents && window.canvas?.browserCapture)
+      try {
+        const assetId = await window.canvas.browserCapture(contents);
+        const o = e.objects.get(live.id);
+        if (o?.type === 'browser' && alive.current && engine.current === e && !external.current)
+          e.hydrateSnapshot(o.id, snapshotKey(o), assetId);
+      } catch {
+        /* The previous picture stays. */
+      }
+    if (liveBrowserState.current?.id === live.id) updateLiveBrowser(null);
+  };
+  // A browser frame remembers the page it shows, like a tab; not an undo step.
+  const browserNavigated = (id: string, url: string, title: string) => {
+    const e = engine.current,
+      o = e?.objects.get(id);
+    if (!e || o?.type !== 'browser' || o.locked || readOnlyRef.current || external.current) return;
+    if (!/^https?:\/\//i.test(url) || url.length > 8192) return;
+    const text = (title && title !== url ? title : '').slice(0, 500);
+    if (o.url === url && (o.text || '') === text) return;
+    e.apply({ upserts: [{ ...o, url, text }], deleted: [] }, false);
+  };
+  const createBrowser = (point?: { x: number; y: number }, url = browserHome) => {
+    finishEdit();
+    const e = engine.current;
+    if (!e) return;
+    const p = e.center(),
+      { width, height } = browserCardSize;
+    const o: CanvasObject = {
+      id: uid(),
+      type: 'browser',
+      url,
+      text: '',
+      x: point?.x ?? p.x - width / 2,
+      y: point?.y ?? p.y - height / 2,
+      width,
+      height,
+      z: e.topZ() + 1,
+    };
+    e.apply({ upserts: [o], deleted: [] });
+    selectTool('select');
+    void openBrowser(o, url === browserHome);
+  };
+  // Pictures of web cards are captured after their page or size settles. A
+  // running browser frame is captured when it stops instead.
+  const webCaptures = useRef(new Map<string, string>());
+  const failedCaptures = useRef(new Map<string, string>());
+  const htmlTimer = useRef(0);
+  const captureWebCards = () => {
+    const e = engine.current,
+      bridge = window.canvas;
+    if (!e || !alive.current || readOnlyRef.current || !bridge?.htmlSnapshot) return;
     for (const o of e.all) {
-      if (o.type !== 'html' || htmlSnapshotCurrent(o)) continue;
-      const key = htmlSnapshotKey(o);
-      if (htmlCaptures.current.get(o.id) === key) continue;
-      htmlCaptures.current.set(o.id, key);
+      if (!isWebCard(o) || snapshotCurrent(o) || liveBrowserState.current?.id === o.id) continue;
+      const key = snapshotKey(o);
+      if (webCaptures.current.get(o.id) === key || failedCaptures.current.get(o.id) === key)
+        continue;
+      webCaptures.current.set(o.id, key);
       const deliver = (assetId: string) => {
         if (!alive.current || engine.current !== e) return;
         // An external edit is being merged; attach the picture afterwards.
         if (external.current) setTimeout(() => deliver(assetId), 250);
-        else e.hydrateHtml(o.id, key, assetId);
+        else e.hydrateSnapshot(o.id, key, assetId);
       };
-      void window.canvas
-        .htmlSnapshot({ html: o.html || '', ...htmlViewport(o) })
+      const size = pageViewport(o);
+      void (
+        o.type === 'browser'
+          ? bridge.browserSnapshot({ url: o.url || '', ...size })
+          : bridge.htmlSnapshot({ html: o.html || '', ...size })
+      )
         .then(deliver)
         .catch(() => {
-          /* Offline pages and failed captures keep the previous picture. */
+          // Offline pages and failed captures keep the previous picture.
+          failedCaptures.current.set(o.id, key);
         })
         .finally(() => {
-          if (htmlCaptures.current.get(o.id) === key) htmlCaptures.current.delete(o.id);
+          if (webCaptures.current.get(o.id) === key) webCaptures.current.delete(o.id);
         });
     }
   };
   const scheduleHtmlCapture = () => {
     window.clearTimeout(htmlTimer.current);
-    htmlTimer.current = window.setTimeout(captureHtml, 600);
+    htmlTimer.current = window.setTimeout(captureWebCards, 600);
   };
   useEffect(() => () => window.clearTimeout(htmlTimer.current), []);
   const activate = (o: CanvasObject, intent?: 'title') => {
@@ -1306,6 +1431,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     else if (o.type === 'list') setEditingListId(o.id);
     else if (o.type === 'paper') setEditingPaperId(o.id);
     else if (o.type === 'html') interactHtml(o);
+    else if (o.type === 'browser') void openBrowser(o);
     else if (o.type === 'link' && o.linkCompact) openLink(o.url!).catch(error);
     else if (o.type === 'link') openObject(o);
     else startEdit(o);
@@ -1508,7 +1634,12 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             setPinRevision((revision) => revision + 1);
         }
         setCount(e.objects.size);
-        if (edit.upserts.some((o) => o.type === 'html')) scheduleHtmlCapture();
+        if (edit.upserts.some(isWebCard)) scheduleHtmlCapture();
+        const browserId = liveBrowserState.current?.id;
+        if (browserId) {
+          if (edit.deleted.includes(browserId)) updateLiveBrowser(null);
+          else positionLiveBrowser();
+        }
         const liveId = liveHtmlId.current;
         if (liveId) {
           const live = edit.upserts.find((o) => o.id === liveId);
@@ -1533,6 +1664,9 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         setSelected(objects);
         if (liveHtmlId.current && !(objects.length === 1 && objects[0].id === liveHtmlId.current))
           setLiveHtml(null);
+        const browser = liveBrowserState.current;
+        if (browser && !browser.closing && !(objects.length === 1 && objects[0].id === browser.id))
+          void endBrowser();
         const id = readingDocumentId.current,
           session = readingDocumentSession.current;
         if (id && !objects.some((o) => o.id === id)) {
@@ -1561,6 +1695,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         positionTools();
         positionPlayer();
         positionLiveHtml();
+        positionLiveBrowser();
         syncDocumentView();
         for (const o of e.all) {
           if (o.type !== 'document') continue;
@@ -2478,6 +2613,34 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           null,
         ]
       : []),
+    ...(selected.length === 1 && selected[0].type === 'browser'
+      ? [
+          {
+            label: 'Use page',
+            icon: <MousePointerClick />,
+            action: () => void openBrowser(selected[0]),
+          },
+          {
+            label: 'Open in your browser',
+            icon: <ExternalLink />,
+            action: () => openLink(selected[0].url!).catch(error),
+          },
+          null,
+        ]
+      : []),
+    ...(selected.length === 1 && selected[0].type === 'link'
+      ? [
+          {
+            label: 'Open as browser frame',
+            icon: <Globe />,
+            action: () =>
+              createBrowser(
+                { x: selected[0].x + selected[0].width + 40, y: selected[0].y },
+                selected[0].url,
+              ),
+          },
+        ]
+      : []),
     ...(selected.length === 1 && selected[0].type === 'link' && selected[0].assetId
       ? [
           {
@@ -3273,9 +3436,17 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             )}
             {selected.every(
               (o) =>
-                !['image', 'video', 'link', 'frame', 'arrow', 'list', 'paper', 'html'].includes(
-                  o.type,
-                ),
+                ![
+                  'image',
+                  'video',
+                  'link',
+                  'frame',
+                  'arrow',
+                  'list',
+                  'paper',
+                  'html',
+                  'browser',
+                ].includes(o.type),
             ) && (
               <div key="colors" className="color-options">
                 {(selected.every((o) => o.type === 'highlight') ? highlightColors : colors).map(
@@ -3300,22 +3471,27 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
                 </label>
               </div>
             )}
-            {selected.length === 1 && selected[0].type === 'html' && (
+            {selected.length === 1 && isWebCard(selected[0]) && (
               <button
                 key="html-interact"
                 className="icon-button"
-                aria-label={liveHtml?.id === selected[0].id ? 'Stop interacting' : 'Interact'}
-                aria-pressed={liveHtml?.id === selected[0].id}
-                title={
-                  liveHtml?.id === selected[0].id
-                    ? 'Stop interacting'
-                    : 'Interact with the page (double-click)'
-                }
-                onClick={() =>
-                  liveHtml?.id === selected[0].id ? setLiveHtml(null) : interactHtml(selected[0])
-                }
+                aria-label={webLive ? 'Stop interacting' : 'Interact'}
+                aria-pressed={webLive}
+                title={webLive ? 'Stop interacting' : 'Interact with the page (double-click)'}
+                onClick={() => toggleWebLive(selected[0])}
               >
                 <MousePointerClick size={16} />
+              </button>
+            )}
+            {selected.length === 1 && selected[0].type === 'browser' && (
+              <button
+                key="open"
+                className="icon-button"
+                aria-label="Open in your browser"
+                title="Open in your browser"
+                onClick={() => openLink(selected[0].url!).catch(error)}
+              >
+                <ExternalLink size={16} />
               </button>
             )}
             {selected.length === 1 && selected[0].type === 'html' && !selected[0].locked && (
@@ -3772,6 +3948,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             { id: 'list', label: 'List', icon: ListTodo, action: createList },
             { id: 'paper', label: 'Document', icon: NotebookPen, action: createPaper },
             { id: 'html', label: 'HTML embed', icon: CodeXml, action: () => createHtml() },
+            { id: 'browser', label: 'Browser', icon: Globe, action: () => createBrowser() },
             { id: 'media', label: 'Files', icon: ImagePlus, action: importMedia },
             { id: 'gallery', label: 'Gallery', icon: Images, action: createGallery },
           ]}
@@ -3786,6 +3963,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             } else if (id === 'list') createList(anchor);
             else if (id === 'paper') createPaper(anchor);
             else if (id === 'html') createHtml(anchor);
+            else if (id === 'browser') createBrowser(anchor);
             else if (id === 'gallery') createGallery(anchor);
             else if (id === 'media') void performImport(pickMedia, anchor);
             else if (id === 'select' || id === 'hand' || id === 'highlight') selectTool(id);
@@ -3807,6 +3985,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             { id: 'list', label: 'Add list', icon: ListTodo, action: createList },
             { id: 'paper', label: 'Add document', icon: NotebookPen, action: createPaper },
             { id: 'html', label: 'Add HTML embed', icon: CodeXml, action: () => createHtml() },
+            { id: 'browser', label: 'Add browser', icon: Globe, action: () => createBrowser() },
             { id: 'media', label: 'Add files', icon: ImagePlus, action: importMedia },
             { id: 'gallery', label: 'Gallery', icon: Images, action: createGallery },
           ]}
@@ -4020,11 +4199,27 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           <HtmlEmbedFrame html={liveHtml.html} title="HTML embed" />
         </div>
       )}
+      {liveBrowser && (
+        <div
+          ref={liveBrowserRef}
+          className="board-browser-live"
+          data-closing={liveBrowser.closing || undefined}
+        >
+          <BrowserFrame
+            key={liveBrowser.id}
+            url={liveBrowser.url}
+            focusAddress={liveBrowser.focus}
+            viewRef={browserView}
+            onNavigate={(url, title) => browserNavigated(liveBrowser.id, url, title)}
+            onOpenExternal={(url) => openLink(url).catch(error)}
+          />
+        </div>
+      )}
       {codeHtml && (
         <HtmlEmbedEditor
           key={codeHtml.id}
           html={codeHtml.html || ''}
-          {...htmlViewport(codeHtml)}
+          {...pageViewport(codeHtml)}
           onSave={(html) => {
             const e = engine.current,
               o = e?.objects.get(codeHtml.id);

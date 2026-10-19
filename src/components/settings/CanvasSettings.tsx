@@ -9,6 +9,7 @@ import {
   ListTodo,
   NotebookPen,
   CodeXml,
+  Globe,
   MousePointer2,
   MoveUpRight,
   Settings2,
@@ -78,6 +79,7 @@ const toolInfo: Record<ToolbarId, { label: string; icon: LucideIcon }> = {
   list: { label: 'List', icon: ListTodo },
   paper: { label: 'Document', icon: NotebookPen },
   html: { label: 'HTML embed', icon: CodeXml },
+  browser: { label: 'Browser', icon: Globe },
   media: { label: 'Files', icon: ImagePlus },
   gallery: { label: 'Gallery', icon: Images },
 };

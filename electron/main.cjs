@@ -12,6 +12,7 @@ const {
   ClipboardItem,
   nativeImage,
   safeStorage,
+  webContents,
 } = require('electron');
 const { CloudSync, cloudConfig } = require('./cloud-sync.cjs');
 const { LiveShare } = require('./live-share.cjs');
@@ -25,6 +26,7 @@ const { fetchPreview } = require('./link-preview.cjs');
 const { downloadSongLink } = require('./song-link.cjs');
 const { createOcr } = require('./ocr.cjs');
 const { createHtmlCards, embedRequest, fromEmbed } = require('./html-cards.cjs');
+const { browserSession, hardenWebviews, guestOf } = require('./browser-frames.cjs');
 const { Worker } = require('node:worker_threads');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -415,7 +417,12 @@ app
         return new Response('Media not found', { status: 404 });
       }
     });
-    const htmlCards = createHtmlCards({ BrowserWindow, session, call });
+    const htmlCards = createHtmlCards({
+      BrowserWindow,
+      session,
+      call,
+      browserSession: () => browserSession(session),
+    });
     protocol.handle('terra-html', htmlCards.handle);
     win = new BrowserWindow({
       width: 1380,
@@ -432,8 +439,11 @@ app
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,
+        // Browser frames; every guest is hardened in browser-frames.cjs.
+        webviewTag: true,
       },
     });
+    hardenWebviews(win);
     Menu.setApplicationMenu(null);
     if (!smoke) {
       win.once('ready-to-show', () => {
@@ -554,6 +564,14 @@ app
       trusted(e);
       return htmlCards.snapshot(args);
     });
+    ipcMain.handle('canvas:browser-snapshot', (e, args) => {
+      trusted(e);
+      return htmlCards.snapshotUrl(args);
+    });
+    ipcMain.handle('canvas:browser-capture', (e, id) => {
+      trusted(e);
+      return htmlCards.captureContents(guestOf(win, webContents, id));
+    });
     let previewActive = 0;
     const previewWaiters = [];
     ipcMain.handle('canvas:link-preview', async (e, url) => {
@@ -599,7 +617,12 @@ app
         previewWaiters.shift()?.();
       }
     });
-    mcp = new McpService({ root, call, transaction: mcpTransaction });
+    mcp = new McpService({
+      root,
+      call,
+      transaction: mcpTransaction,
+      services: { captureHtml: (args) => htmlCards.snapshot(args) },
+    });
     cloud = new CloudSync({
       call,
       root,

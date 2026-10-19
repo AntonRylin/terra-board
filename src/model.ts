@@ -16,7 +16,9 @@ export type ObjectType =
   | 'paper'
   // A web page written in HTML, CSS and JavaScript. It runs sandboxed while
   // someone interacts with it and shows a captured picture otherwise.
-  | 'html';
+  | 'html'
+  // A website by URL, like a browser tab: live while someone uses it.
+  | 'browser';
 export interface ListItem {
   id: string;
   text: string;
@@ -135,10 +137,11 @@ export interface CanvasObject {
   linkIconId?: string;
   linkCompact?: boolean;
   linkPreviewHeight?: number;
-  // An HTML embed's source. Its picture is `assetId`, captured from the source
-  // and size that `htmlSnapshotKey` names (src/canvas/html-card.ts).
+  // An HTML embed's source. Web cards (embeds and browser frames) show a
+  // picture, `assetId`, captured from what `snapshotKey` names
+  // (src/canvas/html-card.ts). A browser frame's page is `url`, its title `text`.
   html?: string;
-  htmlSnapshotKey?: string;
+  snapshotKey?: string;
 }
 export interface Camera {
   x: number;

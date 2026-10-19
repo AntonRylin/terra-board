@@ -89,3 +89,101 @@
   background-image: radial-gradient(#2a3646 1px, transparent 1px);
   border-color: #344255;
 }
+/* Browser frames: a website over the board, with its address bar. */
+.board-browser-live {
+  position: absolute;
+  z-index: 3;
+  transform-origin: 0 0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+  box-shadow:
+    0 0 0 2px #2f6fed,
+    0 18px 50px #24354f30;
+}
+.board-browser-live[data-closing] {
+  pointer-events: none;
+}
+.browser-frame {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+}
+.browser-frame-bar {
+  flex: 0 0 40px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 10px 0 6px;
+  background: #f4f6f9;
+  border-bottom: 1px solid #e3e8ee;
+}
+.browser-frame-bar button {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #5b6878;
+  cursor: pointer;
+}
+.browser-frame-bar button:hover:not(:disabled) {
+  background: #e6ebf1;
+}
+.browser-frame-bar button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.browser-frame-bar form {
+  flex: 1;
+  min-width: 0;
+  margin: 0 6px;
+}
+.browser-frame-bar input {
+  width: 100%;
+  height: 26px;
+  border: 1px solid #e1e6ed;
+  border-radius: 13px;
+  background: #fff;
+  padding: 0 13px;
+  font:
+    13px 'Segoe UI',
+    system-ui,
+    sans-serif;
+  color: #1f2a37;
+  outline: none;
+}
+.browser-frame-bar input:focus {
+  border-color: #9db8ef;
+}
+.browser-frame-host {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  background: #fff;
+}
+.browser-frame-page {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  width: 100%;
+  height: 100%;
+}
+:root[data-theme='dark'] .browser-frame-bar {
+  background: #1c2632;
+  border-color: #2e3a4a;
+}
+:root[data-theme='dark'] .browser-frame-bar button {
+  color: #a7b9ce;
+}
+:root[data-theme='dark'] .browser-frame-bar button:hover:not(:disabled) {
+  background: #263241;
+}
+:root[data-theme='dark'] .browser-frame-bar input {
+  background: #263241;
+  border-color: #344255;
+  color: #dbe4ef;
+}
