@@ -28,4 +28,20 @@ Development and packaged repository builds share a repository-local `Library` fo
 
 ## Releasing
 
-`npm run installer` builds a standalone Windows x64 installer (`Terra-Board-Setup-<version>-x64.exe`) with the app and its offline resources. `npm run release` (with `GH_TOKEN` set) publishes a new version to GitHub Releases; installed copies download updates in the background and install them when the app closes. The installer is unsigned unless a signing certificate is configured.
+`npm run installer` builds a standalone Windows x64 installer (`release/installer/Terra-Board-Setup-x64.exe`) with the app and its offline resources. The file name has no version, so <https://github.com/AntonRylin/terra-board/releases/latest/download/Terra-Board-Setup-x64.exe> always serves the newest one. The installer is unsigned unless a signing certificate is configured.
+
+To release a version:
+
+1. Raise `version` in `package.json` and commit.
+2. Run `npm run installer`, then `npm run test:update` with every Terra Board window closed. It installs the new installer into `.local-test`, serves a build of the next version from localhost and checks the update prompt, **Restart to update** (installs and reopens the app) and uninstalls again. Add `--installer <older installer> --feed release/installer` to update an older version to this one, `--close-first` to check that closing the prompt and quitting installs it, and `--source "release/win-unpacked/Terra Board.exe"` to check the from-source prompt. Run it from a normal terminal: the installer reopens the app through Explorer, which a sandboxed shell blocks.
+3. Publish the installer, its blockmap and `latest.yml` as a GitHub release tagged `v<version>`:
+
+   ```
+   gh release create v0.1.27 release/installer/Terra-Board-Setup-x64.exe release/installer/Terra-Board-Setup-x64.exe.blockmap release/installer/latest.yml --title 0.1.27 --notes-file notes.md
+   ```
+
+   (`npm run release` with `GH_TOKEN` set does the same through electron-builder.)
+
+Every packaged copy reads `latest.yml` from the newest release a few seconds after launch and every 4 hours. Installed copies download the new installer in the background and show a prompt with the new version: **Restart to update** installs it and reopens the app, closing the prompt leaves it to install when the app quits, and **What's new** opens the release. Builds from source show the same prompt with **Download**, which opens the installer link. A version is only announced once its release has `latest.yml`, so bumping `package.json` alone changes nothing for users.
+
+To test the flow locally, set `TERRA_UPDATE_FEED` to a folder URL serving a newer installer and its `latest.yml` (installed-style updates from any build), or `TERRA_VERSION_URL` to a `latest.yml` URL (the source-build prompt).

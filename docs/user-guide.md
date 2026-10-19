@@ -90,7 +90,7 @@ A daily SQLite metadata snapshot is created on startup under `Library\backups`. 
 - Videos use a generic board card and decode only in the player. Playback depends on Chromium's supported codecs; a generated VP9 WebM clip was tested. Animated images currently display a static preview.
 - Dragging a frame carries all objects fully inside its border, including nested frames. Membership follows placement: move an object out to release it. Contents are captured at drag start, and the whole move undoes in one step. Resizing or rotating a frame changes the region without transforming its contents. Nested folders, connectors, freehand ink, rich text, PDF export and editable Miro import are not implemented.
 - The canvas is not yet fully screen-reader navigable. Reduced-motion behavior and keyboard-operable controls are implemented, but a full accessibility audit remains open.
-- The build is unsigned, so Windows SmartScreen may warn before the installer runs. Only installed copies update themselves; the repository build in `release/win-unpacked` does not. The large-board startup test is not a certification of sustained 60 FPS, 10,000 distinct high-resolution photos, 4K displays, or long editing sessions.
+- The build is unsigned, so Windows SmartScreen may warn before the installer runs. Only installed copies update themselves: they show a prompt with the new version and a **Restart to update** button. Builds from source, such as `release/win-unpacked`, show the same prompt with a **Download** link to the new installer. The large-board startup test is not a certification of sustained 60 FPS, 10,000 distinct high-resolution photos, 4K displays, or long editing sessions.
 
 ## Arrows and highlighter
 

@@ -20,7 +20,7 @@ const { Store } = require('../electron/store.cjs');
 const repository = fileURLToPath(new URL('../', import.meta.url));
 const { version } = require('../package.json');
 const installer = resolve(
-  process.argv[2] || join(repository, 'release/installer', `Terra-Board-Setup-${version}-x64.exe`),
+  process.argv[2] || join(repository, 'release/installer', 'Terra-Board-Setup-x64.exe'),
 );
 assert.equal(process.platform, 'win32', 'This check runs the Windows installer.');
 assert.ok(existsSync(installer), 'Build the installer first.');

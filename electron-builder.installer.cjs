@@ -19,6 +19,8 @@ module.exports = {
     createDesktopShortcut: true,
     createStartMenuShortcut: true,
     deleteAppDataOnUninstall: false,
-    artifactName: 'Terra-Board-Setup-${version}-${arch}.${ext}',
+    // No version in the name, so releases/latest/download/Terra-Board-Setup-x64.exe
+    // always serves the newest installer.
+    artifactName: 'Terra-Board-Setup-${arch}.${ext}',
   },
 };

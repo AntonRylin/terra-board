@@ -1,7 +1,7 @@
 {
   "name": "terra-board",
   "productName": "Terra Board",
-  "version": "0.1.26",
+  "version": "0.1.27",
   "description": "A private, local visual workspace",
   "author": "Terra Board",
   "license": "MIT",
@@ -23,6 +23,7 @@
     "prerelease": "node scripts/check-release.mjs",
     "release": "npm run build && node scripts/prepare-vc-runtime.mjs && electron-builder --config electron-builder.installer.cjs --win nsis --x64 --publish always",
     "test:desktop": "node scripts/desktop-check.mjs",
+    "test:update": "node scripts/update-check.mjs",
     "test:cloud": "node scripts/cloud-sync-check.mjs"
   },
   "dependencies": {

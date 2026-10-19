@@ -98,9 +98,19 @@ export interface AppInfo {
   openAtLogin: boolean;
 }
 export interface UpdateStatus {
+  /** This build can download and install updates itself (the installed copy). */
   supported: boolean;
-  state: 'idle' | 'checking' | 'current' | 'downloading' | 'ready' | 'error';
+  /** This build checks GitHub for a newer version, installed or not. */
+  notify?: boolean;
+  /** 'available': a newer version exists that this build cannot install itself. */
+  state: 'idle' | 'checking' | 'current' | 'available' | 'downloading' | 'ready' | 'error';
   version: string;
+  /** Newer version published on GitHub, when there is one. */
+  latest?: string;
+  /** Release page of the newer version (the latest release until one is found). */
+  page?: string;
+  /** Installer of the newer version, for builds that cannot install it themselves. */
+  download?: string;
   available?: string;
   percent?: number;
   checkedAt?: number;

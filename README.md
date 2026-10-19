@@ -4,11 +4,12 @@ A free, open-source whiteboard for Windows. Drop in images, videos, PDFs, notes 
 
 ## Install
 
-1. Download **`Terra-Board-Setup-x.x.x-x64.exe`** from the [latest release](https://github.com/AntonRylin/terra-board/releases/latest).
-2. Run it and follow the installer.
-3. Open **Terra Board** from the Start menu or desktop.
+**[⬇ Download Terra Board for Windows](https://github.com/AntonRylin/terra-board/releases/latest/download/Terra-Board-Setup-x64.exe)** (64-bit installer, always the newest version)
 
-That's it. The app updates itself when new versions come out.
+1. Run the downloaded `Terra-Board-Setup-x64.exe` and follow the installer.
+2. Open **Terra Board** from the Start menu or desktop.
+
+That's it. When a new version comes out, the app downloads it in the background and shows a prompt with the new version number: click **Restart to update** to install it now, or close the prompt and it installs the next time you quit. **What's new** opens the release notes. Older versions and release notes are on the [releases page](https://github.com/AntonRylin/terra-board/releases).
 
 > Windows may show a SmartScreen warning because the installer isn't code-signed yet. Click **More info → Run anyway**.
 

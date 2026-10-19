@@ -2,7 +2,13 @@ import { useEffect, useState } from 'react';
 import { FolderOpen } from 'lucide-react';
 import type { AppInfo } from '../../bridge';
 import { Group, Notice, Row, useNotice } from './controls';
-import { installUpdate, useUpdateStatus } from '../../updates';
+import {
+  downloadUpdate,
+  installUpdate,
+  newerVersion,
+  openReleasePage,
+  useUpdateStatus,
+} from '../../updates';
 import type { UpdateStatus } from '../../bridge';
 
 function useAppInfo() {
@@ -145,17 +151,19 @@ export function AboutSettings() {
 }
 
 function updateText(status: UpdateStatus | null) {
-  if (!status?.supported) return 'Available in the installed app.';
+  if (!status?.notify) return 'Available in the installed app.';
   switch (status.state) {
     case 'checking':
     case 'idle':
       return 'Checking for updates…';
     case 'current':
-      return 'Terra Board is up to date.';
+      return `Terra Board ${status.version} is up to date.`;
     case 'downloading':
       return `Downloading version ${status.available}… ${status.percent ?? 0}%`;
     case 'ready':
       return `Version ${status.available} is ready. It installs when you close Terra Board.`;
+    case 'available':
+      return `Version ${status.latest} is available. You have ${status.version}.`;
     case 'error':
       return `Could not check for updates. ${status.error ?? ''}`.trim();
   }
@@ -163,19 +171,32 @@ function updateText(status: UpdateStatus | null) {
 
 function UpdateRow() {
   const status = useUpdateStatus();
-  const ready = status?.state === 'ready';
   const busy = status?.state === 'checking' || status?.state === 'downloading';
+  const ignore = (promise: Promise<unknown> | undefined) => void promise?.catch(() => {});
   return (
     <Row id="updates" description={updateText(status)}>
-      {ready ? (
-        <button type="button" className="st-button primary" onClick={() => void installUpdate()}>
+      {newerVersion(status) && (
+        <button type="button" className="st-button" onClick={() => ignore(openReleasePage(status))}>
+          What's new
+        </button>
+      )}
+      {status?.state === 'ready' ? (
+        <button type="button" className="st-button primary" onClick={() => ignore(installUpdate())}>
           Restart to update
+        </button>
+      ) : status?.state === 'available' ? (
+        <button
+          type="button"
+          className="st-button primary"
+          onClick={() => ignore(downloadUpdate(status))}
+        >
+          Download
         </button>
       ) : (
         <button
           type="button"
           className="st-button"
-          disabled={!status?.supported || busy}
+          disabled={!status?.notify || busy}
           onClick={() => void window.canvas?.updates.check()}
         >
           Check now
