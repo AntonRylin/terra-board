@@ -4,6 +4,7 @@ import McpSettings from './McpSettings';
 import AppearanceSettings from './AppearanceSettings';
 import type { Appearance } from './useAppearance';
 import type { Library } from '../model';
+import { openLink } from '../bridge';
 import { searchSettings, sectionById, sections, type SectionId } from './settings/settings-index';
 import { GeneralSettings, PanelSettings, type PanelOptions } from './settings/GeneralSettings';
 import { CanvasSettings, RadialSettings } from './settings/CanvasSettings';
@@ -12,6 +13,8 @@ import { AboutSettings, StorageSettings } from './settings/StorageSettings';
 import { CloudSettings } from './settings/CloudSettings';
 import { ProfileSettings } from './settings/ProfileSettings';
 import './settings/settings.css';
+
+const discordUrl = 'https://discord.gg/GNJX5y9tux';
 
 // Reopening Settings returns to the section used last in this session.
 let lastSection: SectionId = 'general';
@@ -155,6 +158,22 @@ export default function SettingsPage({
             </div>
           ))}
         </nav>
+        <button
+          type="button"
+          className="st-nav-item st-discord"
+          onClick={() => void openLink(discordUrl)}
+        >
+          <svg
+            viewBox="0 0 127.14 96.36"
+            width="16"
+            height="16"
+            fill="currentColor"
+            aria-hidden="true"
+          >
+            <path d="M107.7,8.07A105.15,105.15,0,0,0,77.26,0a77.19,77.19,0,0,0-3.3,6.83A96.67,96.67,0,0,0,52.8,6.83,77.19,77.19,0,0,0,49.5,0,105.15,105.15,0,0,0,19.06,8.07C-3.41,41.92-1.74,75.16,8.32,96A105.73,105.73,0,0,0,39.46,84.14a79.25,79.25,0,0,0,6.6-11A67.46,67.46,0,0,1,34,68.32c1-.7,1.94-1.44,2.83-2.22a74.37,74.37,0,0,0,53.46,0c.89.78,1.86,1.52,2.83,2.22a67.46,67.46,0,0,1-12.06,4.82,79.25,79.25,0,0,0,6.6,11A105.73,105.73,0,0,0,118.4,96C128.46,75.16,129.8,41.92,107.7,8.07ZM42.45,65.69C36.18,65.69,31,60,31,53S36.18,40.36,42.45,40.36,53.9,46,53.9,53,48.72,65.69,42.45,65.69Zm42,0C78.18,65.69,73,60,73,53S78.18,40.36,84.45,40.36,95.9,46,95.9,53,90.72,65.69,84.45,65.69Z" />
+          </svg>
+          Discord
+        </button>
       </aside>
       <div className="st-scroll" ref={scroller}>
         <div className="st-content">

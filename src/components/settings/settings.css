@@ -137,6 +137,10 @@
 .st-nav-item[aria-current='page'] svg {
   color: var(--st-ink);
 }
+.st-discord {
+  flex: none;
+  margin-top: auto;
+}
 
 /* Content */
 .st-scroll {
