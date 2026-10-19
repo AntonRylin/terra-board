@@ -2,7 +2,9 @@
 
 The approved launcher design is implemented in the Windows app: one vertical icon strip with floating folders and a centered Create button. The source lives in src/ and electron/.
 
-- [Getting started and current feature boundaries](../README.md)
+- [Install and getting started](../README.md)
+- [User guide: features, controls and limits](user-guide.md)
+- [Development, testing and releasing](development.md)
 - [Verification evidence and open release gates](verification.md)
 - [Product design and roadmap](product-design.md)
 - [Implementation record](implementation-log.md)

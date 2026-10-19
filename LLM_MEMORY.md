@@ -10,7 +10,7 @@ Last verified: 2026-10-01. This is the project handoff from the session that imp
 - Source version at handoff is **0.1.24**. Verify `package.json`; do not assume every small edit increments it.
 - The user's real data lives in **`D:\Projects\terra\Library`**. It is outside the replaceable build directory and ignored by Git. Never use it for automated test fixtures or delete it to fix a build.
 - The deliverable is **`release\win-unpacked\Terra Board.exe`**, launched through **`Open Terra Board.cmd`**. A successful web build does not update the packaged executable.
-- Read `README.md` for current features and `docs/verification.md` for dated evidence and limitations. Local test output paths in these documents are evidence on this computer, not files included in Git.
+- Read `docs/user-guide.md` for current features, `docs/development.md` for build/test/release commands, and `docs/verification.md` for dated evidence and limitations. Local test output paths in these documents are evidence on this computer, not files included in Git.
 
 ## User's delivery preference from this session
 
