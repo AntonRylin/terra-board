@@ -1,0 +1,133 @@
+.album-settings fieldset {
+  margin: 18px 0 0;
+  padding: 0;
+  border: 0;
+}
+.album-settings legend {
+  margin-bottom: 8px;
+  color: #788494;
+  font-size: 12px;
+}
+.modal .album-choice {
+  display: flex;
+  gap: 10px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  border: 1px solid #dfe5ee;
+  border-radius: 10px;
+  color: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+.modal .album-choice:has(input:checked) {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+.modal .album-choice[data-disabled] {
+  cursor: default;
+}
+.modal .album-choice[data-disabled] b {
+  opacity: 0.55;
+}
+.modal .album-choice input {
+  width: auto;
+  margin: 2px 0 0;
+  flex-shrink: 0;
+}
+.album-choice b {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.album-choice em {
+  display: block;
+  margin-top: 6px;
+  color: #8a5800;
+  font-style: normal;
+}
+.album-note,
+.album-count {
+  margin: 8px 0 0;
+  color: #7b8796;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.album-warning {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #fff4e0;
+  color: #6b4300;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.album-missing {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.album-missing li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  color: #6b4300;
+  font-size: 12px;
+}
+.album-missing span {
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+
+/* Hovering an album card: how many images it holds, and any broken links. */
+.album-hover {
+  position: absolute;
+  z-index: 6;
+  pointer-events: none;
+}
+.album-hover-count {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+.album-hover-count span {
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 62%);
+  color: #fff;
+  font:
+    600 12px 'Canvas UI',
+    'Segoe UI',
+    sans-serif;
+  white-space: nowrap;
+}
+.album-hover-count span.album-hover-warning {
+  background: #b26b00;
+}
+
+.album-settings-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 1300;
+  pointer-events: none;
+}
+.album-settings-layer > * {
+  pointer-events: auto;
+}
+
+:root[data-theme='dark'] .modal .album-choice {
+  border-color: #3a4a5c;
+}
+:root[data-theme='dark'] :is(.album-missing li, .album-choice em) {
+  color: #f0c27a;
+}
+:root[data-theme='dark'] .album-warning {
+  background: #3d2e12;
+  color: #f0c27a;
+}

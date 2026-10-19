@@ -286,7 +286,10 @@ const commands = new Set([
   'setLastBoard',
   'importAsset',
   'removeBackground',
+  'assetLinks',
+  'boardSyncs',
 ]);
+const albumImageExtensions = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'avif', 'tif', 'tiff'];
 const dev = process.env.CANVAS_DEV_URL;
 function trusted(event) {
   const url = event.senderFrame?.url;
@@ -798,6 +801,39 @@ app
         result.push(await call('importFile', { file, attachment: true }));
       return result;
     });
+    // Images for an album: chosen here, or dropped (paths from the drop). With
+    // `link`, the album keeps the file where it is and the library only a preview.
+    ipcMain.handle('canvas:import-album-files', async (e, { paths, link } = {}) => {
+      trusted(e);
+      let files = paths;
+      if (files === undefined) {
+        const r = await dialog.showOpenDialog(win, {
+          title: 'Add images to the album',
+          properties: ['openFile', 'multiSelections'],
+          filters: [{ name: 'Images', extensions: albumImageExtensions }],
+        });
+        if (r.canceled) return [];
+        files = r.filePaths;
+      }
+      if (!Array.isArray(files) || files.length > 2000 || !files.every((f) => typeof f === 'string'))
+        throw Error('Invalid files');
+      const result = [];
+      for (const file of files) {
+        if (!albumImageExtensions.includes(path.extname(file).slice(1).toLowerCase()))
+          throw Error(`${path.basename(file)} is not an image. Albums hold PNG, JPEG, WebP, GIF, AVIF and TIFF.`);
+        result.push(await call('importFile', { file, attachment: true, link: link === true }));
+      }
+      return result;
+    });
+    ipcMain.handle('canvas:locate-asset', async (e, { id, name } = {}) => {
+      trusted(e);
+      const r = await dialog.showOpenDialog(win, {
+        title: `Locate ${typeof name === 'string' ? name : 'the image'}`,
+        properties: ['openFile'],
+        filters: [{ name: 'Images', extensions: albumImageExtensions }],
+      });
+      return r.canceled ? null : call('relinkAsset', { id, file: r.filePaths[0] });
+    });
     ipcMain.handle('canvas:import-board', async (e) => {
       trusted(e);
       const r = await dialog.showOpenDialog(win, {
@@ -870,7 +906,8 @@ app
     });
     ipcMain.handle('canvas:asset-dimensions', async (e, id) => {
       trusted(e);
-      const { width, height } = await call('asset', { id, variant: 'original' });
+      // The row holds the original's size; a linked original may be missing.
+      const { width, height } = await call('asset', { id, variant: 'preview' });
       return { width, height };
     });
     ipcMain.handle('canvas:export-image', (e, args) => {

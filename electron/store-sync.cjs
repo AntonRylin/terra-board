@@ -108,6 +108,7 @@ function referencedAssets(kind, data, iconAssetId) {
           data.linkIconId,
           data.documentPreviewId,
           ...(data.pdfComposer?.sources || []).map((s) => s.assetId),
+          ...(data.album?.images || []).map((image) => image.assetId),
         ];
   return ids.filter((id) => typeof id === 'string' && /^[a-f0-9]{64}$/.test(id));
 }

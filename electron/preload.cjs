@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 contextBridge.exposeInMainWorld('canvas', {
   copyObjects: (objects) => ipcRenderer.invoke('canvas:copy-objects', objects),
   cancelCopy: () => ipcRenderer.send('canvas:cancel-copy'),
@@ -14,6 +14,10 @@ contextBridge.exposeInMainWorld('canvas', {
   },
   invoke: (command, args) => ipcRenderer.invoke('canvas:invoke', command, args),
   pickMedia: () => ipcRenderer.invoke('canvas:pick-media'),
+  importAlbumFiles: (args) => ipcRenderer.invoke('canvas:import-album-files', args),
+  locateAsset: (args) => ipcRenderer.invoke('canvas:locate-asset', args),
+  // Where a dropped file is on disk ('' for pasted or generated files).
+  filePath: (file) => webUtils.getPathForFile(file),
   importPortable: () => ipcRenderer.invoke('canvas:import-board'),
   exportPortable: (id) => ipcRenderer.invoke('canvas:export-board', id),
   exportImage: (args) => ipcRenderer.invoke('canvas:export-image', args),

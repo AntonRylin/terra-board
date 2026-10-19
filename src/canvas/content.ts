@@ -2,6 +2,7 @@ import type { CanvasObject } from '../model';
 import { pdfComposerValue } from './pdf-composer.ts';
 import { sanitizeMarks } from './rich-text.ts';
 import { htmlSourceLimit } from './html-card.ts';
+import { albumValue } from './album.ts';
 export function pastedUrl(text: string): string | null {
   const value = text.trim();
   if (value.length > 8192 || !/^https?:\/\/\S+$/i.test(value)) return null;
@@ -371,6 +372,9 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
           }
         : {}),
       ...(o.assetId ? { assetId: o.assetId } : {}),
+      ...(o.type === 'image' && o.album !== undefined && !o.galleryId
+        ? { album: albumValue(o.album, o.assetId) }
+        : {}),
       ...(o.type === 'link' && o.linkIconId ? { linkIconId: o.linkIconId } : {}),
       ...(o.type === 'link' && o.linkCompact !== undefined ? { linkCompact: o.linkCompact } : {}),
       ...(o.type === 'link' && o.linkPreviewHeight !== undefined

@@ -67,6 +67,7 @@ import {
 } from './object-spoiler';
 import { documentPreviewBox, renderDocumentCard } from './document-card';
 import { renderBrowserCard, renderHtmlCard } from './html-card-rendering';
+import { renderAlbumName } from './album-rendering';
 import { isWebCard, snapshotKey } from './html-card';
 import { listLayout } from './list-layout';
 import {
@@ -474,6 +475,11 @@ export class Engine {
     const edit = bringToFrontEdit(this.all, this.clipboardSelection);
     if (edit.upserts.length) this.apply(edit);
   }
+  // The album card under a board point that can take more images.
+  albumAt(point: Point) {
+    const o = this.hit(this.screenPoint(point));
+    return o?.type === 'image' && o.album && !o.locked ? o.id : null;
+  }
   galleryImageAt(point: Point) {
     const o = this.hit(this.screenPoint(point));
     return o?.type === 'image' && o.galleryId && !o.locked && !this.objects.get(o.galleryId)?.locked
@@ -839,7 +845,9 @@ export class Engine {
         this.tool === 'select' && !this.space && e.target === this.app.canvas
           ? this.hit(this.screenPoint(this.point(e)))
           : undefined;
-      this.callbacks.hover?.(hovered?.type === 'image' && hovered.galleryId ? hovered.id : null);
+      this.callbacks.hover?.(
+        hovered?.type === 'image' && (hovered.galleryId || hovered.album) ? hovered.id : null,
+      );
       this.updateCursor(
         e.target === this.app.canvas ? this.resizeCorner(this.point(e)) : undefined,
       );
@@ -1943,6 +1951,7 @@ export class Engine {
         o.height,
         o.text,
         o.imageTitle,
+        o.album?.name,
         o.documentTitle,
         o.documentMime,
         o.documentBytes,
@@ -2436,7 +2445,8 @@ export class Engine {
       sprite.width = o.width;
       sprite.height = o.height;
       container.addChild(sprite);
-      if ((exporting || this.editingId !== o.id) && o.imageTitle?.trim())
+      if (o.album) container.addChild(renderAlbumName(o, resolution));
+      else if ((exporting || this.editingId !== o.id) && o.imageTitle?.trim())
         this.addLabel(
           container,
           o,

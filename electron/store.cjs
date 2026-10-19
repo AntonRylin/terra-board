@@ -220,7 +220,62 @@ const objectAssetIds = (object) =>
     object.linkIconId,
     object.documentPreviewId,
     ...(object.pdfComposer?.sources.map((source) => source.assetId) || []),
+    ...(object.album?.images.map((image) => image.assetId) || []),
   ].filter(Boolean);
+// An album is an image card (its cover) that holds more images. `storage`
+// says whether images added to it later are copied into the library or
+// linked to their file on this computer.
+function albumValue(value, coverAssetId) {
+  if (
+    !value ||
+    typeof value.name !== 'string' ||
+    value.name.length > 200 ||
+    !['copy', 'link'].includes(value.storage) ||
+    !Array.isArray(value.images) ||
+    value.images.length < 1 ||
+    value.images.length > 2000
+  )
+    throw Error('Invalid album');
+  const images = value.images.map((image) => {
+    if (
+      !image ||
+      typeof image.assetId !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(image.assetId) ||
+      !number(image.width, 1, 1e6) ||
+      !number(image.height, 1, 1e6) ||
+      (image.title !== undefined && (typeof image.title !== 'string' || image.title.length > 1000)) ||
+      (image.rotation !== undefined && !number(image.rotation, 0, 360))
+    )
+      throw Error('Invalid album image');
+    const result = {
+      id: idValue(image.id),
+      assetId: image.assetId,
+      width: image.width,
+      height: image.height,
+    };
+    if (image.title !== undefined) result.title = image.title;
+    if (image.rotation !== undefined) result.rotation = image.rotation;
+    if (image.crop !== undefined) {
+      const c = image.crop;
+      if (
+        !c ||
+        !number(c.x, 0, 1) ||
+        !number(c.y, 0, 1) ||
+        !number(c.width, 1e-6, 1) ||
+        !number(c.height, 1e-6, 1) ||
+        c.x + c.width > 1 + 1e-9 ||
+        c.y + c.height > 1 + 1e-9
+      )
+        throw Error('Invalid album image crop');
+      result.crop = { x: c.x, y: c.y, width: c.width, height: c.height };
+    }
+    return result;
+  });
+  if (new Set(images.map((image) => image.id)).size !== images.length)
+    throw Error('Invalid album images');
+  if (!images.some((image) => image.assetId === coverAssetId)) throw Error('Album cover is not in the album');
+  return { name: value.name, storage: value.storage, images };
+}
 function objectValue(o) {
   if (
     !o ||
@@ -416,6 +471,10 @@ function objectValue(o) {
     }
   }
   if (o.groupId) result.groupId = idValue(o.groupId);
+  if (o.album !== undefined) {
+    if (o.type !== 'image' || o.galleryId !== undefined) throw Error('Invalid album');
+    result.album = albumValue(o.album, o.assetId);
+  }
   if (o.gallery !== undefined) {
     const g = o.gallery;
     if (
@@ -550,7 +609,13 @@ class Store {
    CREATE TABLE IF NOT EXISTS object_revisions(boardId TEXT NOT NULL REFERENCES boards(id) ON DELETE CASCADE,id TEXT NOT NULL,revision INTEGER NOT NULL,PRIMARY KEY(boardId,id));
    CREATE INDEX IF NOT EXISTS object_revisions_age ON object_revisions(boardId,revision);
    CREATE TABLE IF NOT EXISTS merge_floors(boardId TEXT PRIMARY KEY REFERENCES boards(id) ON DELETE CASCADE,revision INTEGER NOT NULL);
-   CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL); PRAGMA user_version=2;`);
+   CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL);
+   CREATE TABLE IF NOT EXISTS asset_links(id TEXT PRIMARY KEY REFERENCES assets(id) ON DELETE CASCADE,path TEXT NOT NULL,bytes INTEGER NOT NULL,modified REAL NOT NULL); PRAGMA user_version=2;`);
+    // Pictures made from linked originals (viewer copies, zoom tiles) are a
+    // cache that must not grow the library: they live in temp, emptied here.
+    this.linkedCache = path.join(root, 'temp', 'linked');
+    fs.rmSync(this.linkedCache, { recursive: true, force: true });
+    fs.mkdirSync(this.linkedCache, { recursive: true });
     if (
       !this.db
         .prepare('PRAGMA table_info(boards)')
@@ -928,6 +993,9 @@ class Store {
         throw Error('Missing document preview image asset');
       for (const source of o.pdfComposer?.sources || [])
         if (!findAsset.get(source.assetId)) throw Error('Missing PDF composer source asset');
+      for (const image of o.album?.images || [])
+        if (!findAsset.get(image.assetId)?.mime.startsWith('image/'))
+          throw Error('Missing album image');
     }
     return this.transaction(() => {
       if (operationId) {
@@ -1073,7 +1141,7 @@ class Store {
     }
     return this.importAsset({ bytes, name: asset.name.replace(/\.[^.]+$/, '') + ' - cutout.png' });
   }
-  async importAsset({ bytes, name }, prepareOnly = false) {
+  async importAsset({ bytes, name, link }, prepareOnly = false) {
     name = String(name || 'image.png').slice(0, 240);
     let data = Buffer.from(bytes);
     if (data.length > 256 * 1024 * 1024)
@@ -1085,6 +1153,17 @@ class Store {
     }
     const id = createHash('sha256').update(data).digest('hex');
     const existing = this.db.prepare('SELECT * FROM assets WHERE id=?').get(id);
+    // A linked image keeps no copy here. The same picture added again as a
+    // copy gets its copy now; added again as a link it points at the newer path.
+    const stored = fs.existsSync(path.join(this.root, 'assets', id + '.original'));
+    if (existing && existing.mime.startsWith('image/') && !documentMime && !stored) {
+      const { file, contentType, linked, ...row } = this.asset({ id, variant: 'preview' });
+      // Prepared for a later commit (sync, board import): commit writes the copy.
+      if (prepareOnly) return link ? { ...row, name } : { ...row, name, data };
+      if (link) this.writeLink(id, link);
+      else this.storeOriginal(id, data);
+      return { ...row, name };
+    }
     // A file may first arrive as an opaque document and later as an image or
     // video. Validate and prepare that media before promoting its shared row.
     if (existing && (documentMime || /^(image|video)\//.test(existing.mime)))
@@ -1136,13 +1215,16 @@ class Store {
       data,
       preview,
       thumbnail,
+      // Only images can be linked: they are the only media with a preview to
+      // fall back on when the original goes missing.
+      ...(link && mime.startsWith('image/') ? { link } : {}),
     };
     if (prepareOnly) return prepared;
     return this.commitAsset(prepared);
   }
   commitAsset(a) {
     const file = path.join(this.root, 'assets', a.id);
-    durableWrite(file + '.original', a.data);
+    if (!a.link) durableWrite(file + '.original', a.data);
     if (a.preview) {
       durableWrite(file + '.preview', a.preview);
       durableWrite(file + '.thumb', a.thumbnail);
@@ -1156,6 +1238,7 @@ class Store {
           AND assets.mime NOT LIKE 'image/%' AND assets.mime NOT LIKE 'video/%'`,
       )
       .run(a.id, a.name, a.mime, a.width, a.height, a.bytes);
+    if (a.link) this.writeLink(a.id, a.link);
     return {
       id: a.id,
       name: a.name,
@@ -1165,12 +1248,80 @@ class Store {
       bytes: a.bytes,
     };
   }
+  storeOriginal(id, data) {
+    durableWrite(path.join(this.root, 'assets', id + '.original'), data);
+    this.db.prepare('DELETE FROM asset_links WHERE id=?').run(id);
+  }
+  writeLink(id, { file, modified }) {
+    const stat = fs.statSync(file);
+    this.db
+      .prepare(
+        `INSERT INTO asset_links VALUES(?,?,?,?)
+        ON CONFLICT(id) DO UPDATE SET path=excluded.path,bytes=excluded.bytes,modified=excluded.modified`,
+      )
+      .run(id, path.resolve(file), stat.size, modified ?? stat.mtimeMs);
+  }
+  // A linked original is usable while the file is where it was, the same size
+  // and not modified since it was added. Anything else is 'missing' or 'changed'.
+  linkState(id) {
+    const link = this.db.prepare('SELECT * FROM asset_links WHERE id=?').get(id);
+    if (!link || fs.existsSync(path.join(this.root, 'assets', id + '.original'))) return null;
+    let stat = null;
+    try {
+      stat = fs.statSync(link.path);
+    } catch {}
+    const state = !stat?.isFile()
+      ? 'missing'
+      : stat.size !== link.bytes || Math.abs(stat.mtimeMs - link.modified) > 1
+        ? 'changed'
+        : 'ok';
+    return { id, path: link.path, state };
+  }
+  assetLinks({ ids }) {
+    if (!Array.isArray(ids) || ids.length > 10000) throw Error('Invalid asset list');
+    return [...new Set(ids)]
+      .filter((id) => typeof id === 'string' && /^[a-f0-9]{64}$/.test(id))
+      .map((id) => this.linkState(id))
+      .filter(Boolean);
+  }
+  // Locate file…: point a linked image at the same picture somewhere else.
+  relinkAsset({ id, file }) {
+    if (!/^[a-f0-9]{64}$/.test(id) || typeof file !== 'string') throw Error('Invalid asset');
+    if (!this.db.prepare('SELECT 1 FROM asset_links WHERE id=?').get(id))
+      throw Error('This image is stored in the board, not linked to a file.');
+    const stat = fs.statSync(file);
+    if (!stat.isFile()) throw Error('Choose a file');
+    if (createHash('sha256').update(fs.readFileSync(file)).digest('hex') !== id)
+      throw Error(
+        `${path.basename(file)} is a different picture: its contents do not match the image in the album.`,
+      );
+    this.writeLink(id, { file, modified: stat.mtimeMs });
+    for (const name of fs.readdirSync(this.linkedCache))
+      if (name.startsWith(id + '.')) fs.rmSync(path.join(this.linkedCache, name), { force: true });
+    return this.linkState(id);
+  }
+  // Linking only makes sense where nobody else opens the board: a board that
+  // syncs is read on computers that cannot reach this one's files.
+  boardSyncs({ id }) {
+    idValue(id);
+    return !!this.db.prepare('SELECT 1 FROM sync_tracked WHERE id=?').get(id);
+  }
   asset({ id, variant = 'preview' }) {
     if (!/^[a-f0-9]{64}$/.test(id) || !['original', 'preview', 'thumb'].includes(variant))
       throw Error('Invalid asset');
     const a = this.db.prepare('SELECT * FROM assets WHERE id=?').get(id);
     if (!a) throw Error('Asset not found');
     const suffix = a.mime.startsWith('image/') ? variant : 'original';
+    const link = suffix === 'original' ? this.linkState(id) : null;
+    if (link) {
+      if (link.state !== 'ok')
+        throw Error(
+          `"${a.name}" is linked to ${link.path}, and that file ${
+            link.state === 'missing' ? 'is missing' : 'has changed since it was added'
+          }. Open its album and use Locate file… to find it.`,
+        );
+      return { ...a, file: link.path, contentType: a.mime, linked: true };
+    }
     return {
       ...a,
       file: path.join(this.root, 'assets', id + '.' + suffix),
@@ -1181,9 +1332,12 @@ class Store {
     // Lossless, orientation-correct fallback for formats Chromium cannot decode
     // directly (notably TIFF). Never substitute the small WebP preview in exports.
     if (variant === 'export') {
-      const original = this.asset({ id, variant: 'original' });
+      const original = this.displaySource(id);
       if (!original.mime.startsWith('image/')) throw Error('Only images can be exported as PNG');
-      const file = path.join(this.root, 'assets', `${id}.export.png`);
+      const file = path.join(
+        original.linked || original.fallback ? this.linkedCache : path.join(this.root, 'assets'),
+        `${id}.export${original.fallback ? '-preview' : ''}.png`,
+      );
       if (!fs.existsSync(file)) {
         const bytes = await sharp(original.file, { limitInputPixels: 100000000 })
           .rotate()
@@ -1200,16 +1354,21 @@ class Store {
     const validGrid = (n) => n >= 1 && n <= 256 && (n & (n - 1)) === 0;
     if (!validGrid(cols) || !validGrid(rows) || x >= cols || y >= rows)
       throw Error('Invalid image tile');
-    const original = this.asset({ id, variant: 'original' });
+    const original = this.displaySource(id);
     if (!original.mime.startsWith('image/')) throw Error('Invalid image tile');
-    const file = path.join(this.root, 'assets', `${id}.${variant}`);
+    const file = path.join(
+      original.linked || original.fallback ? this.linkedCache : path.join(this.root, 'assets'),
+      `${id}.${variant}${original.fallback ? '-preview' : ''}`,
+    );
     if (!fs.existsSync(file)) {
       // Crop the original before resizing. Decode is off the renderer thread,
       // requests are concurrency-limited, and each GPU tile is at most 512px.
-      const left = Math.min(original.width - 1, Math.floor((x * original.width) / cols));
-      const top = Math.min(original.height - 1, Math.floor((y * original.height) / rows));
-      const right = Math.max(left + 1, Math.floor(((x + 1) * original.width) / cols));
-      const bottom = Math.max(top + 1, Math.floor(((y + 1) * original.height) / rows));
+      // A missing linked original is cut from its preview, already upright.
+      const { width, height } = original.fallback ? await sharp(original.file).metadata() : original;
+      const left = Math.min(width - 1, Math.floor((x * width) / cols));
+      const top = Math.min(height - 1, Math.floor((y * height) / rows));
+      const right = Math.max(left + 1, Math.floor(((x + 1) * width) / cols));
+      const bottom = Math.max(top + 1, Math.floor(((y + 1) * height) / rows));
       const bytes = await sharp(original.file, { limitInputPixels: 100000000, animated: false })
         .rotate()
         .extract({ left, top, width: right - left, height: bottom - top })
@@ -1219,6 +1378,13 @@ class Store {
       durableWrite(file, bytes);
     }
     return { ...original, file, contentType: 'image/png' };
+  }
+  // What to draw an image from: its original, or the saved preview when a
+  // linked original is missing or changed (`fallback`).
+  displaySource(id) {
+    const link = this.linkState(id);
+    if (!link || link.state === 'ok') return this.asset({ id, variant: 'original' });
+    return { ...this.asset({ id, variant: 'preview' }), fallback: true };
   }
   async exportBoard({ id }) {
     const d = this.loadBoard({ id }),

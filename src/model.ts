@@ -25,6 +25,23 @@ export interface ListItem {
   checked: boolean;
   marks?: TextMark[];
 }
+// An album is an image card whose picture is its cover (`assetId`, one of
+// `images`). Each image keeps what it had on the board, for when it is released.
+export interface AlbumImage {
+  id: string;
+  assetId: string;
+  width: number;
+  height: number;
+  title?: string;
+  crop?: ImageCrop;
+  rotation?: number;
+}
+export interface Album {
+  name: string;
+  // Images added later: copied into the library, or linked to their file.
+  storage: 'copy' | 'link';
+  images: AlbumImage[];
+}
 export interface ImageCrop {
   x: number;
   y: number;
@@ -79,6 +96,7 @@ export interface CanvasObject {
   items?: ListItem[];
   listScale?: number;
   gallery?: { direction: 'right' | 'below'; size: number; gap: number };
+  album?: Album;
   pdfComposer?: PdfComposer;
   galleryId?: string;
   galleryIndex?: number;

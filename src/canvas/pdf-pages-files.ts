@@ -129,6 +129,7 @@ export function canMergeToPdf(objects: CanvasObject[]) {
     objects.every(
       (o) =>
         !!o.assetId &&
+        !o.album &&
         (o.type === 'image' ||
           (o.type === 'document' && documentKind(o.text || '', o.documentMime) === 'pdf')),
     )
