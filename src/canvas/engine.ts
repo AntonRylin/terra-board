@@ -50,9 +50,10 @@ import {
   stackingOverlap,
   stackingSelection,
   bringToFrontEdit,
+  copySelection,
 } from './stacking';
 import { renderText, renderLinkCaption, textRegion, textSpoilers } from './text-rendering';
-import { hasRichText } from './rich-text';
+import { hasRichText, shownMarks, shownText } from './rich-text';
 import { dustLayer, hideDuration, revealDuration, updateDust } from './spoiler-dust';
 import {
   canBeSpoiler,
@@ -434,6 +435,10 @@ export class Engine {
   }
   get clipboardSelection() {
     return selectionWithGalleryImages(this.selected, this.objects.values());
+  }
+  /** Selection as copied or duplicated: frames bring their contents along. */
+  get copySelection() {
+    return copySelection(this.all, this.clipboardSelection);
   }
   get selectionLocked() {
     const selected = this.selected;
@@ -1321,7 +1326,7 @@ export class Engine {
     if (frame && (!hit || hit.z <= frame.z)) return { id: frame.id, start: wholeObject };
     if (!hit || hit.id === this.editingId || !hasRichText(hit)) return null;
     const q = worldToLocal(hit, w);
-    const box = textSpoilers(hit).find(
+    const box = textSpoilers(hit, shownText(hit), this.camera.zoom).find(
       (b) => q.x >= b.x && q.x <= b.x + b.width && q.y >= b.y && q.y <= b.y + b.height,
     );
     return box ? { id: hit.id, start: box.start } : null;
@@ -1608,7 +1613,7 @@ export class Engine {
   }
   duplicate() {
     const ids = new Map<string, string>();
-    const objects = this.clipboardSelection;
+    const objects = this.copySelection;
     const objectIds = new Map(objects.map((o) => [o.id, uid()]));
     const top = this.topZ();
     const copies = objects.map((o, i) => {
@@ -1628,7 +1633,8 @@ export class Engine {
     });
     if (copies.length) {
       this.apply({ upserts: copies, deleted: [] });
-      this.setSelection(copies.filter((o) => !o.galleryId).map((o) => o.id));
+      const chosen = new Set(this.selected.map((o) => objectIds.get(o.id)));
+      this.setSelection(copies.filter((o) => !o.galleryId && chosen.has(o.id)).map((o) => o.id));
     }
   }
   group() {
@@ -1954,7 +1960,7 @@ export class Engine {
         o.strikethrough,
         hasRichText(o)
           ? [
-              o.textMarks,
+              shownMarks(o),
               [...(this.spoilers.get(o.id) || [])].filter(
                 ([start, s]) => s.revealed && start !== wholeObject,
               ),
@@ -2148,10 +2154,16 @@ export class Engine {
     }
     if (o.type === 'document') {
       container.addChild(renderDocumentCard(o, texture, resolution, region, dark));
-      if ((exporting || staticPreview || this.editingId !== o.id) && o.documentTitle?.trim()) {
-        const label = renderText(o, o.documentTitle, resolution, region, dark);
-        if (label) container.addChild(label);
-      }
+      if ((exporting || staticPreview || this.editingId !== o.id) && o.documentTitle?.trim())
+        this.addLabel(
+          container,
+          o,
+          o.documentTitle,
+          resolution,
+          region,
+          dark,
+          exporting || staticPreview,
+        );
       return container;
     }
     if (o.type === 'paper') {
@@ -2424,10 +2436,16 @@ export class Engine {
       sprite.width = o.width;
       sprite.height = o.height;
       container.addChild(sprite);
-      if ((exporting || this.editingId !== o.id) && o.imageTitle?.trim()) {
-        const label = renderText(o, o.imageTitle, resolution, region, dark);
-        if (label) container.addChild(label);
-      }
+      if ((exporting || this.editingId !== o.id) && o.imageTitle?.trim())
+        this.addLabel(
+          container,
+          o,
+          o.imageTitle,
+          resolution,
+          region,
+          dark,
+          exporting || staticPreview,
+        );
       return container;
     }
     if (dark && ['note', 'rect', 'ellipse', 'frame'].includes(o.type)) {
@@ -2495,25 +2513,40 @@ export class Engine {
       if (o.type === 'frame') text = o.text || 'Untitled frame';
       if (o.type === 'image') text = o.imageTitle?.trim() ? o.imageTitle : 'Image';
       if (o.type === 'video') text = o.text || 'Play video';
-      if (text) {
-        const still = exporting || staticPreview;
-        const label = renderText(
+      if (text)
+        this.addLabel(
+          container,
           o.type === 'image' && !o.imageTitle?.trim() ? { ...o, type: 'rect' } : o,
           text,
           resolution,
           region,
           dark,
+          exporting || staticPreview,
           exporting ? undefined : this.camera?.zoom,
-          { exporting: still, revealed: (start) => this.spoilerRevealed(o.id, start) },
         );
-        if (label) container.addChild(label);
-        if (!still && hasRichText(o)) {
-          const boxes = textSpoilers(o, text);
-          if (boxes.length) container.addChild(dustLayer(boxes, dark));
-        }
-      }
     }
     return container;
+  }
+  // An object's text or name, with dust over the spoilers this viewer has not revealed.
+  private addLabel(
+    container: Container,
+    o: CanvasObject,
+    text: string,
+    resolution: number,
+    region: ReturnType<typeof textRegion>,
+    dark: boolean,
+    still: boolean,
+    frameZoom?: number,
+  ) {
+    const label = renderText(o, text, resolution, region, dark, frameZoom, {
+      exporting: still,
+      revealed: (start) => this.spoilerRevealed(o.id, start),
+    });
+    if (label) container.addChild(label);
+    if (!still && hasRichText(o)) {
+      const boxes = textSpoilers(o, text, frameZoom);
+      if (boxes.length) container.addChild(dustLayer(boxes, dark));
+    }
   }
   private imageSprite(source: Texture, crop?: ImageCrop) {
     if (!crop || (crop.x === 0 && crop.y === 0 && crop.width === 1 && crop.height === 1))

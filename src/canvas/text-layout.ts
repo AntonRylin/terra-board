@@ -4,7 +4,7 @@ import { textAppearance } from './text-style';
 import { localToWorld } from './transform';
 import { frameTitleSize } from './frame-title-size';
 import { textInkBounds } from './text-ink';
-import { hasRichText } from './rich-text';
+import { hasRichText, shownMarks, shownText } from './rich-text';
 import {
   layoutRichText,
   richInkBounds,
@@ -70,8 +70,7 @@ function editorHeight(text: string, a: Layout['appearance']) {
 // editing so fitting does not run again for each GPU frame or change the note size.
 export function textLayout(
   o: CanvasObject,
-  text = (o.type === 'image' ? o.imageTitle : o.type === 'document' ? o.documentTitle : o.text) ||
-    '',
+  text = shownText(o),
   frameZoom?: number,
 ): Layout {
   const titleSize = o.type === 'frame' ? frameTitleSize(o, frameZoom) : undefined;
@@ -85,7 +84,7 @@ export function textLayout(
     o.bold,
     text,
     titleSize,
-    hasRichText(o) ? o.textMarks : null,
+    hasRichText(o) ? shownMarks(o) : null,
   ]);
   const store = titleSize && frameZoom !== undefined ? titleCache : cache;
   const cached = store.get(key);
@@ -125,7 +124,7 @@ export function textLayout(
       const lines = layoutRichText(
         measureContext(),
         text,
-        o.textMarks,
+        shownMarks(o),
         richBase,
         o.type !== 'text' || o.textBox ? wrapWidth : Infinity,
       );
@@ -167,7 +166,9 @@ export function textLayout(
     // turn into a heading block almost as tall as their frame when zoomed out.
     const budget = o.height * 0.16;
     const fits = (layout: Layout) =>
-      Math.max(1, layout.metrics.lines.length) * layout.appearance.lineHeight +
+      (layout.rich
+        ? layout.metrics.height
+        : Math.max(1, layout.metrics.lines.length) * layout.appearance.lineHeight) +
         (layout.appearance.labelGap || 0) <=
       budget;
     if (!fits(result)) {
@@ -279,8 +280,7 @@ export function textLayout(
 // rectangle; textLayout wraps and fits their contents instead of widening them.
 export function fitTextObject(
   o: CanvasObject,
-  text = (o.type === 'image' ? o.imageTitle : o.type === 'document' ? o.documentTitle : o.text) ||
-    '',
+  text = shownText(o),
 ): CanvasObject {
   if (o.type === 'image') return { ...o, imageTitle: text };
   if (o.type === 'document') return { ...o, documentTitle: text };

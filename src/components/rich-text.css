@@ -4,6 +4,11 @@
   outline: none;
   cursor: text;
 }
+.rt-field[data-placeholder]:empty::before {
+  content: attr(data-placeholder);
+  opacity: 0.5;
+  pointer-events: none;
+}
 .rt-field[contenteditable='false'] {
   pointer-events: none;
   cursor: inherit;

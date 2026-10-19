@@ -5,8 +5,12 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { clipboardObjects } from '../src/canvas/content.ts';
-import { stackingSelection } from '../src/canvas/stacking.ts';
-import { linkedFrameScene, linkedFrameTitle } from '../src/canvas/frame-links.ts';
+import { stackingSelection, copySelection } from '../src/canvas/stacking.ts';
+import {
+  linkedFrameScene,
+  linkedFrameTitle,
+  independentFrameCopy,
+} from '../src/canvas/frame-links.ts';
 import { exportPlan } from '../src/canvas/export-plan.ts';
 const { Store } = createRequire(import.meta.url)('../electron/store.cjs');
 const frame = {
@@ -162,4 +166,35 @@ test('exporting a linked frame does not include unrelated overlapping destinatio
     plan.objects.map((o) => o.id),
     [link.id],
   );
+});
+
+test('copying a frame takes its contents along in stacking order', () => {
+  const inside = { id: 'note', type: 'note', x: 40, y: 40, width: 100, height: 80, z: 2 };
+  const below = { id: 'shape', type: 'rect', x: 200, y: 60, width: 50, height: 50, z: 1 };
+  const outside = { id: 'away', type: 'rect', x: 900, y: 0, width: 50, height: 50, z: 3 };
+  const all = [frame, inside, below, outside];
+  assert.deepEqual(
+    copySelection(all, [frame]).map((o) => o.id),
+    ['original', 'shape', 'note'],
+  );
+  assert.deepEqual(copySelection(all, [inside]), [inside]);
+});
+
+test('an independent copy of a linked frame is the original, centred over the link', () => {
+  const inside = { id: 'note', type: 'note', x: 40, y: 40, width: 100, height: 80, z: 1 };
+  const nested = { ...link, id: 'nested', x: 300, y: 100, width: 100, height: 60, z: 2 };
+  const small = { ...link, width: 250, height: 150 };
+  const copy = independentFrameCopy(small, [frame, inside, nested]);
+  assert.deepEqual(
+    copy.map((o) => o.id),
+    ['original', 'note', 'nested'],
+  );
+  assert.equal(copy[0].frameLink, undefined);
+  assert.equal(copy[0].width, 500);
+  assert.deepEqual([copy[0].x, copy[0].y], [600 + 125 - 250, 75 - 150]);
+  assert.deepEqual([copy[1].x, copy[1].y], [40 + 475, 40 - 75]);
+  // Linked frames inside the original stay links.
+  assert.deepEqual(copy[2].frameLink, link.frameLink);
+  assert.equal(independentFrameCopy(small, [inside]), null);
+  assert.equal(independentFrameCopy(frame, [frame]), null);
 });

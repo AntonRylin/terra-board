@@ -147,3 +147,9 @@ export function bringToFrontEdit(all: CanvasObject[], selected: CanvasObject[]):
   if (previous > 1e7) next = ordered.map((o, i) => ({ ...o, z: i }));
   return { upserts: next.filter((o, i) => o.z !== ordered[i].z), deleted: [] };
 }
+
+/** What copying a selection takes along: frames bring their contents, in stacking order. */
+export function copySelection(all: CanvasObject[], selected: CanvasObject[]): CanvasObject[] {
+  if (!selected.some((o) => o.type === 'frame')) return selected;
+  return stackingSelection(all, selected).sort((a, b) => a.z - b.z);
+}

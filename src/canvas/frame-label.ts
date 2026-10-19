@@ -5,7 +5,7 @@ import { localToWorld, objectBounds } from './transform';
 import { highlightSize } from './highlight';
 
 export function frameLabel(o: CanvasObject, zoom?: number) {
-  const { appearance, metrics } = textLayout(
+  const { appearance, metrics, rich } = textLayout(
     o,
     o.type === 'image'
       ? o.imageTitle || ''
@@ -15,7 +15,7 @@ export function frameLabel(o: CanvasObject, zoom?: number) {
     zoom,
   );
   return {
-    ...textPlacement(o, appearance, metrics.lines.length),
+    ...textPlacement(o, appearance, metrics.lines.length, rich ? metrics.height : undefined),
     width: Math.min(o.width, Math.max(32, metrics.maxLineWidth)),
   };
 }

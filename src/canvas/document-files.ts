@@ -1,17 +1,31 @@
 import type { CanvasObject } from '../model';
+import { trimMarked } from './rich-text.ts';
 
 export function withDocumentTitle(
   current: CanvasObject,
   draft: CanvasObject,
   title: string,
 ): CanvasObject {
+  const { titleMarks: _, ...rest } = current,
+    trimmed = trimMarked(title, draft.titleMarks);
   return {
-    ...current,
-    documentTitle: title.trim(),
+    ...rest,
+    documentTitle: trimmed.text,
+    ...(trimmed.marks.length ? { titleMarks: trimmed.marks } : {}),
     bold: draft.bold,
     strikethrough: draft.strikethrough,
     color: draft.color,
     fontSize: draft.fontSize,
+  };
+}
+
+export function withImageTitle(draft: CanvasObject, title: string): CanvasObject {
+  const { titleMarks: _, ...rest } = draft,
+    trimmed = trimMarked(title, draft.titleMarks);
+  return {
+    ...rest,
+    imageTitle: trimmed.text,
+    ...(trimmed.marks.length ? { titleMarks: trimmed.marks } : {}),
   };
 }
 

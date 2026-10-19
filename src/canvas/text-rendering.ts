@@ -7,6 +7,7 @@ import { frameLabel, hasExternalLabel } from './frame-label';
 import { linkLayout, hasLinkImage } from './link-preview';
 import { nightInk } from '../appearance';
 import { drawRichText, spoilerBoxes, type SpoilerBox } from './rich-text-canvas';
+import { shownText } from './rich-text';
 
 export interface RichRenderOptions {
   // Spoiler regions this viewer has revealed (never saved or shared).
@@ -17,16 +18,24 @@ export interface RichRenderOptions {
 }
 
 // Hidden-text boxes in the object's local coordinates, for dust and clicks.
-export function textSpoilers(o: CanvasObject, text = o.text || ''): SpoilerBox[] {
-  const { appearance: a, metrics, rich } = textLayout(o, text);
+export function textSpoilers(
+  o: CanvasObject,
+  text = shownText(o),
+  frameZoom?: number,
+): SpoilerBox[] {
+  const { appearance: a, metrics, rich } = textLayout(o, text, frameZoom);
   if (!rich) return [];
   const placement = textPlacement(o, a, metrics.lines.length, metrics.height);
+  const centered = centeredText(o);
   return spoilerBoxes(rich.lines, {
-    x: o.centerX ? o.width / 2 : a.padding,
+    x: centered ? o.width / 2 : a.padding,
     y: placement.top,
-    align: o.centerX ? 'center' : 'left',
+    align: centered ? 'center' : 'left',
   });
 }
+// Names above frames, images and documents always start at the left edge.
+const centeredText = (o: CanvasObject) =>
+  o.type !== 'frame' && o.type !== 'image' && o.type !== 'document' && !!o.centerX;
 
 export function renderLinkCaption(
   o: CanvasObject,
@@ -168,7 +177,7 @@ export function renderText(
 ) {
   const { appearance: a, metrics, rich } = textLayout(o, text, frameZoom);
   const placement = textPlacement(o, a, metrics.lines.length, rich ? metrics.height : undefined);
-  const centered = o.type !== 'frame' && o.type !== 'image' && o.type !== 'document' && o.centerX;
+  const centered = centeredText(o);
   const anchor = centered ? o.width / 2 : a.padding;
   const largest = rich ? Math.max(a.fontSize, ...rich.lines.map((line) => line.size)) : a.fontSize;
   const overhang = largest * 0.25 + 2;

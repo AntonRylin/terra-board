@@ -7,7 +7,7 @@ import { textAppearance } from '../src/canvas/text-style.ts';
 import { localToWorld } from '../src/canvas/transform.ts';
 import { frameTitleSize } from '../src/canvas/frame-title-size.ts';
 import * as richCanvas from '../src/canvas/rich-text-canvas.ts';
-import { hasRichText } from '../src/canvas/rich-text.ts';
+import * as richText from '../src/canvas/rich-text.ts';
 
 // A 2D context whose characters are half an em wide in whatever font is set.
 function halfEmContext() {
@@ -88,7 +88,7 @@ function fixture() {
                 : id === './rich-text-canvas'
                   ? richCanvas
                   : id === './rich-text'
-                    ? { hasRichText }
+                    ? richText
                     : { textInkBounds: () => ({ top: 0, height: 10 }) },
     },
   );
@@ -189,6 +189,10 @@ test('formatted notes lay out their own lines and shrink until they fit', () => 
     textLayout({ ...formatted, textMarks: [{ start: 0, end: 30, italic: true }] }),
     layout,
   );
-  // Frames and other titles stay plain even if marks arrive from outside.
-  assert.equal(textLayout({ ...frame, textMarks: formatted.textMarks }).rich, undefined);
+  // Frame names take formatting; shapes stay plain even if marks arrive from outside.
+  assert.ok(textLayout({ ...frame, textMarks: formatted.textMarks }).rich);
+  assert.equal(
+    textLayout({ ...plain, type: 'rect', textMarks: formatted.textMarks }).rich,
+    undefined,
+  );
 });

@@ -337,6 +337,7 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
         ? { textMarks: sanitizeMarks(o.textMarks, o.text.length) }
         : {}),
       ...(o.imageTitle === undefined ? {} : { imageTitle: o.imageTitle }),
+      ...titleMarksOf(o),
       ...(o.frameLink
         ? { frameLink: { boardId: o.frameLink.boardId, frameId: o.frameLink.frameId } }
         : {}),
@@ -389,6 +390,15 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
     };
   });
 }
+// Formatting of an image's or document's title, kept only over that title.
+function titleMarksOf(o: any) {
+  const title =
+    o.type === 'image' ? o.imageTitle : o.type === 'document' ? o.documentTitle : undefined;
+  const titleMarks =
+    typeof title === 'string' ? sanitizeMarks(o.titleMarks, title.length) : undefined;
+  return titleMarks ? { titleMarks } : {};
+}
+
 export function previewText(text: string, width: number, height: number, font: number): string {
   const cols = Math.max(1, Math.floor(Math.min(width, 2048) / (font * 1.1))),
     lines = Math.max(1, Math.min(64, Math.floor(Math.min(height, 2048) / (font * 1.45))));

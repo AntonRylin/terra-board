@@ -53,6 +53,8 @@ import type { BackgroundAppearance } from '../model';
 import SelectionToolbar from './SelectionToolbar';
 import FrameUsages from './FrameUsages';
 import { frameReference, type FrameReference } from '../canvas/frame-usages';
+import { independentFrameCopy } from '../canvas/frame-links';
+import { copySelection, stackingHierarchy } from '../canvas/stacking';
 import ObjectLockButton from './ObjectLockButton';
 import type { ToolbarId } from './toolbar-layout';
 import {
@@ -157,7 +159,8 @@ import ImageCrop from './ImageCrop';
 import DocumentReader, { type DocumentReaderHandle } from './DocumentReader';
 import PdfWorkspace, { type PdfWorkspaceHandle } from './PdfWorkspace';
 import ImageViewer from './ImageViewer';
-import { documentKind, withDocumentTitle } from '../canvas/document-files';
+import { documentKind, withDocumentTitle, withImageTitle } from '../canvas/document-files';
+import { shownMarks, shownMarksKey, shownText, trimTrailingBreaks } from '../canvas/rich-text';
 import {
   documentBytes,
   loadPdf,
@@ -205,6 +208,10 @@ const tools: { id: Tool & ToolbarId; label: string; icon: typeof Type; command: 
   { id: 'link', label: 'Link', icon: Link2, command: 'tool.link' },
 ];
 const colors = ['#f8efd4', '#e4eee8', '#e4ecfa', '#efe5f1', '#f4e4e5', '#ffffff', '#000000'];
+// Names shown above frames, images and documents.
+const isName = (o: CanvasObject) => ['frame', 'image', 'document'].includes(o.type);
+// Text that takes inline formatting while edited on the board; shapes stay plain.
+const richEditing = (o: CanvasObject) => o.type === 'text' || o.type === 'note' || isName(o);
 const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   {
     document: doc,
@@ -249,6 +256,20 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     if (!source?.some((item) => item.id === frameId && item.type === 'frame'))
       throw Error('The original frame is unavailable. Restore it to reconnect this link.');
     onOpenFrame(boardId, frameId);
+  };
+  // A real frame with the original's contents, no longer tied to the source.
+  const duplicateIndependentFrame = async (o: CanvasObject) => {
+    if (!o.frameLink) return;
+    const { boardId } = o.frameLink;
+    const source =
+      boardId === doc.board.id
+        ? engine.current?.all
+        : (await invoke<Document>('loadBoard', { id: boardId })).objects;
+    const copy = source && independentFrameCopy(o, source);
+    if (!copy)
+      throw Error('The original frame is unavailable. Restore it to duplicate this frame.');
+    if (!alive.current) return;
+    pasteObjects(copy);
   };
   const copyFrameLink = async (o: CanvasObject) => {
     finishEdit();
@@ -339,7 +360,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     queue = useRef<SaveQueue | null>(null),
     cameraQueue = useRef<CameraSaveQueue | null>(null),
     alive = useRef(true),
-    // The in-place editor: a rich field for text and notes, a textarea for titles.
+    // The in-place editor: a rich field for text, notes and names, a textarea for shapes.
     editorRef = useRef<HTMLElement | null>(null),
     pasting = useRef(false),
     editingSession = useRef<{ object: CanvasObject; draft: string } | null>(null),
@@ -1179,8 +1200,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     }
     if (editingSession.current) finishEdit();
     engine.current?.setSelection([o.id]);
-    const value =
-      (o.type === 'image' ? o.imageTitle : o.type === 'document' ? o.documentTitle : o.text) || '';
+    const value = shownText(o);
     editingSession.current = { object: { ...o }, draft: value };
     engine.current?.setEditing(o.id);
     setEditing({ ...o });
@@ -1433,7 +1453,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         const next =
           editing.type === 'document' && current
             ? withDocumentTitle(current, editing, draft)
-            : { ...editing, imageTitle: draft.trim() };
+            : withImageTitle(editing, draft);
         if (current && JSON.stringify(next) !== JSON.stringify(current))
           engine.current.apply({ upserts: [next], deleted: [] });
       } else {
@@ -1447,7 +1467,16 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
                   engine.current.camera.zoom +
                   padding * 2,
               );
-        const next = { ...editing, text: draft, height };
+        let next: CanvasObject = { ...editing, text: draft, height };
+        if (editing.type === 'frame' || editing.type === 'list') {
+          const { textMarks: _, ...rest } = next,
+            trimmed = trimTrailingBreaks(draft, editing.textMarks);
+          next = {
+            ...rest,
+            text: trimmed.text,
+            ...(trimmed.marks.length ? { textMarks: trimmed.marks } : {}),
+          };
+        }
         if (JSON.stringify(next) !== JSON.stringify(engine.current.objects.get(editing.id)))
           engine.current.apply({ upserts: [next], deleted: [] });
       }
@@ -2078,12 +2107,22 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       target && edit.upserts.some((o) => o.galleryId === target.galleryId)
         ? target.galleryId
         : null;
-    e.setSelection(gallery ? [gallery] : copies.filter((o) => !o.galleryId).map((o) => o.id));
+    // A pasted frame is selected on its own; its contents travel with it.
+    const { parent } = stackingHierarchy(e.all);
+    const pasted = new Set<string>(copies.map((o) => o.id));
+    e.setSelection(
+      gallery
+        ? [gallery]
+        : copies
+            .filter((o) => !o.galleryId && !pasted.has(parent.get(o.id) || ''))
+            .map((o) => o.id),
+    );
     for (const o of copies) if (o.type === 'link' && !o.assetId) refreshLink(o, e);
   };
   const copyDesktop = (objects: CanvasObject[], cut = false) => {
     const e = engine.current;
-    const snapshot = structuredClone(selectionWithGalleryImages(objects, e?.all || []));
+    const all = e?.all || [];
+    const snapshot = structuredClone(copySelection(all, selectionWithGalleryImages(objects, all)));
     const task = window.canvas!.copyObjects(snapshot).then((copied) => {
       if (copied && cut && alive.current && engine.current === e)
         e?.apply({ upserts: [], deleted: snapshot.map((o) => o.id) });
@@ -2213,7 +2252,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         return;
       }
       event.preventDefault();
-      const objects = engine.current.clipboardSelection;
+      const objects = engine.current.copySelection;
       if (window.canvas) {
         void copyDesktop(objects);
         return;
@@ -2447,6 +2486,14 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
                   action: () => {
                     void openOriginalFrame(selected[0]).catch(error);
                   },
+                },
+                {
+                  label: 'Duplicate as independent frame',
+                  icon: <Copy />,
+                  action: () => {
+                    void duplicateIndependentFrame(selected[0]).catch(error);
+                  },
+                  disabled: readOnly,
                 },
               ]
             : []),
@@ -3520,24 +3567,42 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           </SelectionToolbar>
         </div>
       )}
-      {editing && editingAppearance && (editing.type === 'text' || editing.type === 'note') && (
+      {editing && editingAppearance && richEditing(editing) && (
         <RichTextField
           fieldRef={(element) => {
             editorRef.current = element;
           }}
           className={'text-editor ' + (editing.type === 'note' ? 'note-editor' : '')}
-          label="Edit canvas text"
+          label={
+            editing.type === 'document'
+              ? 'Edit document title'
+              : editing.type === 'image'
+                ? 'Edit image title'
+                : editing.gallery
+                  ? 'Edit gallery name'
+                  : editing.type === 'frame'
+                    ? 'Edit frame name'
+                    : 'Edit canvas text'
+          }
+          placeholder={
+            editing.type === 'document'
+              ? 'Document title'
+              : editing.type === 'image'
+                ? 'Image title'
+                : undefined
+          }
           maxLength={100000}
           value={draft}
-          marks={editing.textMarks}
+          marks={shownMarks(editing)}
           editable
           onChange={(value, marks) => {
             const session = editingSession.current;
             if (session) {
               session.draft = value;
-              if (marks !== session.object.textMarks) {
-                const { textMarks: _, ...rest } = session.object;
-                session.object = marks ? { ...rest, textMarks: marks } : rest;
+              const key = shownMarksKey(session.object);
+              if (marks !== session.object[key]) {
+                const { [key]: _, ...rest } = session.object;
+                session.object = marks ? { ...rest, [key]: marks } : rest;
                 setEditing(session.object);
               }
               // Text pasted into free text can run far off screen on one line;
@@ -3583,7 +3648,11 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             } else if (e.key === 'Escape') {
               e.preventDefault();
               finishEdit(true);
-            } else if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+            } else if (
+              (e.ctrlKey || e.metaKey || (isName(editing) && !e.shiftKey)) &&
+              e.key === 'Enter'
+            ) {
+              // A name is one line unless Shift+Enter breaks it.
               e.preventDefault();
               finishEdit();
             }
@@ -3595,7 +3664,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             top: (editorOrigin?.y ?? editing.y) * camera.zoom + camera.y,
             transform: `rotate(${editing.rotation || 0}deg)`,
             transformOrigin: '0 0',
-            textAlign: editing.centerX ? 'center' : 'left',
+            textAlign: !isName(editing) && editing.centerX ? 'center' : 'left',
             width: editingAppearance.wrapWidth * camera.zoom,
             fontSize: editingAppearance.fontSize * camera.zoom,
             // Unitless, so larger formatted runs grow their own line like on the canvas.
@@ -3610,30 +3679,13 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           }}
         />
       )}
-      {editing && editingAppearance && editing.type !== 'text' && editing.type !== 'note' && (
+      {editing && editingAppearance && !richEditing(editing) && (
         <textarea
           ref={(element) => {
             editorRef.current = element;
           }}
           className="text-editor"
-          aria-label={
-            editing.type === 'document'
-              ? 'Edit document title'
-              : editing.type === 'image'
-                ? 'Edit image title'
-                : editing.gallery
-                  ? 'Edit gallery name'
-                  : editing.type === 'frame'
-                    ? 'Edit frame name'
-                    : 'Edit canvas text'
-          }
-          placeholder={
-            editing.type === 'document'
-              ? 'Document title'
-              : editing.type === 'image'
-                ? 'Image title'
-                : undefined
-          }
+          aria-label="Edit canvas text"
           maxLength={100000}
           value={draft}
           onChange={(e) => {
@@ -3654,12 +3706,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             } else if (e.key === 'Escape') {
               e.preventDefault();
               finishEdit(true);
-            } else if (
-              (e.ctrlKey ||
-                e.metaKey ||
-                (['frame', 'image', 'document'].includes(editing.type) && !e.shiftKey)) &&
-              e.key === 'Enter'
-            ) {
+            } else if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
               e.preventDefault();
               finishEdit();
             }
@@ -3671,10 +3718,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             top: (editorOrigin?.y ?? editing.y) * camera.zoom + camera.y,
             transform: `rotate(${editing.rotation || 0}deg)`,
             transformOrigin: '0 0',
-            textAlign:
-              !['frame', 'image', 'document'].includes(editing.type) && editing.centerX
-                ? 'center'
-                : 'left',
+            textAlign: editing.centerX ? 'center' : 'left',
             width: editingAppearance.wrapWidth * camera.zoom,
             fontSize: editingAppearance.fontSize * camera.zoom,
             lineHeight: `${editingAppearance.lineHeight * camera.zoom}px`,

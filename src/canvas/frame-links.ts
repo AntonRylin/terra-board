@@ -1,4 +1,5 @@
 import type { CanvasObject } from '../model';
+import { copySelection } from './stacking.ts';
 import { containsObject, worldToLocal } from './transform.ts';
 
 export interface FrameScene {
@@ -63,4 +64,22 @@ export function sceneObjects(scene: FrameScene): CanvasObject[] {
 
 export function linkedFrameTitle(scene: FrameScene): string {
   return scene.source?.text || scene.object.text || 'Linked frame';
+}
+
+/**
+ * An independent copy of a linked frame's original: the source frame and its
+ * contents, placed over the link. The result keeps source ids; pasting remaps them.
+ */
+export function independentFrameCopy(
+  link: CanvasObject,
+  sourceObjects: CanvasObject[],
+): CanvasObject[] | null {
+  if (!link.frameLink) return null;
+  const source = sourceObjects.find(
+    (o) => o.id === link.frameLink!.frameId && o.type === 'frame' && !o.frameLink,
+  );
+  if (!source) return null;
+  const dx = link.x + link.width / 2 - (source.x + source.width / 2);
+  const dy = link.y + link.height / 2 - (source.y + source.height / 2);
+  return copySelection(sourceObjects, [source]).map((o) => ({ ...o, x: o.x + dx, y: o.y + dy }));
 }

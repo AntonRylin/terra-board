@@ -94,10 +94,12 @@ export interface CanvasObject {
   height: number;
   z: number;
   text?: string;
-  // Inline formatting of `text`: edited on list titles, board text and notes.
+  // Inline formatting of `text`: edited on list titles, board text, notes and frame names.
   textMarks?: TextMark[];
   imageTitle?: string;
   documentTitle?: string;
+  // Inline formatting of `imageTitle` or `documentTitle`; there `text` is the file name.
+  titleMarks?: TextMark[];
   documentMime?: string;
   documentBytes?: number;
   documentPreviewId?: string;

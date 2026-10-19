@@ -7,7 +7,16 @@ import {
   sanitizeMarks,
   spoilerRegions,
   styleRuns,
+  trimTrailingBreaks,
 } from '../src/canvas/rich-text.ts';
+
+test('titles lose trailing line breaks but keep inner ones and their styles', () => {
+  assert.deepEqual(trimTrailingBreaks('Plan\nQ3\n\r\n', [{ start: 5, end: 10, bold: true }]), {
+    text: 'Plan\nQ3',
+    marks: [{ start: 5, end: 7, bold: true }],
+  });
+  assert.deepEqual(trimTrailingBreaks('  Plan  '), { text: '  Plan  ', marks: [] });
+});
 
 test('styles split, merge and toggle across ranges', () => {
   let marks = applyStyle(11, [], 0, 5, { bold: true });
@@ -118,6 +127,69 @@ test('formatting survives storage and clipboard validation, malformed ranges are
     assert.deepEqual(value.items, expectedItems);
     assert.deepEqual(value.textMarks, [{ start: 0, end: 4, highlight: '#ffd43b', font: 'hand' }]);
   }
+});
+
+test('frame, image and document names keep their formatting', async () => {
+  const { createRequire } = await import('node:module');
+  const { objectValue } = createRequire(import.meta.url)('../electron/store.cjs');
+  const { clipboardObjects } = await import('../src/canvas/content.ts');
+  const { withDocumentTitle, withImageTitle } = await import('../src/canvas/document-files.ts');
+  const big = { start: 0, end: 4, bold: true, size: 2 };
+  const frame = {
+    id: 'frame',
+    type: 'frame',
+    x: 0,
+    y: 0,
+    width: 400,
+    height: 300,
+    z: -1,
+    text: 'Plan B',
+    textMarks: [big],
+  };
+  const image = {
+    id: 'image',
+    type: 'image',
+    assetId: 'a'.repeat(64),
+    x: 0,
+    y: 0,
+    width: 200,
+    height: 100,
+    z: 1,
+    text: 'photo.png',
+    imageTitle: 'Plan B',
+    // Formats the title, not the file name; past its end it is cut back.
+    titleMarks: [{ start: 0, end: 99, italic: true }],
+  };
+  for (const value of [objectValue(frame), clipboardObjects([frame])[0]])
+    assert.deepEqual(value.textMarks, [big]);
+  for (const value of [objectValue(image), clipboardObjects([image])[0]])
+    assert.deepEqual(value.titleMarks, [{ start: 0, end: 6, italic: true }]);
+  // Marks only belong to an image's or document's title.
+  assert.equal(objectValue({ ...frame, titleMarks: [big] }).titleMarks, undefined);
+
+  // Saving trims the title and moves its formatting along with the text.
+  assert.deepEqual(
+    withImageTitle({ ...image, titleMarks: [{ start: 2, end: 6, bold: true }] }, '  Plan B '),
+    {
+      ...image,
+      imageTitle: 'Plan B',
+      titleMarks: [{ start: 0, end: 4, bold: true }],
+    },
+  );
+  const { titleMarks: _, ...untitled } = withImageTitle({ ...image, titleMarks: [big] }, '   ');
+  assert.deepEqual(withImageTitle({ ...image, titleMarks: [big] }, '   '), {
+    ...untitled,
+    imageTitle: '',
+  });
+  const document = { ...image, type: 'document', documentTitle: 'Old', imageTitle: undefined };
+  assert.deepEqual(
+    withDocumentTitle(
+      document,
+      { ...document, titleMarks: [{ start: 1, end: 4, code: true }] },
+      ' Spec ',
+    ).titleMarks,
+    [{ start: 0, end: 3, code: true }],
+  );
 });
 
 // A context whose characters are half an em wide, with fixed font metrics.

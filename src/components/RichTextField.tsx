@@ -205,6 +205,7 @@ export default function RichTextField({
   maxLength,
   className,
   label,
+  placeholder,
   style,
   onKeyDown,
   fieldRef,
@@ -222,6 +223,8 @@ export default function RichTextField({
   maxLength: number;
   className?: string;
   label: string;
+  // Shown while the field is empty.
+  placeholder?: string;
   style?: CSSProperties;
   onKeyDown?: (event: KeyboardEvent<HTMLDivElement>) => void;
   fieldRef?: (element: HTMLDivElement | null) => void;
@@ -437,6 +440,8 @@ export default function RichTextField({
       suppressContentEditableWarning
       role="textbox"
       aria-label={label}
+      aria-placeholder={placeholder}
+      data-placeholder={placeholder}
       aria-multiline={multiline}
       aria-readonly={!editable}
       tabIndex={editable ? 0 : -1}

@@ -1096,6 +1096,28 @@ test('selected content drags, duplicates and deletes as one complete selection',
   assert.equal(f.engine.objects.size, 3);
   assert.ok(copies.every((id) => !f.engine.objects.has(id)));
 });
+test('duplicating a frame copies its contents as a separate frame', () => {
+  const f = fixture();
+  f.engine.apply({
+    upserts: [
+      { id: 'frame', type: 'frame', x: 0, y: 0, width: 400, height: 300, z: 1, text: 'Plan' },
+      { id: 'inside', type: 'note', x: 40, y: 40, width: 100, height: 80, z: 2, text: 'A' },
+      { id: 'outside', type: 'rect', x: 600, y: 0, width: 50, height: 50, z: 3 },
+    ],
+    deleted: [],
+  });
+  f.engine.setSelection(['frame']);
+  f.engine.duplicate();
+  assert.equal(f.engine.objects.size, 5);
+  const [frame] = f.engine.selected;
+  assert.ok(frame.id !== 'frame' && frame.type === 'frame');
+  assert.deepEqual([frame.x, frame.y, frame.text], [28, 28, 'Plan']);
+  const note = f.engine.all.find((o) => o.type === 'note' && o.id !== 'inside');
+  assert.deepEqual([note.x, note.y, note.text], [68, 68, 'A']);
+  assert.ok(note.z > frame.z);
+  f.engine.apply({ upserts: [{ ...note, text: 'B' }], deleted: [] });
+  assert.equal(f.engine.objects.get('inside').text, 'A');
+});
 
 for (const corner of ['nw', 'ne', 'sw', 'se']) {
   test(`zoomed-out ${corner} handle wins over nearby corners`, () => {

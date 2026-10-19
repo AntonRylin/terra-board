@@ -2,9 +2,17 @@
 // The text itself stays a plain string, so search, sync and MCP keep working.
 import type { CanvasObject } from '../model';
 
-// Board text and notes render their formatting; titles stay plain.
+// The text an object shows on the board: an image's or document's title, else `text`.
+export const shownText = (o: CanvasObject) =>
+  (o.type === 'image' ? o.imageTitle : o.type === 'document' ? o.documentTitle : o.text) || '';
+export const shownMarksKey = (o: CanvasObject) =>
+  o.type === 'image' || o.type === 'document' ? 'titleMarks' : 'textMarks';
+export const shownMarks = (o: CanvasObject) => o[shownMarksKey(o)];
+
+// Board text, notes and the names of frames, images and documents render their
+// formatting; shapes and other titles stay plain.
 export const hasRichText = (o: CanvasObject) =>
-  (o.type === 'text' || o.type === 'note') && !!o.textMarks?.length;
+  ['text', 'note', 'frame', 'image', 'document'].includes(o.type) && !!shownMarks(o)?.length;
 
 export const textFonts = ['serif', 'mono', 'hand', 'condensed'] as const;
 export type TextFont = (typeof textFonts)[number];
@@ -97,6 +105,25 @@ export function runsToMarks(runs: readonly StyleRun[]): TextMark[] {
 
 export function normalizeMarks(length: number, marks?: readonly TextMark[]): TextMark[] {
   return runsToMarks(styleRuns(length, marks));
+}
+
+// Trims surrounding whitespace, keeping each style on the characters that remain.
+export function trimMarked(text: string, marks?: readonly TextMark[]) {
+  const trimmed = text.trim(),
+    shift = text.length - text.trimStart().length;
+  return {
+    text: trimmed,
+    marks: normalizeMarks(
+      trimmed.length,
+      marks?.map((m) => ({ ...m, start: m.start - shift, end: m.end - shift })),
+    ),
+  };
+}
+
+// Drops line breaks left at the end of a title, clipping styles to the text that remains.
+export function trimTrailingBreaks(text: string, marks?: readonly TextMark[]) {
+  const trimmed = text.replace(/[\r\n]+$/, '');
+  return { text: trimmed, marks: normalizeMarks(trimmed.length, marks) };
 }
 
 // Untrusted data: drop anything malformed rather than rejecting the whole object.

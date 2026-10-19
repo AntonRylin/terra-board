@@ -360,6 +360,16 @@ function objectValue(o) {
       result[key] = o[key];
     }
   }
+  const title =
+    o.type === 'image'
+      ? result.imageTitle
+      : o.type === 'document'
+        ? result.documentTitle
+        : undefined;
+  if (title !== undefined) {
+    const titleMarks = marksValue(o.titleMarks, title.length);
+    if (titleMarks) result.titleMarks = titleMarks;
+  }
   for (const [key, min, max] of [
     ['documentBytes', 0, 256 * 1024 * 1024],
     ['documentPageCount', 1, 100000],
