@@ -10,7 +10,14 @@ import { updatePreferences, usePreferences } from '../settings/preferences';
 import { isCommand } from '../shortcuts/active';
 import './radial-menu.css';
 
-type Session = { center: Point; anchor: Point; editing: boolean; armed: boolean };
+type Session = {
+  anchor: Point;
+  origin: Point;
+  code: string;
+  editing: boolean;
+  armed: boolean;
+  held: boolean;
+};
 export default function RadialMenu({
   engine,
   host,
@@ -25,11 +32,13 @@ export default function RadialMenu({
   const layout = usePreferences().radial;
   const [session, setSession] = useState<Session | null>(null);
   const [slot, setSlot] = useState(5);
+  const [hover, setHover] = useState<number | null>(null);
   const current = useRef(session);
   const pointer = useRef<Point | null>(null);
   const latest = useRef({ layout, onChoose });
   latest.current = { layout, onChoose };
   const panel = useRef<HTMLDivElement>(null);
+  const wheel = useRef<HTMLDivElement>(null);
   const update = (value: Session | null) => {
     current.current = value;
     setSession(value);
@@ -45,17 +54,35 @@ export default function RadialMenu({
     latest.current.onChoose(latest.current.layout[index], s.anchor, point);
   };
   const save = (value: ToolbarId[]) => updatePreferences({ radial: value });
+  // Pointer position translated into a wheel slot, whatever size the wheel renders at.
+  const slotAt = (point: Point) => {
+    const rect = wheel.current?.getBoundingClientRect();
+    if (!rect) return null;
+    const scale = rect.width / 280;
+    return radialSlot(
+      (point.x - rect.left - rect.width / 2) / scale,
+      (point.y - rect.top - rect.width / 2) / scale,
+    );
+  };
   useEffect(() => {
     const move = (event: PointerEvent) => {
       pointer.current = { x: event.clientX, y: event.clientY };
       const s = current.current;
       if (!s || s.editing || event.buttons) return;
-      const dx = event.clientX - s.center.x,
-        dy = event.clientY - s.center.y;
-      // A wheel shifted away from an edge must be entered before flick selection arms.
-      if (Math.hypot(dx, dy) < 60) s.armed = true;
-      const index = radialSlot(dx, dy);
-      if (s.armed && index !== null) choose(index, pointer.current);
+      // Highlighting arms only after deliberate movement, so releasing the trigger
+      // right away never picks whatever sector the stale cursor happened to sit in.
+      if (!s.armed && Math.hypot(event.clientX - s.origin.x, event.clientY - s.origin.y) > 16)
+        s.armed = true;
+      setHover(s.armed ? slotAt(pointer.current) : null);
+    };
+    const release = (event: KeyboardEvent) => {
+      const s = current.current;
+      if (!s || s.editing || !s.held || event.code !== s.code) return;
+      const p = pointer.current;
+      const index = s.armed && p ? slotAt(p) : null;
+      if (p && index !== null) choose(index, p);
+      // A tap without movement leaves the wheel open for click or keyboard selection.
+      else update({ ...s, held: false });
     };
     const key = (event: KeyboardEvent) => {
       const s = current.current;
@@ -140,26 +167,27 @@ export default function RadialMenu({
       event.stopImmediatePropagation();
       e.stopCameraAnimation();
       const rect = host.current!.getBoundingClientRect();
-      const center = {
-        x: Math.max(150, Math.min(innerWidth - 150, p.x)),
-        y: Math.max(150, Math.min(innerHeight - 195, p.y)),
-      };
       setSlot(5);
+      setHover(null);
       update({
-        center,
         anchor: e.screenPoint({ x: p.x - rect.left, y: p.y - rect.top }),
+        origin: { ...p },
+        code: event.code,
         editing: false,
-        armed: Math.hypot(center.x - p.x, center.y - p.y) < 60,
+        armed: false,
+        held: true,
       });
     };
     const dismiss = () => update(null);
     window.addEventListener('pointermove', move, true);
     window.addEventListener('keydown', key, true);
+    window.addEventListener('keyup', release, true);
     window.addEventListener('blur', dismiss);
     window.addEventListener('resize', dismiss);
     return () => {
       window.removeEventListener('pointermove', move, true);
       window.removeEventListener('keydown', key, true);
+      window.removeEventListener('keyup', release, true);
       window.removeEventListener('blur', dismiss);
       window.removeEventListener('resize', dismiss);
     };
@@ -171,6 +199,9 @@ export default function RadialMenu({
   if (!session) return null;
   const byId = new Map(tools.map((t) => [t.id, t]));
   const selected = byId.get(layout[slot]);
+  const hovered = hover === null ? undefined : byId.get(layout[hover]);
+  // The wheel fills most of the screen's smaller dimension; zoom keeps text crisp.
+  const grow = Math.max(1, (Math.min(innerWidth, innerHeight) * 0.85) / 330);
   return createPortal(
     <div
       className="radial-backdrop"
@@ -189,9 +220,9 @@ export default function RadialMenu({
         role={session.editing ? 'dialog' : 'toolbar'}
         aria-label={session.editing ? 'Customize quick tools' : 'Quick tools'}
         aria-modal={session.editing || undefined}
-        style={session.editing ? undefined : { left: session.center.x, top: session.center.y }}
+        style={session.editing ? undefined : { zoom: grow }}
       >
-        <div className="radial-wheel">
+        <div className="radial-wheel" ref={wheel}>
           <svg className="radial-segments" viewBox="-140 -140 280 280" aria-hidden="true">
             {radialSectors.map((sector, index) => {
               const a = ((sector * 45 - 111) * Math.PI) / 180,
@@ -201,15 +232,23 @@ export default function RadialMenu({
               return (
                 <path
                   key={sector}
-                  data-active={(session.editing && slot === index) || undefined}
+                  data-active={(session.editing ? slot === index : hover === index) || undefined}
                   d={`M ${point(60, a)} L ${point(136, a)} A 136 136 0 0 1 ${point(136, b)} L ${point(60, b)} A 60 60 0 0 0 ${point(60, a)} Z`}
                 />
               );
             })}
           </svg>
           <div className="radial-center" aria-hidden="true">
-            <span>{session.editing ? selected?.label : 'Quick tools'}</span>
-            <small>{session.editing ? 'Choose a slot' : 'Move to select'}</small>
+            <span>{session.editing ? selected?.label : (hovered?.label ?? 'Quick tools')}</span>
+            <small>
+              {session.editing
+                ? 'Choose a slot'
+                : session.held
+                  ? hovered
+                    ? 'Release to select'
+                    : 'Move to a tool'
+                  : 'Click to select'}
+            </small>
           </div>
           {layout.map((id, index) => {
             const tool = byId.get(id)!;
@@ -220,6 +259,7 @@ export default function RadialMenu({
                 className="radial-tool"
                 data-radial-slot={index}
                 data-radial-tool={id}
+                data-hover={(!session.editing && hover === index) || undefined}
                 aria-label={session.editing ? `Change ${tool.label} slot` : tool.label}
                 aria-pressed={session.editing ? slot === index : undefined}
                 style={{ left: 140 + Math.cos(angle) * 99, top: 140 + Math.sin(angle) * 99 }}
@@ -231,7 +271,7 @@ export default function RadialMenu({
                         index,
                         event.detail
                           ? { x: event.clientX, y: event.clientY }
-                          : pointer.current || session.center,
+                          : pointer.current || session.origin,
                       )
                 }
               >

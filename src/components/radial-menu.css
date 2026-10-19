@@ -2,12 +2,15 @@
   position: fixed;
   inset: 0;
   z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--paper) 40%, transparent);
 }
 .radial-menu {
-  position: fixed;
+  position: relative;
   width: 280px;
   height: 330px;
-  transform: translate(-50%, -140px);
   color: inherit;
 }
 .radial-wheel {
@@ -79,6 +82,7 @@
   white-space: nowrap;
 }
 .radial-tool:hover,
+.radial-tool[data-hover],
 .radial-tool:focus-visible {
   background: var(--blue);
   color: var(--accent);
@@ -100,9 +104,6 @@
   height: auto;
   max-height: calc(100vh - 32px);
   overflow-y: auto;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
   display: flex;
   align-items: center;
   gap: 24px;

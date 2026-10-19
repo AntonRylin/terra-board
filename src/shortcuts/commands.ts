@@ -38,7 +38,7 @@ export const commands = [
   { id: 'tool.link', name: 'Link', group: 'Tools', scope: 'board', defaults: [key('KeyL')] },
   {
     id: 'view.radial',
-    name: 'Quick tools at cursor',
+    name: 'Quick tools wheel',
     group: 'Tools',
     scope: 'board',
     defaults: [key('Tab')],

@@ -1,5 +1,12 @@
 # Verification — Terra Board
 
+## Centered release-to-select radial menu — 2026-10-19
+
+The quick-tools wheel no longer opens at the cursor: it appears centered over the board, scaled to about 85% of the window's smaller dimension (CSS `zoom` keeps text crisp), over a light theme-tinted scrim. Moving the pointer onto a sector only highlights it; the highlighted tool is chosen when the trigger key (Tab by default) is **released**, so nothing is selected just because the cursor crossed a sector. A quick tap keeps the wheel open for click or keyboard selection, and highlighting arms only after the pointer moves, so releasing without moving never picks the sector under the stale cursor. Objects are still anchored at the cursor position where the wheel was invoked. The shortcut was renamed from "Quick tools at cursor" to "Quick tools wheel" and the settings subtitle updated.
+
+- `npx tsc --noEmit`: passed. `tests/radial-layout.test.mjs` and `tests/preferences.test.mjs`: 5 passed.
+- `scripts/desktop-radial.mjs` (source build) passed with reworked flows: centered near-fullscreen wheel, hover highlights without selecting, release-to-select, tap keeps the wheel open for clicks, anchor preservation (including from a screen edge), hover preview, click commit, undo/redo, cancel, settings corridor on release, customization, reload persistence, anchored list, editing Tab, light/dark, keyboard selection, Shift/Ctrl-constrained arrows, endpoint alignment. Two stale script assertions were also fixed (the radial layout now lives in `terra-board.preferences`, and the text editor is a rich contenteditable field), and startup waits were extended to 60 s for cold source launches.
+
 ## Canvas rendering performance — 2026-10-11
 
 Text layouts are no longer evicted by per-zoom frame titles or by typing; a note's previous fitted size is verified before searching again; text raster regions stay stable while panning; sharper text and frame titles are rebuilt within a per-frame budget; image variants decode off the main thread and reach the GPU a bounded amount per frame; night shadows share one blur pass. No object data, storage or export format changed.

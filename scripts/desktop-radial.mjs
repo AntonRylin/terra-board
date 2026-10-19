@@ -88,23 +88,20 @@ async function click(selector) {
   await mouse('mousePressed', x, y, 1);
   await mouse('mouseReleased', x, y);
 }
-const key = async (key, code = key, modifiers = 0) => {
+const keyEvent = async (type, key, code = key, modifiers = 0) => {
   const windowsVirtualKeyCode =
     { Tab: 9, Enter: 13, Escape: 27, ArrowLeft: 37 }[key] || key.toUpperCase().charCodeAt(0);
   await send('Input.dispatchKeyEvent', {
-    type: 'keyDown',
+    type,
     key,
     code,
     modifiers,
     windowsVirtualKeyCode,
   });
-  await send('Input.dispatchKeyEvent', {
-    type: 'keyUp',
-    key,
-    code,
-    modifiers,
-    windowsVirtualKeyCode,
-  });
+};
+const key = async (k, code = k, modifiers = 0) => {
+  await keyEvent('keyDown', k, code, modifiers);
+  await keyEvent('keyUp', k, code, modifiers);
 };
 const state = () => read(`window.canvas.invoke('loadBoard',{id:${JSON.stringify(board.id)}})`);
 const screenshot = async (name) =>
@@ -143,6 +140,7 @@ try {
         `!!document.querySelector('.canvas-surface canvas') && !document.querySelector('.canvas-loading')`,
       ),
     'canvas',
+    60000,
   );
   await until(
     () =>
@@ -150,26 +148,59 @@ try {
         "!document.querySelector('#startup-screen') && !!document.querySelector('.canvas-toolbar')",
       ),
     'ready',
+    60000,
   );
   const surface = await rect('.canvas-surface');
   const origin = { x: surface.x + surface.width * 0.55, y: surface.y + surface.height * 0.45 };
   const wheel = () => read("!!document.querySelector('.radial-menu')");
   const focusBoard = () => read("document.querySelector('.canvas-surface').focus()");
+  // A tap of the trigger leaves the wheel open for click or keyboard selection.
   const open = async (point = origin) => {
     await focusBoard();
     await mouse('mouseMoved', point.x, point.y);
     await key('Tab');
     await until(wheel, 'radial menu');
   };
+  const center = async (selector) => {
+    const r = await until(() => rect(selector), selector);
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  };
+  // Holding the trigger, moving onto a tool and releasing selects it.
+  const holdSelect = async (tool, point = origin) => {
+    await focusBoard();
+    await mouse('mouseMoved', point.x, point.y);
+    await keyEvent('keyDown', 'Tab');
+    await until(wheel, 'radial menu');
+    const p = await center(`[data-radial-tool="${tool}"]`);
+    await mouse('mouseMoved', p.x, p.y);
+    await keyEvent('keyUp', 'Tab');
+    await until(async () => !(await wheel()), `release selects ${tool}`);
+  };
   const clickAt = async (point) => {
     await mouse('mousePressed', point.x, point.y, 1);
     await mouse('mouseReleased', point.x, point.y);
   };
   const objects = async () => (await state()).objects;
-  await open();
+  await focusBoard();
+  await mouse('mouseMoved', origin.x, origin.y);
+  await keyEvent('keyDown', 'Tab');
+  await until(wheel, 'radial menu');
+  const viewport = await read('({ w: innerWidth, h: innerHeight })');
+  const menuBounds = await rect('.radial-menu');
+  assert.ok(
+    Math.abs(menuBounds.x + menuBounds.width / 2 - viewport.w / 2) < 2,
+    'wheel is centered on screen',
+  );
+  assert.ok(
+    menuBounds.height >= Math.min(viewport.w, viewport.h) * 0.75,
+    'wheel fills most of the screen',
+  );
   await screenshot('radial-light.png');
-  await mouse('mouseMoved', origin.x - 95, origin.y);
-  await until(async () => !(await wheel()), 'flick selects arrow');
+  const arrowSlot = await center('[data-radial-tool="arrow"]');
+  await mouse('mouseMoved', arrowSlot.x, arrowSlot.y);
+  assert.equal(await wheel(), true, 'hovering a tool does not select it');
+  await keyEvent('keyUp', 'Tab');
+  await until(async () => !(await wheel()), 'release selects arrow');
   assert.equal((await objects()).length, 0, 'draft is not saved');
   const end = { x: origin.x + 165, y: origin.y + 95 };
   await mouse('mouseMoved', end.x, end.y);
@@ -202,15 +233,20 @@ try {
   await mouse('mouseMoved', origin.x - 95, origin.y);
   await key('Escape');
   assert.equal((await objects()).length, 1, 'cancel leaves only committed arrow');
-  await open();
-  await mouse('mouseMoved', origin.x, origin.y + 156);
+  await focusBoard();
+  await mouse('mouseMoved', origin.x, origin.y);
+  await keyEvent('keyDown', 'Tab');
+  await until(wheel, 'radial menu');
+  const corridor = await center('.radial-settings');
+  await mouse('mouseMoved', corridor.x, corridor.y);
+  await keyEvent('keyUp', 'Tab');
   assert.equal(await wheel(), true, 'settings corridor does not select a tool');
   await click('.radial-settings');
   await until(() => read("!!document.querySelector('.radial-palette')"), 'customization');
   await click('[data-radial-slot="5"]');
   await click('.radial-choices button:nth-child(10)');
   assert.equal(
-    await read("JSON.parse(localStorage.getItem('terra-board.radial-layout'))[5]"),
+    await read("JSON.parse(localStorage.getItem('terra-board.preferences')).radial[5]"),
     'list',
   );
   await screenshot('radial-customization.png');
@@ -237,7 +273,7 @@ try {
     await read('document.querySelector(\'[data-radial-slot="5"]\').dataset.radialTool'),
     'list',
   );
-  await mouse('mouseMoved', origin.x - 95, origin.y);
+  await click('[data-radial-slot="5"]');
   const list = await until(
     async () => (await objects()).find((o) => o.type === 'list'),
     'custom tool action',
@@ -248,13 +284,17 @@ try {
   );
   await key('Escape');
   await open();
-  await mouse('mouseMoved', origin.x, origin.y + 156);
   await click('.radial-settings');
   await click('.radial-reset');
   await key('Escape');
-  await open();
-  await mouse('mouseMoved', origin.x, origin.y - 95);
-  await until(() => read("!!document.querySelector('textarea:focus')"), 'text editor');
+  await holdSelect('text');
+  await until(
+    () =>
+      read(
+        "!!document.activeElement && (document.activeElement.isContentEditable || document.activeElement.tagName === 'TEXTAREA')",
+      ),
+    'text editor',
+  );
   await key('Tab');
   assert.equal(await wheel(), false, 'Tab does not open wheel while editing');
   await key('Escape');
@@ -265,7 +305,7 @@ try {
   const edge = { x: surface.x + surface.width - 25, y: surface.y + 110 };
   await open(edge);
   const bounds = await rect('.radial-menu');
-  assert.ok(bounds.x >= 0 && bounds.y >= 0, 'wheel stays on screen near edge');
+  assert.ok(bounds.x >= 0 && bounds.y >= 0, 'centered wheel stays fully on screen');
   await key('ArrowLeft');
   assert.equal(
     await read('document.activeElement.dataset.radialTool'),
@@ -286,7 +326,7 @@ try {
   const edgeStart = edgeArrow.arrow.points[0];
   assert.ok(
     Math.abs((edgeArrow.x + edgeStart.x * edgeArrow.width) * c.zoom + c.x + surface.x - edge.x) < 2,
-    'edge-clamped wheel preserves original anchor',
+    'centered wheel preserves original anchor at the edge',
   );
   await key('Escape');
   await open();
@@ -319,8 +359,7 @@ try {
     ['Control', 'ControlLeft', 2, 'vertical'],
   ]) {
     const before = new Set((await objects()).map((o) => o.id));
-    await open();
-    await mouse('mouseMoved', origin.x - 95, origin.y);
+    await holdSelect('arrow');
     const target = { x: origin.x - 180, y: origin.y + 110 };
     await mouse('mouseMoved', target.x, target.y);
     await send('Input.dispatchKeyEvent', {
@@ -360,8 +399,7 @@ try {
   }
   const editOrigin = { x: surface.x + surface.width * 0.28, y: surface.y + surface.height * 0.72 };
   const idsBeforeEditArrow = new Set((await objects()).map((o) => o.id));
-  await open(editOrigin);
-  await mouse('mouseMoved', editOrigin.x - 95, editOrigin.y);
+  await holdSelect('arrow', editOrigin);
   await mouse('mouseMoved', editOrigin.x + 150, editOrigin.y - 80);
   await clickAt({ x: editOrigin.x + 150, y: editOrigin.y - 80 });
   const editable = await until(
@@ -419,6 +457,10 @@ try {
       JSON.stringify({
         root,
         checks: [
+          'centered near-fullscreen wheel',
+          'hover highlights without selecting',
+          'release-to-select',
+          'tap keeps the wheel open for clicks',
           'anchor',
           'hover preview',
           'click commit',
@@ -430,7 +472,6 @@ try {
           'anchored list',
           'editing Tab',
           'light/dark',
-          'edge placement',
           'keyboard selection',
           'Shift horizontal / Ctrl vertical arrows',
           'existing endpoints align with fixed opposite endpoint and undo',

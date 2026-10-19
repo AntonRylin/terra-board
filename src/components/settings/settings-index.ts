@@ -76,7 +76,7 @@ export const sections: Section[] = [
     label: 'Radial menu',
     group: 'Board',
     icon: CircleDot,
-    subtitle: 'Quick tools that open at your cursor.',
+    subtitle: 'A quick-tools wheel over the board; release the trigger to pick.',
   },
   {
     id: 'shortcuts',
