@@ -34,6 +34,8 @@ contextBridge.exposeInMainWorld('canvas', {
   linkPreview: (url) => ipcRenderer.invoke('canvas:link-preview', url),
   htmlPage: (html) => ipcRenderer.invoke('canvas:html-page', html),
   htmlSnapshot: (args) => ipcRenderer.invoke('canvas:html-snapshot', args),
+  browserSnapshot: (args) => ipcRenderer.invoke('canvas:browser-snapshot', args),
+  browserCapture: (id) => ipcRenderer.invoke('canvas:browser-capture', id),
   mcpStatus: () => ipcRenderer.invoke('canvas:mcp-status'),
   mcpUpdate: (patch) => ipcRenderer.invoke('canvas:mcp-update', patch),
   onMcpSync: (callback) => {

@@ -7,7 +7,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { createServer } from 'node:net';
 import assert from 'node:assert/strict';
-import { htmlSnapshotKey } from '../src/canvas/html-card.ts';
+import { snapshotKey } from '../src/canvas/html-card.ts';
 const require = createRequire(import.meta.url);
 const { Store } = require('../electron/store.cjs');
 
@@ -215,9 +215,9 @@ try {
   // 1. Opening the board captures a picture at twice the card's CSS size.
   const captured = await until(async () => {
     const o = await embed();
-    return o.assetId && o.htmlSnapshotKey ? o : null;
+    return o.assetId && o.snapshotKey ? o : null;
   }, 'first picture');
-  assert.equal(captured.htmlSnapshotKey, htmlSnapshotKey(captured));
+  assert.equal(captured.snapshotKey, snapshotKey(captured));
   assert.deepEqual(
     await read(`window.canvas.assetDimensions(${JSON.stringify(captured.assetId)})`),
     {
@@ -276,7 +276,7 @@ try {
     const o = await embed();
     return o.html.includes('#16a34a') &&
       o.assetId !== captured.assetId &&
-      htmlSnapshotKey(o) === o.htmlSnapshotKey
+      snapshotKey(o) === o.snapshotKey
       ? o
       : null;
   }, 'edited picture');
@@ -291,7 +291,7 @@ try {
     return o.html.includes('#2f6fed') ? o : null;
   }, 'undo');
   assert.equal(undone.assetId, captured.assetId);
-  assert.equal(undone.htmlSnapshotKey, captured.htmlSnapshotKey);
+  assert.equal(undone.snapshotKey, captured.snapshotKey);
 
   // 5. Clicking the board stops a running page.
   await clickAt(center.x, center.y, 2);

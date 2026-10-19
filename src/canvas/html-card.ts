@@ -1,13 +1,20 @@
 import type { CanvasObject } from '../model';
 
-// HTML embeds: a web page written in HTML, CSS and JavaScript. The board draws
-// a captured picture of the page; the page itself runs, sandboxed, only while
-// someone interacts with it or edits its code.
+// Web cards on the board. HTML embeds hold a page written in HTML, CSS and
+// JavaScript; browser frames show a website by URL, like a browser tab. The
+// board draws a captured picture of the page; the page itself runs only while
+// someone interacts with it (an embed sandboxed, a website in its own session).
 
-export const htmlSourceLimit = 500_000;
+export const htmlSourceLimit = 1_000_000;
 export const htmlCardSize = { width: 480, height: 320 };
-// The page is laid out at the card's size in CSS pixels, within these bounds.
+export const browserCardSize = { width: 960, height: 640 };
+// Height of a browser frame's address bar, above its page.
+export const browserChrome = 40;
+export const browserHome = 'https://www.google.com/';
+// The page is laid out at its area's size in CSS pixels, within these bounds.
 export const htmlViewportLimit = { min: 40, max: 4096 };
+export const isWebCard = (o: Pick<CanvasObject, 'type'>) =>
+  o.type === 'html' || o.type === 'browser';
 
 export const starterHtml = `<!doctype html>
 <html>
@@ -68,20 +75,46 @@ function hash(value: string) {
   return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
 }
 
-export const htmlViewport = (o: Pick<CanvasObject, 'width' | 'height'>) => ({
-  width: Math.round(Math.min(htmlViewportLimit.max, Math.max(htmlViewportLimit.min, o.width))),
-  height: Math.round(Math.min(htmlViewportLimit.max, Math.max(htmlViewportLimit.min, o.height))),
+const clampSide = (value: number) =>
+  Math.round(Math.min(htmlViewportLimit.max, Math.max(htmlViewportLimit.min, value)));
+// The page's CSS size: the whole embed, or a browser frame below its address bar.
+export const pageViewport = (o: Pick<CanvasObject, 'type' | 'width' | 'height'>) => ({
+  width: clampSide(o.width),
+  height: clampSide(o.type === 'browser' ? o.height - browserChrome : o.height),
 });
 
-// The source and viewport a picture was captured from. A card whose key no
-// longer matches needs a new picture.
-export function htmlSnapshotKey(o: Pick<CanvasObject, 'html' | 'width' | 'height'>) {
-  const { width, height } = htmlViewport(o);
-  return `${width}x${height}-${hash(o.html || '')}`;
+// What a picture was captured from: the page source (or address) and viewport.
+// A card whose key no longer matches needs a new picture. electron/html-cards.cjs
+// computes the same key.
+export function snapshotKey(o: Pick<CanvasObject, 'type' | 'html' | 'url' | 'width' | 'height'>) {
+  const { width, height } = pageViewport(o);
+  const source = o.type === 'browser' ? 'url:' + (o.url || '') : o.html || '';
+  return `${width}x${height}-${hash(source)}`;
 }
 
-export const htmlSnapshotCurrent = (o: CanvasObject) =>
-  o.type === 'html' && !!o.assetId && o.htmlSnapshotKey === htmlSnapshotKey(o);
+export const snapshotCurrent = (o: CanvasObject) =>
+  isWebCard(o) && !!o.assetId && o.snapshotKey === snapshotKey(o);
+
+// What someone typed into a browser frame's address bar: an address, a bare
+// domain, or words to search for.
+export function browserAddress(input: string): string | null {
+  const value = input.trim();
+  if (!value) return null;
+  let candidate = value;
+  if (!/^https?:\/\//i.test(value))
+    candidate =
+      /^[^\s/]+\.[^\s/]{2,}(\/\S*)?$/.test(value) || /^localhost(:\d+)?(\/\S*)?$/i.test(value)
+        ? // Local servers and bare IP addresses rarely speak https.
+          (/^(localhost|\d{1,3}(\.\d{1,3}){3})(:|\/|$)/i.test(value) ? 'http://' : 'https://') +
+          value
+        : 'https://www.google.com/search?q=' + encodeURIComponent(value);
+  try {
+    const url = new URL(candidate);
+    return ['http:', 'https:'].includes(url.protocol) && url.href.length <= 8192 ? url.href : null;
+  } catch {
+    return null;
+  }
+}
 
 // Pasted text that is a whole web page becomes an embed rather than a note.
 export function pastedHtml(text: string): string | null {

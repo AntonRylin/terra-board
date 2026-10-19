@@ -12,6 +12,7 @@ import {
   ListTodo,
   NotebookPen,
   CodeXml,
+  Globe,
 } from 'lucide-react';
 import type { ContentSearchResponse, Library, ObjectType } from '../model';
 import { invoke } from '../bridge';
@@ -42,6 +43,7 @@ const kinds: Record<ObjectType, { label: string; icon: typeof Search }> = {
   arrow: { label: 'Arrow', icon: Shapes },
   highlight: { label: 'Highlight', icon: Shapes },
   html: { label: 'HTML embed', icon: CodeXml },
+  browser: { label: 'Browser', icon: Globe },
 };
 function Excerpt({ text, query }: { text: string; query: string }) {
   const index = text.toLowerCase().indexOf(query.toLowerCase());

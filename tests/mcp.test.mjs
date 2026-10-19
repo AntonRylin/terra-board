@@ -23,13 +23,14 @@ const data = (r) => {
   assert.ok(!r.isError, r.content?.[0]?.text);
   return JSON.parse(r.content[0].text);
 };
-async function fixture() {
+async function fixture(services) {
   mkdirSync(resolve('.local-test'), { recursive: true });
   const root = mkdtempSync(resolve('.local-test/mcp-'));
   const store = new Store(root);
   const service = new McpService({
     root,
     call: (c, a) => (c === 'asset' ? store.readAsset(a) : store[c](a)),
+    services,
   });
   const port = await freePort();
   assert.equal(service.status().enabled, false);
@@ -62,7 +63,7 @@ test('MCP interoperates with SDK: board/folder CRUD, complete object edits, stal
     const call = async (name, args = {}) =>
       data(await f.client.callTool({ name, arguments: args }));
     const names = (await f.client.listTools()).tools.map((t) => t.name);
-    assert.equal(names.length, 11);
+    assert.equal(names.length, 13);
     assert.ok(names.includes('edit_board'));
     const folder = await call('create_folder', { name: 'Research' });
     const board = await call('create_board', { name: 'AI board', folderId: folder.id });
@@ -375,7 +376,7 @@ test('Claude stdio connector discovers tools while disabled and works after enab
       stderr: 'pipe',
     });
     await client.connect(transport);
-    assert.equal((await client.listTools()).tools.length, 11);
+    assert.equal((await client.listTools()).tools.length, 13);
     assert.ok(
       data(await client.callTool({ name: 'create_board', arguments: { name: 'From Claude' } })).id,
     );
@@ -411,6 +412,110 @@ test('MCP enable state and port survive restart, and occupied ports report a rec
     assert.equal(disabled.status().running, false);
   } finally {
     await other?.stop();
+    await f.close();
+  }
+});
+
+test('MCP builds HTML embed mockups: create from a file, cheap edits, compact reads and pictures', async () => {
+  const captured = [];
+  let f;
+  const services = {
+    captureHtml: async (args) => {
+      captured.push(args);
+      const bytes = await sharp({
+        create: { width: 64, height: 40, channels: 3, background: '#2f6fed' },
+      })
+        .png()
+        .toBuffer();
+      return (await f.store.importAsset({ bytes, name: 'HTML embed.png' })).id;
+    },
+  };
+  f = await fixture(services);
+  try {
+    const call = async (name, args = {}) =>
+      data(await f.client.callTool({ name, arguments: args }));
+    const board = await call('create_board', { name: 'Mockups' });
+    await call('edit_board', {
+      id: board.id,
+      revision: 0,
+      upserts: [{ id: 'note', type: 'note', x: 0, y: 0, width: 200, height: 200, z: 3, text: 'Hi' }],
+    });
+    // A page with its stylesheet, script and image next to it.
+    const dir = join(f.root, 'mockup');
+    mkdirSync(join(dir, 'img'), { recursive: true });
+    writeFileSync(join(dir, 'style.css'), 'body{background:url(img/dot.png)} h1{color:#123456}');
+    writeFileSync(join(dir, 'app.js'), 'document.title = "ok"; // </script> inside');
+    writeFileSync(join(dir, 'img', 'dot.png'), Buffer.from([137, 80, 78, 71]));
+    writeFileSync(
+      join(dir, 'index.html'),
+      '<!doctype html><html><head><link rel="stylesheet" href="style.css">' +
+        '<script src="https://cdn.example.com/lib.js"></script></head>' +
+        '<body><h1>Dashboard</h1><img src="img/dot.png"><script src="app.js"></script></body></html>',
+    );
+    const created = await f.client.callTool({
+      name: 'html_embed',
+      arguments: { id: board.id, file: join(dir, 'index.html'), width: 800, height: 500 },
+    });
+    const made = data(created);
+    assert.equal(made.created, true);
+    assert.deepEqual([made.x, made.y, made.width, made.height], [280, 0, 800, 500]);
+    assert.equal(created.content[1].type, 'image', 'the rendered page comes back as a picture');
+    assert.deepEqual(captured.at(-1), {
+      html: captured.at(-1).html,
+      width: 800,
+      height: 500,
+    });
+    const page = captured.at(-1).html;
+    assert.match(page, /<style>\nbody\{background:url\("data:image\/png;base64,/);
+    assert.match(page, /<script>\ndocument.title = "ok"; \/\/ <\\\/script> inside\n<\/script>/);
+    assert.match(page, /<img src="data:image\/png;base64,iVBORw==">/);
+    assert.match(page, /src="https:\/\/cdn.example.com\/lib.js"/, 'web scripts stay links');
+
+    // Board reads stay small: sources are left out.
+    const read = await call('read_board', { id: board.id });
+    const embed = read.objects.find((o) => o.id === made.embedId);
+    assert.equal(embed.html, undefined);
+    assert.equal(embed.htmlChars, page.length);
+    assert.equal(embed.assetId, made.pictureAssetId);
+
+    // A small edit changes the stored page and captures a new picture.
+    const edited = await call('html_embed', {
+      id: board.id,
+      embedId: made.embedId,
+      edits: [{ find: '<h1>Dashboard</h1>', replace: '<h1>Revenue</h1>' }],
+      picture: false,
+    });
+    assert.equal(edited.created, false);
+    assert.equal(captured.length, 2);
+    const source = await call('read_html_embed', { id: board.id, embedId: made.embedId });
+    assert.match(source.source, /^1\t<!doctype html>/);
+    assert.match(source.source, /<h1>Revenue<\/h1>/);
+    const ambiguous = await f.client.callTool({
+      name: 'html_embed',
+      arguments: { id: board.id, embedId: made.embedId, edits: [{ find: 'h1', replace: 'h2' }] },
+    });
+    assert.ok(ambiguous.isError);
+    assert.match(ambiguous.content[0].text, /appears \d+ times/);
+
+    // Moving it keeps its picture: same page, same size.
+    const moved = await call('html_embed', { id: board.id, embedId: made.embedId, x: 0, y: 400 });
+    assert.equal(captured.length, 2);
+    assert.equal(moved.pictureAssetId, edited.pictureAssetId);
+
+    // edit_board keeps a source it was not given, from a compact read.
+    const compact = (await call('read_board', { id: board.id })).objects.find(
+      (o) => o.id === made.embedId,
+    );
+    const { htmlChars, ...rest } = compact;
+    await call('edit_board', {
+      id: board.id,
+      revision: (await call('read_board', { id: board.id })).revision,
+      upserts: [{ ...rest, width: 900 }],
+    });
+    const stored = f.store.loadBoard({ id: board.id }).objects.find((o) => o.id === made.embedId);
+    assert.match(stored.html, /<h1>Revenue<\/h1>/);
+    assert.equal(stored.width, 900);
+  } finally {
     await f.close();
   }
 });

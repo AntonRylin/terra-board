@@ -11,6 +11,7 @@ export const toolbarIds = [
   'list',
   'paper',
   'html',
+  'browser',
   'media',
   'gallery',
 ] as const;
@@ -22,7 +23,7 @@ export const toolbarStorageKey = 'terra-board.toolbar-layout';
 
 export const defaultToolbarLayout = (): ToolbarLayout => ({
   bar: ['select', 'hand', 'text', 'note', 'rect', 'arrow', 'highlight', 'frame', 'link', 'media'],
-  inventory: ['gallery', 'list', 'paper', 'html'],
+  inventory: ['gallery', 'list', 'paper', 'html', 'browser'],
 });
 
 // Repair old or malformed preferences without losing access to any tool.

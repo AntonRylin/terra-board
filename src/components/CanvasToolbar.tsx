@@ -68,9 +68,11 @@ export default function CanvasToolbar({
           ? 'Document'
           : id === 'html'
             ? 'HTML embed'
-            : id === 'media'
-              ? 'Images and video'
-              : item.label;
+            : id === 'browser'
+              ? 'Browser'
+              : id === 'media'
+                ? 'Images and video'
+                : item.label;
     const Icon = item.icon;
     return (
       <div

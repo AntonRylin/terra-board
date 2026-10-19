@@ -34,6 +34,7 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
         'list',
         'paper',
         'html',
+        'browser',
       ].includes(o.type)
     )
       throw Error('Invalid clipboard object');
@@ -202,14 +203,28 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
     )
       throw Error('Invalid HTML source');
     if (
-      o.htmlSnapshotKey !== undefined &&
-      (o.type !== 'html' ||
-        typeof o.htmlSnapshotKey !== 'string' ||
-        !/^[\w-]{1,100}$/.test(o.htmlSnapshotKey))
+      o.snapshotKey !== undefined &&
+      ((o.type !== 'html' && o.type !== 'browser') ||
+        typeof o.snapshotKey !== 'string' ||
+        !/^[\w-]{1,100}$/.test(o.snapshotKey))
     )
       throw Error('Invalid HTML snapshot');
-    if (o.type === 'html' && o.assetId && !/^[a-f0-9]{64}$/.test(o.assetId))
-      throw Error('Invalid HTML snapshot');
+    if (
+      (o.type === 'html' || o.type === 'browser') &&
+      o.assetId &&
+      !/^[a-f0-9]{64}$/.test(o.assetId)
+    )
+      throw Error('Invalid web page picture');
+    if (o.type === 'browser') {
+      let u;
+      try {
+        u = new URL(o.url);
+      } catch {
+        throw Error('Invalid browser address');
+      }
+      if (!['http:', 'https:'].includes(u.protocol) || o.url.length > 8192)
+        throw Error('Invalid browser address');
+    }
     if (o.type === 'link') {
       if (o.linkCompact !== undefined && typeof o.linkCompact !== 'boolean')
         throw Error('Invalid link appearance');
@@ -368,8 +383,8 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
         ? { linkDescription: o.linkDescription }
         : {}),
       ...(o.type === 'html' && o.html !== undefined ? { html: o.html } : {}),
-      ...(o.type === 'html' && o.htmlSnapshotKey !== undefined
-        ? { htmlSnapshotKey: o.htmlSnapshotKey }
+      ...((o.type === 'html' || o.type === 'browser') && o.snapshotKey !== undefined
+        ? { snapshotKey: o.snapshotKey }
         : {}),
     };
   });

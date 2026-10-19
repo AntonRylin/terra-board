@@ -37,6 +37,7 @@ const types = new Set([
   'list',
   'paper',
   'html',
+  'browser',
 ]);
 const idValue = (value) => {
   if (typeof value !== 'string' || !value || value.length > 100 || !/^[\w-]+$/.test(value))
@@ -465,20 +466,20 @@ function objectValue(o) {
       throw Error('Invalid document asset');
   }
   if (o.html !== undefined) {
-    if (o.type !== 'html' || typeof o.html !== 'string' || o.html.length > 500000)
+    if (o.type !== 'html' || typeof o.html !== 'string' || o.html.length > 1000000)
       throw Error('Invalid HTML source');
     result.html = o.html;
   }
-  if (o.htmlSnapshotKey !== undefined) {
+  if (o.snapshotKey !== undefined) {
     if (
-      o.type !== 'html' ||
-      typeof o.htmlSnapshotKey !== 'string' ||
-      !/^[\w-]{1,100}$/.test(o.htmlSnapshotKey)
+      (o.type !== 'html' && o.type !== 'browser') ||
+      typeof o.snapshotKey !== 'string' ||
+      !/^[\w-]{1,100}$/.test(o.snapshotKey)
     )
       throw Error('Invalid HTML snapshot');
-    result.htmlSnapshotKey = o.htmlSnapshotKey;
+    result.snapshotKey = o.snapshotKey;
   }
-  if (o.type === 'link') {
+  if (o.type === 'link' || o.type === 'browser') {
     if (typeof o.url !== 'string' || o.url.length > 8192) throw Error('Invalid URL');
     let u;
     try {

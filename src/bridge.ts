@@ -168,6 +168,10 @@ interface DesktopBridge {
   htmlPage(html: string): Promise<string>;
   // Captures an HTML embed at a CSS size; returns the picture's asset ID.
   htmlSnapshot(args: { html: string; width: number; height: number }): Promise<string>;
+  // Captures a website offscreen, in the browser frames' session.
+  browserSnapshot(args: { url: string; width: number; height: number }): Promise<string>;
+  // Captures a running browser frame by its <webview>'s WebContents ID.
+  browserCapture(id: number): Promise<string>;
   dataDirectory(): Promise<string>;
   appInfo(): Promise<AppInfo>;
   setOpenAtLogin(enabled: boolean): Promise<boolean>;
