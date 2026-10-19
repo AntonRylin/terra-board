@@ -7,6 +7,8 @@ export const selectionToolLabels = {
   colors: 'Colors',
   'arrow-style': 'Arrow style',
   open: 'Open',
+  'html-interact': 'Interact',
+  'html-code': 'Edit code',
   'copy-frame-link': 'Copy frame link',
   'open-frame': 'Open original frame',
   youtube: 'Open on YouTube',

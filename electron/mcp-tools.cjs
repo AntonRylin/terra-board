@@ -99,6 +99,7 @@ const object = z
       'highlight',
       'list',
       'paper',
+      'html',
     ]),
     items: z
       .array(
@@ -175,6 +176,11 @@ const object = z
     linkIconId: id.optional(),
     linkCompact: z.boolean().optional(),
     linkPreviewHeight: size.optional(),
+    html: z.string().max(500000).optional(),
+    htmlSnapshotKey: z
+      .string()
+      .regex(/^[\w-]{1,100}$/)
+      .optional(),
     arrow: z
       .object({
         points: z.array(point).min(2).max(32),
@@ -294,7 +300,7 @@ function tools(call) {
   );
   add(
     'edit_board',
-    'Atomically create, replace or delete objects. Upserts are COMPLETE objects, not partial patches; preserve fields read earlier, including gallery layout, image membership, document metadata, pdfComposer and inline formatting (textMarks on text, marks on list items: non-overlapping {start,end,...style} ranges; spoiler ranges hide text until a viewer clicks; spoiler: true on an image, video, document, link or frame hides the whole object, and a plain frame also hides what it holds). Coordinates are board units; z controls stacking. Images/videos/documents require imported assetId; document text retains its filename and documentTitle is an independent board title; arrows require normalized points; links require http(s) URL. Galleries are frames with gallery settings; member images use galleryId, galleryIndex, galleryRow and galleryColumn. PDF composers are non-gallery frames with sources and columns; page references use source IDs, zero-based pageIndex and 90-degree rotation deltas. Preserve original source asset IDs. This is undoable on the open board. Edits to separate objects merge automatically. If a target object changed or was deleted since your read, the whole edit is rejected with conflicting IDs; read again and preserve those changes.',
+    'Atomically create, replace or delete objects. Upserts are COMPLETE objects, not partial patches; preserve fields read earlier, including gallery layout, image membership, document metadata, pdfComposer and inline formatting (textMarks on text, marks on list items: non-overlapping {start,end,...style} ranges; spoiler ranges hide text until a viewer clicks; spoiler: true on an image, video, document, link or frame hides the whole object, and a plain frame also hides what it holds). Coordinates are board units; z controls stacking. Images/videos/documents require imported assetId; document text retains its filename and documentTitle is an independent board title; arrows require normalized points; links require http(s) URL. HTML embeds (type html) hold a complete web page in html (HTML, CSS and JavaScript, up to 500,000 characters); it is laid out at the object width and height in CSS pixels and runs sandboxed, with network access but no access to the app. The board shows a picture of the page that Terra captures and refreshes after html, width or height change; omit assetId and htmlSnapshotKey on new embeds. Galleries are frames with gallery settings; member images use galleryId, galleryIndex, galleryRow and galleryColumn. PDF composers are non-gallery frames with sources and columns; page references use source IDs, zero-based pageIndex and 90-degree rotation deltas. Preserve original source asset IDs. This is undoable on the open board. Edits to separate objects merge automatically. If a target object changed or was deleted since your read, the whole edit is rejected with conflicting IDs; read again and preserve those changes.',
     {
       id,
       revision,

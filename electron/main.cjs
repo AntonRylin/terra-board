@@ -24,6 +24,7 @@ const { attachWindowShadow } = require('./window-shadow.cjs');
 const { fetchPreview } = require('./link-preview.cjs');
 const { downloadSongLink } = require('./song-link.cjs');
 const { createOcr } = require('./ocr.cjs');
+const { createHtmlCards, embedRequest, fromEmbed } = require('./html-cards.cjs');
 const { Worker } = require('node:worker_threads');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -33,6 +34,8 @@ const { libraryRoot } = require('./storage-paths.cjs');
 const { createAppUpdater } = require('./app-updater.cjs');
 protocol.registerSchemesAsPrivileged([
   { scheme: 'canvas-app', privileges: { standard: true, secure: true, supportFetchAPI: true } },
+  // HTML embeds: their own origin, framed with a sandbox (html-cards.cjs).
+  { scheme: 'terra-html', privileges: { standard: true, secure: true } },
   {
     scheme: 'canvas-media',
     privileges: {
@@ -409,6 +412,8 @@ app
         return new Response('Media not found', { status: 404 });
       }
     });
+    const htmlCards = createHtmlCards({ BrowserWindow, session, call });
+    protocol.handle('terra-html', htmlCards.handle);
     win = new BrowserWindow({
       width: 1380,
       height: 900,
@@ -515,10 +520,16 @@ app
         'google.com',
         'doubleclick.net',
       ].some((domain) => host === domain || host.endsWith('.' + domain));
+      // HTML embeds reach the web, never the app's own schemes or media.
+      if (fromEmbed(details)) {
+        cb({ cancel: !embedRequest(details) });
+        return;
+      }
       const allowed =
         ['canvas-app:', 'canvas-media:', 'data:', 'blob:', 'devtools:'].some((s) =>
           details.url.startsWith(s),
         ) ||
+        embedRequest(details) ||
         (details.url.startsWith('https:') && playerHost && details.resourceType !== 'mainFrame') ||
         (dev &&
           (details.url.startsWith(dev + '/') || details.url.startsWith('ws://127.0.0.1:5173/')));
@@ -532,6 +543,14 @@ app
         });
       },
     );
+    ipcMain.handle('canvas:html-page', (e, html) => {
+      trusted(e);
+      return htmlCards.register(html).url;
+    });
+    ipcMain.handle('canvas:html-snapshot', (e, args) => {
+      trusted(e);
+      return htmlCards.snapshot(args);
+    });
     let previewActive = 0;
     const previewWaiters = [];
     ipcMain.handle('canvas:link-preview', async (e, url) => {

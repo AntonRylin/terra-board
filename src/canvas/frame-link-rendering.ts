@@ -7,7 +7,7 @@ export function frameMediaKey(o: CanvasObject): string | null {
   const id =
     o.type === 'document'
       ? o.documentPreviewId
-      : o.type === 'image' || (o.type === 'link' && hasLinkImage(o))
+      : o.type === 'image' || o.type === 'html' || (o.type === 'link' && hasLinkImage(o))
         ? o.assetId
         : o.type === 'link'
           ? o.linkIconId

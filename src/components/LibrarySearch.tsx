@@ -11,6 +11,7 @@ import {
   Shapes,
   ListTodo,
   NotebookPen,
+  CodeXml,
 } from 'lucide-react';
 import type { ContentSearchResponse, Library, ObjectType } from '../model';
 import { invoke } from '../bridge';
@@ -40,6 +41,7 @@ const kinds: Record<ObjectType, { label: string; icon: typeof Search }> = {
   ellipse: { label: 'Shape', icon: Shapes },
   arrow: { label: 'Arrow', icon: Shapes },
   highlight: { label: 'Highlight', icon: Shapes },
+  html: { label: 'HTML embed', icon: CodeXml },
 };
 function Excerpt({ text, query }: { text: string; query: string }) {
   const index = text.toLowerCase().indexOf(query.toLowerCase());

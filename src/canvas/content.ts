@@ -1,6 +1,7 @@
 import type { CanvasObject } from '../model';
 import { pdfComposerValue } from './pdf-composer.ts';
 import { sanitizeMarks } from './rich-text.ts';
+import { htmlSourceLimit } from './html-card.ts';
 export function pastedUrl(text: string): string | null {
   const value = text.trim();
   if (value.length > 8192 || !/^https?:\/\/\S+$/i.test(value)) return null;
@@ -32,6 +33,7 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
         'highlight',
         'list',
         'paper',
+        'html',
       ].includes(o.type)
     )
       throw Error('Invalid clipboard object');
@@ -194,6 +196,20 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
       )
         throw Error('Invalid image crop');
     }
+    if (
+      o.html !== undefined &&
+      (o.type !== 'html' || typeof o.html !== 'string' || o.html.length > htmlSourceLimit)
+    )
+      throw Error('Invalid HTML source');
+    if (
+      o.htmlSnapshotKey !== undefined &&
+      (o.type !== 'html' ||
+        typeof o.htmlSnapshotKey !== 'string' ||
+        !/^[\w-]{1,100}$/.test(o.htmlSnapshotKey))
+    )
+      throw Error('Invalid HTML snapshot');
+    if (o.type === 'html' && o.assetId && !/^[a-f0-9]{64}$/.test(o.assetId))
+      throw Error('Invalid HTML snapshot');
     if (o.type === 'link') {
       if (o.linkCompact !== undefined && typeof o.linkCompact !== 'boolean')
         throw Error('Invalid link appearance');
@@ -350,6 +366,10 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
       ...(o.url ? { url: o.url } : {}),
       ...(o.type === 'link' && o.linkDescription !== undefined
         ? { linkDescription: o.linkDescription }
+        : {}),
+      ...(o.type === 'html' && o.html !== undefined ? { html: o.html } : {}),
+      ...(o.type === 'html' && o.htmlSnapshotKey !== undefined
+        ? { htmlSnapshotKey: o.htmlSnapshotKey }
         : {}),
     };
   });

@@ -9,6 +9,15 @@ import CanvasPapers, {
 } from './CanvasPapers';
 import { paperHeight, paperWidth } from '../canvas/paper-layout';
 import CanvasPdfComposers from './CanvasPdfComposers';
+import { HtmlEmbedEditor, HtmlEmbedFrame } from './HtmlEmbed';
+import {
+  htmlCardSize,
+  htmlSnapshotCurrent,
+  htmlSnapshotKey,
+  htmlViewport,
+  pastedHtml,
+  starterHtml,
+} from '../canvas/html-card';
 import PdfExportDialog from './PdfExportDialog';
 import PdfPagesDialog from './PdfPagesDialog';
 import {
@@ -75,6 +84,8 @@ import {
   FileText,
   ListTodo,
   NotebookPen,
+  CodeXml,
+  MousePointerClick,
   Images,
   ArrowRight,
   ArrowDown,
@@ -468,6 +479,31 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     el.style.height = `${box.height}px`;
     el.style.transform = `rotate(${o.rotation || 0}deg) scale(${e.camera.zoom})`;
   };
+  // The HTML embed running over the board, and the one whose code is open.
+  const [liveHtml, setLiveHtml] = useState<{ id: string; html: string } | null>(null);
+  const liveHtmlId = useRef<string | null>(null);
+  const liveHtmlRef = useRef<HTMLDivElement>(null);
+  const [codeHtmlId, setCodeHtmlId] = useState<string | null>(null);
+  const positionLiveHtml = () => {
+    const el = liveHtmlRef.current,
+      e = engine.current;
+    if (!el || !e || !liveHtmlId.current) return;
+    const o = e.objects.get(liveHtmlId.current);
+    if (o?.type !== 'html') {
+      setLiveHtml(null);
+      return;
+    }
+    const origin = localToWorld(o, { x: 0, y: 0 });
+    el.style.left = `${origin.x * e.camera.zoom + e.camera.x}px`;
+    el.style.top = `${origin.y * e.camera.zoom + e.camera.y}px`;
+    el.style.width = `${o.width}px`;
+    el.style.height = `${o.height}px`;
+    el.style.transform = `rotate(${o.rotation || 0}deg) scale(${e.camera.zoom})`;
+  };
+  useLayoutEffect(() => {
+    liveHtmlId.current = liveHtml?.id || null;
+    positionLiveHtml();
+  }, [liveHtml]);
   useLayoutEffect(() => {
     playerId.current = player?.id || null;
     positionPlayer();
@@ -872,6 +908,29 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     e.setSelection([o.id]);
     selectTool('select');
   };
+  const createHtml = (point?: { x: number; y: number }, html?: string) => {
+    finishEdit();
+    const e = engine.current;
+    if (!e) return;
+    const p = e.center(),
+      { width, height } = htmlCardSize;
+    const o: CanvasObject = {
+      id: uid(),
+      type: 'html',
+      html: html ?? starterHtml,
+      x: point?.x ?? p.x - width / 2,
+      y: point?.y ?? p.y - height / 2,
+      width,
+      height,
+      z: e.topZ() + 1,
+    };
+    e.apply({ upserts: [o], deleted: [] });
+    e.setSelection([o.id]);
+    selectTool('select');
+    // A new embed starts in its code; a pasted page is ready as it is.
+    if (html === undefined) setCodeHtmlId(o.id);
+  };
+  const codeHtml = codeHtmlId ? engine.current?.objects.get(codeHtmlId) : undefined;
   const canExportFromSelectionBar =
     selected.some((object) => object.type === 'frame') ||
     selected.filter((object) => object.type === 'image').length > 1;
@@ -988,9 +1047,17 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   };
   const alignmentSelection = (editingObject ? [editingObject] : selected).filter(
     (o) =>
-      !['image', 'document', 'frame', 'link', 'arrow', 'highlight', 'list', 'paper'].includes(
-        o.type,
-      ),
+      ![
+        'image',
+        'document',
+        'frame',
+        'link',
+        'arrow',
+        'highlight',
+        'list',
+        'paper',
+        'html',
+      ].includes(o.type),
   );
   const editorOrigin =
     editingObject && editingPlacement
@@ -1034,6 +1101,11 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     if (engine.current?.objects.get(o.id)?.locked || o.type === 'highlight') return;
     if (o.type === 'paper') {
       setEditingPaperId(o.id);
+      return;
+    }
+    if (o.type === 'html') {
+      setLiveHtml(null);
+      setCodeHtmlId(o.id);
       return;
     }
     if (o.type === 'list') {
@@ -1080,6 +1152,44 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       } else openLink(o.url!).catch(error);
     }
   };
+  const interactHtml = (o: CanvasObject) => {
+    if (editingSession.current) finishEdit();
+    engine.current?.setSelection([o.id]);
+    setLiveHtml({ id: o.id, html: o.html || '' });
+  };
+  // Pictures of HTML embeds are captured after their source or size settles.
+  const htmlCaptures = useRef(new Map<string, string>());
+  const htmlTimer = useRef(0);
+  const captureHtml = () => {
+    const e = engine.current;
+    if (!e || !alive.current || readOnlyRef.current || !window.canvas?.htmlSnapshot) return;
+    for (const o of e.all) {
+      if (o.type !== 'html' || htmlSnapshotCurrent(o)) continue;
+      const key = htmlSnapshotKey(o);
+      if (htmlCaptures.current.get(o.id) === key) continue;
+      htmlCaptures.current.set(o.id, key);
+      const deliver = (assetId: string) => {
+        if (!alive.current || engine.current !== e) return;
+        // An external edit is being merged; attach the picture afterwards.
+        if (external.current) setTimeout(() => deliver(assetId), 250);
+        else e.hydrateHtml(o.id, key, assetId);
+      };
+      void window.canvas
+        .htmlSnapshot({ html: o.html || '', ...htmlViewport(o) })
+        .then(deliver)
+        .catch(() => {
+          /* Offline pages and failed captures keep the previous picture. */
+        })
+        .finally(() => {
+          if (htmlCaptures.current.get(o.id) === key) htmlCaptures.current.delete(o.id);
+        });
+    }
+  };
+  const scheduleHtmlCapture = () => {
+    window.clearTimeout(htmlTimer.current);
+    htmlTimer.current = window.setTimeout(captureHtml, 600);
+  };
+  useEffect(() => () => window.clearTimeout(htmlTimer.current), []);
   const activate = (o: CanvasObject, intent?: 'title') => {
     if (o.frameLink) {
       void openOriginalFrame(o).catch(error);
@@ -1092,6 +1202,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     else if (o.type === 'image') void openImageViewer(o).catch(error);
     else if (o.type === 'list') setEditingListId(o.id);
     else if (o.type === 'paper') setEditingPaperId(o.id);
+    else if (o.type === 'html') interactHtml(o);
     else if (o.type === 'link' && o.linkCompact) openLink(o.url!).catch(error);
     else if (o.type === 'link') openObject(o);
     else startEdit(o);
@@ -1294,6 +1405,19 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             setPinRevision((revision) => revision + 1);
         }
         setCount(e.objects.size);
+        if (edit.upserts.some((o) => o.type === 'html')) scheduleHtmlCapture();
+        const liveId = liveHtmlId.current;
+        if (liveId) {
+          const live = edit.upserts.find((o) => o.id === liveId);
+          if (edit.deleted.includes(liveId)) setLiveHtml(null);
+          else if (live)
+            setLiveHtml((current) =>
+              current?.id === liveId && current.html !== (live.html || '')
+                ? { id: liveId, html: live.html || '' }
+                : current,
+            );
+          positionLiveHtml();
+        }
         syncDocumentView();
         void refreshLinkedBoards.current();
       },
@@ -1304,6 +1428,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       selection: (objects) => {
         if (objects.length === 1) rememberTextSize(objects[0]);
         setSelected(objects);
+        if (liveHtmlId.current && !(objects.length === 1 && objects[0].id === liveHtmlId.current))
+          setLiveHtml(null);
         const id = readingDocumentId.current,
           session = readingDocumentSession.current;
         if (id && !objects.some((o) => o.id === id)) {
@@ -1331,6 +1457,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         selectionView.current = { bounds, viewport };
         positionTools();
         positionPlayer();
+        positionLiveHtml();
         syncDocumentView();
         for (const o of e.all) {
           if (o.type !== 'document') continue;
@@ -1417,6 +1544,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       for (const o of e.all) if (o.type === 'link' && !o.assetId) refreshLink(o, e);
     };
     recoverPreviews();
+    scheduleHtmlCapture();
     window.addEventListener('online', recoverPreviews);
     return () => {
       framesDisposed = true;
@@ -1911,6 +2039,11 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         return;
       }
       if (!text) return;
+      const page = pastedHtml(text);
+      if (page) {
+        createHtml(undefined, page);
+        return;
+      }
       if (text.length > 100000) {
         onError('Paste up to 100,000 characters at once.');
         return;
@@ -2221,6 +2354,19 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
                 deleted: [],
               }),
           },
+          null,
+        ]
+      : []),
+    ...(selected.length === 1 && selected[0].type === 'html'
+      ? [
+          {
+            label: 'Interact',
+            icon: <MousePointerClick />,
+            action: () => interactHtml(selected[0]),
+          },
+          ...(selected[0].locked
+            ? []
+            : [{ label: 'Edit code', icon: <CodeXml />, action: () => startEdit(selected[0]) }]),
           null,
         ]
       : []),
@@ -2913,7 +3059,9 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             )}
             {selected.every(
               (o) =>
-                !['image', 'video', 'link', 'frame', 'arrow', 'list', 'paper'].includes(o.type),
+                !['image', 'video', 'link', 'frame', 'arrow', 'list', 'paper', 'html'].includes(
+                  o.type,
+                ),
             ) && (
               <div key="colors" className="color-options">
                 {(selected.every((o) => o.type === 'highlight') ? highlightColors : colors).map(
@@ -2937,6 +3085,35 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
                   />
                 </label>
               </div>
+            )}
+            {selected.length === 1 && selected[0].type === 'html' && (
+              <button
+                key="html-interact"
+                className="icon-button"
+                aria-label={liveHtml?.id === selected[0].id ? 'Stop interacting' : 'Interact'}
+                aria-pressed={liveHtml?.id === selected[0].id}
+                title={
+                  liveHtml?.id === selected[0].id
+                    ? 'Stop interacting'
+                    : 'Interact with the page (double-click)'
+                }
+                onClick={() =>
+                  liveHtml?.id === selected[0].id ? setLiveHtml(null) : interactHtml(selected[0])
+                }
+              >
+                <MousePointerClick size={16} />
+              </button>
+            )}
+            {selected.length === 1 && selected[0].type === 'html' && !selected[0].locked && (
+              <button
+                key="html-code"
+                className="icon-button"
+                aria-label="Edit code"
+                title="Edit code"
+                onClick={() => startEdit(selected[0])}
+              >
+                <CodeXml size={16} />
+              </button>
             )}
             {selected.length === 1 && ['video', 'link'].includes(selected[0].type) && (
               <button
@@ -3366,6 +3543,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             })),
             { id: 'list', label: 'List', icon: ListTodo, action: createList },
             { id: 'paper', label: 'Document', icon: NotebookPen, action: createPaper },
+            { id: 'html', label: 'HTML embed', icon: CodeXml, action: () => createHtml() },
             { id: 'media', label: 'Files', icon: ImagePlus, action: importMedia },
             { id: 'gallery', label: 'Gallery', icon: Images, action: createGallery },
           ]}
@@ -3379,6 +3557,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
               e.beginQuickArrow(anchor, { x: pointer.x - rect.left, y: pointer.y - rect.top });
             } else if (id === 'list') createList(anchor);
             else if (id === 'paper') createPaper(anchor);
+            else if (id === 'html') createHtml(anchor);
             else if (id === 'gallery') createGallery(anchor);
             else if (id === 'media') void performImport(pickMedia, anchor);
             else if (id === 'select' || id === 'hand' || id === 'highlight') selectTool(id);
@@ -3399,6 +3578,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             })),
             { id: 'list', label: 'Add list', icon: ListTodo, action: createList },
             { id: 'paper', label: 'Add document', icon: NotebookPen, action: createPaper },
+            { id: 'html', label: 'Add HTML embed', icon: CodeXml, action: () => createHtml() },
             { id: 'media', label: 'Add files', icon: ImagePlus, action: importMedia },
             { id: 'gallery', label: 'Gallery', icon: Images, action: createGallery },
           ]}
@@ -3606,6 +3786,25 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             </button>
           </div>
         </div>
+      )}
+      {liveHtml && (
+        <div ref={liveHtmlRef} className="board-html-live">
+          <HtmlEmbedFrame html={liveHtml.html} title="HTML embed" />
+        </div>
+      )}
+      {codeHtml && (
+        <HtmlEmbedEditor
+          key={codeHtml.id}
+          html={codeHtml.html || ''}
+          {...htmlViewport(codeHtml)}
+          onSave={(html) => {
+            const e = engine.current,
+              o = e?.objects.get(codeHtml.id);
+            if (o?.type === 'html' && !o.locked)
+              e!.apply({ upserts: [{ ...o, html }], deleted: [] });
+          }}
+          onClose={() => setCodeHtmlId(null)}
+        />
       )}
       {linkPoint && (
         <Modal title="Add a link" onClose={() => setLinkPoint(null)}>

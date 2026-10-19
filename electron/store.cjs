@@ -36,6 +36,7 @@ const types = new Set([
   'highlight',
   'list',
   'paper',
+  'html',
 ]);
 const idValue = (value) => {
   if (typeof value !== 'string' || !value || value.length > 100 || !/^[\w-]+$/.test(value))
@@ -462,6 +463,20 @@ function objectValue(o) {
     if (!o.assetId) throw Error('Missing asset');
     if (o.type === 'document' && !/^[a-f0-9]{64}$/.test(o.assetId))
       throw Error('Invalid document asset');
+  }
+  if (o.html !== undefined) {
+    if (o.type !== 'html' || typeof o.html !== 'string' || o.html.length > 500000)
+      throw Error('Invalid HTML source');
+    result.html = o.html;
+  }
+  if (o.htmlSnapshotKey !== undefined) {
+    if (
+      o.type !== 'html' ||
+      typeof o.htmlSnapshotKey !== 'string' ||
+      !/^[\w-]{1,100}$/.test(o.htmlSnapshotKey)
+    )
+      throw Error('Invalid HTML snapshot');
+    result.htmlSnapshotKey = o.htmlSnapshotKey;
   }
   if (o.type === 'link') {
     if (typeof o.url !== 'string' || o.url.length > 8192) throw Error('Invalid URL');

@@ -1,0 +1,91 @@
+/* HTML embeds: the live page over the board, and the code editor. */
+.board-html-live {
+  position: absolute;
+  z-index: 3;
+  transform-origin: 0 0;
+  background: #fff;
+  box-shadow: 0 0 0 2px #2f6fed;
+}
+.board-html-live iframe,
+.html-editor-page iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fff;
+}
+.modal.html-editor {
+  width: min(1400px, 96vw);
+  height: min(860px, 92vh);
+  max-height: none;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 18px 20px 16px;
+}
+.modal.html-editor header {
+  margin-bottom: 12px;
+}
+.html-editor-panes {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+}
+.html-editor-code {
+  resize: none;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  border: 1px solid #dfe5ee;
+  border-radius: 10px;
+  background: #fafbfd;
+  color: #1f2a37;
+  padding: 12px 14px;
+  font:
+    13px/1.55 'Cascadia Code',
+    Consolas,
+    'Courier New',
+    monospace;
+  tab-size: 2;
+  outline: none;
+}
+.html-editor-code:focus {
+  border-color: #9db8ef;
+}
+.html-editor-preview {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid #dfe5ee;
+  border-radius: 10px;
+  background-color: #f1f4f8;
+  background-image: radial-gradient(#d5dce6 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+.html-editor-page {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform-origin: 50% 50%;
+  background: #fff;
+  box-shadow: 0 6px 24px #24354f26;
+}
+.html-editor-actions {
+  margin-top: 14px;
+  align-items: center;
+}
+.html-editor-actions .quiet {
+  margin-right: auto;
+}
+:root[data-theme='dark'] .html-editor-code {
+  background: #151d27;
+  border-color: #344255;
+  color: #dbe4ef;
+}
+:root[data-theme='dark'] .html-editor-preview {
+  background-color: #111821;
+  background-image: radial-gradient(#2a3646 1px, transparent 1px);
+  border-color: #344255;
+}

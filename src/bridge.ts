@@ -164,6 +164,10 @@ interface DesktopBridge {
     assetId?: string;
     linkIconId?: string;
   } | null>;
+  // An HTML embed's page, served from its own sandboxed origin.
+  htmlPage(html: string): Promise<string>;
+  // Captures an HTML embed at a CSS size; returns the picture's asset ID.
+  htmlSnapshot(args: { html: string; width: number; height: number }): Promise<string>;
   dataDirectory(): Promise<string>;
   appInfo(): Promise<AppInfo>;
   setOpenAtLogin(enabled: boolean): Promise<boolean>;

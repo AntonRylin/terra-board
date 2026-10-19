@@ -65,6 +65,8 @@ import {
   wholeObject,
 } from './object-spoiler';
 import { documentPreviewBox, renderDocumentCard } from './document-card';
+import { renderHtmlCard } from './html-card-rendering';
+import { htmlSnapshotKey } from './html-card';
 import { listLayout } from './list-layout';
 import {
   paginateLines,
@@ -296,6 +298,25 @@ export class Engine {
       this.callbacks.edit({ upserts: [withLinkPreview(original, preview)], deleted: [] });
       this.invalidate();
     } else this.apply({ upserts: [object], deleted: [] }, false);
+  }
+  // A captured picture of an HTML embed. It belongs to the source and size it
+  // was captured from; a picture for an older version is dropped.
+  hydrateHtml(id: string, key: string, assetId: string) {
+    const object = this.objects.get(id);
+    if (this.disposed || object?.type !== 'html' || htmlSnapshotKey(object) !== key) return;
+    if (object.assetId === assetId && object.htmlSnapshotKey === key) return;
+    const original = this.gesture?.original.find((o) => o.id === id);
+    if (original) {
+      // Keep the committed geometry on disk if the gesture is cancelled.
+      this.preview({ ...object, assetId, htmlSnapshotKey: key });
+      if (htmlSnapshotKey(original) === key)
+        this.callbacks.edit({
+          upserts: [{ ...original, assetId, htmlSnapshotKey: key }],
+          deleted: [],
+        });
+      this.invalidate();
+    } else
+      this.apply({ upserts: [{ ...object, assetId, htmlSnapshotKey: key }], deleted: [] }, false);
   }
   app = new Application();
   camera: Camera;
@@ -1790,8 +1811,9 @@ export class Engine {
     const icons = new Map<string, string>();
     const tiles = new Map<string, ReturnType<typeof imageTiles>>();
     for (const o of [...visible].reverse()) {
-      if (!['image', 'link', 'document'].includes(o.type)) continue;
-      const showImage = o.type === 'image' || o.type === 'document' || hasLinkImage(o);
+      if (!['image', 'link', 'document', 'html'].includes(o.type)) continue;
+      const showImage =
+        o.type === 'image' || o.type === 'document' || o.type === 'html' || hasLinkImage(o);
       const mediaId =
         o.type === 'document' ? o.documentPreviewId : showImage ? o.assetId : o.linkIconId;
       if (!mediaId) continue;
@@ -2386,6 +2408,10 @@ export class Engine {
       }
       return container;
     }
+    if (o.type === 'html') {
+      container.addChild(renderHtmlCard(o, texture, dark));
+      return container;
+    }
     if (o.type === 'image' && texture) {
       const sprite = this.imageSprite(texture, o.crop);
       sprite.width = o.width;
@@ -2700,7 +2726,9 @@ export class Engine {
       const id =
         object.type === 'document'
           ? object.documentPreviewId
-          : object.type === 'image' || (object.type === 'link' && hasLinkImage(object))
+          : object.type === 'image' ||
+              object.type === 'html' ||
+              (object.type === 'link' && hasLinkImage(object))
             ? object.assetId
             : undefined;
       return id ? [{ object, id }] : [];
@@ -2714,7 +2742,7 @@ export class Engine {
           try {
             sizes.set(id, await dimensions(id));
           } catch (error) {
-            if (o.type !== 'document') throw error;
+            if (o.type !== 'document' && o.type !== 'html') throw error;
             // A derived document thumbnail is optional. Its file card still
             // exports when the thumbnail is missing or cannot be decoded.
             continue;
@@ -2842,7 +2870,7 @@ export class Engine {
         const imageId =
           o.type === 'document'
             ? o.documentPreviewId
-            : o.type === 'image' || (o.type === 'link' && hasLinkImage(o))
+            : o.type === 'image' || o.type === 'html' || (o.type === 'link' && hasLinkImage(o))
               ? o.assetId
               : o.type === 'link'
                 ? o.linkIconId
@@ -2858,7 +2886,8 @@ export class Engine {
           try {
             texture = await load(imageId, o.type === 'link' && !hasLinkImage(o));
           } catch (error) {
-            if (o.type !== 'document') throw error;
+            // Document thumbnails and embed pictures are derived; the card still exports.
+            if (o.type !== 'document' && o.type !== 'html') throw error;
           }
         }
         const icon =

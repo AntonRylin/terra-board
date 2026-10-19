@@ -13,7 +13,10 @@ export type ObjectType =
   | 'highlight'
   | 'list'
   // A written document of A4 pages; 'document' is an attached file.
-  | 'paper';
+  | 'paper'
+  // A web page written in HTML, CSS and JavaScript. It runs sandboxed while
+  // someone interacts with it and shows a captured picture otherwise.
+  | 'html';
 export interface ListItem {
   id: string;
   text: string;
@@ -114,6 +117,10 @@ export interface CanvasObject {
   linkIconId?: string;
   linkCompact?: boolean;
   linkPreviewHeight?: number;
+  // An HTML embed's source. Its picture is `assetId`, captured from the source
+  // and size that `htmlSnapshotKey` names (src/canvas/html-card.ts).
+  html?: string;
+  htmlSnapshotKey?: string;
 }
 export interface Camera {
   x: number;
