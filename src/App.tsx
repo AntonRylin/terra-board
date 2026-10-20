@@ -959,6 +959,7 @@ export default function App() {
               theme={appearance.theme}
               key={doc.board.id}
               readOnly={sharingOf(doc.board)?.shared === 'view'}
+              pinning
               ref={whiteboard}
               document={doc}
               backgroundPreview={

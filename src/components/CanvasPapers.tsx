@@ -8,7 +8,6 @@ import {
   type MutableRefObject,
   type PointerEvent,
 } from 'react';
-import { PinOff } from 'lucide-react';
 import type { Camera, CanvasObject } from '../model';
 import { localToWorld } from '../canvas/transform';
 import {
@@ -33,27 +32,15 @@ export interface PaperView {
   objects: CanvasObject[];
   camera: Camera;
 }
-// A document pinned to the view: where its panel sits on screen, in pixels.
-// Local to this window only; the document itself stays where it is on the board.
-export interface PaperPin {
-  id: string;
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-}
 type Press = { x: number; y: number; at: number } | null;
 
 const handles = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
-const pinHandles = ['e', 's', 'w', 'se', 'sw'];
-export const pinMinimum = { width: 260, height: 180 };
-const pinHeader = 34;
 // Room beside the pages for their shadow and the scrollbar.
 const pinInset = 22;
 
 // A document's name. Pressing it does what pressing the document does (select,
 // drag); a double-click renames it. An empty name removes it.
-function PaperName({
+export function PaperName({
   object: o,
   update,
   onPress,
@@ -362,199 +349,71 @@ function PaperCard({
   );
 }
 
-// Keeps a pinned panel on screen and at least its minimum size.
-export function clampPin(pin: PaperPin, view: { width: number; height: number }): PaperPin {
-  const width = Math.max(pinMinimum.width, Math.min(view.width - 16, pin.width));
-  const height = Math.max(pinMinimum.height, Math.min(view.height - 16, pin.height));
-  return {
-    ...pin,
-    width,
-    height,
-    left: Math.max(8, Math.min(view.width - width - 8, pin.left)),
-    top: Math.max(8, Math.min(view.height - height - 8, pin.top)),
-  };
-}
-
-function PinnedPaper({
+// A pinned document's pages, scrolling inside its pin. Pinned documents are
+// for writing: one click starts.
+export function PinnedPaperPages({
   object: o,
-  pin,
+  width,
+  height,
   update,
   fit,
-  move,
-  unpin,
   editing,
   setEditing,
 }: {
   object: CanvasObject;
-  pin: PaperPin;
+  width: number;
+  height: number;
   update: (o: CanvasObject) => void;
   fit: (o: CanvasObject) => void;
-  move: (pin: PaperPin) => void;
-  unpin: () => void;
   editing: boolean;
   setEditing: (editing: boolean) => void;
 }) {
   const field = useRef<HTMLDivElement | null>(null);
   const press = useRef<Press>(null);
   const writing = writingHandlers(editing, setEditing, field);
-  const scale = (pin.width - pinInset) / paperWidth;
+  const scale = (width - pinInset) / paperWidth;
   const pages = paperPages(o);
-  const title = o.documentTitle?.trim() || 'Untitled';
-  // Moving and resizing change the panel on screen, never the board.
-  const drag = (event: PointerEvent<HTMLElement>, handle: string | null) => {
-    if (event.button !== 0) return;
-    event.preventDefault();
-    event.stopPropagation();
-    const target = event.currentTarget;
-    target.setPointerCapture(event.pointerId);
-    const start = { x: event.clientX, y: event.clientY },
-      from = pin;
-    const view = target.closest('.canvas-paper-pins')!.getBoundingClientRect();
-    const moved = (e: globalThis.PointerEvent) => {
-      const dx = e.clientX - start.x,
-        dy = e.clientY - start.y;
-      let next = { ...from };
-      if (!handle) next = { ...from, left: from.left + dx, top: from.top + dy };
-      else {
-        if (handle.includes('e')) next.width = from.width + dx;
-        if (handle.includes('s')) next.height = from.height + dy;
-        if (handle.includes('w')) {
-          next.width = Math.max(pinMinimum.width, from.width - dx);
-          next.left = from.left + from.width - next.width;
-        }
-      }
-      move(clampPin(next, view));
-    };
-    const done = () => {
-      target.removeEventListener('pointermove', moved);
-      target.removeEventListener('pointerup', done);
-      target.removeEventListener('pointercancel', done);
-    };
-    target.addEventListener('pointermove', moved);
-    target.addEventListener('pointerup', done);
-    target.addEventListener('pointercancel', done);
-  };
   return (
-    <section
-      className="canvas-paper-pinned"
+    <div
+      className="canvas-paper-scroll"
       data-paper-id={o.id}
-      data-editing={editing}
-      aria-label={`Pinned document: ${title}`}
-      style={{ left: pin.left, top: pin.top, width: pin.width, height: pin.height }}
+      style={{ height }}
       onKeyDown={writing.onKeyDown}
+      onPointerDown={(event) => {
+        if (event.button !== 0) return;
+        if ((event.target as HTMLElement).closest('.rt-spoiler[data-hidden]')) return;
+        press.current = { x: event.clientX, y: event.clientY, at: performance.now() };
+        if (editing) writing.pressWhileEditing(event);
+        else if (!o.locked) {
+          event.preventDefault();
+          setEditing(true);
+        }
+      }}
     >
-      <header className="canvas-paper-pin-bar" onPointerDown={(event) => drag(event, null)}>
-        <PaperName
-          object={o}
-          update={update}
-          className="canvas-paper-pin-title"
-          onPress={(event) => drag(event, null)}
-        />
-        <span className="canvas-paper-pin-space" />
-        <button
-          className="icon-button"
-          aria-label="Unpin from view"
-          title="Unpin from view"
-          onPointerDown={(event) => event.stopPropagation()}
-          onClick={unpin}
-        >
-          <PinOff size={15} />
-        </button>
-      </header>
       <div
-        className="canvas-paper-scroll"
-        style={{ height: pin.height - pinHeader }}
-        onPointerDown={(event) => {
-          if (event.button !== 0) return;
-          if ((event.target as HTMLElement).closest('.rt-spoiler[data-hidden]')) return;
-          press.current = { x: event.clientX, y: event.clientY, at: performance.now() };
-          if (editing) writing.pressWhileEditing(event);
-          else if (!o.locked) {
-            // Pinned documents are for writing: one click starts.
-            event.preventDefault();
-            setEditing(true);
-          }
-        }}
+        className="canvas-paper-pin-pages"
+        style={{ width: paperWidth * scale, height: paperHeight(pages, scale) }}
       >
         <div
-          className="canvas-paper-pin-pages"
-          style={{ width: paperWidth * scale, height: paperHeight(pages, scale) }}
+          className="canvas-paper"
+          data-editing={editing}
+          style={{
+            width: paperWidth,
+            height: paperHeight(pages),
+            transform: `scale(${scale})`,
+          }}
         >
-          <div
-            className="canvas-paper"
-            data-editing={editing}
-            style={{
-              width: paperWidth,
-              height: paperHeight(pages),
-              transform: `scale(${scale})`,
-            }}
-          >
-            <PaperSheets
-              object={o}
-              editing={editing}
-              update={update}
-              fit={fit}
-              field={field}
-              press={press}
-              hint="Click to write"
-            />
-          </div>
+          <PaperSheets
+            object={o}
+            editing={editing}
+            update={update}
+            fit={fit}
+            field={field}
+            press={press}
+            hint="Click to write"
+          />
         </div>
       </div>
-      {pinHandles.map((handle) => (
-        <i
-          key={handle}
-          className="canvas-paper-pin-handle"
-          data-handle={handle}
-          onPointerDown={(event) => drag(event, handle)}
-        />
-      ))}
-    </section>
-  );
-}
-
-export function PinnedPapers({
-  pins,
-  objects,
-  update,
-  fit,
-  move,
-  unpin,
-  editingId,
-  onEdit,
-}: {
-  pins: PaperPin[];
-  objects: Map<string, CanvasObject>;
-  update: (o: CanvasObject) => void;
-  fit: (o: CanvasObject) => void;
-  move: (pin: PaperPin) => void;
-  unpin: (id: string) => void;
-  editingId: string | null;
-  onEdit: (id: string | null) => void;
-}) {
-  return (
-    <div className="canvas-paper-pins">
-      {pins.map((pin) => {
-        const o = objects.get(pin.id);
-        if (!o) return null;
-        return (
-          <PinnedPaper
-            key={pin.id}
-            object={o}
-            pin={pin}
-            update={(next) => {
-              if (!o.locked) update(next);
-            }}
-            fit={fit}
-            move={move}
-            unpin={() => unpin(pin.id)}
-            editing={!o.locked && editingId === o.id}
-            setEditing={(editing) => {
-              if (!o.locked) onEdit(editing ? o.id : null);
-            }}
-          />
-        );
-      })}
     </div>
   );
 }

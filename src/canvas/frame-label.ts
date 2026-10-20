@@ -47,6 +47,12 @@ export function arrowLabelObject(o: CanvasObject): CanvasObject {
 
 // Include the external name in culling and pointer queries, but keep resize
 // handles on the frame body. Rotated labels use the same local coordinates.
+// What a picture of an object covers: its name outside and a note's shadow included.
+export function pictureBounds(o: CanvasObject) {
+  const b = visualBounds(o);
+  const pad = o.type === 'note' ? Math.min(o.width, o.height) * 0.08 : 2;
+  return { x: b.x - pad, y: b.y - pad, width: b.width + 2 * pad, height: b.height + 2 * pad };
+}
 export function visualBounds(o: CanvasObject, editingTitle = false, zoom?: number) {
   if (o.type === 'arrow') {
     const b = objectBounds(o),

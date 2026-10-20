@@ -70,6 +70,7 @@ import { renderBrowserCard, renderHtmlCard } from './html-card-rendering';
 import { renderAlbumName } from './album-rendering';
 import { isWebCard, snapshotKey } from './html-card';
 import { listLayout } from './list-layout';
+import { unionBounds } from './pins';
 import {
   paginateLines,
   paperContentHeight,
@@ -105,7 +106,13 @@ import {
   rotationHandlePoint,
   objectBounds,
 } from './transform';
-import { hitsFrameLabel, visualBounds, hasExternalLabel, arrowLabelObject } from './frame-label';
+import {
+  hitsFrameLabel,
+  visualBounds,
+  pictureBounds,
+  hasExternalLabel,
+  arrowLabelObject,
+} from './frame-label';
 import { galleryEdit, selectionWithGalleryImages } from './gallery';
 import {
   youtubeId,
@@ -499,15 +506,8 @@ export class Engine {
         this.groupMembers.get(o.groupId)!.add(o.id);
       }
   }
-  // Objects shown somewhere else for now (a document pinned to the view) keep
-  // their place on the board, but are neither drawn, hit nor selected there.
-  private detached = new Set<string>();
-  setDetached(ids: string[]) {
-    this.detached = new Set(ids);
-    this.setSelection([...this.selection]);
-  }
   setSelection(ids: string[]) {
-    this.selection = new Set(ids.filter((id) => this.objects.has(id) && !this.detached.has(id)));
+    this.selection = new Set(ids.filter((id) => this.objects.has(id)));
     this.callbacks.selection(this.selected);
     this.invalidate();
   }
@@ -524,7 +524,6 @@ export class Engine {
       })
       .sort((a, b) => b.z - a.z)
       .find((o) => {
-        if (this.detached.has(o.id)) return false;
         if (this.coveringFrames.length && concealedBy(o, this.coveringFrames)) return false;
         const q = worldToLocal(o, p);
         if (o.type === 'highlight') return ink && hitsHighlight(o, q, 2 / this.camera.zoom);
@@ -1819,7 +1818,7 @@ export class Engine {
       c,
     );
     this.callbacks.papers?.(
-      visible.filter((o) => o.type === 'paper' && !this.detached.has(o.id) && !concealed(o)),
+      visible.filter((o) => o.type === 'paper' && !concealed(o)),
       c,
     );
     this.callbacks.composers?.(
@@ -1828,7 +1827,7 @@ export class Engine {
     );
     this.callbacks.embeds?.(
       visible.filter(
-        (o) => o.type === 'html' && !this.detached.has(o.id) && !isSpoiler(o) && !concealed(o),
+        (o) => o.type === 'html' && !isSpoiler(o) && !concealed(o),
       ),
       c,
     );
@@ -2800,11 +2799,7 @@ export class Engine {
   ) {
     await this.initialized;
     if (this.disposed || !this.ready) throw Error('The canvas is not ready to export.');
-    const getBounds = (o: CanvasObject) => {
-      const b = visualBounds(o);
-      const pad = o.type === 'note' ? Math.min(o.width, o.height) * 0.08 : 2;
-      return { x: b.x - pad, y: b.y - pad, width: b.width + 2 * pad, height: b.height + 2 * pad };
-    };
+    const getBounds = pictureBounds;
     const plan = exportPlan(
       this.all,
       [...this.selection],
@@ -2873,6 +2868,58 @@ export class Engine {
     const context = canvas.getContext('2d')!;
     context.fillStyle = '#fbfcfd';
     context.fillRect(0, 0, canvas.width, canvas.height);
+    await this.drawObjects(context, plan, assetUrl, getBounds, progress);
+    progress(82, 'Encoding file…');
+    return { canvas, limited: resolution.limited, pageSize };
+  }
+  // A picture of objects from any board, for a view pinned to the screen. It is
+  // drawn like an export at the given pixel size, without a background.
+  async pinPicture(
+    objects: CanvasObject[],
+    pixels: { width: number; height: number },
+    assetUrl: (id: string, variant: string) => string,
+  ) {
+    await this.initialized;
+    if (this.disposed || !this.ready) return null;
+    const hidden = objects.filter(
+      (o) => isSpoiler(o) && hidesContents(o) && !this.spoilerRevealed(o.id, wholeObject),
+    );
+    if (hidden.length) objects = objects.filter((o) => !concealedBy(o, hidden));
+    if (!objects.length) return null;
+    const bounds = unionBounds(objects.map(pictureBounds));
+    const scale = Math.min(
+      pixels.width / bounds.width,
+      pixels.height / bounds.height,
+      8192 / bounds.width,
+      8192 / bounds.height,
+    );
+    const width = Math.max(1, Math.round(bounds.width * scale)),
+      height = Math.max(1, Math.round(bounds.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    await this.drawObjects(
+      canvas.getContext('2d')!,
+      { objects, bounds, scale, width, height, quick: true },
+      assetUrl,
+      pictureBounds,
+    );
+    return canvas;
+  }
+  private async drawObjects(
+    context: CanvasRenderingContext2D,
+    plan: {
+      objects: CanvasObject[];
+      bounds: Bounds;
+      scale: number;
+      width: number;
+      height: number;
+      quick?: boolean;
+    },
+    assetUrl: (id: string, variant: string) => string,
+    getBounds: (o: CanvasObject) => Bounds,
+    progress?: (value: number, label: string) => void,
+  ) {
     const camera = {
       x: -plan.bounds.x * plan.scale,
       y: -plan.bounds.y * plan.scale,
@@ -2906,14 +2953,6 @@ export class Engine {
             clearTimeout(timer);
           }
         };
-        if (icon) await decode('thumb');
-        else {
-          try {
-            await decode('original');
-          } catch {
-            await decode('export');
-          }
-        }
         const needed = icon
           ? Math.max(256, 24 * plan.scale)
           : Math.min(
@@ -2921,6 +2960,15 @@ export class Engine {
               Math.max(o.width / (o.crop?.width || 1), o.height / (o.crop?.height || 1)) *
                 plan.scale,
             );
+        if (icon) await decode('thumb');
+        else {
+          try {
+            // Pinned pictures make do with the 1600-pixel preview when it is enough.
+            await decode(plan.quick && needed <= 1600 ? 'preview' : 'original');
+          } catch {
+            await decode('export');
+          }
+        }
         const scale = Math.min(1, needed / Math.max(img.naturalWidth, img.naturalHeight));
         const bitmap = await createImageBitmap(img, {
           resizeWidth: Math.max(1, Math.ceil(img.naturalWidth * scale)),
@@ -2932,7 +2980,7 @@ export class Engine {
         textures.push(texture);
         return texture;
       };
-      progress(
+      progress?.(
         5 + Math.round((75 * i) / Math.max(1, plan.objects.length)),
         `Rendering ${i + 1} of ${plan.objects.length} items…`,
       );
@@ -3038,8 +3086,6 @@ export class Engine {
         for (const bitmap of bitmaps) bitmap.close();
       }
     }
-    progress(82, 'Encoding file…');
-    return { canvas, limited: resolution.limited, pageSize };
   }
   async screenshot() {
     await this.initialized;

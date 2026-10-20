@@ -14,7 +14,7 @@ export interface ListView {
 }
 export { listHeight } from '../canvas/list-layout';
 
-function ListCard({
+export function ListCard({
   object: o,
   camera,
   update,

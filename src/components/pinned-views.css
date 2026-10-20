@@ -1,0 +1,235 @@
+/* Objects pinned to the screen float over the board in screen pixels, with a
+   slim bar above them for the name, finding the original and unpinning. */
+.screen-pins {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.screen-pin {
+  position: absolute;
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+}
+.screen-pin-bar {
+  flex: none;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 2px 0 6px;
+  cursor: grab;
+  user-select: none;
+}
+.screen-pin-bar:active {
+  cursor: grabbing;
+}
+.screen-pin-title {
+  min-width: 0;
+  max-width: calc(100% - 76px);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  padding: 3px 8px;
+  border-radius: 7px;
+  font:
+    600 13px/1.4 'Segoe UI',
+    sans-serif;
+  color: #3a4452;
+  outline: none;
+  background: rgb(255 255 255 / 0.72);
+  box-shadow: 0 1px 4px rgb(30 40 55 / 0.1);
+  backdrop-filter: blur(12px);
+}
+.screen-pin-title[data-empty='true'] {
+  color: #8a94a1;
+}
+.screen-pin-board {
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font:
+    12px/1.4 'Segoe UI',
+    sans-serif;
+  color: #6c7785;
+  padding: 3px 6px;
+  border-radius: 7px;
+  background: rgb(255 255 255 / 0.6);
+  backdrop-filter: blur(12px);
+}
+[data-theme='dark'] .screen-pin-title {
+  color: #dbe2ea;
+  background: rgb(36 44 56 / 0.72);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.3);
+}
+[data-theme='dark'] .screen-pin-title[data-empty='true'] {
+  color: #8e99a7;
+}
+[data-theme='dark'] .screen-pin-board {
+  color: #a3aebb;
+  background: rgb(36 44 56 / 0.6);
+}
+.screen-pin-space {
+  flex: 1;
+  align-self: stretch;
+}
+.screen-pin-bar .icon-button {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  cursor: default;
+  color: #5d6876;
+  background: rgb(255 255 255 / 0.72);
+  box-shadow: 0 1px 4px rgb(30 40 55 / 0.1);
+  backdrop-filter: blur(12px);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+[data-theme='dark'] .screen-pin-bar .icon-button {
+  color: #c4cdd8;
+  background: rgb(36 44 56 / 0.72);
+}
+/* A picture keeps its bar out of the way until the pointer is over it. */
+.screen-pin[data-kind='picture'] .screen-pin-title,
+.screen-pin[data-kind='picture'] .screen-pin-board {
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.screen-pin:hover .screen-pin-bar .icon-button,
+.screen-pin:hover .screen-pin-title,
+.screen-pin:hover .screen-pin-board,
+.screen-pin-bar .icon-button:focus-visible {
+  opacity: 1;
+}
+
+.screen-pin-content {
+  flex: none;
+  cursor: grab;
+}
+.screen-pin-content:active {
+  cursor: grabbing;
+}
+.screen-pin-picture {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.screen-pin-picture > canvas {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 6px 18px rgb(30 40 55 / 0.18));
+}
+[data-theme='dark'] .screen-pin-picture > canvas {
+  filter: drop-shadow(0 8px 24px rgb(0 0 0 / 0.5));
+}
+.screen-pin-missing {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: rgb(255 255 255 / 0.72);
+  box-shadow: 0 6px 22px rgb(30 40 55 / 0.14);
+  backdrop-filter: blur(12px);
+}
+[data-theme='dark'] .screen-pin-missing {
+  background: rgb(36 44 56 / 0.72);
+}
+.screen-pin-note {
+  padding: 8px 12px;
+  text-align: center;
+  font:
+    13px/1.4 'Segoe UI',
+    sans-serif;
+  color: #6c7785;
+}
+[data-theme='dark'] .screen-pin-note {
+  color: #a3aebb;
+}
+
+/* Documents and checklists scroll inside their pin. */
+.canvas-paper-scroll,
+.screen-pin-scroll {
+  flex: none;
+  overflow-x: hidden;
+  overflow-y: auto;
+  box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  scrollbar-gutter: stable;
+}
+.canvas-paper-scroll {
+  /* Room for the sheets' shadow, which the scroll box would otherwise clip. */
+  padding: 2px 6px 14px 6px;
+  cursor: text;
+}
+.screen-pin:hover .canvas-paper-scroll,
+.screen-pin:hover .screen-pin-scroll {
+  scrollbar-color: rgb(120 132 148 / 0.45) transparent;
+}
+.canvas-paper-pin-pages,
+.screen-pin-list {
+  position: relative;
+}
+.canvas-paper-pin-pages > .canvas-paper {
+  left: 0;
+  top: 0;
+}
+.screen-pin .canvas-paper-sheet {
+  border-radius: 4px;
+  box-shadow:
+    0 0 0 1px rgb(30 40 55 / 0.06),
+    0 6px 22px rgb(30 40 55 / 0.16);
+}
+[data-theme='dark'] .screen-pin .canvas-paper-sheet {
+  box-shadow:
+    0 0 0 1px rgb(0 0 0 / 0.3),
+    0 8px 28px rgb(0 0 0 / 0.5);
+}
+.screen-pin-list > .canvas-list {
+  box-shadow: 0 6px 22px rgb(30 40 55 / 0.16);
+}
+
+.screen-pin-handle {
+  position: absolute;
+  z-index: 1;
+}
+.screen-pin-handle[data-handle='e'],
+.screen-pin-handle[data-handle='w'] {
+  top: 34px;
+  bottom: 12px;
+  width: 8px;
+  cursor: ew-resize;
+}
+.screen-pin-handle[data-handle='e'] {
+  right: -2px;
+}
+.screen-pin-handle[data-handle='w'] {
+  left: -2px;
+}
+.screen-pin-handle[data-handle='s'] {
+  left: 12px;
+  right: 12px;
+  bottom: -2px;
+  height: 8px;
+  cursor: ns-resize;
+}
+.screen-pin-handle[data-handle='se'],
+.screen-pin-handle[data-handle='sw'] {
+  bottom: -2px;
+  width: 14px;
+  height: 14px;
+}
+.screen-pin-handle[data-handle='se'] {
+  right: -2px;
+  cursor: nwse-resize;
+}
+.screen-pin-handle[data-handle='sw'] {
+  left: -2px;
+  cursor: nesw-resize;
+}

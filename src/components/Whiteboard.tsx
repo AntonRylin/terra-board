@@ -1,12 +1,17 @@
 import ArrowControls from './ArrowControls';
 import CanvasLists, { listHeight, type ListView } from './CanvasLists';
-import CanvasPapers, {
-  PinnedPapers,
-  clampPin,
-  pinMinimum,
-  type PaperPin,
-  type PaperView,
-} from './CanvasPapers';
+import CanvasPapers, { type PaperView } from './CanvasPapers';
+import PinnedViews from './PinnedViews';
+import {
+  pinKey,
+  pinKind,
+  pinnedObjects,
+  placePin,
+  screenPins,
+  setScreenPins,
+  unionBounds,
+} from '../canvas/pins';
+import { pictureBounds } from '../canvas/frame-label';
 import { paperHeight, paperWidth } from '../canvas/paper-layout';
 import CanvasPdfComposers from './CanvasPdfComposers';
 import { HtmlEmbedEditor, HtmlEmbedFrame, type HtmlRelay } from './HtmlEmbed';
@@ -213,6 +218,8 @@ interface Props {
   onError: (message: string) => void;
   // Live-sharing visitors without edit rights.
   readOnly?: boolean;
+  // Objects can be pinned to the screen (not for live-sharing visitors).
+  pinning?: boolean;
 }
 const tools: { id: Tool & ToolbarId; label: string; icon: typeof Type; command: CommandId }[] = [
   { id: 'select', label: 'Select', icon: MousePointer2, command: 'tool.select' },
@@ -241,6 +248,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     onOpenFrame,
     backgroundPreview,
     readOnly = false,
+    pinning = false,
   },
   ref,
 ) {
@@ -800,12 +808,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   const [editingListId, setEditingListId] = useState<string | null>(null);
   const [editingPaperId, setEditingPaperId] = useState<string | null>(null);
   const [paperView, setPaperView] = useState<PaperView>({ objects: [], camera: doc.camera });
-  // Documents pinned to the view. Local to this window and this visit to the
-  // board: the documents themselves never move, so leaving the board or closing
-  // the app without unpinning finds them where they were.
-  const [pins, setPins] = useState<PaperPin[]>([]);
-  const pinIds = useRef(new Set<string>());
-  const [, setPinRevision] = useState(0);
+  // The open board's objects for pins to the screen; a new array after each edit.
+  const [pinSource, setPinSource] = useState<CanvasObject[] | null>(null);
   const [listView, setListView] = useState<ListView>({ objects: [], camera: doc.camera });
   const [composerView, setComposerView] = useState<ListView>({ objects: [], camera: doc.camera });
   const [editingComposerId, setEditingComposerId] = useState<string | null>(null);
@@ -1156,36 +1160,58 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     }
   };
   const listViewKey = useRef('');
-  useEffect(() => {
-    pinIds.current = new Set(pins.map((pin) => pin.id));
-    engine.current?.setDetached(pins.map((pin) => pin.id));
-  }, [pins]);
-  const pinPaper = (o: CanvasObject) => {
+  // Live copies of objects on the screen; each object stays where it is. A
+  // frame brings what is inside it, so objects inside a chosen frame are not
+  // pinned again on their own.
+  const pinToScreen = (chosen: CanvasObject[]) => {
     const e = engine.current,
       surface = host.current;
-    if (!e || !surface || pins.some((pin) => pin.id === o.id)) return;
-    const c = e.camera,
-      origin = localToWorld(o, { x: 0, y: 0 });
+    if (!e || !surface || !chosen.length) return;
+    const all = e.all,
+      c = e.camera;
     const view = { width: surface.clientWidth, height: surface.clientHeight };
-    // The panel starts where the document is on screen, at a usable size.
-    const width = Math.max(pinMinimum.width, Math.min(view.width * 0.6, 720, o.width * c.zoom));
-    const height = Math.min(view.height - 16, o.height * c.zoom + 36, view.height * 0.85);
-    setPins((current) => [
-      ...current,
-      clampPin(
-        { id: o.id, left: origin.x * c.zoom + c.x, top: origin.y * c.zoom + c.y, width, height },
-        view,
+    const inside = new Set(
+      chosen.flatMap((o) => (o.type === 'frame' ? pinnedObjects(all, o.id).slice(1) : [])).map(
+        (o) => o.id,
       ),
-    ]);
-  };
-  const unpinPaper = (id: string) => {
-    if (editingPaperId === id) setEditingPaperId(null);
-    setPins((current) => current.filter((pin) => pin.id !== id));
+    );
+    const roots = chosen.filter((o) => !inside.has(o.id)).slice(0, 24);
+    const added = roots.map((o, i) => {
+      const kind = pinKind(o);
+      const b = unionBounds(
+        (kind === 'picture' ? pinnedObjects(all, o.id) : [o]).map(pictureBounds),
+      );
+      const pin = placePin(
+        doc.board.id,
+        o.id,
+        kind,
+        {
+          left: b.x * c.zoom + c.x + i * 24,
+          top: b.y * c.zoom + c.y + i * 24,
+          width: b.width * c.zoom,
+          height: b.height * c.zoom,
+        },
+        view,
+        b.width / b.height,
+      );
+      return screenPins().find((item) => pinKey(item) === pinKey(pin)) || pin;
+    });
+    const keys = new Set(added.map(pinKey));
+    setPinSource(all);
+    setScreenPins((list) => [...list.filter((pin) => !keys.has(pinKey(pin))), ...added]);
   };
   const updatePaper = (o: CanvasObject) => {
     if (engine.current?.objects.get(o.id)?.locked) return;
     engine.current?.apply({ upserts: [o], deleted: [] });
     setPaperView((view) => ({
+      ...view,
+      objects: view.objects.map((item) => (item.id === o.id ? o : item)),
+    }));
+  };
+  const updateList = (o: CanvasObject) => {
+    if (engine.current?.objects.get(o.id)?.locked) return;
+    engine.current?.apply({ upserts: [o], deleted: [] });
+    setListView((view) => ({
       ...view,
       objects: view.objects.map((item) => (item.id === o.id ? o : item)),
     }));
@@ -1838,12 +1864,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       },
       edit: (edit) => {
         if (!syncingExternal.current) queue.current!.enqueue(edit);
-        if (pinIds.current.size) {
-          const gone = edit.deleted.filter((id) => pinIds.current.has(id));
-          if (gone.length) setPins((current) => current.filter((pin) => !gone.includes(pin.id)));
-          if (gone.length || edit.upserts.some((o) => pinIds.current.has(o.id)))
-            setPinRevision((revision) => revision + 1);
-        }
+        if (pinning && screenPins().some((pin) => pin.boardId === doc.board.id))
+          setPinSource(e.all);
         setCount(e.objects.size);
         if (edit.upserts.some(isWebCard)) scheduleHtmlCapture();
         const browserId = liveBrowserState.current?.id;
@@ -1951,6 +1973,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       context: (p) => setMenu(p),
       highlightSize: (size) => setHighlightStyle((style) => ({ ...style, size })),
       ready: () => {
+        if (pinning) setPinSource(e.all);
         setReady(true);
         onReady();
         window.canvas?.rendererReady();
@@ -3139,6 +3162,16 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       action: () => engine.current?.duplicate(),
       disabled: !selected.length,
     },
+    ...(pinning
+      ? [
+          {
+            label: 'Pin to screen',
+            icon: <Pin />,
+            action: () => pinToScreen(selected),
+            disabled: !selected.length,
+          },
+        ]
+      : []),
     {
       label: selected.some((o) => o.groupId) ? 'Ungroup' : 'Group',
       icon: <Group />,
@@ -3315,27 +3348,22 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           finishEdit();
           engine.current?.setSelection([id]);
         }}
-        update={(o) => {
-          if (engine.current?.objects.get(o.id)?.locked) return;
-          engine.current?.apply({ upserts: [o], deleted: [] });
-          setListView((view) => ({
-            ...view,
-            objects: view.objects.map((item) => (item.id === o.id ? o : item)),
-          }));
-        }}
+        update={updateList}
       />
-      {!!pins.length && engine.current && (
-        <PinnedPapers
-          pins={pins}
-          objects={engine.current.objects}
-          update={updatePaper}
+      {pinning && (
+        <PinnedViews
+          boardId={doc.board.id}
+          boardName={doc.board.name}
+          engine={ready ? engine.current : null}
+          objects={pinSource}
+          readOnly={readOnly}
+          update={(o) => {
+            if (o.type === 'paper') updatePaper(o);
+            else updateList(o);
+          }}
           fit={fitPaper}
-          move={(next) =>
-            setPins((current) => current.map((pin) => (pin.id === next.id ? next : pin)))
-          }
-          unpin={unpinPaper}
-          editingId={editingPaperId}
-          onEdit={setEditingPaperId}
+          open={onOpenFrame}
+          onError={onError}
         />
       )}
       {readingDocument && (
@@ -3659,13 +3687,13 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           >
             {lockButton}
             {spoilerButton}
-            {selected.length === 1 && selected[0].type === 'paper' && (
+            {pinning && (
               <button
                 key="pin"
                 className="icon-button"
-                aria-label="Pin to view"
-                title="Pin to view"
-                onClick={() => pinPaper(selected[0])}
+                aria-label="Pin to screen"
+                title="Pin to screen"
+                onClick={() => pinToScreen(selected)}
               >
                 <Pin size={16} />
               </button>
