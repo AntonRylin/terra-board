@@ -145,7 +145,10 @@ test('stop ends the running job and turns away waiting ones', async () => {
   const fork = () => {
     const child = new EventEmitter();
     child.postMessage = (message) => (child.received = message);
-    child.kill = () => (child.killed = true);
+    child.kill = () => {
+      child.killed = true;
+      child.emit('exit', 0);
+    };
     children.push(child);
     return child;
   };
@@ -163,7 +166,7 @@ test('stop ends the running job and turns away waiting ones', async () => {
     model: 'u2net.onnx',
     runtime: 'runtime',
   });
-  removal.stop();
+  await removal.stop();
   await assert.rejects(first, /stopped/);
   await assert.rejects(second, /stopped/);
   assert.equal(children[0].killed, true);

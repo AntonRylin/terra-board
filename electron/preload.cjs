@@ -54,6 +54,17 @@ contextBridge.exposeInMainWorld('canvas', {
   openFolder: (which) => ipcRenderer.invoke('canvas:open-folder', which),
   exportLibrary: () => ipcRenderer.invoke('canvas:export-library'),
   licenses: () => ipcRenderer.invoke('canvas:licenses'),
+  extensions: {
+    list: () => ipcRenderer.invoke('canvas:extensions-list'),
+    install: (id) => ipcRenderer.invoke('canvas:extensions-install', id),
+    cancel: (id) => ipcRenderer.invoke('canvas:extensions-cancel', id),
+    remove: (id) => ipcRenderer.invoke('canvas:extensions-remove', id),
+    onChange: (callback) => {
+      const handler = (_event, list) => callback(list);
+      ipcRenderer.on('canvas:extensions-changed', handler);
+      return () => ipcRenderer.removeListener('canvas:extensions-changed', handler);
+    },
+  },
   updates: {
     status: () => ipcRenderer.invoke('canvas:update-status'),
     check: () => ipcRenderer.invoke('canvas:update-check'),

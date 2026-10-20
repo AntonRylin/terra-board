@@ -116,6 +116,25 @@ export interface UpdateStatus {
   checkedAt?: number;
   error?: string;
 }
+/** An optional part listed in Settings → Extensions (electron/extensions.cjs). */
+export interface ExtensionStatus {
+  id: string;
+  name: string;
+  description: string;
+  version: string;
+  state: 'available' | 'installing' | 'installed';
+  /** Download size; approximate for LibreOffice. */
+  downloadBytes: number;
+  /** Space used on this PC, once installed. */
+  installedBytes?: number;
+  /** Installed, but this version of Terra Board has a newer one. */
+  outdated?: boolean;
+  progress?: { received: number; total: number; label?: string };
+  /** Provided by Windows (a LibreOffice in Program Files): nothing to remove. */
+  system?: boolean;
+  error?: string;
+  notice?: string;
+}
 interface DesktopBridge {
   assetDimensions(id: string): Promise<{ width: number; height: number }>;
   exportImage(args: {
@@ -181,6 +200,13 @@ interface DesktopBridge {
   openFolder(which: 'library' | 'backups'): Promise<void>;
   exportLibrary(): Promise<{ count: number; folder: string } | null>;
   licenses(): Promise<{ name: string; version: string; license: string }[]>;
+  extensions: {
+    list(): Promise<ExtensionStatus[]>;
+    install(id: string): Promise<void>;
+    cancel(id: string): Promise<void>;
+    remove(id: string): Promise<void>;
+    onChange(callback: (list: ExtensionStatus[]) => void): () => void;
+  };
   updates: {
     status(): Promise<UpdateStatus>;
     check(): Promise<UpdateStatus>;

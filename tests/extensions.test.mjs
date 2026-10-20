@@ -268,3 +268,27 @@ test('installs retry a folder rename that Windows briefly refuses', async () => 
   assert.equal(refusals, 3);
   assert.equal(readFileSync(join(extensions.path('tool'), 'tool.exe'), 'utf8'), 'tool');
 });
+
+// 0.1.28 and earlier extracted LibreOffice into Library/tools; it moves into the
+// Office files extension instead of being downloaded again.
+test('adopt moves an existing folder in as an installed extension', async () => {
+  const { root } = workspace();
+  const legacy = join(root, '..', 'Library', 'tools', 'libreoffice-26.2.6');
+  mkdirSync(join(legacy, 'program'), { recursive: true });
+  writeFileSync(join(legacy, 'program', 'soffice.com'), 'office');
+  const extensions = createExtensions({
+    root,
+    catalog: { extensions: [entry('office', [], { installer: 'office' })] },
+    source: { remote: true },
+  });
+  assert.equal(await extensions.adopt('office', legacy), true);
+  const dir = extensions.path('office');
+  assert.equal(
+    readFileSync(join(dir, 'libreoffice-26.2.6', 'program', 'soffice.com'), 'utf8'),
+    'office',
+  );
+  assert.ok(!existsSync(legacy), 'the old folder is moved, not copied');
+  assert.equal(status(extensions, 'office').state, 'installed');
+  // Nothing to adopt, or already installed: no change.
+  assert.equal(await extensions.adopt('office', legacy), false);
+});

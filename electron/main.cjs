@@ -12,6 +12,7 @@ const {
   ClipboardItem,
   nativeImage,
   safeStorage,
+  utilityProcess,
   webContents,
 } = require('electron');
 const { CloudSync, cloudConfig } = require('./cloud-sync.cjs');
@@ -20,7 +21,12 @@ const { createImageClipboard } = require('./image-clipboard.cjs');
 const { createVisualExport } = require('./visual-export.cjs');
 const { createAssetDownload, assetResponse } = require('./document-assets.cjs');
 const { createDocumentPrint } = require('./document-print.cjs');
-const { createOfficeConverter } = require('./office-converter.cjs');
+const {
+  createOfficeConverter,
+  officeLocation,
+  installOffice,
+  VERSION: officeVersion,
+} = require('./office-converter.cjs');
 const { attachWindowShadow } = require('./window-shadow.cjs');
 const { fetchPreview } = require('./link-preview.cjs');
 const { downloadSongLink } = require('./song-link.cjs');
@@ -36,6 +42,8 @@ const { createHash, randomUUID } = require('node:crypto');
 const { libraryRoot } = require('./storage-paths.cjs');
 const { createAppUpdater } = require('./app-updater.cjs');
 const { collectLicenses } = require('./licenses.cjs');
+const { createExtensions } = require('./extensions.cjs');
+const { createBackgroundRemoval, removeAssetBackground } = require('./background-removal.cjs');
 protocol.registerSchemesAsPrivileged([
   { scheme: 'canvas-app', privileges: { standard: true, secure: true, supportFetchAPI: true } },
   // HTML embeds: their own origin, framed with a sandbox (html-cards.cjs).
@@ -77,10 +85,7 @@ const matchesInput = (b, input) =>
 let licenseList = null;
 // Everything the app ships, with each package's declared license.
 function bundledLicenses() {
-  licenseList ||= collectLicenses({
-    appPath: app.getAppPath(),
-    resourcesPath: process.resourcesPath,
-  });
+  licenseList ||= collectLicenses({ appPath: app.getAppPath(), extensionsRoot });
   return licenseList;
 }
 let mcp,
@@ -193,9 +198,40 @@ for (const [name, directory] of Object.entries({
   app.setPath(name, location);
 }
 app.setAppLogsPath(path.join(root, 'logs'));
+// Settings → Extensions (extensions.cjs). Installed copies keep extensions next
+// to the Library and download them; repository builds keep them under release/
+// and install from the build output there, so development needs no downloads.
+const installedCopy =
+  app.isPackaged && require('../package.json').terraDistribution === 'installed';
+const repository = app.isPackaged
+  ? path.resolve(path.dirname(app.getPath('exe')), '../..')
+  : app.getAppPath();
+const extensionsRoot = path.resolve(
+  process.env.TERRA_EXTENSIONS_DIR ||
+    (installedCopy
+      ? path.join(path.dirname(root), 'Extensions')
+      : path.join(repository, 'release', 'installed-extensions')),
+);
+const extensionSource =
+  process.env.TERRA_EXTENSIONS_SOURCE || !installedCopy
+    ? {
+        dir: path.resolve(
+          process.env.TERRA_EXTENSIONS_SOURCE || path.join(repository, 'release', 'extensions'),
+        ),
+      }
+    : { remote: true };
+function extensionCatalog() {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(__dirname, 'generated', 'extensions.json'), 'utf8'));
+  } catch {
+    return { extensions: [] };
+  }
+}
 let win,
   documentPrint,
   officeConverter,
+  extensions,
+  backgroundRemoval,
   worker,
   closed = false,
   quitting = false,
@@ -358,6 +394,44 @@ app
     }
     startWorker();
     const storageReady = seed();
+    const officeProgress = (message) => {
+      if (win && !win.isDestroyed()) win.webContents.send('canvas:office-progress', message);
+    };
+    const downloads = session.fromPartition('terra-downloads', { cache: false });
+    extensions = createExtensions({
+      root: extensionsRoot,
+      catalog: extensionCatalog(),
+      source: extensionSource,
+      fetch: (url, options) => downloads.fetch(url, options),
+      installers: {
+        libreoffice: (job) => installOffice({ ...job, onText: officeProgress }),
+      },
+      // A LibreOffice installed in Windows needs nothing from the extension.
+      systemInstalled: (id) => id === 'office-files' && officeLocation()?.system === true,
+      beforeRemove: async (id) => {
+        if (id === 'background-removal') await backgroundRemoval.stop();
+      },
+      onChange: (list) => {
+        licenseList = null;
+        if (win && !win.isDestroyed()) win.webContents.send('canvas:extensions-changed', list);
+      },
+    });
+    // Leftovers of interrupted installs go; LibreOffice extracted by 0.1.28 and
+    // earlier moves into the Office files extension.
+    void extensions
+      .cleanup()
+      .then(() =>
+        extensions.adopt('office-files', path.join(root, 'tools', `libreoffice-${officeVersion}`)),
+      )
+      .catch(() => {});
+    backgroundRemoval = createBackgroundRemoval({
+      fork: (modulePath) =>
+        utilityProcess.fork(modulePath, [], { serviceName: 'Terra Board background removal' }),
+      location: () => {
+        const dir = extensions.path('background-removal');
+        return dir && { model: path.join(dir, 'u2net.onnx'), runtime: dir };
+      },
+    });
     protocol.handle('canvas-app', (request) => {
       const url = new URL(request.url);
       let relative = decodeURIComponent(url.pathname).replace(/^\/+/, '') || 'index.html';
@@ -727,7 +801,8 @@ app
     // The renderer is denied every web permission, including clipboard writes.
     ipcMain.handle('canvas:song-from-link', (e, url) => {
       trusted(e);
-      return downloadSongLink(app, url);
+      const dir = extensions.path('song-links');
+      return downloadSongLink(url, dir && path.join(dir, 'yt-dlp.exe'));
     });
     ipcMain.handle('canvas:copy-text', (e, text) => {
       trusted(e);
@@ -751,6 +826,13 @@ app
       await storageReady;
       if (externalPhase === 'apply' && !['library', 'loadBoard', 'saveCamera'].includes(command))
         throw Error('AI edit in progress. Retry after it completes.');
+      // Cut-outs run in a utility process, which only the main process can start.
+      if (command === 'removeBackground')
+        return removeAssetBackground(args, {
+          readAsset: (a) => call('asset', a),
+          importAsset: (a) => call('importAsset', a),
+          run: backgroundRemoval.run,
+        });
       return call(command, args);
     });
     ipcMain.handle('canvas:pick-media', async (e) => {
@@ -856,11 +938,17 @@ app
     });
     officeConverter = createOfficeConverter({
       root,
+      // The first conversion installs the Office files extension, as the
+      // converter did before it was an extension; the board shows its progress.
+      runtime: async () => {
+        const location = () =>
+          officeLocation({ extensionDir: extensions.path('office-files'), legacyRoot: root });
+        if (!location()) await extensions.install('office-files');
+        return location().executable;
+      },
       readAsset: (args) => call('asset', args),
       importAsset: (args) => call('importAsset', args),
-      onProgress: (message) => {
-        if (win && !win.isDestroyed()) win.webContents.send('canvas:office-progress', message);
-      },
+      onProgress: officeProgress,
     });
     ipcMain.handle('canvas:print-document', async (event, args) => {
       trusted(event);
@@ -975,6 +1063,24 @@ app
       trusted(e);
       return bundledLicenses();
     });
+    // Settings → Extensions. Progress and every change arrive as
+    // canvas:extensions-changed.
+    ipcMain.handle('canvas:extensions-list', (e) => {
+      trusted(e);
+      return extensions.list();
+    });
+    ipcMain.handle('canvas:extensions-install', async (e, id) => {
+      trusted(e);
+      await extensions.install(String(id));
+    });
+    ipcMain.handle('canvas:extensions-cancel', (e, id) => {
+      trusted(e);
+      extensions.cancel(String(id));
+    });
+    ipcMain.handle('canvas:extensions-remove', async (e, id) => {
+      trusted(e);
+      await extensions.remove(String(id));
+    });
     ipcMain.on('canvas:fullscreen-keys', (e, bindings) => {
       trusted(e);
       fullscreenKeys = cleanFullscreenKeys(bindings);
@@ -997,6 +1103,7 @@ app
     win.on('closed', () => {
       documentPrint?.dispose();
       officeConverter?.dispose();
+      void backgroundRemoval?.stop();
     });
     app.on('second-instance', () => {
       if (win.isMinimized()) win.restore();
@@ -1064,6 +1171,7 @@ app.on('before-quit', (event) => {
   };
   documentPrint?.dispose();
   officeConverter?.dispose();
+  void backgroundRemoval?.stop();
   ocr?.dispose();
   void mcp?.stop();
   cloud?.stop();

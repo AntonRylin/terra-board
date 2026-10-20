@@ -24,7 +24,7 @@ function createBackgroundRemoval({ fork, location }) {
         child.kill();
         error ? reject(error) : resolve(bytes ? Buffer.from(bytes) : null);
       };
-      current = finish;
+      current = { finish, exited: new Promise((resolve) => child.once('exit', resolve)) };
       const timer = setTimeout(
         () => finish(Error('Background removal took too long. Try a smaller image.')),
         90000,
@@ -52,11 +52,15 @@ function createBackgroundRemoval({ fork, location }) {
     chain = task.catch(() => {});
     return task.finally(() => queued--);
   }
-  // For removing the extension or quitting: ends the running job and turns
-  // away the ones still waiting.
-  function stop() {
+  // For removing the extension or quitting: ends the running job, turns away
+  // the ones still waiting, and resolves once its process has exited, so the
+  // runtime's DLLs are no longer in use.
+  async function stop() {
     generation++;
-    current?.(Error('Background removal was stopped.'));
+    const running = current;
+    if (!running) return;
+    running.finish(Error('Background removal was stopped.'));
+    await Promise.race([running.exited, new Promise((resolve) => setTimeout(resolve, 3000))]);
   }
   return { run, stop };
 }

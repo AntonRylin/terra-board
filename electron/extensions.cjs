@@ -263,6 +263,40 @@ function createExtensions({
     emit(true);
   }
 
+  // Takes over a folder that already holds an extension's files, such as the
+  // LibreOffice that 0.1.28 and earlier extracted into Library/tools. It moves
+  // into the extension's folder under its own name. False when there is
+  // nothing to take over or the extension is already installed.
+  async function adopt(id, existing) {
+    const entry = entryOf(id);
+    if (installed(id) || jobs.has(id) || !fs.existsSync(existing)) return false;
+    await fs.promises.mkdir(root, { recursive: true });
+    const staging = path.join(root, `.partial-${id}-${randomUUID()}`);
+    await fs.promises.mkdir(staging);
+    try {
+      await retried(() => rename(existing, path.join(staging, path.basename(existing))), 4);
+      await fs.promises.writeFile(
+        path.join(staging, MARKER),
+        JSON.stringify({ id, version: entry.version, installedAt: new Date().toISOString() }),
+      );
+      await retried(() => rename(staging, folder(id)), 8);
+    } catch {
+      // Put the old folder back where it was; it still works from there.
+      const moved = path.join(staging, path.basename(existing));
+      const restored =
+        !fs.existsSync(moved) ||
+        (await rename(moved, existing).then(
+          () => true,
+          () => false,
+        ));
+      if (restored) await fs.promises.rm(staging, { recursive: true, force: true }).catch(() => {});
+      return false;
+    }
+    sizes.delete(id);
+    emit(true);
+    return true;
+  }
+
   async function cleanup() {
     if (!fs.existsSync(root)) return;
     for (const name of await fs.promises.readdir(root)) {
@@ -283,6 +317,7 @@ function createExtensions({
     remove,
     path: (id) => (installed(id) ? folder(id) : null),
     cleanup,
+    adopt,
   };
 }
 
