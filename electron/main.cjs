@@ -34,6 +34,7 @@ const { pathToFileURL } = require('node:url');
 const { createHash, randomUUID } = require('node:crypto');
 const { libraryRoot } = require('./storage-paths.cjs');
 const { createAppUpdater } = require('./app-updater.cjs');
+const { collectLicenses } = require('./licenses.cjs');
 protocol.registerSchemesAsPrivileged([
   { scheme: 'canvas-app', privileges: { standard: true, secure: true, supportFetchAPI: true } },
   // HTML embeds: their own origin, framed with a sandbox (html-cards.cjs).
@@ -73,39 +74,12 @@ const matchesInput = (b, input) =>
   !!b.alt === !!input.alt;
 
 let licenseList = null;
-// Production dependency tree with each package's declared license.
+// Everything the app ships, with each package's declared license.
 function bundledLicenses() {
-  if (licenseList) return licenseList;
-  const base = app.getAppPath();
-  const readPackage = (dir) => {
-    try {
-      return JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
-    } catch {
-      return null;
-    }
-  };
-  const found = new Map();
-  const queue = Object.keys(readPackage(base)?.dependencies || {}).map((name) => ({
-    name,
-    from: base,
-  }));
-  while (queue.length) {
-    const { name, from } = queue.shift();
-    const dir = [path.join(from, 'node_modules', name), path.join(base, 'node_modules', name)].find(
-      (candidate) => fs.existsSync(path.join(candidate, 'package.json')),
-    );
-    if (!dir || found.has(dir)) continue;
-    const pkg = readPackage(dir);
-    if (!pkg) continue;
-    const license =
-      typeof pkg.license === 'string'
-        ? pkg.license
-        : pkg.license?.type || (Array.isArray(pkg.licenses) && pkg.licenses[0]?.type) || 'Unknown';
-    found.set(dir, { name: pkg.name || name, version: String(pkg.version || ''), license });
-    for (const dependency of Object.keys(pkg.dependencies || {}))
-      queue.push({ name: dependency, from: dir });
-  }
-  licenseList = [...found.values()].sort((a, b) => a.name.localeCompare(b.name));
+  licenseList ||= collectLicenses({
+    appPath: app.getAppPath(),
+    resourcesPath: process.resourcesPath,
+  });
   return licenseList;
 }
 let mcp,
