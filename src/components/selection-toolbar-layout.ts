@@ -9,6 +9,7 @@ export const selectionToolLabels = {
   open: 'Open',
   'html-interact': 'Interact',
   'html-code': 'Edit code',
+  'html-hover': 'Run on hover',
   'copy-frame-link': 'Copy frame link',
   'open-frame': 'Open original frame',
   youtube: 'Open on YouTube',

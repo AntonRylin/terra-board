@@ -144,6 +144,9 @@ export interface CanvasObject {
   // (src/canvas/html-card.ts). A browser frame's page is `url`, its title `text`.
   html?: string;
   snapshotKey?: string;
+  // An HTML embed runs while the pointer rests on it; false waits for a
+  // double-click or the Interact button instead.
+  hoverLive?: boolean;
 }
 export interface Camera {
   x: number;

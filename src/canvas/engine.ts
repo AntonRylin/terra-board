@@ -142,6 +142,11 @@ interface Callbacks {
   camera: (c: Camera) => void;
   selection: (items: CanvasObject[]) => void;
   hover?: (imageId: string | null) => void;
+  // The object under the pointer with the select tool, outside gestures, and
+  // the pointer's board position.
+  hoverObject?: (o: CanvasObject | null, point: Point | null) => void;
+  // HTML embeds on screen, each frame, for running their pages under the board.
+  embeds?: (objects: CanvasObject[], camera: Camera) => void;
   selectionView?: (bounds: Bounds | null, viewport: { width: number; height: number }) => void;
   rotation?: (value: { angle: number; x: number; y: number } | null) => void;
   activate: (o: CanvasObject, intent?: 'title') => void;
@@ -566,6 +571,22 @@ export class Engine {
   beginOverlayPointer(e: PointerEvent) {
     this.down(e, true);
   }
+  // HTML embeds whose running page shows through the board in place of their
+  // picture (the board draws a see-through hole and the border).
+  private liveEmbeds = new Set<string>();
+  setLiveEmbeds(ids: Iterable<string>) {
+    const next = new Set(ids);
+    if (next.size === this.liveEmbeds.size && [...next].every((id) => this.liveEmbeds.has(id)))
+      return;
+    this.liveEmbeds = next;
+    this.invalidate();
+  }
+  /** A wheel turned over a running web page that the page did not scroll. */
+  relayWheel(init: WheelEventInit) {
+    this.app.canvas.dispatchEvent(
+      new WheelEvent('wheel', { ...init, bubbles: true, cancelable: true }),
+    );
+  }
   get canOpenQuickTools() {
     return !this.gesture && !this.editingId;
   }
@@ -848,6 +869,16 @@ export class Engine {
       this.callbacks.hover?.(
         hovered?.type === 'image' && (hovered.galleryId || hovered.album) ? hovered.id : null,
       );
+      // While the canvas lets the pointer through to a page under it, moves
+      // the page has not taken yet reach the host; they are still on the board.
+      // Moves addressed to a page's own frame (the browser sends some as the
+      // pointer enters it) belong to the page, and say nothing about the board.
+      const over =
+        e.target === this.host && this.tool === 'select' && !this.space
+          ? this.hit(this.screenPoint(this.point(e)))
+          : hovered;
+      if (e.target === this.app.canvas || e.target === this.host)
+        this.callbacks.hoverObject?.(over || null, over ? this.screenPoint(this.point(e)) : null);
       this.updateCursor(
         e.target === this.app.canvas ? this.resizeCorner(this.point(e)) : undefined,
       );
@@ -868,6 +899,7 @@ export class Engine {
       return;
     }
     this.callbacks.hover?.(null);
+    this.callbacks.hoverObject?.(null, null);
     const p = this.point(e),
       dx = p.x - g.start.x,
       dy = p.y - g.start.y;
@@ -1794,6 +1826,12 @@ export class Engine {
       visible.filter((o) => !!o.pdfComposer && !snapshotComposer(o) && !concealed(o)),
       c,
     );
+    this.callbacks.embeds?.(
+      visible.filter(
+        (o) => o.type === 'html' && !this.detached.has(o.id) && !isSpoiler(o) && !concealed(o),
+      ),
+      c,
+    );
     const lightMargin = 600;
     const lightingObjects =
       this.dark && document.documentElement.dataset.nightGlow === 'true'
@@ -1825,6 +1863,8 @@ export class Engine {
     const tiles = new Map<string, ReturnType<typeof imageTiles>>();
     for (const o of [...visible].reverse()) {
       if (!['image', 'link', 'document', 'html', 'browser'].includes(o.type)) continue;
+      // A running page shows in place of its picture, which need not load.
+      if (o.type === 'html' && this.liveEmbeds.has(o.id) && !isSpoiler(o)) continue;
       const showImage =
         o.type === 'image' || o.type === 'document' || isWebCard(o) || hasLinkImage(o);
       const mediaId =
@@ -1992,6 +2032,7 @@ export class Engine {
         detail,
         this.editingId === o.id,
         detailTiles.map((tile) => [tile.key, tile.texture?.uid]),
+        o.type === 'html' && this.liveEmbeds.has(o.id),
       ]);
       // Raster sharpness only: what changes when the camera moves over unchanged
       // content. These rebuilds are spread across frames within a small budget;
@@ -2433,7 +2474,14 @@ export class Engine {
       return container;
     }
     if (o.type === 'html') {
-      container.addChild(renderHtmlCard(o, texture, dark));
+      container.addChild(
+        renderHtmlCard(
+          o,
+          texture,
+          dark,
+          !exporting && !staticPreview && !isSpoiler(o) && this.liveEmbeds.has(o.id),
+        ),
+      );
       return container;
     }
     if (o.type === 'browser') {

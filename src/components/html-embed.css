@@ -1,10 +1,53 @@
 /* HTML embeds: the live page over the board, and the code editor. */
 .board-html-live {
   position: absolute;
+  left: 0;
+  top: 0;
   z-index: 3;
   transform-origin: 0 0;
   background: #fff;
   box-shadow: 0 0 0 2px #2f6fed;
+}
+.board-html-live:not([data-ready]) {
+  opacity: 0;
+}
+/* Embed pages on screen, under the board canvas, which shows them through
+   holes and draws their borders and anything above them. The pointer reaches a
+   page only while it rests on that embed. */
+.board-pages {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.board-page {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  background: #fff;
+}
+/* While the board zooms, pages scale as they were drawn and are drawn again
+   at the new size once it stops, rather than at every step. */
+.board-pages[data-zooming] > .board-page {
+  will-change: transform;
+}
+.board-page[data-shown] {
+  pointer-events: auto;
+}
+.canvas-surface > canvas:not(.night-lighting) {
+  position: relative;
+  z-index: 1;
+}
+.canvas-surface[data-page-hover] > canvas {
+  pointer-events: none;
+}
+.board-page iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
 }
 .board-html-live iframe,
 .html-editor-page iframe {

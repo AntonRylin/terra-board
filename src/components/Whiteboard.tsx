@@ -9,7 +9,7 @@ import CanvasPapers, {
 } from './CanvasPapers';
 import { paperHeight, paperWidth } from '../canvas/paper-layout';
 import CanvasPdfComposers from './CanvasPdfComposers';
-import { HtmlEmbedEditor, HtmlEmbedFrame } from './HtmlEmbed';
+import { HtmlEmbedEditor, HtmlEmbedFrame, type HtmlRelay } from './HtmlEmbed';
 import { BrowserFrame, type BrowserView } from './BrowserFrame';
 import {
   browserCardSize,
@@ -145,7 +145,7 @@ import {
 import { textAppearance } from '../canvas/text-style';
 import { textLayout, fitTextObject, fitTextToView } from '../canvas/text-layout';
 import { textPlacement } from '../canvas/text-alignment';
-import { localToWorld, objectBounds, containsObject } from '../canvas/transform';
+import { localToWorld, worldToLocal, objectBounds, containsObject } from '../canvas/transform';
 import { SaveQueue, CameraSaveQueue, type SaveState } from '../canvas/save-queue';
 import {
   importFiles,
@@ -539,31 +539,209 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     el.style.height = `${box.height}px`;
     el.style.transform = `rotate(${o.rotation || 0}deg) scale(${e.camera.zoom})`;
   };
-  // The HTML embed running over the board, and the one whose code is open.
+  // The HTML embed running over the board after a double-click, and the one
+  // whose code is open.
   const [liveHtml, setLiveHtml] = useState<{ id: string; html: string } | null>(null);
   const liveHtmlId = useRef<string | null>(null);
   const liveHtmlRef = useRef<HTMLDivElement>(null);
   const [codeHtmlId, setCodeHtmlId] = useState<string | null>(null);
+  // Placed by transform alone, which the compositor applies without layout,
+  // and only written when it changes: this runs every frame the board draws.
+  const placed = useRef(new WeakMap<HTMLElement, string>());
+  const placeHtml = (el: HTMLElement, o: CanvasObject, e: Engine) => {
+    const origin = localToWorld(o, { x: 0, y: 0 }),
+      c = e.camera;
+    const transform = `translate(${origin.x * c.zoom + c.x}px, ${origin.y * c.zoom + c.y}px) rotate(${o.rotation || 0}deg) scale(${c.zoom})`;
+    const key = `${o.width}x${o.height} ${transform}`;
+    if (placed.current.get(el) === key) return;
+    placed.current.set(el, key);
+    el.style.width = `${o.width}px`;
+    el.style.height = `${o.height}px`;
+    el.style.transform = transform;
+  };
   const positionLiveHtml = () => {
     const el = liveHtmlRef.current,
       e = engine.current;
-    if (!el || !e || !liveHtmlId.current) return;
+    if (!e) return;
+    for (const [id, frame] of pageFrames.current) {
+      const o = e.objects.get(id);
+      if (o?.type === 'html') placeHtml(frame, o, e);
+    }
+    if (!el || !liveHtmlId.current) return;
     const o = e.objects.get(liveHtmlId.current);
     if (o?.type !== 'html') {
       setLiveHtml(null);
       return;
     }
-    const origin = localToWorld(o, { x: 0, y: 0 });
-    el.style.left = `${origin.x * e.camera.zoom + e.camera.x}px`;
-    el.style.top = `${origin.y * e.camera.zoom + e.camera.y}px`;
-    el.style.width = `${o.width}px`;
-    el.style.height = `${o.height}px`;
-    el.style.transform = `rotate(${o.rotation || 0}deg) scale(${e.camera.zoom})`;
+    placeHtml(el, o, e);
   };
   useLayoutEffect(() => {
     liveHtmlId.current = liveHtml?.id || null;
     positionLiveHtml();
   }, [liveHtml]);
+  // Embeds on screen run their pages in DOM frames under the board, which
+  // shows them through see-through holes (renderHtmlCard): the page itself,
+  // never a picture of it, so nothing changes when the pointer arrives. Tiny
+  // or surplus embeds keep their pictures. Resting the pointer on one lets it
+  // through to the page. Frames keep their document order, since moving one
+  // would reload its page.
+  const pageLimit = 6,
+    pageMinSide = 96;
+  const [boardPages, setBoardPages] = useState<{ id: string; html: string }[]>([]);
+  const boardPagesKey = useRef('');
+  const boardPagesNow = useRef(boardPages);
+  boardPagesNow.current = boardPages;
+  const pageFrames = useRef(new Map<string, HTMLDivElement>());
+  const readyPages = useRef(new Set<string>());
+  // The embed under the pointer, and the one whose page has the pointer: the
+  // same, once that page is on the board.
+  const hoverWanted = useRef<string | null>(null);
+  const hoverShownId = useRef<string | null>(null);
+  useLayoutEffect(() => positionLiveHtml(), [boardPages]);
+  const syncLivePages = () => engine.current?.setLiveEmbeds(readyPages.current);
+  const pageReady = (id: string, ready: boolean) => {
+    if (ready === readyPages.current.has(id)) return;
+    if (ready) readyPages.current.add(id);
+    else readyPages.current.delete(id);
+    syncLivePages();
+  };
+  // Hands the pointer to a page, in one step on the DOM: the board lets the
+  // pointer through as the page starts taking it, so no move falls between.
+  // A page not on the board yet takes it once it arrives.
+  const showHover = (id: string | null) => {
+    hoverWanted.current = id;
+    const frame = id ? pageFrames.current.get(id) : undefined;
+    if (id && !frame) engine.current?.invalidate();
+    const next = frame ? id : null;
+    if (hoverShownId.current === next) return;
+    if (hoverShownId.current)
+      pageFrames.current.get(hoverShownId.current)?.removeAttribute('data-shown');
+    hoverShownId.current = next;
+    frame?.setAttribute('data-shown', '');
+    host.current?.toggleAttribute('data-page-hover', !!next);
+  };
+  // Pages that scrolled out of view keep running a while, undrawn, so panning
+  // back does not reload them.
+  const pageKeep = 20000;
+  const pageSeen = useRef(new Map<string, number>());
+  const pagesLayer = useRef<HTMLDivElement>(null);
+  const pagesZoom = useRef<number | null>(null);
+  const zoomSettle = useRef(0);
+  useEffect(() => () => window.clearTimeout(zoomSettle.current), []);
+  const embedsInView = (objects: CanvasObject[], camera: { zoom: number }) => {
+    const shown = hoverWanted.current,
+      now = performance.now();
+    if (pagesZoom.current !== null && pagesZoom.current !== camera.zoom) {
+      pagesLayer.current?.setAttribute('data-zooming', '');
+      window.clearTimeout(zoomSettle.current);
+      zoomSettle.current = window.setTimeout(
+        () => pagesLayer.current?.removeAttribute('data-zooming'),
+        180,
+      );
+    }
+    pagesZoom.current = camera.zoom;
+    const inView = objects.filter(
+      (o) => o.id === shown || Math.max(o.width, o.height) * camera.zoom >= pageMinSide,
+    );
+    for (const o of inView) pageSeen.current.set(o.id, now);
+    const recent = [...pageSeen.current]
+      .filter(([id, seen]) => {
+        if (now - seen <= pageKeep && engine.current?.objects.get(id)?.type === 'html') return true;
+        pageSeen.current.delete(id);
+        return false;
+      })
+      .sort((a, b) => b[1] - a[1])
+      .map(([id]) => id);
+    const ids = [
+      ...inView
+        .sort(
+          (a, b) =>
+            Number(b.id === shown) - Number(a.id === shown) ||
+            b.width * b.height - a.width * a.height,
+        )
+        .map((o) => o.id),
+      ...recent.filter((id) => !inView.some((o) => o.id === id)),
+    ].slice(0, pageLimit);
+    const key = [...ids].sort().join(',');
+    if (key !== boardPagesKey.current) {
+      boardPagesKey.current = key;
+      // Pictures return before their frames go.
+      for (const id of readyPages.current) if (!ids.includes(id)) pageReady(id, false);
+      setBoardPages((pages) => [
+        ...pages.filter((p) => ids.includes(p.id)),
+        ...ids
+          .filter((id) => !pages.some((p) => p.id === id))
+          .map((id) => ({ id, html: engine.current?.objects.get(id)?.html || '' })),
+      ]);
+    }
+    positionLiveHtml();
+  };
+  // Within the embed itself, not the reach the board allows around objects.
+  const insideEmbed = (o: CanvasObject, point: { x: number; y: number }) => {
+    const local = worldToLocal(o, point);
+    return local.x >= 0 && local.y >= 0 && local.x <= o.width && local.y <= o.height;
+  };
+  const hoverHtml = (o: CanvasObject | null, point: { x: number; y: number } | null) => {
+    const wanted =
+      o?.type === 'html' &&
+      !!point &&
+      insideEmbed(o, point) &&
+      o.hoverLive !== false &&
+      !liveHtmlId.current &&
+      !engine.current?.selected.some((s) => s.id === o.id);
+    if (wanted) showHover(o.id);
+    else if (hoverWanted.current) showHover(null);
+  };
+  // The page reports the pointer leaving when it really left the embed, and
+  // sometimes while the board and page hand it over; only the first counts.
+  const pageLeft = (id: string, clientX: number, clientY: number) => {
+    if (hoverShownId.current !== id) return;
+    const e = engine.current,
+      o = e?.objects.get(id),
+      box = host.current?.getBoundingClientRect();
+    if (
+      e &&
+      o &&
+      box &&
+      insideEmbed(o, e.screenPoint({ x: clientX - box.left, y: clientY - box.top }))
+    )
+      return;
+    showHover(null);
+  };
+  // A running page passes back wheel turns it did not scroll with, and presses
+  // away from anything clickable, which select a hover embed.
+  const relayHtml = (id: string, m: HtmlRelay) => {
+    const e = engine.current,
+      o = e?.objects.get(id),
+      box = host.current?.getBoundingClientRect();
+    if (!e || !o || !box) return;
+    const w = localToWorld(o, { x: m.x, y: m.y });
+    const clientX = box.left + w.x * e.camera.zoom + e.camera.x,
+      clientY = box.top + w.y * e.camera.zoom + e.camera.y;
+    if (m.kind === 'wheel') {
+      const { deltaX, deltaY, deltaMode, ctrlKey, metaKey, shiftKey, altKey } = m;
+      e.relayWheel({
+        clientX,
+        clientY,
+        deltaX,
+        deltaY,
+        deltaMode,
+        ctrlKey,
+        metaKey,
+        shiftKey,
+        altKey,
+      });
+    } else if (hoverShownId.current === id) {
+      showHover(null);
+      e.setSelection([o.id]);
+    }
+  };
+  const toggleHoverLive = (o: CanvasObject) => {
+    const next = { ...(engine.current?.objects.get(o.id) || o) };
+    if (next.hoverLive === false) delete next.hoverLive;
+    else next.hoverLive = false;
+    engine.current?.apply({ upserts: [next], deleted: [] });
+  };
   // The browser frame running over the board. While closing it stays on screen
   // until its picture is captured.
   type LiveBrowser = { id: string; url: string; focus: boolean; closing?: boolean };
@@ -1331,6 +1509,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   const interactHtml = (o: CanvasObject) => {
     if (editingSession.current) finishEdit();
     engine.current?.setSelection([o.id]);
+    showHover(null);
     setLiveHtml({ id: o.id, html: o.html || '' });
   };
   const openBrowser = async (o: CanvasObject, focus = false) => {
@@ -1679,8 +1858,29 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
                 ? { id: liveId, html: live.html || '' }
                 : current,
             );
-          positionLiveHtml();
         }
+        // Running pages follow their embed's code; the picture shows while a
+        // changed page reloads. Deleted embeds leave the view, which drops
+        // their pages on the next frame.
+        const shownId = hoverShownId.current;
+        if (
+          shownId &&
+          (edit.deleted.includes(shownId) ||
+            edit.upserts.some((o) => o.id === shownId && o.hoverLive === false))
+        )
+          showHover(null);
+        const recoded = edit.upserts.filter((o) =>
+          boardPagesNow.current.some((p) => p.id === o.id && p.html !== (o.html || '')),
+        );
+        for (const o of recoded) pageReady(o.id, false);
+        if (recoded.length)
+          setBoardPages((pages) =>
+            pages.map((p) => {
+              const o = recoded.find((r) => r.id === p.id);
+              return o ? { id: p.id, html: o.html || '' } : p;
+            }),
+          );
+        positionLiveHtml();
         syncDocumentView();
         void refreshLinkedBoards.current();
       },
@@ -1693,6 +1893,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         setSelected(objects);
         if (liveHtmlId.current && !(objects.length === 1 && objects[0].id === liveHtmlId.current))
           setLiveHtml(null);
+        // A hover embed gives way once selected, so it can be moved.
+        if (objects.some((o) => o.id === hoverShownId.current)) showHover(null);
         const browser = liveBrowserState.current;
         if (browser && !browser.closing && !(objects.length === 1 && objects[0].id === browser.id))
           void endBrowser();
@@ -1708,6 +1910,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         }
       },
       hover: hoverImage,
+      hoverObject: hoverHtml,
+      embeds: embedsInView,
       tool: setTool,
       rotation: (value) => {
         const el = angleRef.current;
@@ -2656,7 +2860,15 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           },
           ...(selected[0].locked
             ? []
-            : [{ label: 'Edit code', icon: <CodeXml />, action: () => startEdit(selected[0]) }]),
+            : [
+                { label: 'Edit code', icon: <CodeXml />, action: () => startEdit(selected[0]) },
+                {
+                  label:
+                    selected[0].hoverLive === false ? 'Run on hover' : 'Run only on double-click',
+                  icon: <MousePointer2 />,
+                  action: () => toggleHoverLive(selected[0]),
+                },
+              ]),
           null,
         ]
       : []),
@@ -2992,7 +3204,35 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         }}
         onDrop={drop}
         onDragLeave={() => setPdfDropTarget(null)}
-      />
+      >
+        {/* Under the board canvas, which shows these pages through holes. */}
+        <div ref={pagesLayer} className="board-pages">
+          {boardPages.map((page) => (
+            <div
+              key={page.id}
+              ref={(el) => {
+                if (!el) {
+                  pageFrames.current.delete(page.id);
+                  return;
+                }
+                pageFrames.current.set(page.id, el);
+                // data-shown is set by showHover, outside React.
+                if (hoverWanted.current === page.id) showHover(page.id);
+              }}
+              className="board-page"
+              onPointerLeave={(event) => pageLeft(page.id, event.clientX, event.clientY)}
+            >
+              <HtmlEmbedFrame
+                html={page.html}
+                title="HTML embed"
+                onRelay={(m) => relayHtml(page.id, m)}
+                // The picture stays until the page has drawn.
+                onLoad={() => pageReady(page.id, true)}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
       {!ready && <div className="canvas-loading">Opening canvas…</div>}
       {pdfDropTarget &&
         (() => {
@@ -3539,6 +3779,22 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
                 onClick={() => openLink(selected[0].url!).catch(error)}
               >
                 <ExternalLink size={16} />
+              </button>
+            )}
+            {selected.length === 1 && selected[0].type === 'html' && !selected[0].locked && (
+              <button
+                key="html-hover"
+                className="icon-button"
+                aria-label="Run on hover"
+                aria-pressed={selected[0].hoverLive !== false}
+                title={
+                  selected[0].hoverLive === false
+                    ? 'Runs on double-click. Click to run on hover'
+                    : 'Runs on hover. Click to run only on double-click'
+                }
+                onClick={() => toggleHoverLive(selected[0])}
+              >
+                <MousePointer2 size={16} />
               </button>
             )}
             {selected.length === 1 && selected[0].type === 'html' && !selected[0].locked && (
@@ -4240,7 +4496,12 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       )}
       {liveHtml && (
         <div ref={liveHtmlRef} className="board-html-live">
-          <HtmlEmbedFrame html={liveHtml.html} title="HTML embed" />
+          <HtmlEmbedFrame
+            html={liveHtml.html}
+            title="HTML embed"
+            onRelay={(m) => relayHtml(liveHtml.id, m)}
+            onLoad={() => liveHtmlRef.current?.setAttribute('data-ready', '')}
+          />
         </div>
       )}
       {liveBrowser && (

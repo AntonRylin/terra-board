@@ -203,6 +203,8 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
       (o.type !== 'html' || typeof o.html !== 'string' || o.html.length > htmlSourceLimit)
     )
       throw Error('Invalid HTML source');
+    if (o.hoverLive !== undefined && (o.type !== 'html' || typeof o.hoverLive !== 'boolean'))
+      throw Error('Invalid HTML hover setting');
     if (
       o.snapshotKey !== undefined &&
       ((o.type !== 'html' && o.type !== 'browser') ||
@@ -388,6 +390,7 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
         ? { linkDescription: o.linkDescription }
         : {}),
       ...(o.type === 'html' && o.html !== undefined ? { html: o.html } : {}),
+      ...(o.type === 'html' && o.hoverLive !== undefined ? { hoverLive: o.hoverLive } : {}),
       ...((o.type === 'html' || o.type === 'browser') && o.snapshotKey !== undefined
         ? { snapshotKey: o.snapshotKey }
         : {}),

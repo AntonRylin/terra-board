@@ -85,6 +85,16 @@ test('clipboard copies embeds whole and rejects foreign fields', () => {
   assert.throws(() => clipboardObjects([embed({ assetId: '../secret' })]), /web page picture/);
 });
 
+test('an embed can wait for a double-click instead of running on hover', () => {
+  assert.equal(objectValue(embed()).hoverLive, undefined);
+  assert.equal(objectValue(embed({ hoverLive: false })).hoverLive, false);
+  assert.equal(clipboardObjects([embed({ hoverLive: false })])[0].hoverLive, false);
+  assert.throws(() => objectValue(embed({ hoverLive: 'no' })), /hover setting/);
+  assert.throws(() => objectValue(browser({ hoverLive: false })), /hover setting/);
+  assert.throws(() => clipboardObjects([embed({ hoverLive: 0 })]), /hover setting/);
+  assert.throws(() => clipboardObjects([browser({ hoverLive: true })]), /hover setting/);
+});
+
 test('embed pages are served once registered, from their own origin', async () => {
   const cards = createHtmlCards({ BrowserWindow: null, session: null, call: null });
   const { url } = cards.register('<p>Hi</p>');

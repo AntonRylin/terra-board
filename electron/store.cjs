@@ -539,6 +539,11 @@ function objectValue(o) {
       throw Error('Invalid HTML source');
     result.html = o.html;
   }
+  if (o.hoverLive !== undefined) {
+    if (o.type !== 'html' || typeof o.hoverLive !== 'boolean')
+      throw Error('Invalid HTML hover setting');
+    result.hoverLive = o.hoverLive;
+  }
   if (o.snapshotKey !== undefined) {
     if (
       (o.type !== 'html' && o.type !== 'browser') ||

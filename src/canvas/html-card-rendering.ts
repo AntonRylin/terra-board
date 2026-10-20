@@ -3,14 +3,24 @@ import type { CanvasObject } from '../model';
 import { browserChrome } from './html-card.ts';
 
 // An HTML embed on the board: its captured picture, or a code mark while the
-// first picture is being captured. The live page is a DOM frame over this.
-export function renderHtmlCard(o: CanvasObject, texture: Texture | null, dark: boolean) {
+// first picture is being captured. While its page runs in a DOM frame under
+// the board, the card is a see-through hole onto that page instead, so objects
+// above it still draw over it.
+export function renderHtmlCard(
+  o: CanvasObject,
+  texture: Texture | null,
+  dark: boolean,
+  live = false,
+) {
   const card = new Container();
   const back = new Graphics()
     .rect(0, 0, o.width, o.height)
-    .fill(texture ? '#ffffff' : dark ? '#1c2632' : '#f4f6f9');
+    .fill(texture || live ? '#ffffff' : dark ? '#1c2632' : '#f4f6f9');
+  if (live) back.blendMode = 'erase';
   card.addChild(back);
-  if (texture) {
+  if (live) {
+    // Nothing between the hole and the border.
+  } else if (texture) {
     const sprite = new Sprite(texture);
     sprite.width = o.width;
     sprite.height = o.height;
