@@ -246,3 +246,25 @@ test('custom installers write into the staging folder', async () => {
   await extensions.install('office');
   assert.equal(readFileSync(join(extensions.path('office'), 'soffice.com'), 'utf8'), 'office');
 });
+
+// Windows Defender or the indexer can hold a just-written file for a moment,
+// which makes renaming its folder fail with EPERM; installs retry instead.
+test('installs retry a folder rename that Windows briefly refuses', async () => {
+  const { root, source } = workspace();
+  const tool = payload(source, 'tool.exe', Buffer.from('tool'));
+  const { rename } = await import('node:fs/promises');
+  let refusals = 0;
+  const extensions = createExtensions({
+    root,
+    catalog: { extensions: [entry('tool', [tool])] },
+    source: { dir: source },
+    rename: async (from, to) => {
+      if (refusals++ < 2)
+        throw Object.assign(new Error('EPERM: operation not permitted'), { code: 'EPERM' });
+      return rename(from, to);
+    },
+  });
+  await extensions.install('tool');
+  assert.equal(refusals, 3);
+  assert.equal(readFileSync(join(extensions.path('tool'), 'tool.exe'), 'utf8'), 'tool');
+});

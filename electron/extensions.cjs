@@ -12,6 +12,19 @@ const { unzipSync } = require('fflate');
 const MARKER = 'extension.json';
 const REMOVE = '.remove';
 
+// Windows refuses a rename for a moment while an antivirus or the search
+// indexer still reads files that were just written. Retry before giving up.
+async function retried(task, attempts) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await task();
+    } catch (error) {
+      if (!['EPERM', 'EACCES', 'EBUSY'].includes(error.code) || attempt >= attempts) throw error;
+      await new Promise((resolve) => setTimeout(resolve, Math.min(1000, 50 * 2 ** attempt)));
+    }
+  }
+}
+
 function createExtensions({
   root,
   catalog,
@@ -21,6 +34,7 @@ function createExtensions({
   systemInstalled = () => false,
   beforeRemove = async () => {},
   onChange = () => {},
+  rename = fs.promises.rename,
 }) {
   const entries = new Map((catalog?.extensions || []).map((entry) => [entry.id, entry]));
   const jobs = new Map();
@@ -152,7 +166,7 @@ function createExtensions({
   async function discard(dir) {
     const trash = path.join(root, `.trash-${path.basename(dir)}-${randomUUID()}`);
     try {
-      await fs.promises.rename(dir, trash);
+      await retried(() => rename(dir, trash), 4);
     } catch {
       await fs.promises.writeFile(path.join(dir, REMOVE), '');
       return false;
@@ -201,7 +215,7 @@ function createExtensions({
       const target = folder(entry.id);
       if (fs.existsSync(target) && !(await discard(target)))
         throw Error(`Close anything that uses ${entry.name}, then try again.`);
-      await fs.promises.rename(staging, target);
+      await retried(() => rename(staging, target), 8);
       sizes.delete(entry.id);
     } catch (error) {
       await fs.promises.rm(staging, { recursive: true, force: true }).catch(() => {});
