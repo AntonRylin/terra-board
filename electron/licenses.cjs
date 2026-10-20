@@ -14,30 +14,58 @@ const licenseOf = (pkg) =>
     : pkg.license?.type || (Array.isArray(pkg.licenses) && pkg.licenses[0]?.type) || 'Unknown';
 const dependenciesOf = (pkg) => Object.keys({ ...pkg?.dependencies, ...pkg?.optionalDependencies });
 
-// Files the app ships that are not npm packages, each listed when present.
-function payloadNotices(appPath, resourcesPath) {
-  const unpacked = (relative) =>
-    path.join(appPath, relative).replace(/app\.asar([\\/])/, 'app.asar.unpacked$1');
+// What installed extensions add (electron/extensions.cjs): the npm packages in
+// their node_modules, and payloads that are not npm packages, each listed only
+// while it is on this PC.
+function extensionNotices(extensionsRoot) {
+  if (!extensionsRoot || !fs.existsSync(extensionsRoot)) return [];
+  const at = (...parts) => path.join(extensionsRoot, ...parts);
+  const runtime = at('background-removal', 'node_modules');
+  const packages = fs.existsSync(runtime)
+    ? fs
+        .readdirSync(runtime)
+        .map((name) => readJson(path.join(runtime, name, 'package.json')))
+        .filter(Boolean)
+        .map((pkg) => ({
+          name: pkg.name,
+          version: String(pkg.version || ''),
+          license: licenseOf(pkg),
+        }))
+    : [];
+  const office = at('office-files');
+  const libreOffice = fs.existsSync(office)
+    ? fs
+        .readdirSync(office)
+        .map((name) => /^libreoffice-(.+)$/.exec(name))
+        .filter(
+          (match) => match && fs.existsSync(path.join(office, match[0], 'program', 'soffice.com')),
+        )
+        .map((match) => ({ name: 'LibreOffice', version: match[1], license: 'MPL-2.0' }))
+    : [];
   return [
-    {
-      file: unpacked('assets/models/u2net.onnx'),
-      notice: { name: 'U-2-Net background-removal model', version: '', license: 'Apache-2.0' },
-    },
-    {
-      file: resourcesPath && path.join(resourcesPath, 'yt-dlp', 'yt-dlp.exe'),
-      notice: { name: 'yt-dlp', version: '', license: 'Unlicense' },
-    },
-    {
-      file: unpacked('node_modules/onnxruntime-node/bin/napi-v6/win32/x64/vcruntime140.dll'),
-      notice: {
-        name: 'Microsoft Visual C++ Runtime',
-        version: '14',
-        license: 'Microsoft Software License Terms',
+    ...packages,
+    ...libreOffice,
+    ...[
+      {
+        file: at('background-removal', 'u2net.onnx'),
+        notice: { name: 'U-2-Net background-removal model', version: '', license: 'Apache-2.0' },
       },
-    },
-  ]
-    .filter(({ file }) => file && fs.existsSync(file))
-    .map(({ notice }) => notice);
+      {
+        file: path.join(runtime, 'onnxruntime-node/bin/napi-v6/win32/x64/vcruntime140.dll'),
+        notice: {
+          name: 'Microsoft Visual C++ Runtime',
+          version: '14',
+          license: 'Microsoft Software License Terms',
+        },
+      },
+      {
+        file: at('song-links', 'yt-dlp.exe'),
+        notice: { name: 'yt-dlp', version: '', license: 'Unlicense' },
+      },
+    ]
+      .filter(({ file }) => fs.existsSync(file))
+      .map(({ notice }) => notice),
+  ];
 }
 
 // Every package reachable from `queue` ({ name, from }) through dependencies,
@@ -86,8 +114,8 @@ function bundledPackages(moduleIds, base) {
 // Everything the app ships with its declared license: the main-process
 // packages in node_modules (including installed optional natives), the
 // packages Vite bundled into the renderer (dist/licenses.json, written at
-// build time) and the non-npm payloads.
-function collectLicenses({ appPath, resourcesPath }) {
+// build time) and what installed extensions add.
+function collectLicenses({ appPath, extensionsRoot }) {
   const main = dependenciesOf(readJson(path.join(appPath, 'package.json'))).map((name) => ({
     name,
     from: appPath,
@@ -101,7 +129,7 @@ function collectLicenses({ appPath, resourcesPath }) {
   return unique([
     ...packageTree(main, appPath, { optional: true }),
     ...renderer,
-    ...payloadNotices(appPath, resourcesPath),
+    ...extensionNotices(extensionsRoot),
   ])
     .filter((entry) => entry.name)
     .sort(byName);

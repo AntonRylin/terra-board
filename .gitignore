@@ -64,3 +64,6 @@ desktop.ini
 .DS_Store
 build/vc-runtime/
 build/yt-dlp/
+
+# The extension catalog the build writes (scripts/build-extensions.mjs)
+electron/generated/

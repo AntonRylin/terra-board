@@ -1,12 +1,12 @@
-// Build-time download only. The packaged app never downloads models or uploads images.
+// Build-time download of the background-removal model, for tests and for the
+// Background removal extension (build-extensions.mjs). Images never leave the PC.
 import { mkdir, readFile, rename, writeFile, rm } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { u2net } from './payloads.mjs';
 
-const file = fileURLToPath(new URL('../assets/models/u2net.onnx', import.meta.url));
-const url = 'https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net.onnx';
-// Pinned after verifying rembg's published MD5: 60024c5c889badc19c04ad937298a77b.
-const digest = '8d10d2f3bb75ae3b6d527c77944fc5e7dcd94b29809d47a739a7a728a912b491';
+const file = fileURLToPath(new URL('../' + u2net.file, import.meta.url));
+const { url, sha256: digest } = u2net;
 const valid = (bytes) => createHash('sha256').update(bytes).digest('hex') === digest;
 let cached;
 try {

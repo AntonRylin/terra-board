@@ -12,16 +12,16 @@
     "key": "sb_publishable_rblk19HUEG-TKNpssPf5bQ_0RrXAplo"
   },
   "scripts": {
-    "dev": "node scripts/prepare-documents.mjs && node scripts/prepare-background-model.mjs && node scripts/dev.mjs",
+    "dev": "node scripts/prepare-documents.mjs && node scripts/prepare-background-model.mjs && node scripts/prepare-yt-dlp.mjs && node scripts/build-extensions.mjs --allow-missing && node scripts/dev.mjs",
     "preview": "node scripts/prepare-documents.mjs && vite --host 127.0.0.1",
     "build": "node scripts/prepare-documents.mjs && node scripts/prepare-background-model.mjs && node scripts/prepare-yt-dlp.mjs && tsc --noEmit && vite build",
     "start": "electron .",
     "test": "node scripts/prepare-background-model.mjs && node --test tests/*.test.mjs",
     "prepackage": "node scripts/check-package-idle.mjs",
-    "package": "npm run build && node scripts/prepare-vc-runtime.mjs && electron-builder --win dir",
-    "installer": "npm run build && node scripts/prepare-vc-runtime.mjs && electron-builder --config electron-builder.installer.cjs --win nsis --x64 --publish never",
+    "package": "npm run build && node scripts/prepare-vc-runtime.mjs && node scripts/build-extensions.mjs && electron-builder --win dir",
+    "installer": "npm run build && node scripts/prepare-vc-runtime.mjs && node scripts/build-extensions.mjs && electron-builder --config electron-builder.installer.cjs --win nsis --x64 --publish never",
     "prerelease": "node scripts/check-release.mjs",
-    "release": "npm run build && node scripts/prepare-vc-runtime.mjs && electron-builder --config electron-builder.installer.cjs --win nsis --x64 --publish always",
+    "release": "npm run build && node scripts/prepare-vc-runtime.mjs && node scripts/build-extensions.mjs && electron-builder --config electron-builder.installer.cjs --win nsis --x64 --publish always",
     "test:desktop": "node scripts/desktop-check.mjs",
     "test:update": "node scripts/update-check.mjs",
     "test:cloud": "node scripts/cloud-sync-check.mjs"
@@ -32,7 +32,6 @@
     "electron-updater": "6.8.9",
     "fflate": "^0.8.2",
     "icojs": "1.0.1",
-    "onnxruntime-node": "1.30.0",
     "pdf-lib": "1.17.1",
     "sharp": "0.35.5",
     "zod": "4.6.5"
@@ -46,6 +45,7 @@
     "electron": "44.5.1",
     "electron-builder": "^26.0.12",
     "lucide-react": "^0.468.0",
+    "onnxruntime-node": "1.30.0",
     "pdfjs-dist": "6.4.299",
     "pixi.js": "8.21.0",
     "prettier": "^3.9.9",
@@ -70,10 +70,7 @@
       "electron/**",
       "assets/**",
       "package.json",
-      "!node_modules/onnxruntime-node/bin/napi-v6/darwin/**",
-      "!node_modules/onnxruntime-node/bin/napi-v6/linux/**",
-      "!node_modules/onnxruntime-node/bin/napi-v6/win32/arm64/**",
-      "!node_modules/onnxruntime-node/bin/napi-v6/win32/x64/{DirectML.dll,dxcompiler.dll,dxil.dll}",
+      "!assets/models/**",
       "!node_modules/pdf-lib/{dist,es,src}/**",
       "!node_modules/zod/src/**",
       "!node_modules/@modelcontextprotocol/sdk/dist/esm/**",
@@ -81,29 +78,11 @@
     ],
     "asarUnpack": [
       "node_modules/sharp/**",
-      "node_modules/@img/**",
-      "node_modules/onnxruntime-node/**",
-      "assets/models/*.onnx"
+      "node_modules/@img/**"
     ],
     "win": {
       "target": "dir",
       "icon": "assets/icon.ico"
-    },
-    "extraResources": [
-      {
-        "from": "build/yt-dlp",
-        "to": "yt-dlp",
-        "filter": [
-          "yt-dlp.exe"
-        ]
-      },
-      {
-        "from": "build/vc-runtime",
-        "to": "app.asar.unpacked/node_modules/onnxruntime-node/bin/napi-v6/win32/x64",
-        "filter": [
-          "*.dll"
-        ]
-      }
-    ]
+    }
   }
 }

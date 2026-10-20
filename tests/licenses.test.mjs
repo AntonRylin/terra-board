@@ -16,7 +16,7 @@ test('collects main packages, optional natives, the renderer list and payloads',
   mkdirSync(resolve('.local-test'), { recursive: true });
   const root = mkdtempSync(resolve('.local-test/licenses-'));
   const app = join(root, 'app');
-  const resources = join(root, 'resources');
+
   writeJson(join(app, 'package.json'), {
     dependencies: { a: '1.0.0' },
     optionalDependencies: { b: '1.0.0', missing: '1.0.0' },
@@ -42,20 +42,54 @@ test('collects main packages, optional natives, the renderer list and payloads',
     { name: 'react', version: '19.3.0', license: 'MIT' },
     { name: 'a', version: '1.0.0', license: 'MIT' },
   ]);
-  mkdirSync(join(resources, 'yt-dlp'), { recursive: true });
-  writeFileSync(join(resources, 'yt-dlp', 'yt-dlp.exe'), '');
+  // Installed extensions: their payloads and the packages inside them.
+  const extensions = join(root, 'Extensions');
+  const file = (path) => {
+    mkdirSync(resolve(path, '..'), { recursive: true });
+    writeFileSync(path, '');
+  };
+  file(join(extensions, 'song-links', 'yt-dlp.exe'));
+  file(join(extensions, 'background-removal', 'u2net.onnx'));
+  writeJson(join(extensions, 'background-removal/node_modules/onnxruntime-node/package.json'), {
+    name: 'onnxruntime-node',
+    version: '1.30.0',
+    license: 'MIT',
+  });
+  file(
+    join(
+      extensions,
+      'background-removal/node_modules/onnxruntime-node/bin/napi-v6/win32/x64/vcruntime140.dll',
+    ),
+  );
+  file(join(extensions, 'office-files/libreoffice-26.2.6/program/soffice.com'));
 
-  const list = collectLicenses({ appPath: app, resourcesPath: resources });
+  const list = collectLicenses({ appPath: app, extensionsRoot: extensions });
   assert.deepEqual(
     list.map((entry) => entry.name),
-    ['a', 'b', 'c', 'react', 'yt-dlp'],
+    [
+      'a',
+      'b',
+      'c',
+      'LibreOffice',
+      'Microsoft Visual C++ Runtime',
+      'onnxruntime-node',
+      'react',
+      'U-2-Net background-removal model',
+      'yt-dlp',
+    ],
   );
   assert.deepEqual(list[1], {
     name: 'b',
     version: '1.0.0',
     license: 'Apache-2.0 AND LGPL-3.0-or-later',
   });
-  assert.equal(list[4].license, 'Unlicense');
+  assert.deepEqual(list[3], { name: 'LibreOffice', version: '26.2.6', license: 'MPL-2.0' });
+  assert.equal(list[8].license, 'Unlicense');
+  // Without extensions, only what the app itself ships is listed.
+  assert.deepEqual(
+    collectLicenses({ appPath: app, extensionsRoot: join(root, 'none') }).map((e) => e.name),
+    ['a', 'b', 'c', 'react'],
+  );
 });
 
 // jszip resolves to a prebuilt file that already contains lie and immediate,
