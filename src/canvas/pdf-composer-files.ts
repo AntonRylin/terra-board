@@ -1,7 +1,7 @@
 import { uid, type CanvasObject, type PdfComposer, type PdfComposerSource } from '../model';
 import { mediaUrl } from '../bridge';
 import { documentKind } from './document-files';
-import { MAX_PDF_PAGES, MAX_PDF_WORKSPACE_BYTES, type PdfSource } from './pdf-edit';
+import { MAX_PDF_PAGES, MAX_PDF_WORKSPACE_BYTES, type PdfSource } from './pdf-sources';
 import { inspectPdfSourceLocal, assemblePdfLocal } from './pdf-edit-client';
 import { createPdfPreviewWorker, loadPdf } from './document-preview';
 import type { PDFDocumentProxy, PDFWorker } from 'pdfjs-dist';

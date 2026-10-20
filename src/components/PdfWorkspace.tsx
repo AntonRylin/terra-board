@@ -38,7 +38,7 @@ import {
   MAX_PDF_WORKSPACE_BYTES,
   type PdfPageSpec,
   type PdfSource,
-} from '../canvas/pdf-edit';
+} from '../canvas/pdf-sources';
 import { assemblePdfLocal, inspectPdfSourceLocal } from '../canvas/pdf-edit-client';
 import { convertPdfPages, renderPdfSheet } from '../canvas/pdf-render';
 import { pdfPageText } from '../canvas/page-text';

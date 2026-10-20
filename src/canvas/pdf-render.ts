@@ -1,6 +1,6 @@
 import { zip, type AsyncZippable } from 'fflate';
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
-import type { PdfPageSpec } from './pdf-edit';
+import type { PdfPageSpec } from './pdf-sources';
 
 type TextContent = Awaited<ReturnType<PDFPageProxy['getTextContent']>>;
 type TextItem = Extract<TextContent['items'][number], { str: string }>;

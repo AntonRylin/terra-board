@@ -1,4 +1,3 @@
-import { PDFDocument } from 'pdf-lib';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 
 /** Render only when the original exceeds the requested attachment size. */
@@ -11,6 +10,8 @@ export async function compressPdfPages(
 ): Promise<Uint8Array<ArrayBuffer>> {
   if (!Number.isFinite(targetBytes) || targetBytes <= 0)
     throw Error('Choose a positive PDF target size.');
+  // Loaded on first use, so pdf-lib stays out of the board's startup code.
+  const { PDFDocument } = await import('pdf-lib');
   let edge = 2200;
   try {
     for (let attempt = 0; attempt < 5; attempt++) {

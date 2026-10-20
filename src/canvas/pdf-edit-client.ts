@@ -1,4 +1,9 @@
-import { validatePdfSources, MAX_PDF_PAGES, type PdfSource, type PdfPageSpec } from './pdf-edit.ts';
+import {
+  validatePdfSources,
+  MAX_PDF_PAGES,
+  type PdfSource,
+  type PdfPageSpec,
+} from './pdf-sources.ts';
 import type { PdfEditRequest, PdfEditResponse } from './pdf-edit.worker.ts';
 
 const PDF_WORKER_TIMEOUT = 60_000;

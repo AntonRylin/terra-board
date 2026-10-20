@@ -7,7 +7,7 @@ import {
   MAX_PDF_WORKSPACE_BYTES,
   type PdfPageSpec,
   type PdfSource,
-} from './pdf-edit';
+} from './pdf-sources';
 import { assemblePdfLocal, inspectPdfSourceLocal } from './pdf-edit-client';
 import { renderPdfSheet } from './pdf-render';
 import { imageKind, jpegOrientation, pageName, pageRotation } from './pdf-pages';

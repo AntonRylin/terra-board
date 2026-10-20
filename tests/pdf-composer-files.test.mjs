@@ -59,7 +59,7 @@ function fixture(assets = new Map(), overrides = {}) {
             documentKind: (name, mime) =>
               /\.pdf$/i.test(name) || mime === 'application/pdf' ? 'pdf' : 'file',
           };
-        if (id === './pdf-edit') return { MAX_PDF_PAGES, MAX_PDF_WORKSPACE_BYTES };
+        if (id === './pdf-sources') return { MAX_PDF_PAGES, MAX_PDF_WORKSPACE_BYTES };
         if (id === './pdf-size') return { compressPdfPages };
         if (id === './pdf-edit-client')
           return {

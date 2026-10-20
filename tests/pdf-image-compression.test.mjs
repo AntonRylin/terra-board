@@ -30,17 +30,24 @@ test(
       inputs.push({ id, name: `${id}.${kind}`, kind });
     }
     // Run the production implementation with real Chromium bitmap/canvas APIs.
-    writeFileSync(
-      join(root, 'pdf-edit.cjs'),
-      ts.transpileModule(readFileSync(resolve('src/canvas/pdf-edit.ts'), 'utf8'), {
-        compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-      }).outputText,
-    );
+    // pdf-edit.ts imports ./pdf-sources.ts; both become CommonJS .js files here.
+    writeFileSync(join(root, 'package.json'), '{ "type": "commonjs" }');
+    for (const name of ['pdf-edit', 'pdf-sources'])
+      writeFileSync(
+        join(root, `${name}.js`),
+        ts.transpileModule(readFileSync(resolve(`src/canvas/${name}.ts`), 'utf8'), {
+          compilerOptions: {
+            module: ts.ModuleKind.CommonJS,
+            target: ts.ScriptTarget.ES2022,
+            rewriteRelativeImportExtensions: true,
+          },
+        }).outputText,
+      );
     writeFileSync(join(root, 'blank.html'), '<!doctype html><title>PDF compression test</title>');
     const expression = `(async () => {
       const fs = require('node:fs'), path = require('node:path');
       const root = ${JSON.stringify(root)};
-      const { assemblePdf } = require(path.join(root, 'pdf-edit.cjs'));
+      const { assemblePdf } = require(path.join(root, 'pdf-edit.js'));
       const sources = ${JSON.stringify(inputs)}.map(s => ({...s,
         bytes: Uint8Array.from(fs.readFileSync(path.join(root, s.name)))}));
       const snapshots = sources.map(s => Buffer.from(s.bytes));
