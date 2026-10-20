@@ -1135,17 +1135,6 @@ class Store {
       .run(id);
     return true;
   }
-  async removeBackground({ id, icon = false }) {
-    const asset = this.asset({ id, variant: 'original' });
-    if (!asset.mime.startsWith('image/')) throw Error('Choose an image to remove its background.');
-    if (typeof icon !== 'boolean') throw Error('Invalid icon option');
-    const bytes = await require('./background-removal.cjs').removeBackground(asset.file, icon);
-    if (!bytes) {
-      const { file, contentType, ...original } = asset;
-      return original;
-    }
-    return this.importAsset({ bytes, name: asset.name.replace(/\.[^.]+$/, '') + ' - cutout.png' });
-  }
   async importAsset({ bytes, name, link }, prepareOnly = false) {
     name = String(name || 'image.png').slice(0, 240);
     let data = Buffer.from(bytes);

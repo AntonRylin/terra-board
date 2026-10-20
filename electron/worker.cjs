@@ -46,11 +46,12 @@ const allowed = new Set([
 let chain = Promise.resolve();
 const assetJobs = new Set();
 parentPort.on('message', (message) => {
-  // Image work must not block the saved-edit queue. Inference runs in its own
-  // bounded worker; asset metadata is read/committed synchronously between awaits.
-  // Closing waits for these jobs before closing SQLite.
-  if (message.command === 'asset' || message.command === 'removeBackground') {
-    const job = store[message.command === 'asset' ? 'readAsset' : 'removeBackground'](message.args)
+  // Reading media must not block the saved-edit queue; asset metadata is read
+  // synchronously between awaits. Closing waits for these jobs before closing
+  // SQLite.
+  if (message.command === 'asset') {
+    const job = store
+      .readAsset(message.args)
       .then((result) => parentPort.postMessage({ id: message.id, result }))
       .catch((e) => parentPort.postMessage({ id: message.id, error: e.message }))
       .finally(() => assetJobs.delete(job));

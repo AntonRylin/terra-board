@@ -54,7 +54,12 @@ function flatIconMask(rgba, width, height) {
   return mask;
 }
 
-async function cutout(file, model, icon = false) {
+const NEEDS_EXTENSION =
+  'Install Background removal in Settings → Extensions to remove backgrounds from photos.';
+
+// `model` and `loadOrt` (which returns the onnxruntime-node module) come from
+// the installed Background removal extension. Flat icons need neither.
+async function cutout(file, { icon = false, model = null, loadOrt = null } = {}) {
   const { data, info } = await sharp(file, { limitInputPixels, animated: false })
     .rotate()
     .toColourspace('srgb')
@@ -67,9 +72,8 @@ async function cutout(file, model, icon = false) {
   if (icon && data.some((value, i) => i % 4 === 3 && value < 255)) return null;
   let mask = icon ? flatIconMask(data, width, height) : null;
   if (!mask) {
-    if (!fs.existsSync(model))
-      throw Error('Background-removal model is missing. Rebuild the app to restore it.');
-    const ort = require('onnxruntime-node');
+    if (!model || !loadOrt || !fs.existsSync(model)) throw Error(NEEDS_EXTENSION);
+    const ort = loadOrt();
     const session = await ort.InferenceSession.create(model, {
       executionProviders: ['cpu'],
       intraOpNumThreads: Math.max(1, Math.min(4, os.availableParallelism() - 1)),
@@ -123,4 +127,4 @@ async function cutout(file, model, icon = false) {
     data[i * 4 + 3] = Math.round((data[i * 4 + 3] * mask[i]) / 255);
   return sharp(data, { raw }).png().toBuffer();
 }
-module.exports = { cutout, flatIconMask };
+module.exports = { cutout, flatIconMask, NEEDS_EXTENSION };

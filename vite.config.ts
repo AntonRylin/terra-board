@@ -58,7 +58,6 @@ export default defineConfig({
           'saveCamera',
           'setLastBoard',
           'importAsset',
-          'removeBackground',
           'importBoard',
           'exportBoard',
           'assetLinks',
