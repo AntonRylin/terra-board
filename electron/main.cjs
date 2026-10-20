@@ -404,7 +404,10 @@ app
       source: extensionSource,
       fetch: (url, options) => downloads.fetch(url, options),
       installers: {
-        libreoffice: (job) => installOffice({ ...job, onText: officeProgress }),
+        // The board's progress line clears whether the install finished,
+        // failed or was started from Settings.
+        libreoffice: (job) =>
+          installOffice({ ...job, onText: officeProgress }).finally(() => officeProgress('')),
       },
       // A LibreOffice installed in Windows needs nothing from the extension.
       systemInstalled: (id) => id === 'office-files' && officeLocation()?.system === true,
@@ -1103,6 +1106,7 @@ app
     win.on('closed', () => {
       documentPrint?.dispose();
       officeConverter?.dispose();
+      extensions?.cancelAll();
       void backgroundRemoval?.stop();
     });
     app.on('second-instance', () => {
@@ -1171,6 +1175,7 @@ app.on('before-quit', (event) => {
   };
   documentPrint?.dispose();
   officeConverter?.dispose();
+  extensions?.cancelAll();
   void backgroundRemoval?.stop();
   ocr?.dispose();
   void mcp?.stop();

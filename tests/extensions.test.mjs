@@ -292,3 +292,27 @@ test('adopt moves an existing folder in as an installed extension', async () => 
   // Nothing to adopt, or already installed: no change.
   assert.equal(await extensions.adopt('office', legacy), false);
 });
+
+// Quitting must not leave an install (or LibreOffice's msiexec) running.
+test('cancelAll stops every running install', async () => {
+  const { root } = workspace();
+  let started;
+  const running = new Promise((resolve) => (started = resolve));
+  const extensions = createExtensions({
+    root,
+    catalog: { extensions: [entry('office', [], { installer: 'office', downloadSize: 1 })] },
+    source: { remote: true },
+    installers: {
+      office: ({ signal }) =>
+        new Promise((_, reject) => {
+          started();
+          signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+        }),
+    },
+  });
+  const install = extensions.install('office');
+  await running;
+  extensions.cancelAll();
+  await assert.rejects(install, /cancel/i);
+  assert.equal(status(extensions, 'office').state, 'available');
+});

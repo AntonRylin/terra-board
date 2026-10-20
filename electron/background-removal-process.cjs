@@ -4,7 +4,9 @@
 const path = require('node:path');
 const { cutout } = require('./image-cutout.cjs');
 
-process.parentPort.once('message', ({ data }) => {
+// `on`, not `once`: the process stays alive until the parent ends it, so its
+// exit can never overtake the result it posted.
+process.parentPort.on('message', ({ data }) => {
   const { file, icon, model, runtime } = data;
   cutout(file, {
     icon,

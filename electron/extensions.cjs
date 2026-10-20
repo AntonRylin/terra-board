@@ -314,6 +314,8 @@ function createExtensions({
     list,
     install,
     cancel: (id) => jobs.get(id)?.controller.abort(),
+    // For quitting: an install must not outlive the app.
+    cancelAll: () => jobs.forEach((job) => job.controller.abort()),
     remove,
     path: (id) => (installed(id) ? folder(id) : null),
     cleanup,

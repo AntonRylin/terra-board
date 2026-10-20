@@ -23,6 +23,24 @@ export function useExtensions() {
 }
 
 // Whether an extension's features can be offered (its menu items, buttons).
+// Only the answer is state, so install progress doesn't re-render the caller.
 export function useExtensionInstalled(id: string) {
-  return useExtensions()?.some((e) => e.id === id && e.state === 'installed') ?? false;
+  const [installed, setInstalled] = useState(false);
+  useEffect(() => {
+    const extensions = window.canvas?.extensions;
+    if (!extensions) return;
+    let live = true;
+    const update = (list: ExtensionStatus[]) =>
+      live && setInstalled(list.some((e) => e.id === id && e.state === 'installed'));
+    const off = extensions.onChange(update);
+    extensions
+      .list()
+      .then(update)
+      .catch(() => {});
+    return () => {
+      live = false;
+      off();
+    };
+  }, [id]);
+  return installed;
 }

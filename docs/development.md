@@ -75,7 +75,7 @@ To release a version:
    gh release create v0.1.29 release/installer/Terra-Board-Setup-x64.exe release/installer/Terra-Board-Setup-x64.exe.blockmap release/installer/latest.yml release/extensions/onnxruntime-1.30.0-win32-x64-<hash>.zip --title 0.1.29 --notes-file notes.md
    ```
 
-   `npm run release` with `GH_TOKEN` set publishes the first three through electron-builder. Add the zip afterwards with `gh release upload v<version> release/extensions/onnxruntime-*.zip`.
+   `npm run release` with `GH_TOKEN` set publishes the first three through electron-builder. Add the zip afterwards with `gh release upload v<version> release/extensions/onnxruntime-*.zip`. Then run `node scripts/check-extension-downloads.mjs` (`npm run release` runs it last). It fails if any extension file cannot be downloaded.
 
 Every packaged copy reads `latest.yml` from the newest release a few seconds after launch and every 4 hours. Installed copies download the new installer in the background and show a prompt with the new version: **Restart to update** installs it and reopens the app, closing the prompt leaves it to install when the app quits, and **What's new** opens the release. Builds from source show the same prompt with **Download**, which opens the installer link. A version is only announced once its release has `latest.yml`, so bumping `package.json` alone changes nothing for users.
 
