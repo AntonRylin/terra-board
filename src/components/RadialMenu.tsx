@@ -10,7 +10,17 @@ import { updatePreferences, usePreferences } from '../settings/preferences';
 import { isCommand } from '../shortcuts/active';
 import './radial-menu.css';
 
+// One ring tile, in wheel pixels (0-280) with the wheel's middle at 140,140.
+function sectorPath(sector: number) {
+  const a = ((sector * 45 - 111.5) * Math.PI) / 180,
+    b = ((sector * 45 - 68.5) * Math.PI) / 180;
+  const point = (r: number, angle: number) =>
+    `${140 + r * Math.cos(angle)},${140 + r * Math.sin(angle)}`;
+  return `M ${point(56, a)} L ${point(136, a)} A 136 136 0 0 1 ${point(136, b)} L ${point(56, b)} A 56 56 0 0 0 ${point(56, a)} Z`;
+}
+
 type Session = {
+  center: Point;
   anchor: Point;
   origin: Point;
   code: string;
@@ -33,6 +43,7 @@ export default function RadialMenu({
   const [session, setSession] = useState<Session | null>(null);
   const [slot, setSlot] = useState(5);
   const [hover, setHover] = useState<number | null>(null);
+  const [focused, setFocused] = useState<number | null>(null);
   const current = useRef(session);
   const pointer = useRef<Point | null>(null);
   const latest = useRef({ layout, onChoose });
@@ -169,7 +180,9 @@ export default function RadialMenu({
       const rect = host.current!.getBoundingClientRect();
       setSlot(5);
       setHover(null);
+      setFocused(null);
       update({
+        center: { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 },
         anchor: e.screenPoint({ x: p.x - rect.left, y: p.y - rect.top }),
         origin: { ...p },
         code: event.code,
@@ -199,9 +212,8 @@ export default function RadialMenu({
   if (!session) return null;
   const byId = new Map(tools.map((t) => [t.id, t]));
   const selected = byId.get(layout[slot]);
-  const hovered = hover === null ? undefined : byId.get(layout[hover]);
-  // The wheel fills most of the screen's smaller dimension; zoom keeps text crisp.
-  const grow = Math.max(1, (Math.min(innerWidth, innerHeight) * 0.85) / 330);
+  const active = (index: number) =>
+    session.editing ? slot === index : (hover ?? focused) === index;
   return createPortal(
     <div
       className="radial-backdrop"
@@ -220,36 +232,42 @@ export default function RadialMenu({
         role={session.editing ? 'dialog' : 'toolbar'}
         aria-label={session.editing ? 'Customize quick tools' : 'Quick tools'}
         aria-modal={session.editing || undefined}
-        style={session.editing ? undefined : { zoom: grow }}
+        // The wheel sits on the middle of the board, not the middle of the whole window.
+        style={session.editing ? undefined : { left: session.center.x, top: session.center.y }}
       >
-        <div className="radial-wheel" ref={wheel}>
-          <svg className="radial-segments" viewBox="-140 -140 280 280" aria-hidden="true">
-            {radialSectors.map((sector, index) => {
-              const a = ((sector * 45 - 111) * Math.PI) / 180,
-                b = ((sector * 45 - 69) * Math.PI) / 180;
-              const point = (r: number, angle: number) =>
-                `${r * Math.cos(angle)},${r * Math.sin(angle)}`;
-              return (
-                <path
-                  key={sector}
-                  data-active={(session.editing ? slot === index : hover === index) || undefined}
-                  d={`M ${point(60, a)} L ${point(136, a)} A 136 136 0 0 1 ${point(136, b)} L ${point(60, b)} A 60 60 0 0 0 ${point(60, a)} Z`}
-                />
-              );
-            })}
+        <div
+          className="radial-wheel"
+          ref={wheel}
+          // Clicks anywhere in a sector pick it, not just on its icon.
+          onClick={(event) => {
+            if ((event.target as HTMLElement).closest('button')) return;
+            const point = { x: event.clientX, y: event.clientY };
+            const index = slotAt(point);
+            if (index === null) return;
+            if (session.editing) setSlot(index);
+            else choose(index, point);
+          }}
+        >
+          {/* Backdrop blur needs real elements, so each tile is a clipped glass layer. */}
+          {radialSectors.map((sector) => (
+            <div
+              key={sector}
+              className="radial-glass glass-surface"
+              style={{ clipPath: `path('${sectorPath(sector)}')` }}
+              aria-hidden="true"
+            />
+          ))}
+          <svg className="radial-segments" viewBox="0 0 280 280" aria-hidden="true">
+            {radialSectors.map((sector, index) => (
+              <path key={sector} data-active={active(index) || undefined} d={sectorPath(sector)} />
+            ))}
           </svg>
-          <div className="radial-center" aria-hidden="true">
-            <span>{session.editing ? selected?.label : (hovered?.label ?? 'Quick tools')}</span>
-            <small>
-              {session.editing
-                ? 'Choose a slot'
-                : session.held
-                  ? hovered
-                    ? 'Release to select'
-                    : 'Move to a tool'
-                  : 'Click to select'}
-            </small>
-          </div>
+          {session.editing && (
+            <div className="radial-center" aria-hidden="true">
+              <span>{selected?.label}</span>
+              <small>Choose a slot</small>
+            </div>
+          )}
           {layout.map((id, index) => {
             const tool = byId.get(id)!;
             const angle = ((radialSectors[index] * 45 - 90) * Math.PI) / 180;
@@ -259,11 +277,15 @@ export default function RadialMenu({
                 className="radial-tool"
                 data-radial-slot={index}
                 data-radial-tool={id}
-                data-hover={(!session.editing && hover === index) || undefined}
+                data-active={active(index) || undefined}
                 aria-label={session.editing ? `Change ${tool.label} slot` : tool.label}
                 aria-pressed={session.editing ? slot === index : undefined}
-                style={{ left: 140 + Math.cos(angle) * 99, top: 140 + Math.sin(angle) * 99 }}
-                onFocus={() => setSlot(index)}
+                style={{ left: 140 + Math.cos(angle) * 98, top: 140 + Math.sin(angle) * 98 }}
+                onFocus={() => {
+                  setSlot(index);
+                  setFocused(index);
+                }}
+                onBlur={() => setFocused(null)}
                 onClick={(event) =>
                   session.editing
                     ? setSlot(index)
@@ -275,13 +297,13 @@ export default function RadialMenu({
                       )
                 }
               >
-                <tool.icon size={23} strokeWidth={1.65} />
+                <tool.icon size={20} strokeWidth={1.75} />
                 <span>{tool.label}</span>
               </button>
             );
           })}
           <button
-            className="radial-settings icon-button"
+            className="radial-settings icon-button glass-surface"
             aria-label={session.editing ? 'Done customizing' : 'Customize quick tools'}
             title={session.editing ? 'Done' : 'Customize quick tools'}
             onClick={() => {
@@ -289,7 +311,7 @@ export default function RadialMenu({
               else update({ ...session, editing: true });
             }}
           >
-            {session.editing ? <Check size={20} /> : <Settings2 size={20} />}
+            {session.editing ? <Check size={16} /> : <Settings2 size={16} />}
           </button>
         </div>
         {session.editing && (

@@ -185,15 +185,17 @@ try {
   await mouse('mouseMoved', origin.x, origin.y);
   await keyEvent('keyDown', 'Tab');
   await until(wheel, 'radial menu');
-  const viewport = await read('({ w: innerWidth, h: innerHeight })');
   const menuBounds = await rect('.radial-menu');
   assert.ok(
-    Math.abs(menuBounds.x + menuBounds.width / 2 - viewport.w / 2) < 2,
-    'wheel is centered on screen',
+    Math.abs(menuBounds.x + menuBounds.width / 2 - (surface.x + surface.width / 2)) < 2 &&
+      Math.abs(menuBounds.y + menuBounds.height / 2 - (surface.y + surface.height / 2)) < 2,
+    'wheel is centered on the board',
   );
-  assert.ok(
-    menuBounds.height >= Math.min(viewport.w, viewport.h) * 0.75,
-    'wheel fills most of the screen',
+  assert.equal(Math.round(menuBounds.width), 280, 'wheel keeps its compact size');
+  assert.equal(
+    await read("getComputedStyle(document.querySelector('.radial-backdrop')).backgroundColor"),
+    'rgba(0, 0, 0, 0)',
+    'board is not washed out behind the wheel',
   );
   await screenshot('radial-light.png');
   const arrowSlot = await center('[data-radial-tool="arrow"]');
@@ -457,7 +459,7 @@ try {
       JSON.stringify({
         root,
         checks: [
-          'centered near-fullscreen wheel',
+          'centered compact glass wheel',
           'hover highlights without selecting',
           'release-to-select',
           'tap keeps the wheel open for clicks',

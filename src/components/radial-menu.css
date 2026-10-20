@@ -5,19 +5,26 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: color-mix(in srgb, var(--paper) 40%, transparent);
 }
 .radial-menu {
-  position: relative;
+  position: fixed;
   width: 280px;
-  height: 330px;
+  height: 280px;
+  transform: translate(-50%, -50%);
   color: inherit;
 }
 .radial-wheel {
   position: relative;
   width: 280px;
-  height: 330px;
-  filter: drop-shadow(0 8px 18px #0002);
+  height: 280px;
+}
+/* No filter on the wheel: it would cut the tiles' backdrop blur off from the board. */
+.radial-glass.glass-surface {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
 }
 .radial-segments {
   position: absolute;
@@ -27,33 +34,31 @@
   overflow: visible;
 }
 .radial-segments path {
-  fill: var(--panel);
-  stroke: var(--line);
+  fill: transparent;
+  stroke: rgb(79 103 137 / 0.22);
   stroke-width: 1;
+  transition: fill 90ms ease;
 }
 .radial-segments path[data-active] {
-  fill: color-mix(in srgb, var(--accent) 20%, var(--panel));
-  stroke: var(--accent);
+  fill: color-mix(in srgb, var(--accent) 18%, transparent);
+  stroke: color-mix(in srgb, var(--accent) 60%, transparent);
 }
 .radial-center {
   position: absolute;
-  left: 85px;
-  top: 85px;
-  width: 110px;
-  height: 110px;
+  left: 88px;
+  top: 88px;
+  width: 104px;
+  height: 104px;
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  gap: 5px;
-  border-radius: 50%;
-  background: var(--paper);
-  box-shadow: 0 0 0 1px var(--line);
+  gap: 3px;
   text-align: center;
   pointer-events: none;
 }
 .radial-center span {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
 }
 .radial-center small {
@@ -62,44 +67,49 @@
 }
 .radial-tool {
   position: absolute;
-  width: 70px;
-  height: 60px;
+  width: 72px;
+  height: 52px;
   transform: translate(-50%, -50%);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  gap: 4px;
   background: transparent;
   color: inherit;
   border: 0;
-  border-radius: 18px;
-  cursor: pointer;
   padding: 0;
+  outline: none;
+  /* The sector underneath takes the click and shows the highlight. */
+  pointer-events: none;
 }
 .radial-tool span {
-  font-size: 10px;
+  font-size: 11px;
+  font-weight: 500;
   white-space: nowrap;
 }
-.radial-tool:hover,
-.radial-tool[data-hover],
-.radial-tool:focus-visible {
-  background: var(--blue);
+.radial-tool[data-active] {
   color: var(--accent);
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
 }
 .radial-settings.icon-button {
   position: absolute;
-  left: 120px;
-  top: 284px;
-  width: 40px;
-  height: 40px;
-  background: var(--panel);
-  border: 1px solid var(--line);
+  left: 124px;
+  top: 222px;
+  width: 32px;
+  height: 32px;
+  color: var(--muted);
   border-radius: 50%;
 }
+.radial-settings.icon-button:hover,
+.radial-settings.icon-button:focus-visible {
+  color: var(--accent);
+}
+.radial-menu.is-editing .radial-settings.icon-button {
+  color: var(--accent);
+}
 .radial-menu.is-editing {
+  position: relative;
+  transform: none;
   width: min(660px, calc(100vw - 32px));
   height: auto;
   max-height: calc(100vh - 32px);
