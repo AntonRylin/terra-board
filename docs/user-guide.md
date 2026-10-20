@@ -31,7 +31,7 @@ Text in images and PDFs can be selected and copied. In the image viewer, the PDF
 
 Drop a PDF or a convertible document/image onto a PDF or convertible document card to open an on-board **PDF workspace**. Each input file becomes a column of overlapping page previews. Drop more files into the workspace, drag pages within or between columns, drag a column's grip to reorder files, or add an empty column to split a document. Hover a column to **Export PDF**; this downloads a new PDF copy without changing the originals. Column names control export names. The workspace can be moved, resized, duplicated, copied, undone, and saved in portable boards. Page and column movements animate smoothly; creation, conversion and export show progress, with reduced-motion support. **Alt+Up/Down** moves a focused page, **Alt+Left/Right** moves it between columns; use the column grip with **Alt+Left/Right** to reorder columns.
 
-PDFs and images use their original content. DOCX, TXT and HTML convert locally through the built-in renderer; DOCX pagination can differ from Word. Legacy Word, Excel, PowerPoint, RTF and OpenDocument formats use a local LibreOffice engine, downloaded and verified once when first needed (about 356 MB), then available offline. An existing LibreOffice installation is reused. The converter is extracted alongside Terra's local library without installing Office or changing file associations; source documents are never uploaded. Google Workspace shortcuts do not contain the document itself: import an exported document or spreadsheet instead. A workspace supports up to 500 pages and 64 MB of converted PDF/image sources.
+PDFs and images use their original content. DOCX, TXT and HTML convert locally through the built-in renderer; DOCX pagination can differ from Word. Legacy Word, Excel, PowerPoint, RTF and OpenDocument formats use LibreOffice from the **Office files** extension. Terra installs it the first time it is needed (about 356 MB, downloaded and verified once), and it then works offline. An existing LibreOffice installation is reused. The converter is unpacked into Terra's Extensions folder, without installing Office or changing file associations, and source documents are never uploaded. Google Workspace shortcuts do not contain the document itself: import an exported document or spreadsheet instead. A workspace supports up to 500 pages and 64 MB of converted PDF/image sources.
 
 Use the workspace header to switch between stacked and whole sheets, or enlarge/reduce pages. Previews render at the current screen scale for readable zoom. **Ctrl-click** toggles pages, **Shift-click** selects a range, and dragging a selected sheet moves the group. **Delete** or the selection trash button removes sheets. Moving/removing sheets leaves persistent empty slots, including trailing slots; other sheets keep their positions. Drop into a gap to fill it, or onto occupied slots to exchange the affected sheets. Export skips gaps and follows the visible slot order. View, zoom and slots survive undo, reopening and portable export. Bold/Strikethrough are excluded from PDF workspace controls.
 
@@ -78,6 +78,16 @@ Drag a selection rectangle around multiple objects, then drag any selected objec
 Frames are opaque bright white rectangles with their name above the top-left edge. Click the name once to rename it in place; Enter saves, Escape cancels, and dragging the name moves the frame. Names remain outside when zooming, resizing or rotating. Frame names stay left-aligned, and frames do not use the shape-color or text-centering controls.
 
 Right-click an image and choose **Crop image**. Drag an edge/corner to crop, or drag inside the crop area to reposition it, then click **Apply** (or press Enter). **Cancel** / Escape discards the draft; **Reset** restores the full source. The original file is preserved, crops survive copy/export/reopen, and Ctrl+Z undoes a crop.
+
+## Extensions
+
+Some features are optional parts you install when you want them, so the app itself stays small. Open **Settings → Extensions** to see them, with their size, and to install or remove them:
+
+- **Background removal**: **Remove background** in an image's right-click menu and for photo board icons and profile pictures. It runs entirely on your computer. Flat logos and icons can have their background removed without it.
+- **Song links**: **From link…** under Settings → Profile picks your entrance song from YouTube and many other sites.
+- **Office files**: opens and converts old Word, Excel and PowerPoint files, RTF and OpenDocument through LibreOffice. It installs itself the first time you convert such a file.
+
+Installing shows progress and can be cancelled. Removing an extension never deletes anything on your boards. Downloads come from GitHub and LibreOffice's website, and every file is checked against a fingerprint built into the app before it's used. Extensions are kept in `%LOCALAPPDATA%\Terra Board\Extensions`, next to your Library, so app updates keep them.
 
 ## Saving and recovery
 

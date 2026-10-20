@@ -15,7 +15,7 @@ Terra's installer is 345 MB and the installed app is 864 MB. Very little of that
 The proposal has two parts:
 
 - **Packaging fixes** (step 1, done 2026-10-20). They took the installer to 288 MB and the install to 580 MB, with no feature changes.
-- **Extensions** (steps 2 to 4). Optional features become packages people install and remove in **Settings → Extensions**.
+- **Extensions** (steps 2 to 4; step 2 done 2026-10-20). Optional features become packages people install and remove in **Settings → Extensions**. After step 2 the installer measured 109 MB and the install 366 MB.
   - The installer ships only the core: about 100 MB, about 390 MB on disk.
   - Heavy payloads (background removal, the Office converter, the song downloader) and optional features (galleries, albums, Word documents, PDF tools, web cards, papers, sharing, AI access) download when someone wants them.
   - A board that uses an extension you don't have still opens and keeps all of its content.
@@ -144,7 +144,7 @@ With this data and no extension code loaded, the core can:
 
 **Location**
 - Installed builds: `%LOCALAPPDATA%\Terra Board\Extensions\`, next to `Library` rather than inside it, so a Library backup doesn't carry hundreds of re-downloadable megabytes.
-- Repository builds (`release\win-unpacked`): `<repo>\Extensions\`, which must be git-ignored. They install from the local build output (`release\extensions\`), so a packaged test build has everything offline and the current workflow doesn't change.
+- Repository builds (`release\win-unpacked`, `npm run dev`): `<repo>\release\installed-extensions\`. They install from the local build output (`release\extensions\`), so a packaged test build has everything offline and the current workflow doesn't change. (`<repo>\Extensions\` would be the same folder as the `extensions\` sources on case-insensitive Windows.)
 - `TERRA_EXTENSIONS_DIR` overrides the location, for tests.
 
 **Other housekeeping**
@@ -550,7 +550,9 @@ What changed along the way:
 Each step ships on its own.
 
 1. **Packaging fixes (done).** Installer 288 MB, installed 580 MB.
-2. **Extension manager, Settings → Extensions, and the payload extensions:** Background removal, Office files, Entrance songs.
+2. **Extension manager, Settings → Extensions, and the payload extensions (done 2026-10-20):** Background removal, Office files, and Song links (yt-dlp; the rest of entrance songs stays with Sharing).
+   - Measured: installer 114,161,315 bytes (109 MB), install 366 MB. Plan: `docs/superpowers/plans/2026-10-20-extensions-tab.md`.
+   - Not done yet: the uninstaller removing the Extensions folder, **Install from file…**, and a notice for people upgrading.
    - Installer about 100 MB, installed about 390 MB.
    - Background removal moves to a `utilityProcess`.
    - Existing LibreOffice folders move over, or Storage offers to remove them.

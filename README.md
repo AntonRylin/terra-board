@@ -25,6 +25,7 @@ Your boards are saved in `%LOCALAPPDATA%\Terra Board\Library`, so updating or un
 - **Organize** — boards with custom icons and colors, folders, search, trash and restore.
 - **Share** — export a board as a `.canvas` file, or as PNG, JPG or PDF.
 - **AI access** — let Claude or Codex read and edit your boards over [MCP](docs/MCP.md) (off by default).
+- **Extensions** — add background removal, song links and Office file conversion from Settings → Extensions when you want them, so the download stays small.
 
 ## Basic controls
 

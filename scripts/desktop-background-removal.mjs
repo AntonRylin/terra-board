@@ -63,7 +63,14 @@ const server = createServer();
 await new Promise((r) => server.listen(0, '127.0.0.1', r));
 const port = server.address().port;
 await new Promise((r) => server.close(r));
-const env = { ...process.env, CANVAS_DATA_DIR: root };
+// Background removal is an extension: it installs from the local build output
+// into a scratch folder below.
+const env = {
+  ...process.env,
+  CANVAS_DATA_DIR: root,
+  TERRA_EXTENSIONS_DIR: join(root, 'Extensions'),
+  TERRA_EXTENSIONS_SOURCE: resolve('release/extensions'),
+};
 delete env.ELECTRON_RUN_AS_NODE;
 delete env.CANVAS_DEV_URL;
 const executable = process.env.CANVAS_EXECUTABLE || require('electron');
@@ -239,8 +246,18 @@ try {
   const host = await read(
     `(() => {const r=document.querySelector('.canvas-surface').getBoundingClientRect();return {x:r.x,y:r.y}})()`,
   );
+  const menuItems = () =>
+    read(`Array.from(document.querySelectorAll('.context-menu button')).map(b=>b.textContent)`);
+  // Until its extension is installed, the image menu has no "Remove background".
   await click(host.x + 400, host.y + 290, 'right');
   await until(() => read(`!!document.querySelector('.context-menu')`), 'image context menu');
+  assert.ok(!(await menuItems()).includes('Remove background'), 'hidden without the extension');
+  await key('Escape', 'Escape');
+  await until(() => read(`!document.querySelector('.context-menu')`), 'menu closed');
+  await read(`window.canvas.extensions.install('background-removal')`);
+  await click(host.x + 400, host.y + 290, 'right');
+  await until(() => read(`!!document.querySelector('.context-menu')`), 'image context menu');
+  assert.ok((await menuItems()).includes('Remove background'), 'shown once installed');
   await screenshot('image-menu');
   await clickText('Remove background');
   // Keep dragging beyond inference completion: the result must not overwrite

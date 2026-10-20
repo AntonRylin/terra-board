@@ -36,6 +36,25 @@ In PowerShell, `$env:CANVAS_SCALE='1'; npm run test:desktop` generates a disposa
 
 See [verification notes](verification.md) for evidence and open release gates, and [architecture/design](product-design.md) for the longer-term product direction.
 
+## Extensions
+
+Background removal (the u2net model and onnxruntime), Song links (yt-dlp) and Office files (LibreOffice) are not in the app package. People install them from Settings → Extensions (`electron/extensions.cjs`).
+
+**Building them**
+- `scripts/build-extensions.mjs` runs as part of `npm run package`, `installer` and `release`.
+- It writes the payloads into `release/extensions` and the catalog the app embeds into `electron/generated/extensions.json`. The catalog holds each file's address, size and SHA-256.
+- The onnxruntime zip, with the Visual C++ runtime, comes out the same on every build, so its name changes only when its contents do.
+- The pinned third-party files are listed in `scripts/payloads.mjs`.
+
+**Where they install**
+- Repository builds, including `npm run dev`, install from `release/extensions` into `release/installed-extensions`. Nothing is downloaded.
+- Installed copies download into `%LOCALAPPDATA%\Terra Board\Extensions`:
+  - the model and yt-dlp from their projects' GitHub releases;
+  - the onnxruntime zip from this project's release of the same version;
+  - LibreOffice from The Document Foundation.
+- `TERRA_EXTENSIONS_DIR` and `TERRA_EXTENSIONS_SOURCE` override the install folder and the local source; the desktop checks use them.
+- `scripts/desktop-extensions.mjs` installs and removes through the Settings tab.
+
 ## Where data lives
 
 Installed copies keep each user's boards in `%LOCALAPPDATA%\Terra Board\Library`, outside the installation directory, so upgrading or uninstalling the app preserves the library.
@@ -50,13 +69,13 @@ To release a version:
 
 1. Raise `version` in `package.json` and commit.
 2. Run `npm run installer`, then `npm run test:update` with every Terra Board window closed. It installs the new installer into `.local-test`, serves a build of the next version from localhost and checks the update prompt, **Restart to update** (installs and reopens the app) and uninstalls again. Add `--installer <older installer> --feed release/installer` to update an older version to this one, `--close-first` to check that closing the prompt and quitting installs it, and `--source "release/win-unpacked/Terra Board.exe"` to check the from-source prompt. Run it from a normal terminal: the installer reopens the app through Explorer, which a sandboxed shell blocks.
-3. Publish the installer, its blockmap and `latest.yml` as a GitHub release tagged `v<version>`:
+3. Publish the installer, its blockmap, `latest.yml` and the onnxruntime zip of the Background removal extension as a GitHub release tagged `v<version>`. Installed copies download that zip from this release:
 
    ```
-   gh release create v0.1.27 release/installer/Terra-Board-Setup-x64.exe release/installer/Terra-Board-Setup-x64.exe.blockmap release/installer/latest.yml --title 0.1.27 --notes-file notes.md
+   gh release create v0.1.29 release/installer/Terra-Board-Setup-x64.exe release/installer/Terra-Board-Setup-x64.exe.blockmap release/installer/latest.yml release/extensions/onnxruntime-1.30.0-win32-x64-<hash>.zip --title 0.1.29 --notes-file notes.md
    ```
 
-   (`npm run release` with `GH_TOKEN` set does the same through electron-builder.)
+   `npm run release` with `GH_TOKEN` set publishes the first three through electron-builder. Add the zip afterwards with `gh release upload v<version> release/extensions/onnxruntime-*.zip`.
 
 Every packaged copy reads `latest.yml` from the newest release a few seconds after launch and every 4 hours. Installed copies download the new installer in the background and show a prompt with the new version: **Restart to update** installs it and reopens the app, closing the prompt leaves it to install when the app quits, and **What's new** opens the release. Builds from source show the same prompt with **Download**, which opens the installer link. A version is only announced once its release has `latest.yml`, so bumping `package.json` alone changes nothing for users.
 
