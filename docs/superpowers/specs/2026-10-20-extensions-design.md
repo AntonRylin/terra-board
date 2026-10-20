@@ -535,11 +535,15 @@ Measured on the packaged build:
 
 What changed along the way:
 - **Background removal works without the DirectML DLLs.** A CPU inference passed with them removed, and so did `desktop-background-removal.mjs`.
-- **The licenses page lists 175 entries.** It now also includes:
-  - sharp's LGPL libvips build;
-  - the model, yt-dlp and the VC++ runtime.
-- **Websites still get the right languages.** A probe on English-only Chromium showed that Accept-Language, `navigator.language` and date formats fall back to English on a non-English Windows. Spellcheck didn't change, because it follows the Windows languages. The app now sends the Windows languages as Accept-Language, both in browser frames and on the main session.
-- **The browser-frame session is set up at startup.** Before, it was set up on the first capture.
+- **The licenses page lists 190 entries.**
+  - It now also includes sharp's LGPL libvips build, the model, yt-dlp and the VC++ runtime.
+  - Bundled packages also bring the packages they depend on. Prebuilt files contain code that never shows up as modules; for example, jszip's prebuilt file includes lie, immediate and setimmediate.
+- **English-only Chromium has side effects on a non-English Windows,** and the app now compensates for two of them at startup (`electron/system-languages.cjs`).
+  - **Website language:** websites would get Accept-Language "en-US". The app now sends the Windows languages, both in browser frames and on the main session.
+  - **Spellcheck:** a new profile would get only English spellcheck dictionaries. The app now sets the dictionaries from the Windows languages.
+  - **What remains English:** Chromium's built-in strings inside web pages (form messages, date pickers), and `navigator.language` and the default date and number formats. The app's own UI is English anyway.
+  - Keeping one more language costs about 1 MB per locale, through `electronLanguages`.
+- **The browser-frame session is set up at startup.** Before, it was set up on the first capture, so frames opened earlier ran without its permission rules and user agent.
 
 ## Rollout
 

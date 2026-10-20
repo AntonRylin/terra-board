@@ -20,19 +20,6 @@ function browserSession(session, languages = '') {
 }
 const plainUserAgent = (agent) =>
   agent.replace(/ (?:Electron|[\w-]*terra[\w-]*|Terra Board)\/[\w.-]+/gi, '');
-// Accept-Language for websites, from the system's preferred languages. The app
-// ships only Chromium's English locale, which would otherwise ask every site
-// for English.
-const acceptLanguages = (languages) =>
-  [
-    ...new Set(
-      (Array.isArray(languages) ? languages : []).filter(
-        (tag) => typeof tag === 'string' && /^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/.test(tag),
-      ),
-    ),
-  ]
-    .slice(0, 10)
-    .join(',');
 
 // Links that open a tab stay in the frame, like a browser tab would show them;
 // sign-in popups (window.open with features) open as small windows.
@@ -90,6 +77,5 @@ module.exports = {
   hardenWebviews,
   guestOf,
   plainUserAgent,
-  acceptLanguages,
   isWebUrl,
 };

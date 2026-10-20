@@ -5,7 +5,7 @@ import { createRequire } from 'node:module';
 import { join, resolve } from 'node:path';
 
 const require = createRequire(import.meta.url);
-const { collectLicenses } = require('../electron/licenses.cjs');
+const { collectLicenses, bundledPackages } = require('../electron/licenses.cjs');
 
 function writeJson(file, value) {
   mkdirSync(resolve(file, '..'), { recursive: true });
@@ -56,4 +56,45 @@ test('collects main packages, optional natives, the renderer list and payloads',
     license: 'Apache-2.0 AND LGPL-3.0-or-later',
   });
   assert.equal(list[4].license, 'Unlicense');
+});
+
+// jszip resolves to a prebuilt file that already contains lie and immediate,
+// so the bundle never shows them as modules; their declared dependencies count.
+test('bundled packages include the dependencies their prebuilt files contain', () => {
+  mkdirSync(resolve('.local-test'), { recursive: true });
+  const base = mkdtempSync(resolve('.local-test/bundled-')).split('\\').join('/');
+  writeJson(join(base, 'node_modules/jszip/package.json'), {
+    name: 'jszip',
+    version: '3.10.2',
+    license: '(MIT OR GPL-3.0-or-later)',
+    dependencies: { lie: '~3.3.0' },
+  });
+  writeJson(join(base, 'node_modules/jszip/node_modules/lie/package.json'), {
+    name: 'lie',
+    version: '3.3.0',
+    license: 'MIT',
+    dependencies: { immediate: '~3.0.5' },
+  });
+  writeJson(join(base, 'node_modules/immediate/package.json'), {
+    name: 'immediate',
+    version: '3.0.6',
+    license: 'MIT',
+  });
+  writeJson(join(base, 'node_modules/@scope/react/package.json'), {
+    name: '@scope/react',
+    version: '1.0.0',
+    license: 'MIT',
+  });
+  const list = bundledPackages(
+    [
+      `${base}/node_modules/jszip/dist/jszip.min.js`,
+      `\0${base}/node_modules/@scope/react/index.js?commonjs-proxy`,
+      `${base}/src/main.tsx`,
+    ],
+    base,
+  );
+  assert.deepEqual(
+    list.map((entry) => `${entry.name}@${entry.version}`),
+    ['@scope/react@1.0.0', 'immediate@3.0.6', 'jszip@3.10.2', 'lie@3.3.0'],
+  );
 });

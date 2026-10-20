@@ -2,41 +2,24 @@ import { defineConfig, type Plugin } from 'vite';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
 const require = createRequire(import.meta.url);
 
 // The npm packages bundled into the renderer, written to dist/licenses.json for
 // Settings → About. They are dev dependencies, so the packaged app has no
 // node_modules copy to read them from (electron/licenses.cjs).
 function bundledLicenses(): Plugin {
-  const { licenseOf } = require('./electron/licenses.cjs');
-  const packageRoot = (id: string) => {
-    const file = id.replace(/\\/g, '/').replace(/^\0/, '').split('?')[0];
-    const at = file.lastIndexOf('/node_modules/');
-    if (at < 0) return null;
-    const rest = file.slice(at + '/node_modules/'.length).split('/');
-    const name = rest[0].startsWith('@') ? rest.slice(0, 2).join('/') : rest[0];
-    return file.slice(0, at) + '/node_modules/' + name;
-  };
+  const { bundledPackages } = require('./electron/licenses.cjs');
   return {
     name: 'bundled-licenses',
     apply: 'build',
     generateBundle(_options, bundle) {
-      const found = new Map<string, { name: string; version: string; license: string }>();
-      for (const output of Object.values(bundle)) {
-        if (output.type !== 'chunk') continue;
-        for (const id of output.moduleIds) {
-          if (output.modules[id]?.renderedLength === 0) continue;
-          const root = packageRoot(id);
-          if (!root || found.has(root)) continue;
-          const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
-          found.set(root, {
-            name: pkg.name,
-            version: String(pkg.version || ''),
-            license: licenseOf(pkg),
-          });
-        }
-      }
-      const list = [...found.values()].sort((a, b) => a.name.localeCompare(b.name));
+      const ids = Object.values(bundle).flatMap((output) =>
+        output.type === 'chunk'
+          ? output.moduleIds.filter((id) => output.modules[id]?.renderedLength !== 0)
+          : [],
+      );
+      const list = bundledPackages(ids, fileURLToPath(new URL('.', import.meta.url)));
       this.emitFile({ type: 'asset', fileName: 'licenses.json', source: JSON.stringify(list) });
     },
   };

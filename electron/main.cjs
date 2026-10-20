@@ -26,12 +26,8 @@ const { fetchPreview } = require('./link-preview.cjs');
 const { downloadSongLink } = require('./song-link.cjs');
 const { createOcr } = require('./ocr.cjs');
 const { createHtmlCards, embedRequest, fromEmbed } = require('./html-cards.cjs');
-const {
-  browserSession,
-  hardenWebviews,
-  guestOf,
-  acceptLanguages,
-} = require('./browser-frames.cjs');
+const { browserSession, hardenWebviews, guestOf } = require('./browser-frames.cjs');
+const { acceptLanguages, spellcheckLanguages } = require('./system-languages.cjs');
 const { Worker } = require('node:worker_threads');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -396,11 +392,18 @@ app
         return new Response('Media not found', { status: 404 });
       }
     });
-    // Websites (browser frames, YouTube, embeds' resources) get the system's
-    // languages; the app ships only Chromium's English locale.
-    const languages = acceptLanguages(app.getPreferredSystemLanguages());
+    // The app ships only Chromium's English locale, so websites (browser frames,
+    // YouTube, embeds' resources) and the spellchecker get the system's
+    // languages rather than English.
+    const preferred = app.getPreferredSystemLanguages();
+    const languages = acceptLanguages(preferred);
     if (languages)
       session.defaultSession.setUserAgent(session.defaultSession.getUserAgent(), languages);
+    const dictionaries = spellcheckLanguages(
+      preferred,
+      session.defaultSession.availableSpellCheckerLanguages,
+    );
+    if (dictionaries.length) session.defaultSession.setSpellCheckerLanguages(dictionaries);
     // Before any <webview> opens, so frames never run on an unconfigured session.
     browserSession(session, languages);
     const htmlCards = createHtmlCards({
