@@ -10,9 +10,25 @@ Use Node 24.13 or later. Install with `npm ci`, then `npm run dev` for Electron 
 npm test
 npm run build
 npm run test:desktop
-npm audit --omit=dev --audit-level=high
+npm audit --audit-level=high
 npm run package
 ```
+
+**Where a package goes**
+
+- `dependencies`: only packages the main process or the storage worker `require()` (`electron/**`). electron-builder copies these into `app.asar`.
+- `devDependencies`: packages only the renderer imports (React, Pixi, pdf.js, lucide and so on). Vite bundles them into `dist`, so listing them under `dependencies` would ship them twice.
+
+Because renderer libraries still ship inside `dist`, audit without `--omit=dev`. Findings in build-only tools don't reach users: electron-builder and its download chain, the Supabase CLI, TypeScript, Vite. Findings in renderer libraries do.
+
+**Licenses**
+
+- Settings → About → Open-source licenses comes from three sources:
+  - the main-process packages in `node_modules`;
+  - `dist/licenses.json`, which the build writes from the modules Vite bundled;
+  - notices for the bundled model, yt-dlp and the Visual C++ runtime.
+- The list is assembled in `electron/licenses.cjs`.
+- If you bundle a new non-npm file, add its notice there.
 
 The packaging command writes to `release/win-unpacked` inside the repository. Keep this layout so direct executable launches find the repository's `Library` folder. Do not use AppData or OneDrive as project, build or library destinations.
 

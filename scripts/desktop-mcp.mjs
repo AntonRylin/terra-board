@@ -359,7 +359,7 @@ try {
     assert.ok(!r.isError, r.content[0]?.text);
     return JSON.parse(r.content[0].text);
   };
-  assert.equal((await client.listTools()).tools.length, 11);
+  assert.equal((await client.listTools()).tools.length, 13);
   const viewBefore = await documentState();
   await read(
     `window.saveTransitions=[];window.saveObserver=new MutationObserver(()=>saveTransitions.push(document.querySelector('.save-indicator')?.className));saveObserver.observe(document.querySelector('.save-indicator'),{attributes:true,attributeFilter:['class']});`,
@@ -495,7 +495,7 @@ try {
     stderr: 'pipe',
   });
   await claude.connect(stdio);
-  assert.equal((await claude.listTools()).tools.length, 11);
+  assert.equal((await claude.listTools()).tools.length, 13);
   const listed = await claude.callTool({ name: 'list_boards', arguments: {} });
   assert.ok(!listed.isError, listed.content[0]?.text);
   // Exercise the board lifecycle through the packaged connector, then open

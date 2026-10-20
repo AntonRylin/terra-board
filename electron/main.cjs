@@ -26,7 +26,12 @@ const { fetchPreview } = require('./link-preview.cjs');
 const { downloadSongLink } = require('./song-link.cjs');
 const { createOcr } = require('./ocr.cjs');
 const { createHtmlCards, embedRequest, fromEmbed } = require('./html-cards.cjs');
-const { browserSession, hardenWebviews, guestOf } = require('./browser-frames.cjs');
+const {
+  browserSession,
+  hardenWebviews,
+  guestOf,
+  acceptLanguages,
+} = require('./browser-frames.cjs');
 const { Worker } = require('node:worker_threads');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -391,11 +396,18 @@ app
         return new Response('Media not found', { status: 404 });
       }
     });
+    // Websites (browser frames, YouTube, embeds' resources) get the system's
+    // languages; the app ships only Chromium's English locale.
+    const languages = acceptLanguages(app.getPreferredSystemLanguages());
+    if (languages)
+      session.defaultSession.setUserAgent(session.defaultSession.getUserAgent(), languages);
+    // Before any <webview> opens, so frames never run on an unconfigured session.
+    browserSession(session, languages);
     const htmlCards = createHtmlCards({
       BrowserWindow,
       session,
       call,
-      browserSession: () => browserSession(session),
+      browserSession: () => browserSession(session, languages),
     });
     protocol.handle('terra-html', htmlCards.handle);
     win = new BrowserWindow({

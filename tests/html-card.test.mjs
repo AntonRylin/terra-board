@@ -19,7 +19,7 @@ const {
   fromEmbed,
   snapshotKey: appSnapshotKey,
 } = require('../electron/html-cards.cjs');
-const { plainUserAgent } = require('../electron/browser-frames.cjs');
+const { plainUserAgent, acceptLanguages } = require('../electron/browser-frames.cjs');
 const { applyEdits, placeBeside, compactObject } = require('../electron/mcp-html.cjs');
 const asset = 'a'.repeat(64);
 const embed = (patch = {}) => ({
@@ -189,6 +189,20 @@ test('browser frames present as plain Chrome', () => {
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) terra-board/0.1.27 Chrome/140.0.0.0 Electron/44.5.1 Safari/537.36',
     ),
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36',
+  );
+});
+
+// The app ships only Chromium's English strings, so websites learn the
+// languages from Windows instead of from the UI locale.
+test('accept-languages keeps valid unique tags', () => {
+  assert.equal(acceptLanguages(['en-US', 'ru', 'en-US', 'x y', '']), 'en-US,ru');
+  assert.equal(acceptLanguages(['zh-Hans-CN', 'de-CH-1996']), 'zh-Hans-CN,de-CH-1996');
+  assert.equal(acceptLanguages([]), '');
+  assert.equal(acceptLanguages(undefined), '');
+  assert.equal(
+    acceptLanguages(Array.from({ length: 14 }, (_, i) => `l${'abcdefghijklmn'[i]}`)).split(',')
+      .length,
+    10,
   );
 });
 

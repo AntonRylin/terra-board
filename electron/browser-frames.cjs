@@ -6,7 +6,7 @@ const allowedPermissions = ['fullscreen', 'clipboard-sanitized-write', 'pointerL
 const isWebUrl = (url) => typeof url === 'string' && /^https?:\/\//i.test(url);
 
 let configured = null;
-function browserSession(session) {
+function browserSession(session, languages = '') {
   if (configured) return configured;
   const s = session.fromPartition(partition);
   s.setPermissionRequestHandler((_wc, permission, cb) =>
@@ -14,12 +14,25 @@ function browserSession(session) {
   );
   s.setPermissionCheckHandler((_wc, permission) => allowedPermissions.includes(permission));
   // Present as the Chrome it is; some sign-in pages refuse "embedded" browsers.
-  s.setUserAgent(plainUserAgent(s.getUserAgent()));
+  s.setUserAgent(plainUserAgent(s.getUserAgent()), languages || undefined);
   configured = s;
   return s;
 }
 const plainUserAgent = (agent) =>
   agent.replace(/ (?:Electron|[\w-]*terra[\w-]*|Terra Board)\/[\w.-]+/gi, '');
+// Accept-Language for websites, from the system's preferred languages. The app
+// ships only Chromium's English locale, which would otherwise ask every site
+// for English.
+const acceptLanguages = (languages) =>
+  [
+    ...new Set(
+      (Array.isArray(languages) ? languages : []).filter(
+        (tag) => typeof tag === 'string' && /^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/.test(tag),
+      ),
+    ),
+  ]
+    .slice(0, 10)
+    .join(',');
 
 // Links that open a tab stay in the frame, like a browser tab would show them;
 // sign-in popups (window.open with features) open as small windows.
@@ -71,4 +84,12 @@ function guestOf(win, webContents, id) {
   return contents;
 }
 
-module.exports = { partition, browserSession, hardenWebviews, guestOf, plainUserAgent, isWebUrl };
+module.exports = {
+  partition,
+  browserSession,
+  hardenWebviews,
+  guestOf,
+  plainUserAgent,
+  acceptLanguages,
+  isWebUrl,
+};
