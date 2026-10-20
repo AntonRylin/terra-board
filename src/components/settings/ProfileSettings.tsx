@@ -5,6 +5,7 @@ import { updatePreferences, usePreferences } from '../../settings/preferences';
 import BoardIconImage, { type BoardIconImageHandle } from '../BoardIconImage';
 import { playSong } from '../JoinToasts';
 import { useCloudStatus } from '../ShareDialog';
+import { useExtensionInstalled } from '../../extensions';
 import { Group, Notice, Row, Switch, useNotice } from './controls';
 import { SongClipEditor } from './SongClipEditor';
 
@@ -16,6 +17,7 @@ export function ProfileSettings() {
   const cloud = window.canvas?.cloud;
   const status = useCloudStatus();
   const preferences = usePreferences();
+  const songLinks = useExtensionInstalled('song-links');
   const picture = useRef<BoardIconImageHandle>(null);
   const [name, setName] = useState('');
   const [icon, setIcon] = useState('none');
@@ -211,6 +213,10 @@ export function ProfileSettings() {
             className="st-button"
             disabled={busy || fetching || !window.canvas?.songFromLink}
             onClick={() => {
+              if (!songLinks)
+                return setNotice({
+                  text: 'Install Song links under Extensions to pick a song from a link.',
+                });
               setClip(null);
               setLink('');
             }}

@@ -202,6 +202,11 @@ export function useNotice() {
   return [notice, setNotice] as const;
 }
 
+// An error from the desktop app without Electron's "Error invoking remote
+// method …" wrapping.
+export const errorText = (e: unknown) =>
+  String(e).replace(/^Error: (Error invoking remote method '[^']+': )?(Error: )?/, '');
+
 export function Notice({ notice }: { notice: { text: string; error?: boolean } | null }) {
   if (!notice) return null;
   return (

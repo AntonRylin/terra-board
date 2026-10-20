@@ -187,6 +187,7 @@ import {
 import { imageAssetText, pdfPageText } from '../canvas/page-text';
 import { cropRecognizedText, recognizedString } from '../canvas/recognized-text';
 import { downloadAsset } from '../bridge';
+import { useExtensionInstalled } from '../extensions';
 import { cropImage, uncroppedImage, fullCrop } from '../canvas/crop';
 import { selectionToolsPosition } from '../canvas/selection-tools';
 import { boundsOf, type Bounds } from '../canvas/geometry';
@@ -360,6 +361,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   }, [highlightStyle]);
   const backgroundJob = useRef<Promise<void> | null>(null);
   const [removingBackground, setRemovingBackground] = useState(false);
+  // "Remove background" appears once its extension is installed.
+  const backgroundRemoval = useExtensionInstalled('background-removal');
   const exportTask = useRef<Promise<void> | null>(null);
   const [exportScope, setExportScope] = useState<ExportScope | null>(null);
   const [exportProgress, setExportProgress] = useState<ExportProgress | null>(null);
@@ -3046,12 +3049,16 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
               void openPdfWorkspace(selected, 'edit').catch(error);
             },
           },
-          {
-            label: removingBackground ? 'Removing background…' : 'Remove background',
-            icon: <Eraser />,
-            action: () => removeImageBackground(selected[0]),
-            disabled: removingBackground,
-          },
+          ...(backgroundRemoval
+            ? [
+                {
+                  label: removingBackground ? 'Removing background…' : 'Remove background',
+                  icon: <Eraser />,
+                  action: () => removeImageBackground(selected[0]),
+                  disabled: removingBackground,
+                },
+              ]
+            : []),
           ...(window.canvas
             ? [
                 {

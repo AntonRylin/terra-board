@@ -271,6 +271,50 @@
   font-size: 12.5px;
 }
 
+/* Extensions */
+.st-chip {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--st-accent) 14%, transparent);
+  color: var(--st-accent);
+  font-size: 11px;
+  font-weight: 600;
+  vertical-align: 1px;
+}
+.st-extension-details {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  color: var(--st-muted);
+  font-size: 12px;
+}
+.st-extension-error {
+  color: var(--st-danger);
+}
+.st-progress {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--st-line);
+  overflow: hidden;
+}
+.st-progress span {
+  display: block;
+  height: 100%;
+  background: var(--st-accent);
+  transition: width 0.2s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .st-progress span {
+    transition: none;
+  }
+}
+.st-extensions-note {
+  margin-top: 14px;
+}
+
 /* Controls */
 .st-switch {
   position: relative;

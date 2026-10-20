@@ -9,6 +9,7 @@ import {
   MousePointer2,
   Palette,
   PanelLeft,
+  Puzzle,
   Settings2,
   type LucideIcon,
 } from 'lucide-react';
@@ -19,6 +20,7 @@ export type SectionId =
   | 'general'
   | 'appearance'
   | 'panel'
+  | 'extensions'
   | 'canvas'
   | 'radial'
   | 'shortcuts'
@@ -63,6 +65,13 @@ export const sections: Section[] = [
     group: 'App',
     icon: PanelLeft,
     subtitle: 'The strip of board icons beside your canvas.',
+  },
+  {
+    id: 'extensions',
+    label: 'Extensions',
+    group: 'Extensions',
+    icon: Puzzle,
+    subtitle: 'Add the features you use. Removing one never deletes anything on your boards.',
   },
   {
     id: 'canvas',
@@ -297,6 +306,26 @@ export const rows = {
     title: 'Export all boards',
     description: 'Save every board with its media as .canvas files in a folder you choose.',
     keywords: 'backup copy move',
+  },
+  // Each extension's row (ExtensionsSettings.tsx); descriptions match the manifests.
+  extensionBackgroundRemoval: {
+    section: 'extensions',
+    title: 'Background removal',
+    description: 'Cut people and objects out of photos. Runs on this PC.',
+    keywords: 'extension install remove cutout cut out photo transparent image',
+  },
+  extensionSongLinks: {
+    section: 'extensions',
+    title: 'Song links',
+    description: 'Pick your entrance song from a YouTube or other link.',
+    keywords: 'extension install yt-dlp youtube audio music entrance',
+  },
+  extensionOfficeFiles: {
+    section: 'extensions',
+    title: 'Office files',
+    description:
+      'Open and convert .doc, .xls, .ppt, .rtf and OpenDocument files, using LibreOffice.',
+    keywords: 'extension install word excel powerpoint libreoffice convert pdf',
   },
   mcpAccess: {
     section: 'ai',

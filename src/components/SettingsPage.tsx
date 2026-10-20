@@ -12,6 +12,7 @@ import { ShortcutSettings } from './settings/ShortcutSettings';
 import { AboutSettings, StorageSettings } from './settings/StorageSettings';
 import { CloudSettings } from './settings/CloudSettings';
 import { ProfileSettings } from './settings/ProfileSettings';
+import { ExtensionsSettings } from './settings/ExtensionsSettings';
 import './settings/settings.css';
 
 const discordUrl = 'https://discord.gg/GNJX5y9tux';
@@ -225,6 +226,7 @@ export default function SettingsPage({
                 />
               )}
               {section === 'panel' && <PanelSettings panel={panel} />}
+              {section === 'extensions' && <ExtensionsSettings />}
               {section === 'canvas' && <CanvasSettings />}
               {section === 'radial' && <RadialSettings />}
               {section === 'shortcuts' && <ShortcutSettings />}
