@@ -187,9 +187,9 @@ try {
   await until(wheel, 'radial menu');
   const menuBounds = await rect('.radial-menu');
   assert.ok(
-    Math.abs(menuBounds.x + menuBounds.width / 2 - (surface.x + surface.width / 2)) < 2 &&
-      Math.abs(menuBounds.y + menuBounds.height / 2 - (surface.y + surface.height / 2)) < 2,
-    'wheel is centered on the board',
+    Math.abs(menuBounds.x + menuBounds.width / 2 - origin.x) < 2 &&
+      Math.abs(menuBounds.y + menuBounds.height / 2 - origin.y) < 2,
+    'wheel is centered on the cursor',
   );
   assert.equal(Math.round(menuBounds.width), 280, 'wheel keeps its compact size');
   assert.equal(
@@ -307,7 +307,14 @@ try {
   const edge = { x: surface.x + surface.width - 25, y: surface.y + 110 };
   await open(edge);
   const bounds = await rect('.radial-menu');
-  assert.ok(bounds.x >= 0 && bounds.y >= 0, 'centered wheel stays fully on screen');
+  const screen = await read('({ w: innerWidth, h: innerHeight })');
+  assert.ok(
+    bounds.x >= 0 &&
+      bounds.y >= 0 &&
+      bounds.x + bounds.width <= screen.w &&
+      bounds.y + bounds.height <= screen.h,
+    'wheel near an edge stays fully on screen',
+  );
   await key('ArrowLeft');
   assert.equal(
     await read('document.activeElement.dataset.radialTool'),
@@ -328,7 +335,7 @@ try {
   const edgeStart = edgeArrow.arrow.points[0];
   assert.ok(
     Math.abs((edgeArrow.x + edgeStart.x * edgeArrow.width) * c.zoom + c.x + surface.x - edge.x) < 2,
-    'centered wheel preserves original anchor at the edge',
+    'nudged wheel preserves original anchor at the edge',
   );
   await key('Escape');
   await open();
@@ -459,7 +466,7 @@ try {
       JSON.stringify({
         root,
         checks: [
-          'centered compact glass wheel',
+          'compact glass wheel on the cursor',
           'hover highlights without selecting',
           'release-to-select',
           'tap keeps the wheel open for clicks',

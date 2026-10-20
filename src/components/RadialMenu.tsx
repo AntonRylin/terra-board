@@ -182,7 +182,11 @@ export default function RadialMenu({
       setHover(null);
       setFocused(null);
       update({
-        center: { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 },
+        // Opens on the cursor, nudged inward just enough to stay fully on screen.
+        center: {
+          x: Math.max(148, Math.min(innerWidth - 148, p.x)),
+          y: Math.max(148, Math.min(innerHeight - 148, p.y)),
+        },
         anchor: e.screenPoint({ x: p.x - rect.left, y: p.y - rect.top }),
         origin: { ...p },
         code: event.code,
@@ -232,7 +236,6 @@ export default function RadialMenu({
         role={session.editing ? 'dialog' : 'toolbar'}
         aria-label={session.editing ? 'Customize quick tools' : 'Quick tools'}
         aria-modal={session.editing || undefined}
-        // The wheel sits on the middle of the board, not the middle of the whole window.
         style={session.editing ? undefined : { left: session.center.x, top: session.center.y }}
       >
         <div

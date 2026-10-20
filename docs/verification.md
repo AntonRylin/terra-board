@@ -2,10 +2,10 @@
 
 ## Compact liquid-glass radial menu — 2026-10-20
 
-The quick-tools wheel is a fixed 280 px ring centered on the board, with no scrim, no hub circle and no "Quick tools" caption. It is just seven separate tool tiles plus the settings button, which sits in the empty bottom gap. Each tile is its own clipped `glass-surface` layer, so it blurs the board like the toolbar does. The wheel has no `filter`, because a filter would cut the blur off from the board. Hover and keyboard focus tint only the tile underneath (no button rectangle or outline), and a click anywhere on a tile picks it.
+The quick-tools wheel is a fixed 280 px ring centered on the cursor (nudged inward near window edges), with no scrim, no hub circle and no "Quick tools" caption. It is just seven separate tool tiles plus the settings button, which sits in the empty bottom gap. Each tile is its own clipped `glass-surface` layer, so it blurs the board like the toolbar does. The wheel has no `filter`, because a filter would cut the blur off from the board. Hover and keyboard focus tint only the tile underneath (no button rectangle or outline), and a click anywhere on a tile picks it.
 
 - `npx tsc --noEmit`: passed.
-- Packaged build: `scripts/desktop-radial.mjs` passed all flows, including the new assertions (centered on the board, 280 px, transparent backdrop) and light/dark screenshots.
+- Packaged build: `scripts/desktop-radial.mjs` passed all flows, including the new assertions (centered on the cursor, 280 px, transparent backdrop) and light/dark screenshots.
 
 ## Centered release-to-select radial menu — 2026-10-19
 
