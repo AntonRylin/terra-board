@@ -13,7 +13,8 @@ const require = createRequire(import.meta.url);
 const { Store } = require('../electron/store.cjs');
 const {
   createOfficeConverter,
-  ensureOfficeRuntime,
+  officeLocation,
+  installOffice,
   VERSION,
 } = require('../electron/office-converter.cjs');
 const root = await fs.mkdtemp(path.resolve('.local-test/office-check-'));
@@ -28,7 +29,17 @@ if (process.env.CANVAS_OFFICE_RUNTIME) {
   );
 }
 console.log(root);
-const executable = await ensureOfficeRuntime(library, { onProgress: console.log });
+// A LibreOffice in CANVAS_OFFICE_RUNTIME (linked as the old Library/tools copy)
+// or in Program Files is used as is; otherwise the Office files extension is
+// installed into a scratch folder.
+const extension = path.join(root, 'office-files');
+let found = officeLocation({ extensionDir: extension, legacyRoot: library });
+if (!found) {
+  await fs.mkdir(extension, { recursive: true });
+  await installOffice({ dir: extension, onText: console.log });
+  found = officeLocation({ extensionDir: extension });
+}
+const executable = found.executable;
 const fixtures = path.join(root, 'fixtures');
 await fs.mkdir(fixtures);
 await fs.writeFile(
@@ -72,6 +83,7 @@ const cases = [
 const store = new Store(library);
 const converter = createOfficeConverter({
   root: library,
+  runtime: async () => executable,
   readAsset: (args) => store.readAsset(args),
   importAsset: (args) => store.importAsset(args),
   onProgress: console.log,

@@ -5,12 +5,8 @@ const { execFile } = require('node:child_process');
 
 // The audio of a song link: YouTube and the many other sites yt-dlp knows, or a
 // direct link to an audio file. Only the audio track is fetched, never video.
-// yt-dlp runs this app's own Electron as Node for the JavaScript YouTube needs.
-function ytDlpPath(app) {
-  return app.isPackaged
-    ? path.join(process.resourcesPath, 'yt-dlp', 'yt-dlp.exe')
-    : path.join(__dirname, '..', 'build', 'yt-dlp', 'yt-dlp.exe');
-}
+// yt-dlp comes from the Song links extension, and runs this app's own Electron
+// as Node for the JavaScript YouTube needs.
 
 function songLinkValue(value) {
   if (typeof value !== 'string' || value.length > 2000) throw Error('Paste a link to a song.');
@@ -51,10 +47,10 @@ function reason(error) {
   return 'Could not get the song from this link.';
 }
 
-async function downloadSongLink(app, value) {
+async function downloadSongLink(value, exe) {
   const url = songLinkValue(value);
-  const exe = ytDlpPath(app);
-  if (!fs.existsSync(exe)) throw Error('Song links are not available in this build.');
+  if (!exe || !fs.existsSync(exe))
+    throw Error('Install Song links in Settings → Extensions to use song links.');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'terra-song-'));
   try {
     let title;

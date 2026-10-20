@@ -1,6 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const { createHash, randomUUID } = require('node:crypto');
+const { createHash } = require('node:crypto');
 const { spawn } = require('node:child_process');
 const { pathToFileURL } = require('node:url');
 
@@ -76,99 +76,88 @@ async function safeRemove(root, target) {
   await fs.promises.rm(resolved, { recursive: true, force: true });
 }
 
-async function hashFile(file) {
-  const hash = createHash('sha256');
-  for await (const chunk of fs.createReadStream(file)) hash.update(chunk);
-  return hash.digest('hex');
-}
-
-async function ensureOfficeRuntime(root, { signal, onProgress = () => {} } = {}) {
-  const runtime = path.join(root, 'tools', `libreoffice-${VERSION}`);
-  const executable = path.join(runtime, 'program', 'soffice.com');
-  if (fs.existsSync(executable)) return executable;
+// Where a usable LibreOffice is: the Office files extension (`extensionDir`),
+// the folder 0.1.28 and earlier extracted into the Library, or a LibreOffice
+// installed in Windows. Null when there is none.
+function officeLocation({ extensionDir, legacyRoot } = {}) {
+  const program = (dir) => path.join(dir, `libreoffice-${VERSION}`, 'program', 'soffice.com');
+  if (extensionDir && fs.existsSync(program(extensionDir)))
+    return { executable: program(extensionDir), system: false };
+  if (legacyRoot && fs.existsSync(program(path.join(legacyRoot, 'tools'))))
+    return { executable: program(path.join(legacyRoot, 'tools')), system: false, legacy: true };
   for (const programFiles of [process.env.ProgramFiles, process.env['ProgramFiles(x86)']].filter(
     Boolean,
   )) {
     const installed = path.join(programFiles, 'LibreOffice', 'program', 'soffice.com');
-    if (fs.existsSync(installed)) return installed;
+    if (fs.existsSync(installed)) return { executable: installed, system: true };
   }
-  if (process.platform !== 'win32' || process.arch !== 'x64')
-    throw Error('Office conversion currently requires 64-bit Windows.');
-  const toolsRoot = path.join(root, 'tools');
-  await fs.promises.mkdir(toolsRoot, { recursive: true });
-  const packageFile = path.join(toolsRoot, `LibreOffice-${VERSION}.msi`);
-  if (!fs.existsSync(packageFile) || (await hashFile(packageFile)) !== SHA256) {
-    const temporary = packageFile + '.' + randomUUID() + '.download';
-    onProgress('Downloading the Office converter (once)…');
-    try {
-      const options = {
-        signal: AbortSignal.any([
-          signal || new AbortController().signal,
-          AbortSignal.timeout(600000),
-        ]),
-      };
-      let response = await fetch(DOWNLOAD, options);
-      if (response.status === 404 || response.status === 410) {
-        await response.body?.cancel();
-        response = await fetch(ARCHIVE, options);
-      }
-      if (!response.ok || !response.body || !response.url.startsWith('https://'))
-        throw Error(
-          'The Office converter could not be downloaded. Check your connection and try again.',
-        );
-      let size = 0,
-        reported = -1;
-      const total = Number(response.headers.get('content-length')) || 0;
-      const hash = createHash('sha256');
-      const file = await fs.promises.open(temporary, 'wx');
-      try {
-        for await (const chunk of response.body) {
-          signal?.throwIfAborted();
-          size += chunk.length;
-          if (size > 450 * 1024 * 1024) throw Error('Office converter download is too large.');
-          hash.update(chunk);
-          await file.writeFile(chunk);
-          const percent = total ? Math.floor((size * 100) / total) : Math.floor(size / 1048576);
-          if (percent !== reported) {
-            reported = percent;
-            onProgress(`Downloading Office converter · ${percent}${total ? '%' : ' MB'}`);
-          }
-        }
-      } finally {
-        await file.close();
-      }
-      if (hash.digest('hex') !== SHA256)
-        throw Error('Office converter verification failed. Please try again.');
-      await fs.promises.rename(temporary, packageFile);
-    } finally {
-      await fs.promises.rm(temporary, { force: true });
-    }
-  }
-  const staging = path.join(toolsRoot, `office-setup-${randomUUID()}`);
-  await fs.promises.mkdir(staging);
-  try {
-    onProgress('Preparing the Office converter…');
-    // Administrative extraction creates an app-local image; it does not install
-    // Office, change file associations, or register a Windows application.
-    await run(
-      path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'msiexec.exe'),
-      ['/a', packageFile, '/qn', '/norestart', `TARGETDIR=${staging}`],
-      { signal, timeout: 600000 },
-    );
-    if (!fs.existsSync(path.join(staging, 'program', 'soffice.com')))
-      throw Error('The Office converter could not be prepared.');
-    await fs.promises.rename(staging, runtime);
-    await fs.promises.rm(packageFile, { force: true });
-    return executable;
-  } finally {
-    await safeRemove(toolsRoot, staging);
-  }
+  return null;
 }
 
-function createOfficeConverter({ root, readAsset, importAsset, onProgress = () => {} }) {
+// Downloads LibreOffice and extracts it into `dir` (the extension's staging
+// folder) as `libreoffice-<VERSION>`. `progress` feeds Settings → Extensions;
+// `onText` feeds the progress line on the board.
+async function installOffice({ dir, signal, progress = () => {}, onText = () => {} }) {
+  if (process.platform !== 'win32' || process.arch !== 'x64')
+    throw Error('Office conversion currently requires 64-bit Windows.');
+  const packageFile = path.join(dir, `LibreOffice-${VERSION}.msi`);
+  onText('Downloading the Office converter (once)…');
+  const options = {
+    signal: AbortSignal.any([signal || new AbortController().signal, AbortSignal.timeout(600000)]),
+  };
+  let response = await fetch(DOWNLOAD, options);
+  if (response.status === 404 || response.status === 410) {
+    await response.body?.cancel();
+    response = await fetch(ARCHIVE, options);
+  }
+  if (!response.ok || !response.body || !response.url.startsWith('https://'))
+    throw Error(
+      'The Office converter could not be downloaded. Check your connection and try again.',
+    );
+  let size = 0,
+    reported = -1;
+  const total = Number(response.headers.get('content-length')) || 0;
+  const hash = createHash('sha256');
+  const file = await fs.promises.open(packageFile, 'wx');
+  try {
+    for await (const chunk of response.body) {
+      signal?.throwIfAborted();
+      size += chunk.length;
+      if (size > 450 * 1024 * 1024) throw Error('Office converter download is too large.');
+      hash.update(chunk);
+      await file.writeFile(chunk);
+      progress({ received: size, total, label: 'Downloading' });
+      const percent = total ? Math.floor((size * 100) / total) : Math.floor(size / 1048576);
+      if (percent !== reported) {
+        reported = percent;
+        onText(`Downloading Office converter · ${percent}${total ? '%' : ' MB'}`);
+      }
+    }
+  } finally {
+    await file.close();
+  }
+  if (hash.digest('hex') !== SHA256)
+    throw Error('Office converter verification failed. Please try again.');
+  onText('Preparing the Office converter…');
+  progress({ received: size, total: size, label: 'Preparing' });
+  // Administrative extraction creates an app-local image; it does not install
+  // Office, change file associations, or register a Windows application.
+  const runtime = path.join(dir, `libreoffice-${VERSION}`);
+  await run(
+    path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'msiexec.exe'),
+    ['/a', packageFile, '/qn', '/norestart', `TARGETDIR=${runtime}`],
+    { signal, timeout: 600000 },
+  );
+  if (!fs.existsSync(path.join(runtime, 'program', 'soffice.com')))
+    throw Error('The Office converter could not be prepared.');
+  await fs.promises.rm(packageFile, { force: true });
+}
+
+// `runtime()` resolves to the LibreOffice executable, installing the Office files
+// extension first when there is none (main.cjs).
+function createOfficeConverter({ root, runtime, readAsset, importAsset, onProgress = () => {} }) {
   const lifetime = new AbortController();
-  let tail = Promise.resolve(),
-    runtime;
+  let tail = Promise.resolve();
   return {
     convert(args) {
       const task = tail
@@ -189,11 +178,8 @@ function createOfficeConverter({ root, readAsset, importAsset, onProgress = () =
           const asset = await readAsset({ id: args.id, variant: 'original' });
           const stat = await fs.promises.stat(asset.file);
           if (stat.size > MAX_BYTES) throw Error('Office conversion supports files up to 64 MB.');
-          runtime ||= ensureOfficeRuntime(root, { signal, onProgress }).catch((error) => {
-            runtime = null;
-            throw error;
-          });
-          const executable = await runtime;
+          const executable = await runtime();
+          signal.throwIfAborted();
           const tempRoot = path.join(root, 'temp');
           await fs.promises.mkdir(tempRoot, { recursive: true });
           const job = await fs.promises.mkdtemp(path.join(tempRoot, 'office-'));
@@ -252,7 +238,8 @@ function createOfficeConverter({ root, readAsset, importAsset, onProgress = () =
 }
 module.exports = {
   createOfficeConverter,
-  ensureOfficeRuntime,
+  officeLocation,
+  installOffice,
   OFFICE_EXTENSIONS,
   VERSION,
   SHA256,
