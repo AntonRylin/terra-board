@@ -175,6 +175,8 @@ const NEEDS_SERVER_UPDATE = 'This server needs an update';
 const NEEDS_APP_UPDATE = 'Update Terra Board to use this server';
 const couldNotReach = (host) => `Could not reach ${host}.`;
 const noServerAt = (host) => `No Terra Board server found at ${host}.`;
+const KEY_REFUSED = 'This server refused the key. Check the public key.';
+const serverProblem = (host) => `The server at ${host} has a problem. Try again later.`;
 
 // Reads at most MAX_BODY_BYTES; returns null when the body is longer than that.
 async function readCapped(response) {
@@ -248,6 +250,8 @@ async function checkServer(config, { fetch, timeout = DEFAULT_TIMEOUT }) {
   );
   // PostgREST answers an unknown function with 404 and code PGRST202.
   if (status === 404 || json?.code === 'PGRST202') throw new Error(NEEDS_SERVER_UPDATE);
+  if (status === 401 || status === 403) throw new Error(KEY_REFUSED);
+  if (status >= 500) throw new Error(serverProblem(host));
   if (status !== 200 || json === undefined) throw new Error(noServerAt(host));
   // A null, non-object or malformed answer means the server predates server_info().
   const number = (value) => typeof value === 'number' && Number.isFinite(value);

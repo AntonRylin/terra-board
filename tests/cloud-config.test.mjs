@@ -343,7 +343,7 @@ test('checkServer reports unreachable and wrong servers', async () => {
     checkServer(serverConfig, { fetch: down }),
     /Could not reach api\.acme\.eu\./,
   );
-  const wrong = stubFetch(() => json({ message: 'nope' }, { status: 500 }));
+  const wrong = stubFetch(() => json({ message: 'nope' }, { status: 400 }));
   await assert.rejects(
     checkServer(serverConfig, { fetch: wrong.fetch }),
     /No Terra Board server found at api\.acme\.eu\./,
@@ -366,6 +366,24 @@ test('manualServer validates like a discovery file', () => {
     /secret key/,
   );
   assert.throws(() => manualServer('http://abc.supabase.co', publicKey), /https/);
+});
+
+test('checkServer tells a refused key and a broken server apart', async () => {
+  const check = (response) => checkServer(serverConfig, { fetch: stubFetch(() => response).fetch });
+  for (const status of [401, 403])
+    await assert.rejects(
+      check(json({ message: 'Invalid API key' }, { status })),
+      /^Error: This server refused the key\. Check the public key\.$/,
+    );
+  for (const status of [500, 502, 503])
+    await assert.rejects(
+      check(new Response('<html>', { status })),
+      /^Error: The server at api\.acme\.eu has a problem\. Try again later\.$/,
+    );
+  await assert.rejects(
+    check(json({ message: 'nope' }, { status: 418 })),
+    /No Terra Board server found at api\.acme\.eu\./,
+  );
 });
 
 test('checkServer spots a missing function from the body alone', async () => {
