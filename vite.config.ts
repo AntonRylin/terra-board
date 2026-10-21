@@ -14,12 +14,15 @@ function bundledLicenses(): Plugin {
     name: 'bundled-licenses',
     apply: 'build',
     generateBundle(_options, bundle) {
+      const root = fileURLToPath(new URL('.', import.meta.url));
+      // Code chunks, plus files bundled as they are (fonts arrive through CSS,
+      // named relative to the project).
       const ids = Object.values(bundle).flatMap((output) =>
         output.type === 'chunk'
           ? output.moduleIds.filter((id) => output.modules[id]?.renderedLength !== 0)
-          : [],
+          : output.originalFileNames.map((name) => path.resolve(root, name)),
       );
-      const list = bundledPackages(ids, fileURLToPath(new URL('.', import.meta.url)));
+      const list = bundledPackages(ids, root);
       this.emitFile({ type: 'asset', fileName: 'licenses.json', source: JSON.stringify(list) });
     },
   };

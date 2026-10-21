@@ -129,6 +129,37 @@ test('formatting survives storage and clipboard validation, malformed ranges are
   }
 });
 
+test('the bundled Inter font is a font choice in storage, clipboard and MCP', async () => {
+  const { createRequire } = await import('node:module');
+  const require = createRequire(import.meta.url);
+  const { objectValue } = require('../electron/store.cjs');
+  const { tools } = require('../electron/mcp-tools.cjs');
+  const { z } = require('zod');
+  const { clipboardObjects } = await import('../src/canvas/content.ts');
+  const { cleanStyle, fontFamilies } = await import('../src/canvas/rich-text.ts');
+  const note = {
+    id: 'n',
+    type: 'note',
+    x: 0,
+    y: 0,
+    width: 200,
+    height: 200,
+    z: 1,
+    text: 'Title body',
+    textMarks: [
+      { start: 0, end: 5, font: 'inter', bold: true },
+      { start: 6, end: 10, font: 'inter' },
+    ],
+  };
+  for (const value of [objectValue(note), clipboardObjects([note])[0]])
+    assert.deepEqual(value.textMarks, note.textMarks);
+  assert.deepEqual(cleanStyle({ font: 'inter' }), { font: 'inter' });
+  assert.match(fontFamilies.inter, /^"Inter Variable"/);
+  const edit = tools(() => {}).find((t) => t.name === 'edit_board');
+  const parsed = z.object(edit.schema).parse({ id: 'board', revision: 0, upserts: [note] });
+  assert.deepEqual(parsed.upserts[0].textMarks, note.textMarks);
+});
+
 test('frame, image and document names keep their formatting', async () => {
   const { createRequire } = await import('node:module');
   const { objectValue } = createRequire(import.meta.url)('../electron/store.cjs');

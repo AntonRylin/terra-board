@@ -43,6 +43,7 @@ const fonts: { id: TextFont | null; label: string; family: string }[] = [
   { id: 'mono', label: 'Mono', family: fontFamilies.mono },
   { id: 'hand', label: 'Handwritten', family: fontFamilies.hand },
   { id: 'condensed', label: 'Condensed', family: fontFamilies.condensed },
+  { id: 'inter', label: 'Inter', family: fontFamilies.inter },
 ];
 const shortcut = (keys: string) =>
   keys.replace('Mod', navigator.platform.startsWith('Mac') ? '⌘' : 'Ctrl');

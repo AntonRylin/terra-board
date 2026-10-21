@@ -65,7 +65,7 @@ const nameValue = (value) => {
 // dropped and clamped rather than rejecting the object, so an external text
 // edit that shortens the string never makes a board unsavable.
 const markFlags = ['bold', 'italic', 'underline', 'strike', 'code', 'spoiler'];
-const markFonts = ['serif', 'mono', 'hand', 'condensed'];
+const markFonts = ['serif', 'mono', 'hand', 'condensed', 'inter'];
 function marksValue(value, length) {
   if (!Array.isArray(value)) return undefined;
   const marks = [];

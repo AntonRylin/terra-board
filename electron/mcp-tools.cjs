@@ -130,7 +130,7 @@ const textMarks = z
         .string()
         .regex(/^#[a-f\d]{6}$/i)
         .optional(),
-      font: z.enum(['serif', 'mono', 'hand', 'condensed']).optional(),
+      font: z.enum(['serif', 'mono', 'hand', 'condensed', 'inter']).optional(),
       size: z.number().min(0.5).max(3).optional(),
     }),
   )

@@ -14,7 +14,7 @@ export const shownMarks = (o: CanvasObject) => o[shownMarksKey(o)];
 export const hasRichText = (o: CanvasObject) =>
   ['text', 'note', 'frame', 'image', 'document'].includes(o.type) && !!shownMarks(o)?.length;
 
-export const textFonts = ['serif', 'mono', 'hand', 'condensed'] as const;
+export const textFonts = ['serif', 'mono', 'hand', 'condensed', 'inter'] as const;
 export type TextFont = (typeof textFonts)[number];
 export const textSizes = [0.8, 1, 1.25, 1.5, 2] as const;
 const flags = ['bold', 'italic', 'underline', 'strike', 'code', 'spoiler'] as const;
@@ -256,4 +256,6 @@ export const fontFamilies: Record<TextFont | 'sans', string> = {
   mono: '"Cascadia Mono", Consolas, monospace',
   hand: '"Segoe Print", "Segoe UI", sans-serif',
   condensed: 'Bahnschrift, "Segoe UI", sans-serif',
+  // Bundled with the app (src/fonts.ts), a free near-twin of Apple's San Francisco.
+  inter: '"Inter Variable", "Segoe UI", sans-serif',
 };
