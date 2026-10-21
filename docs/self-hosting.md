@@ -44,7 +44,7 @@ Accounts arrive in the next release. Until then a company server uses the same a
 ## Connect people
 
 - Each person opens Settings → Cloud sync → Server → **Change**, types the address (`terra.example.com`), chooses **Check** (the app shows "Found <name> at <host>."), then **Connect**. **Advanced** takes a Supabase URL and public key directly, with no description file.
-- Or send them a link: `terraboard://connect?address=<your address>`. It opens Settings → Cloud sync with the address filled in. The person still checks and confirms; a link never switches servers by itself. It does nothing on a computer whose server is locked, and only the installed app registers `terraboard://` (a development build does not).
+- Or send them a link: `terraboard://connect?address=<your address>`. It opens Settings → Cloud sync with the address filled in. The person still checks and confirms; a link never switches servers by itself. On a computer whose server is locked, it still opens Settings → Cloud sync but fills nothing in. Only the installed app registers `terraboard://` (a development build does not).
 
 If sync is on, the app warns first (with the number of changes not yet sent, if any) and then turns sync off. Boards other people shared with you are removed from that computer; your own boards stay. **Use Terra Cloud** switches back.
 
