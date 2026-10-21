@@ -20,3 +20,7 @@ export function unsentText(pending: number): string {
     ? "1 change hasn't uploaded yet."
     : `${pending} changes haven't uploaded yet.`;
 }
+
+// Shown with the count: what switching now costs.
+export const unsentLoss =
+  "If you switch now, edits to boards other people shared with you that haven't uploaded are lost. Your own boards and their edits stay on this computer.";

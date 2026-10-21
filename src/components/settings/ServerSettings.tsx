@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import type { CloudStatus, ServerInput } from '../../bridge';
 import { Group, Row } from './controls';
-import { serverDescription, switchWarning, unsentText } from './server-text';
+import { serverDescription, switchWarning, unsentLoss, unsentText } from './server-text';
 
 type Act = (job: () => Promise<unknown>, done?: string) => Promise<void>;
 type Target = ServerInput | { terra: true };
@@ -73,9 +73,9 @@ export function ServerSettings({
   const connect = (target: Target, name: string) =>
     act(async () => {
       try {
-        // Sync is turned off first; a server can only change while it is off.
-        if (status.identity) await cloud.disable();
-        await cloud.serverSet(target);
+        // The app checks the server, then turns sync off, then switches; a failed check
+        // leaves sync on.
+        await cloud.serverSet(target, { turnOffSync: true });
         close();
         setAddress('');
         setUrl('');
@@ -101,15 +101,17 @@ export function ServerSettings({
             {unsent && (
               <>
                 {' '}
-                <strong>{unsent}</strong>
+                <strong>{unsent}</strong> {unsentLoss}
               </>
             )}
           </p>
           <div className="server-actions">
+            {/* With changes waiting, Sync now is the default and Switch the other choice. */}
             {status.pending > 0 && (
               <button
                 type="button"
-                className="st-button"
+                className="st-button primary"
+                autoFocus
                 disabled={busy || status.state === 'syncing'}
                 onClick={() => act(() => cloud.syncNow())}
               >
@@ -119,7 +121,7 @@ export function ServerSettings({
             )}
             <button
               type="button"
-              className="st-button primary"
+              className={status.pending > 0 ? 'st-button' : 'st-button primary'}
               disabled={busy}
               onClick={() => connect(confirming.target, confirming.name)}
             >

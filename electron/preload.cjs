@@ -131,7 +131,7 @@ contextBridge.exposeInMainWorld('canvas', {
     removeDevice: (id) => ipcRenderer.invoke('canvas:cloud-remove-device', id),
     syncNow: () => ipcRenderer.invoke('canvas:cloud-sync-now'),
     serverTest: (input) => ipcRenderer.invoke('canvas:cloud-server-test', input),
-    serverSet: (input) => ipcRenderer.invoke('canvas:cloud-server-set', input),
+    serverSet: (input, options) => ipcRenderer.invoke('canvas:cloud-server-set', input, options),
     onDeepLink: (callback) => {
       const handler = (_event, link) => callback(link);
       ipcRenderer.on('canvas:deep-link', handler);

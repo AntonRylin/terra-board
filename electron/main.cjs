@@ -835,13 +835,18 @@ app
       const { billing } = await checkServer(config, { fetch: serverFetch });
       return { name: config.name, host: new URL(config.url).host, billing };
     });
-    cloudAction('server-set', async (input) => {
-      if (chosenServer().locked)
-        throw Error('Your organization manages the server for this computer.');
+    // { turnOffSync: true } turns sync off once the new server has passed its check, so a
+    // failed check leaves sync as it was. Without it, a switch with sync on is refused.
+    cloudAction('server-set', async (input, options) => {
+      const current = chosenServer();
+      if (current.locked) throw Error('Your organization manages the server for this computer.');
+      if (current.source === 'env')
+        throw Error('This copy of Terra Board is set to a development server.');
       const { config, terra } = await serverFromInput(input);
       // The built-in server ships with this app, so it is not checked.
       if (!terra) await checkServer(config, { fetch: serverFetch });
-      // Reconfigure first: it refuses while sync is on, and then nothing has been saved.
+      if (options?.turnOffSync === true && (await cloud.local()).identity) await cloud.disable();
+      // Reconfigure before saving: it refuses while sync is on, and then nothing has been saved.
       await cloud.reconfigure(config, serverStatus(config, false));
       saveServerChoice(root, terra ? 'terra' : config);
       return cloud.status;

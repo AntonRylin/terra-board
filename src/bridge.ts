@@ -280,7 +280,10 @@ interface DesktopBridge {
     removeDevice(id: string): Promise<void>;
     syncNow(): Promise<CloudStatus>;
     serverTest(input: ServerInput): Promise<ServerPreview>;
-    serverSet(input: ServerInput | { terra: true }): Promise<CloudStatus>;
+    serverSet(
+      input: ServerInput | { terra: true },
+      options?: { turnOffSync?: boolean },
+    ): Promise<CloudStatus>;
     onDeepLink(callback: (link: { kind: 'connect'; address: string }) => void): () => void;
     onStatus(callback: (status: CloudStatus) => void): () => void;
   };
