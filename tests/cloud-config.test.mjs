@@ -1,0 +1,206 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+const {
+  normalizeAddress,
+  parseServerFile,
+  resolveServer,
+  saveServerChoice,
+  personalServerFile,
+  managedServerFile,
+  terraCloud,
+} = require('../electron/cloud-config.cjs');
+
+const tempDir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'terra-server-'));
+const publicKey = 'sb_publishable_' + 'x'.repeat(20);
+const description = (name, extra = {}) => ({
+  name,
+  supabaseUrl: 'https://api.acme.eu',
+  publicKey,
+  ...extra,
+});
+const writeJson = (file, value) => {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, typeof value === 'string' ? value : JSON.stringify(value));
+};
+const packageJson = { terraCloud: { url: 'https://cloud.terra.test', key: 'k'.repeat(30) } };
+
+test('normalizeAddress accepts host names and keeps localhost on http', () => {
+  assert.equal(normalizeAddress('terra.acme.eu'), 'https://terra.acme.eu');
+  assert.equal(normalizeAddress('https://terra.acme.eu/'), 'https://terra.acme.eu');
+  assert.equal(normalizeAddress(' HTTPS://Terra.Acme.EU '), 'https://terra.acme.eu');
+  assert.equal(normalizeAddress('localhost:8787'), 'http://localhost:8787');
+  assert.equal(normalizeAddress('http://127.0.0.1:9000'), 'http://127.0.0.1:9000');
+  assert.equal(normalizeAddress('[::1]:9000'), 'http://[::1]:9000');
+  assert.equal(normalizeAddress('https://localhost:8787'), 'https://localhost:8787');
+});
+
+test('normalizeAddress rejects unsafe or unclear input', () => {
+  const unclear = /Enter just the server address, like terra\.example\.com\./;
+  assert.throws(() => normalizeAddress('http://terra.acme.eu'), /Use an https:\/\/ address\./);
+  assert.throws(() => normalizeAddress('https://terra.acme.eu/boards'), unclear);
+  assert.throws(() => normalizeAddress('terra.acme.eu?x=1'), unclear);
+  assert.throws(() => normalizeAddress('https://me@terra.acme.eu'), unclear);
+  assert.throws(() => normalizeAddress('ftp://terra.acme.eu'), unclear);
+  assert.throws(() => normalizeAddress('javascript:alert(1)'), unclear);
+  assert.throws(() => normalizeAddress(''), unclear);
+  assert.throws(() => normalizeAddress('   '), unclear);
+  assert.throws(() => normalizeAddress('a'.repeat(251) + '.eu'), Error);
+});
+
+test('parseServerFile fills sign-in defaults and refuses secret keys', () => {
+  assert.deepEqual(parseServerFile(description('Acme boards'), 'https://terra.acme.eu'), {
+    kind: 'custom',
+    name: 'Acme boards',
+    url: 'https://api.acme.eu',
+    key: 'sb_publishable_xxxxxxxxxxxxxxxxxxxx',
+    address: 'https://terra.acme.eu',
+    signIn: { email: true, google: false, microsoft: false },
+  });
+  assert.deepEqual(
+    parseServerFile(description(' Acme ', { signIn: { google: true }, extra: 1 }), null).signIn,
+    { email: true, google: true, microsoft: false },
+  );
+  assert.equal(parseServerFile(description(' Acme '), null).name, 'Acme');
+
+  const secret = /secret key/;
+  assert.throws(
+    () => parseServerFile(description('A', { publicKey: 'sb_secret_' + 'x'.repeat(20) }), null),
+    secret,
+  );
+  const jwt = (role) =>
+    [
+      'eyJhbGciOiJIUzI1NiJ9',
+      Buffer.from(JSON.stringify({ role })).toString('base64url'),
+      'sig',
+    ].join('.');
+  assert.throws(
+    () => parseServerFile(description('A', { publicKey: jwt('service_role') }), null),
+    secret,
+  );
+  assert.equal(parseServerFile(description('A', { publicKey: jwt('anon') }), null).kind, 'custom');
+  assert.throws(
+    () => parseServerFile(description('A', { supabaseUrl: 'http://api.acme.eu' }), null),
+    /https/,
+  );
+  const notServer = /This is not a Terra Board server description\./;
+  assert.throws(() => parseServerFile([], null), notServer);
+  assert.throws(() => parseServerFile(description(''), null), notServer);
+  assert.throws(() => parseServerFile(description('A', { publicKey: 'short' }), null), notServer);
+});
+
+test('terraCloud reads the built-in server from package.json', () => {
+  assert.deepEqual(terraCloud(packageJson), {
+    kind: 'terra',
+    name: 'Terra Cloud',
+    url: 'https://cloud.terra.test',
+    key: 'k'.repeat(30),
+    address: null,
+    signIn: { email: true, google: true, microsoft: true },
+  });
+  assert.equal(terraCloud({}), null);
+  assert.equal(terraCloud({ terraCloud: { url: 'https://x.test' } }), null);
+});
+
+test('server file locations', () => {
+  assert.equal(
+    managedServerFile({ ProgramData: 'D:\\PD' }),
+    path.join('D:\\PD', 'Terra Board', 'server.json'),
+  );
+  assert.equal(managedServerFile({}), path.join('C:\\ProgramData', 'Terra Board', 'server.json'));
+  assert.equal(personalServerFile('lib'), path.join('lib', 'settings', 'server.json'));
+});
+
+test('resolveServer follows the documented order', () => {
+  const root = tempDir();
+  const managedFile = path.join(tempDir(), 'server.json');
+  const input = { env: {}, root, packageJson, managedFile };
+
+  let result = resolveServer(input);
+  assert.equal(result.source, 'default');
+  assert.equal(result.config.kind, 'terra');
+  assert.equal(result.locked, false);
+
+  assert.deepEqual(resolveServer({ ...input, packageJson: {} }), {
+    config: null,
+    locked: false,
+    source: 'none',
+  });
+
+  writeJson(personalServerFile(root), description('Personal'));
+  result = resolveServer(input);
+  assert.equal(result.source, 'personal');
+  assert.equal(result.locked, false);
+  assert.equal(result.config.name, 'Personal');
+
+  writeJson(managedFile, description('Managed'));
+  result = resolveServer(input);
+  assert.equal(result.source, 'personal');
+
+  fs.rmSync(personalServerFile(root));
+  result = resolveServer(input);
+  assert.equal(result.source, 'managed');
+  assert.equal(result.locked, false);
+  assert.equal(result.config.name, 'Managed');
+
+  writeJson(personalServerFile(root), description('Personal'));
+  writeJson(managedFile, description('Managed', { locked: true }));
+  result = resolveServer(input);
+  assert.equal(result.source, 'managed');
+  assert.equal(result.locked, true);
+
+  const env = { TERRA_CLOUD_URL: 'https://dev.terra.test', TERRA_CLOUD_KEY: 'd'.repeat(30) };
+  result = resolveServer({ ...input, env });
+  assert.equal(result.source, 'env');
+  assert.equal(result.config.kind, 'dev');
+  assert.equal(result.config.name, 'Development server');
+  assert.equal(result.config.url, 'https://dev.terra.test');
+  assert.equal(result.config.key, 'd'.repeat(30));
+});
+
+test('resolveServer ignores broken files', () => {
+  const root = tempDir();
+  const managedFile = path.join(tempDir(), 'server.json');
+  writeJson(personalServerFile(root), '{oops');
+  writeJson(managedFile, '[]');
+  const result = resolveServer({ env: {}, root, packageJson, managedFile });
+  assert.equal(result.source, 'default');
+  assert.equal(result.config.kind, 'terra');
+
+  writeJson(managedFile, {
+    ...description('Managed'),
+    locked: true,
+    publicKey: 'sb_secret_' + 'x'.repeat(20),
+  });
+  assert.equal(resolveServer({ env: {}, root, packageJson, managedFile }).source, 'default');
+});
+
+test('saveServerChoice writes a file resolveServer reads back, and null removes it', () => {
+  const root = tempDir();
+  const managedFile = path.join(tempDir(), 'server.json');
+  const input = { env: {}, root, packageJson, managedFile };
+  const config = parseServerFile(
+    description('Acme boards', { signIn: { email: true, google: true, microsoft: false } }),
+    'https://terra.acme.eu',
+  );
+
+  saveServerChoice(root, config);
+  assert.deepEqual(JSON.parse(fs.readFileSync(personalServerFile(root), 'utf8')), {
+    name: 'Acme boards',
+    supabaseUrl: 'https://api.acme.eu',
+    publicKey,
+    signIn: { email: true, google: true, microsoft: false },
+    address: 'https://terra.acme.eu',
+  });
+  assert.equal(fs.existsSync(personalServerFile(root) + '.tmp'), false);
+  assert.deepEqual(resolveServer(input), { config, locked: false, source: 'personal' });
+
+  saveServerChoice(root, null);
+  assert.equal(fs.existsSync(personalServerFile(root)), false);
+  assert.equal(resolveServer(input).source, 'default');
+  saveServerChoice(root, null);
+});
