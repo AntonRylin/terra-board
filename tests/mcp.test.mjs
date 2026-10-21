@@ -542,3 +542,105 @@ test('MCP builds HTML embed mockups: create from a file, cheap edits, compact re
     await f.close();
   }
 });
+
+test('MCP reads what the user looks at, places they looked at recently and recent changes', async () => {
+  const f = await fixture();
+  try {
+    const call = async (name, args) => data(await f.client.callTool({ name, arguments: args }));
+    const board = await call('create_board', { name: 'Views' });
+    const box = (id, x, y) => ({ id, type: 'rect', x, y, width: 100, height: 100, z: 1 });
+    await call('edit_board', {
+      id: board.id,
+      revision: 0,
+      upserts: [box('left', 0, 0), box('right', 2000, 0), box('far', 9000, 9000)],
+    });
+    // No place recorded yet: the whole board, no view.
+    const fresh = await call('read_board', { id: board.id, within: 'view' });
+    assert.equal(fresh.view, null);
+    assert.deepEqual(fresh.recentViews, []);
+    assert.equal(fresh.total, 3);
+
+    // The app reports the visible area with each camera save.
+    const look = (x, y, width = 1000, height = 600) =>
+      f.store.saveCamera({
+        id: board.id,
+        camera: { x: -x, y: -y, zoom: 1 },
+        view: { x, y, width, height },
+      });
+    look(-50, -50);
+    look(0, 0); // a small pan stays the same place
+    let read = await call('read_board', { id: board.id, within: 'view' });
+    assert.equal(read.recentViews.length, 1);
+    assert.deepEqual(
+      read.objects.map((o) => o.id),
+      ['left'],
+    );
+    assert.deepEqual(
+      { x: read.view.x, y: read.view.y, width: read.view.width },
+      { x: 0, y: 0, width: 1000 },
+    );
+    assert.match(read.view.at, /^\d{4}-\d\d-\d\dT/);
+
+    look(1900, -100); // somewhere else
+    read = await call('read_board', { id: board.id, within: 'view' });
+    assert.deepEqual(
+      read.objects.map((o) => o.id),
+      ['right'],
+    );
+    assert.equal(read.recentViews.length, 2);
+    assert.equal(read.recentViews[0].x, 1900);
+    // An earlier place, or any area, given as a rectangle.
+    const earlier = read.recentViews[1];
+    assert.deepEqual(
+      (
+        await call('read_board', {
+          id: board.id,
+          within: { x: earlier.x, y: earlier.y, width: earlier.width, height: earlier.height },
+        })
+      ).objects.map((o) => o.id),
+      ['left'],
+    );
+    assert.equal(
+      (
+        await call('read_board', {
+          id: board.id,
+          within: { x: 8000, y: 8000, width: 5000, height: 5000 },
+        })
+      ).total,
+      1,
+    );
+    // A camera save without a view (older app) changes no places.
+    f.store.saveCamera({ id: board.id, camera: { x: 1, y: 1, zoom: 1 } });
+    assert.equal((await call('read_board', { id: board.id })).recentViews.length, 2);
+
+    // Recently changed objects, newest first, with who changed them.
+    const before = await call('read_board', { id: board.id });
+    await call('edit_board', {
+      id: board.id,
+      revision: before.revision,
+      upserts: [{ ...box('far', 9100, 9000) }],
+    });
+    const changed = await call('read_board', { id: board.id, changedWithinMinutes: 5 });
+    assert.equal(changed.total, 3);
+    assert.equal(changed.changes[0].id, 'far');
+    assert.equal(changed.changes[0].source, 'ai');
+    assert.match(changed.changes[0].at, /^\d{4}-/);
+    // Combined with the view: only changed objects in it.
+    assert.deepEqual(
+      (
+        await call('read_board', { id: board.id, within: 'view', changedWithinMinutes: 5 })
+      ).objects.map((o) => o.id),
+      ['right'],
+    );
+    // Bad views are refused.
+    assert.throws(() =>
+      f.store.saveCamera({
+        id: board.id,
+        camera: { x: 0, y: 0, zoom: 1 },
+        view: { x: 0, y: 0, width: -1, height: 5 },
+      }),
+    );
+  } finally {
+    await f.close();
+  }
+});

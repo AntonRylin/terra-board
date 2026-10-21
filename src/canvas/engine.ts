@@ -442,6 +442,14 @@ export class Engine {
   center() {
     return this.screenPoint({ x: this.host.clientWidth / 2, y: this.host.clientHeight / 2 });
   }
+  // The board area the window shows with a camera, in board units.
+  visibleArea(camera: Camera = this.camera) {
+    const width = this.host.clientWidth,
+      height = this.host.clientHeight;
+    if (!width || !height) return undefined;
+    const p = screenToWorld({ x: 0, y: 0 }, camera);
+    return { x: p.x, y: p.y, width: width / camera.zoom, height: height / camera.zoom };
+  }
   get selected() {
     return [...this.selection].map((id) => this.objects.get(id)).filter(Boolean) as CanvasObject[];
   }

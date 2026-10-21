@@ -96,6 +96,31 @@ function cameraValue(c) {
     throw Error('Invalid camera');
   return { x: c.x, y: c.y, zoom: c.zoom };
 }
+// The board area visible in the window, in board units.
+function viewValue(v) {
+  if (
+    !v ||
+    !number(v.x) ||
+    !number(v.y) ||
+    !number(v.width, 1e-6, 1e9) ||
+    !number(v.height, 1e-6, 1e9) ||
+    !(v.width > 0 && v.height > 0)
+  )
+    throw Error('Invalid view');
+  return { x: v.x, y: v.y, width: v.width, height: v.height };
+}
+// Share of two areas in common (intersection over union), 0 to 1.
+function viewOverlap(a, b) {
+  const w = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x),
+    h = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y);
+  if (w <= 0 || h <= 0) return 0;
+  const common = w * h;
+  return common / (a.width * a.height + b.width * b.height - common);
+}
+const viewsPerBoard = 100,
+  viewDays = 30,
+  // Looking around the same spot within this time stays one place.
+  viewMergeMs = 30 * 60000;
 function backgroundAppearanceValue(value = {}) {
   if (!value || typeof value !== 'object' || Array.isArray(value))
     throw Error('Invalid background appearance');
@@ -752,6 +777,11 @@ class Store {
     this.db
       .exec(`CREATE TABLE IF NOT EXISTS object_history(seq INTEGER PRIMARY KEY AUTOINCREMENT,boardId TEXT NOT NULL REFERENCES boards(id) ON DELETE CASCADE,objectId TEXT NOT NULL,revision INTEGER NOT NULL,at INTEGER NOT NULL,action TEXT NOT NULL,before TEXT,after TEXT,source TEXT NOT NULL DEFAULT 'local');
    CREATE INDEX IF NOT EXISTS object_history_board ON object_history(boardId,seq);`);
+    // Places on a board the user recently looked at, newest last. Older app versions ignore it.
+    this.db
+      .exec(`CREATE TABLE IF NOT EXISTS board_views(seq INTEGER PRIMARY KEY AUTOINCREMENT,boardId TEXT NOT NULL REFERENCES boards(id) ON DELETE CASCADE,at INTEGER NOT NULL,x REAL NOT NULL,y REAL NOT NULL,width REAL NOT NULL,height REAL NOT NULL);
+   CREATE INDEX IF NOT EXISTS board_views_board ON board_views(boardId,seq);`);
+    this.db.prepare('DELETE FROM board_views WHERE at<?').run(Date.now() - viewDays * 86400000);
     this.historyWrites = 0;
     this.pruneHistory();
     // Pictures made from linked originals (viewer copies, zoom tiles) are a
@@ -1310,11 +1340,56 @@ class Store {
       keptDays: historyDays,
     };
   }
-  saveCamera({ id, camera }) {
+  saveCamera({ id, camera, view }) {
     this.board(id);
     const value = JSON.stringify(cameraValue(camera));
+    if (view !== undefined) view = viewValue(view);
     this.db.prepare('UPDATE boards SET camera=? WHERE id=? AND camera<>?').run(value, id, value);
+    if (view) this.recordView(id, view);
     return true;
+  }
+  // A view close to the latest place, soon after it, moves that place; otherwise it is a new one.
+  recordView(boardId, view, now = Date.now()) {
+    const last = this.db
+      .prepare(
+        'SELECT seq,at,x,y,width,height FROM board_views WHERE boardId=? ORDER BY seq DESC LIMIT 1',
+      )
+      .get(boardId);
+    if (last && now - last.at < viewMergeMs && viewOverlap(last, view) >= 0.5)
+      this.db
+        .prepare('UPDATE board_views SET at=?,x=?,y=?,width=?,height=? WHERE seq=?')
+        .run(now, view.x, view.y, view.width, view.height, last.seq);
+    else {
+      this.db
+        .prepare('INSERT INTO board_views(boardId,at,x,y,width,height) VALUES(?,?,?,?,?,?)')
+        .run(boardId, now, view.x, view.y, view.width, view.height);
+      this.db
+        .prepare(
+          'DELETE FROM board_views WHERE boardId=? AND seq NOT IN (SELECT seq FROM board_views WHERE boardId=? ORDER BY seq DESC LIMIT ?)',
+        )
+        .run(boardId, boardId, viewsPerBoard);
+    }
+  }
+  // Recent places, newest first; the first is what the user sees now (or last saw).
+  boardViews({ id, limit = 10 }) {
+    this.board(idValue(id));
+    limit = Math.min(Math.max(1, Number.isSafeInteger(limit) ? limit : 10), viewsPerBoard);
+    return this.db
+      .prepare(
+        'SELECT at,x,y,width,height FROM board_views WHERE boardId=? ORDER BY seq DESC LIMIT ?',
+      )
+      .all(id, limit);
+  }
+  // Objects changed since a time, newest change first, with who made the latest change.
+  changedObjects({ id, since }) {
+    this.board(idValue(id));
+    if (!number(since, 0, 1e15)) throw Error('Invalid time');
+    return this.db
+      .prepare(
+        `SELECT objectId AS id,MAX(at) AS at,source,action FROM object_history
+          WHERE boardId=? AND at>=? GROUP BY objectId ORDER BY at DESC`,
+      )
+      .all(id, since);
   }
   duplicateBoard({ id }) {
     return this.transaction(() => {
@@ -1778,4 +1853,4 @@ class Store {
     this.db.prepare('UPDATE boards SET camera=? WHERE id=?').run(JSON.stringify(camera), id);
   }
 }
-module.exports = { Store, objectValue, cameraValue, tableValue };
+module.exports = { Store, objectValue, cameraValue, viewValue, tableValue };

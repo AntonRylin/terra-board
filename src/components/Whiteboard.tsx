@@ -395,8 +395,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     let last = id ? e.objects.get(id) : undefined;
     if (last?.type !== type) {
       last = undefined;
-      for (const o of e.objects.values())
-        if (o.type === type && (!last || o.z > last.z)) last = o;
+      for (const o of e.objects.values()) if (o.type === type && (!last || o.z > last.z)) last = o;
     }
     return last ? { width: last.width, height: last.height } : { width: 240, height: 200 };
   };
@@ -1929,7 +1928,13 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     );
     cameraQueue.current = new CameraSaveQueue(
       doc.camera,
-      (camera) => invoke('saveCamera', { id: doc.board.id, camera }),
+      // The visible area lets AI tools find what the user is looking at.
+      (camera) =>
+        invoke('saveCamera', {
+          id: doc.board.id,
+          camera,
+          view: engine.current?.visibleArea(camera),
+        }),
       error,
     );
     const fitted = doc.objects.map((o) =>
@@ -2108,6 +2113,10 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       highlightSize: (size) => setHighlightStyle((style) => ({ ...style, size })),
       ready: () => {
         if (pinning) setPinSource(e.all);
+        // Opening a board counts as looking at it, even before the camera moves.
+        const view = e.visibleArea();
+        if (view)
+          invoke('saveCamera', { id: doc.board.id, camera: { ...e.camera }, view }).catch(() => {});
         setReady(true);
         onReady();
         window.canvas?.rendererReady();
