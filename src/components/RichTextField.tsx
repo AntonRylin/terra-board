@@ -19,6 +19,7 @@ import {
   type TextMark,
   type TextStyle,
 } from '../canvas/rich-text';
+import { listBreak } from '../canvas/text-lists';
 import './rich-text.css';
 
 // A contenteditable over plain text + style ranges. The browser edits the DOM;
@@ -328,6 +329,30 @@ export default function RichTextField({
       pending.current = null;
       commit(next, nextMarks, { anchor: caret, focus: caret }, 'insert', caretOf(root));
     };
+    const continueList = () => {
+      const { value, marks, maxLength } = props.current;
+      const range = fieldRange(root);
+      const result = range && listBreak(value, range.start, range.end);
+      if (!result || result.text.length > maxLength) return false;
+      let text = value,
+        nextMarks: TextMark[] | undefined = marks;
+      // One edit at a time keeps the styles between renumbered items intact.
+      for (const edit of result.edits) {
+        const after = text.slice(0, edit.start) + edit.text + text.slice(edit.end);
+        nextMarks = rebaseMarks(
+          text,
+          after,
+          nextMarks,
+          pending.current,
+          edit.start + edit.text.length,
+        );
+        pending.current = null;
+        text = after;
+      }
+      const caret = { anchor: result.caret, focus: result.caret };
+      commit(text, nextMarks || [], caret, 'insert', caretOf(root));
+      return true;
+    };
     const sync = () => {
       const { value, marks, maxLength, multiline } = props.current;
       let text = readText(root);
@@ -354,7 +379,9 @@ export default function RichTextField({
       } else if (type.startsWith('format')) event.preventDefault();
       else if (type === 'insertParagraph' || type === 'insertLineBreak') {
         event.preventDefault();
-        if (props.current.multiline) insert('\n');
+        // Shift+Enter (a line break) stays a plain newline inside a list item.
+        if (props.current.multiline && !(type === 'insertParagraph' && continueList()))
+          insert('\n');
       } else if (type === 'insertFromPaste' || type === 'insertFromPasteAsQuotation') {
         event.preventDefault();
         props.current.onPaste?.();

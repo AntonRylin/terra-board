@@ -193,6 +193,7 @@ import PdfWorkspace, { type PdfWorkspaceHandle } from './PdfWorkspace';
 import ImageViewer from './ImageViewer';
 import { documentKind, withDocumentTitle, withImageTitle } from '../canvas/document-files';
 import { shownMarks, shownMarksKey, shownText, trimTrailingBreaks } from '../canvas/rich-text';
+import { listBreak } from '../canvas/text-lists';
 import {
   documentBytes,
   loadPdf,
@@ -4385,6 +4386,28 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             } else if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
               e.preventDefault();
               finishEdit();
+            } else if (e.key === 'Enter' && !e.shiftKey && !e.altKey) {
+              const field = e.currentTarget;
+              const result = listBreak(field.value, field.selectionStart, field.selectionEnd);
+              if (!result || result.text.length > field.maxLength) return;
+              e.preventDefault();
+              // Replace only the changed span, through insertText so undo still works.
+              const old = field.value;
+              let head = 0,
+                tail = 0;
+              while (head < old.length && old[head] === result.text[head]) head++;
+              while (
+                tail < Math.min(old.length, result.text.length) - head &&
+                old[old.length - 1 - tail] === result.text[result.text.length - 1 - tail]
+              )
+                tail++;
+              field.setSelectionRange(head, old.length - tail);
+              const span = result.text.slice(head, result.text.length - tail);
+              if (!document.execCommand('insertText', false, span)) {
+                field.value = result.text;
+                field.dispatchEvent(new Event('input', { bubbles: true }));
+              }
+              field.setSelectionRange(result.caret, result.caret);
             }
           }}
           style={{
