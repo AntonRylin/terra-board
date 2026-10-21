@@ -71,8 +71,10 @@ function sessionStorage(file, safeStorage) {
 // on, and otherwise only what they share. Folders and boards other people
 // share are pulled from those people's workspaces with view or edit rights.
 class CloudSync {
-  constructor({ call, root, config, safeStorage, transaction, onStatus, onPresence }) {
+  constructor({ call, root, config, server, safeStorage, transaction, onStatus, onPresence }) {
     this.call = call;
+    this.root = root;
+    this.safeStorage = safeStorage;
     this.config = config;
     this.transaction = transaction;
     this.onStatus = onStatus;
@@ -81,6 +83,7 @@ class CloudSync {
     this.board = null;
     this.status = {
       configured: !!config,
+      server: server || null,
       state: 'off',
       identity: false,
       library: false,
@@ -98,16 +101,44 @@ class CloudSync {
     this.channels = new Map();
     this.roles = { boards: {}, folders: {} };
     this.foreign = [];
-    if (config)
-      this.client = createClient(config.url, config.key, {
-        auth: {
-          storage: sessionStorage(path.join(root, 'settings', 'cloud-session'), safeStorage),
-          storageKey: 'terra-cloud',
-          persistSession: true,
-          autoRefreshToken: true,
-          detectSessionInUrl: false,
-        },
-      });
+    this.client = null;
+    this.makeClient(config);
+  }
+
+  // The client for one server. The person's session lives next to the library
+  // and belongs to that server only. No config means no client (local use only).
+  makeClient(config) {
+    this.config = config || null;
+    this.client = config
+      ? createClient(config.url, config.key, {
+          auth: {
+            storage: sessionStorage(
+              path.join(this.root, 'settings', 'cloud-session'),
+              this.safeStorage,
+            ),
+            storageKey: 'terra-cloud',
+            persistSession: true,
+            autoRefreshToken: true,
+            detectSessionInUrl: false,
+          },
+        })
+      : null;
+  }
+
+  // Points the engine at another server. Only while sync is off, so nothing is
+  // waiting to be sent. The old server's session is dropped; boards in this
+  // library stay as they are, and copies of other people's boards were already
+  // removed when sync was turned off.
+  async reconfigure(config, server) {
+    if ((await this.local()).identity) throw Error('Turn off sync before changing servers.');
+    this.stop();
+    await this.presenceQueue;
+    this.client?.auth.stopAutoRefresh();
+    fs.rmSync(path.join(this.root, 'settings', 'cloud-session'), { force: true });
+    this.workspace = null;
+    this.userId = null;
+    this.makeClient(config);
+    return this.emit({ configured: !!config, server: server || null, state: 'off', error: null });
   }
 
   emit(patch) {
@@ -724,7 +755,7 @@ class CloudSync {
     clearTimeout(this.timer);
     clearInterval(this.poll);
     this.timer = this.poll = null;
-    for (const channel of this.channels.values()) this.client.removeChannel(channel);
+    for (const channel of this.channels.values()) this.client?.removeChannel(channel);
     this.channels.clear();
   }
 

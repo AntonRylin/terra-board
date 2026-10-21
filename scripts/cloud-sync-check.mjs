@@ -2,7 +2,7 @@
 // Runs in plain Node: the store and sync engine are used directly, without Electron.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
@@ -353,6 +353,47 @@ try {
   assert.equal(owner.store.loadBoard({ id: diary.id }).objects[0].text, 'private');
   assert.deepEqual(owner.store.library().sharing.local, [diary.id]);
   results.removeFromCloud = true;
+
+  // --- Switching servers --------------------------------------------------
+  // Only while sync is off. Unsent edits to your own boards stay on this
+  // computer; copies of other people's boards go with the old server.
+  {
+    const own = device('own');
+    const sharer = device('sharer');
+    await own.sync.enable('Own');
+    await sharer.sync.enable('Sharer');
+    const theirs = sharer.store.createBoard({ name: 'Theirs' });
+    sharer.store.patchBoard({ id: theirs.id, revision: 0, upserts: [note('t1', 'from a friend')] });
+    const shareCode = await sharer.sync.invite('board', theirs.id, 'view', 'Sharer');
+    await own.sync.join(shareCode.slice(0, 5) + '-' + shareCode.slice(5), 'Own');
+    await until(
+      () => own.store.library().boards.some((b) => b.id === theirs.id),
+      'the shared board to reach the own device',
+    );
+    const mine = own.store.createBoard({ name: 'Mine' });
+    own.store.patchBoard({ id: mine.id, revision: 0, upserts: [note('m1', 'unsent')] });
+    await assert.rejects(own.sync.reconfigure(config, null), /Turn off sync/);
+    await own.sync.disable();
+    await own.sync.reconfigure(
+      {
+        ...config,
+        kind: 'dev',
+        name: 'Second',
+        address: null,
+        signIn: { email: true, google: false, microsoft: false },
+      },
+      { name: 'Second', kind: 'dev', locked: false, address: null },
+    );
+    assert.equal(own.store.loadBoard({ id: mine.id }).objects[0].text, 'unsent');
+    assert.ok(
+      !own.store.library().boards.some((b) => b.id === theirs.id),
+      "the friend's board goes with the old server",
+    );
+    assert.equal(own.sync.status.server.name, 'Second');
+    assert.equal(own.sync.status.identity, false);
+    assert.equal(existsSync(join(own.root, 'settings', 'cloud-session')), false);
+    results.serverSwitch = true;
+  }
 
   console.log(JSON.stringify({ passed: true, ...results }));
 } catch (e) {
