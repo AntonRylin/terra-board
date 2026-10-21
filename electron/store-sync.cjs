@@ -629,19 +629,30 @@ function createSync(store, helpers) {
 
   function applyObject(r) {
     helpers.idValue(r.id);
-    if (!db().prepare('SELECT 1 FROM boards WHERE id=?').get(r.board_id)) return false;
-    if (r.deleted)
+    const board = db().prepare('SELECT revision FROM boards WHERE id=?').get(r.board_id);
+    if (!board) return false;
+    const before = db()
+      .prepare('SELECT json FROM objects WHERE boardId=? AND id=?')
+      .get(r.board_id, r.id)?.json;
+    // Same revision bumpRevision gives this batch afterwards.
+    const history = (after) =>
+      store.recordHistory?.(r.board_id, r.id, board.revision + 1, before, after, 'cloud');
+    if (r.deleted) {
+      history(null);
       return (
         db().prepare('DELETE FROM objects WHERE boardId=? AND id=?').run(r.board_id, r.id).changes >
         0
       );
+    }
     const o = helpers.objectValue(r.data);
     if (o.id !== r.id) throw Error('Object id mismatch');
+    const json = JSON.stringify(o);
+    history(json);
     db()
       .prepare(
         'INSERT INTO objects VALUES(?,?,?) ON CONFLICT(boardId,id) DO UPDATE SET json=excluded.json',
       )
-      .run(r.board_id, r.id, JSON.stringify(o));
+      .run(r.board_id, r.id, json);
     return true;
   }
 

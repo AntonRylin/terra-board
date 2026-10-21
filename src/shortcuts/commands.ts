@@ -80,6 +80,13 @@ export const commands = [
     scope: 'board',
     defaults: [key('Delete'), key('Backspace')],
   },
+  {
+    id: 'edit.history',
+    name: 'Board history',
+    group: 'Edit',
+    scope: 'board',
+    defaults: [ctrl('KeyH')],
+  },
   { id: 'edit.bold', name: 'Bold text', group: 'Edit', scope: 'board', defaults: [ctrl('KeyB')] },
   { id: 'edit.save', name: 'Save now', group: 'Edit', scope: 'board', defaults: [ctrl('KeyS')] },
   {

@@ -349,7 +349,11 @@ class LiveShare {
       case 'patchBoard': {
         editor();
         shared(args.id);
-        const result = await this.call('patchBoard', { ...args, protectLocked: true }, 'guest');
+        const result = await this.call(
+          'patchBoard',
+          { ...args, protectLocked: true, source: 'guest' },
+          'guest',
+        );
         s.assets = null;
         this.changed(s.boardId, guest.id);
         this.onGuestEdit?.(s.boardId);

@@ -19,6 +19,12 @@ const validIcon = (icon) =>
       /[\p{Extended_Pictographic}\p{Regional_Indicator}\u20e3]/u.test(icon.slice(6))));
 
 const MAX_PACKAGE = 512 * 1024 * 1024;
+// Board history retention (see recordHistory).
+const historyDays = 30;
+const historyRowsPerBoard = 5000;
+const historyBytesPerBoard = 64 * 1024 * 1024;
+const historyAfterLimit = 256 * 1024;
+const historySources = new Set(['local', 'ai', 'guest', 'cloud']);
 const searchText = (value) => (typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '');
 const graphemes = (value) =>
   [...new Intl.Segmenter('und', { granularity: 'grapheme' }).segment(value)].map((s) => s.segment);
@@ -741,6 +747,13 @@ class Store {
    CREATE TABLE IF NOT EXISTS merge_floors(boardId TEXT PRIMARY KEY REFERENCES boards(id) ON DELETE CASCADE,revision INTEGER NOT NULL);
    CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL);
    CREATE TABLE IF NOT EXISTS asset_links(id TEXT PRIMARY KEY REFERENCES assets(id) ON DELETE CASCADE,path TEXT NOT NULL,bytes INTEGER NOT NULL,modified REAL NOT NULL); PRAGMA user_version=2;`);
+    // Board history: the version of each object before every change, so deleted
+    // and overwritten objects can be restored. Older app versions ignore it.
+    this.db
+      .exec(`CREATE TABLE IF NOT EXISTS object_history(seq INTEGER PRIMARY KEY AUTOINCREMENT,boardId TEXT NOT NULL REFERENCES boards(id) ON DELETE CASCADE,objectId TEXT NOT NULL,revision INTEGER NOT NULL,at INTEGER NOT NULL,action TEXT NOT NULL,before TEXT,after TEXT,source TEXT NOT NULL DEFAULT 'local');
+   CREATE INDEX IF NOT EXISTS object_history_board ON object_history(boardId,seq);`);
+    this.historyWrites = 0;
+    this.pruneHistory();
     // Pictures made from linked originals (viewer copies, zoom tiles) are a
     // cache that must not grow the library: they live in temp, emptied here.
     this.linkedCache = path.join(root, 'temp', 'linked');
@@ -1102,6 +1115,7 @@ class Store {
     camera,
     operationId,
     protectLocked = false,
+    source,
   }) {
     if (!Number.isSafeInteger(revision) || revision < 0) throw Error('Invalid revision');
     if (
@@ -1188,8 +1202,17 @@ class Store {
         'INSERT INTO objects VALUES(?,?,?) ON CONFLICT(boardId,id) DO UPDATE SET json=excluded.json',
       );
       const del = this.db.prepare('DELETE FROM objects WHERE boardId=? AND id=?');
-      for (const o of objects) write.run(id, o.id, JSON.stringify(o));
-      for (const oid of deleted) del.run(id, oid);
+      const previous = this.db.prepare('SELECT json FROM objects WHERE boardId=? AND id=?');
+      const origin = historySources.has(source) ? source : 'local';
+      for (const o of objects) {
+        const json = JSON.stringify(o);
+        this.recordHistory(id, o.id, nextRevision, previous.get(id, o.id)?.json, json, origin);
+        write.run(id, o.id, json);
+      }
+      for (const oid of deleted) {
+        this.recordHistory(id, oid, nextRevision, previous.get(id, oid)?.json, null, origin);
+        del.run(id, oid);
+      }
       const track = this.db.prepare(
         'INSERT INTO object_revisions VALUES(?,?,?) ON CONFLICT(boardId,id) DO UPDATE SET revision=excluded.revision',
       );
@@ -1212,6 +1235,72 @@ class Store {
       }
       return { revision: nextRevision };
     });
+  }
+  // One history row per changed object. `before` is what a restore brings back;
+  // `after` is kept only when small, for showing what a change did.
+  recordHistory(boardId, objectId, revision, before, after, source = 'local') {
+    if (!before && !after) return;
+    if (before === after) return;
+    const action = !before ? 'create' : after === null ? 'delete' : 'edit';
+    this.db
+      .prepare(
+        'INSERT INTO object_history(boardId,objectId,revision,at,action,before,after,source) VALUES(?,?,?,?,?,?,?,?)',
+      )
+      .run(
+        boardId,
+        objectId,
+        revision,
+        Date.now(),
+        action,
+        before || null,
+        after && after.length <= historyAfterLimit ? after : null,
+        source,
+      );
+    if (++this.historyWrites % 200 === 0) this.pruneHistory();
+  }
+  pruneHistory(now = Date.now()) {
+    this.db.prepare('DELETE FROM object_history WHERE at<?').run(now - historyDays * 86400000);
+    // Per board: the newest rows, within a row count and a byte budget.
+    this.db
+      .prepare(
+        `DELETE FROM object_history WHERE seq IN (SELECT seq FROM (SELECT seq,
+          row_number() OVER w AS n,
+          sum(ifnull(length(before),0)+ifnull(length(after),0)) OVER w AS bytes
+          FROM object_history WINDOW w AS (PARTITION BY boardId ORDER BY seq DESC))
+          WHERE n>? OR bytes>?)`,
+      )
+      .run(historyRowsPerBoard, historyBytesPerBoard);
+  }
+  boardHistory({ id, deletedOnly = false, before, limit = 100 }) {
+    this.board(idValue(id));
+    if (before !== undefined && !Number.isSafeInteger(before))
+      throw Error('Invalid history cursor');
+    limit = Math.min(Math.max(1, Number.isSafeInteger(limit) ? limit : 100), 500);
+    const rows = this.db
+      .prepare(
+        `SELECT h.seq,h.objectId,h.revision,h.at,h.action,h.before,h.after,h.source,
+          o.json AS current FROM object_history h
+          LEFT JOIN objects o ON o.boardId=h.boardId AND o.id=h.objectId
+          WHERE h.boardId=? AND h.seq<? ${deletedOnly ? "AND h.action='delete' AND o.id IS NULL" : ''}
+          ORDER BY h.seq DESC LIMIT ?`,
+      )
+      .all(id, before ?? Number.MAX_SAFE_INTEGER, limit + 1);
+    const parse = (json) => (json ? JSON.parse(json) : null);
+    return {
+      entries: rows.slice(0, limit).map((r) => ({
+        seq: r.seq,
+        objectId: r.objectId,
+        revision: r.revision,
+        at: r.at,
+        action: r.action,
+        source: r.source,
+        before: parse(r.before),
+        after: parse(r.after),
+        current: parse(r.current),
+      })),
+      next: rows.length > limit ? rows[limit - 1].seq : null,
+      keptDays: historyDays,
+    };
   }
   saveCamera({ id, camera }) {
     this.board(id);

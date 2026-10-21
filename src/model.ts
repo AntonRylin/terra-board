@@ -250,6 +250,24 @@ export interface Edit {
   upserts: CanvasObject[];
   deleted: string[];
 }
+// One object change on a board (store.cjs boardHistory). `before` is null for a
+// creation; `after` is null for a deletion or a very large object.
+export interface HistoryEntry {
+  seq: number;
+  objectId: string;
+  revision: number;
+  at: number;
+  action: 'create' | 'edit' | 'delete';
+  source: 'local' | 'ai' | 'guest' | 'cloud';
+  before: CanvasObject | null;
+  after: CanvasObject | null;
+  current: CanvasObject | null;
+}
+export interface HistoryPage {
+  entries: HistoryEntry[];
+  next: number | null;
+  keptDays: number;
+}
 export type Tool =
   | 'select'
   | 'hand'

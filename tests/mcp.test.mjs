@@ -63,7 +63,8 @@ test('MCP interoperates with SDK: board/folder CRUD, complete object edits, stal
     const call = async (name, args = {}) =>
       data(await f.client.callTool({ name, arguments: args }));
     const names = (await f.client.listTools()).tools.map((t) => t.name);
-    assert.equal(names.length, 13);
+    assert.equal(names.length, 14);
+    assert.ok(names.includes('read_board_history'));
     assert.ok(names.includes('edit_board'));
     const folder = await call('create_folder', { name: 'Research' });
     const board = await call('create_board', { name: 'AI board', folderId: folder.id });
@@ -134,6 +135,12 @@ test('MCP interoperates with SDK: board/folder CRUD, complete object edits, stal
     assert.equal((await call('list_boards')).folders.length, 0);
     await call('edit_board', { id: board.id, revision: 2, deleted: ['text'] });
     assert.equal((await call('read_board', { id: board.id })).objects.length, 1);
+    const history = await call('read_board_history', { id: board.id, deletedOnly: true });
+    assert.equal(history.entries.length, 1);
+    assert.equal(history.entries[0].objectId, 'text');
+    assert.equal(history.entries[0].source, 'ai');
+    assert.equal(history.entries[0].onBoard, false);
+    assert.equal(history.entries[0].before.id, 'text');
     const config = JSON.parse(readFileSync(settingsFile(f.root), 'utf8'));
     assert.equal(config.enabled, true);
     const reopened = new Store(f.root);
@@ -376,7 +383,7 @@ test('Claude stdio connector discovers tools while disabled and works after enab
       stderr: 'pipe',
     });
     await client.connect(transport);
-    assert.equal((await client.listTools()).tools.length, 13);
+    assert.equal((await client.listTools()).tools.length, 14);
     assert.ok(
       data(await client.callTool({ name: 'create_board', arguments: { name: 'From Claude' } })).id,
     );

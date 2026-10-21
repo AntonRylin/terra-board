@@ -64,6 +64,7 @@ import { BackgroundImage } from './BoardBackground';
 import type { BackgroundAppearance } from '../model';
 import SelectionToolbar from './SelectionToolbar';
 import FrameUsages from './FrameUsages';
+import BoardHistory from './BoardHistory';
 import { frameReference, type FrameReference } from '../canvas/frame-usages';
 import { independentFrameCopy } from '../canvas/frame-links';
 import { copySelection, stackingHierarchy } from '../canvas/stacking';
@@ -134,6 +135,7 @@ import {
   EyeOff,
   BookImage,
   Settings2,
+  History as HistoryIcon,
 } from 'lucide-react';
 import type { Asset, CanvasObject, Document, Edit, Tool, ImageCrop as CropBounds } from '../model';
 import { uid } from '../model';
@@ -267,6 +269,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     engine.current?.setReadOnly(readOnly);
   }, [readOnly]);
   const shortcutLabel = useShortcutLabels();
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [usageTarget, setUsageTarget] = useState<{
     source: FrameReference;
     name: string;
@@ -323,6 +326,19 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     localStorage.setItem('terra-board.frame-link', JSON.stringify(link));
     setFrameClipboard(link);
     if (window.canvas) await copyDesktop([link]);
+  };
+  // Board history: put earlier versions of objects back. It is an ordinary
+  // edit, so it saves, syncs and undoes like any other.
+  const restoreObjects = (objects: CanvasObject[]): string | null => {
+    const e = engine.current;
+    if (!e || readOnlyRef.current) return 'This board can’t be edited.';
+    if (objects.some((o) => e.objects.get(o.id)?.locked))
+      return 'A locked object can’t be changed. Unlock it first.';
+    finishEdit();
+    e.apply({ upserts: objects, deleted: [] });
+    if (!objects.every((o) => e.objects.has(o.id))) return 'These objects couldn’t be restored.';
+    e.setSelection(objects.map((o) => o.id));
+    return null;
   };
   const pasteFrameLink = () => {
     const e = engine.current;
@@ -2711,6 +2727,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         else if (command === 'edit.ungroup') e.ungroup();
         else if (command === 'edit.save') queue.current?.flush().catch(error);
         else if (command === 'edit.delete') e.deleteSelected();
+        else if (command === 'edit.history' && !event.repeat) setHistoryOpen(true);
         else if (command === 'view.fit' && !event.repeat) e.fit();
       }
     };
@@ -3247,6 +3264,11 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     },
     null,
     { label: 'Fit board', icon: <Maximize2 />, action: () => engine.current?.fit() },
+    {
+      label: 'Board history…',
+      icon: <HistoryIcon />,
+      action: () => setHistoryOpen(true),
+    },
     {
       label: 'Export selected…',
       icon: <Download />,
@@ -4519,6 +4541,17 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
               },
           )}
           onClose={() => setMenu(null)}
+        />
+      )}
+      {historyOpen && (
+        <BoardHistory
+          boardId={doc.board.id}
+          boardName={doc.board.name}
+          readOnly={readOnly}
+          prepare={() => flush(false)}
+          restore={restoreObjects}
+          show={(id) => !!engine.current?.focusObject(id)}
+          onClose={() => setHistoryOpen(false)}
         />
       )}
       {usageTarget && (

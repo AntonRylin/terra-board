@@ -292,6 +292,7 @@ const commands = new Set([
   'duplicateBoard',
   'loadBoard',
   'searchContent',
+  'boardHistory',
   'patchBoard',
   'saveCamera',
   'setLastBoard',
