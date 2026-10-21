@@ -111,6 +111,7 @@ test('MCP interoperates with SDK: board/folder CRUD, complete object edits, stal
         width: 300,
         height: 200,
         z: 2,
+        imageTitle: 'Las bebidas',
       },
     ];
     await call('edit_board', { id: board.id, revision: 1, upserts: objects });
@@ -122,6 +123,19 @@ test('MCP interoperates with SDK: board/folder CRUD, complete object edits, stal
         .length,
       1,
     );
+    // Search finds objects by their visible names and text, case-insensitively.
+    const found = await call('read_board', { id: board.id, query: 'BEBIDAS' });
+    assert.deepEqual(
+      found.objects.map((o) => o.id),
+      ['picture'],
+    );
+    assert.equal(found.total, 1);
+    assert.equal(found.nextOffset, null);
+    assert.deepEqual(
+      (await call('read_board', { id: board.id, query: 'hello' })).objects.map((o) => o.id),
+      ['text'],
+    );
+    assert.equal((await call('read_board', { id: board.id, query: 'nothing' })).total, 0);
     await call('update_board', {
       id: board.id,
       patch: { name: 'Renamed', icon: 'asset-' + asset.id, trashed: true },

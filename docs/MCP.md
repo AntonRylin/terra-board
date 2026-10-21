@@ -17,7 +17,7 @@ The generated command uses Terra Board's packaged Electron executable with `ELEC
 ## Tools
 
 - `list_boards`: all boards, folders and trash, with optional name filtering.
-- `read_board`: text, geometry, formatting, object IDs, image IDs, revision and camera. Read subsequent pages until `nextOffset` is null. Supply the same revision across pages to detect intervening changes.
+- `read_board`: text, geometry, formatting, object IDs, image IDs, revision and camera. Read subsequent pages until `nextOffset` is null. Supply the same revision across pages to detect intervening changes. `query` keeps only objects whose text, image/document title, link, list items or table cells contain it (case-insensitive), for finding something by name without reading the whole board.
 - `create_board`, `update_board`, `duplicate_board`: create, rename, organize, set icons/colors, duplicate, trash and restore boards.
 - `create_folder`, `update_folder`, `remove_folder`: organize folders. Removing a folder preserves its boards.
 - `edit_board`: atomic object creation/replacement/deletion. Supports text, notes, shapes, frames, links, images, video, documents, lists, and editable arrows, including all stored formatting/crop/group properties.
