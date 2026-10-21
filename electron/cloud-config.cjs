@@ -106,6 +106,8 @@ const personalServerFile = (root) => path.join(root, 'settings', 'server.json');
 function readServerFile(file) {
   try {
     const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+    // The person's explicit choice of the built-in server: { "terra": true }.
+    if (data?.terra === true) return { terra: true, locked: false };
     let address = null;
     try {
       address = normalizeAddress(data.address);
@@ -128,10 +130,16 @@ function resolveServer({ env = process.env, root, packageJson, managedFile }) {
     };
     return { config, locked: false, source: 'env' };
   }
-  const managed = readServerFile(managedFile || managedServerFile(env));
+  const read = readServerFile(managedFile || managedServerFile(env));
+  const managed = read?.config ? read : null;
   if (managed?.locked) return { config: managed.config, locked: true, source: 'managed' };
   const personal = readServerFile(personalServerFile(root));
-  if (personal) return { config: personal.config, locked: false, source: 'personal' };
+  if (personal?.terra) {
+    const config = terraCloud(packageJson);
+    if (config) return { config, locked: false, source: 'personal' };
+  } else if (personal) {
+    return { config: personal.config, locked: false, source: 'personal' };
+  }
   if (managed) return { config: managed.config, locked: false, source: 'managed' };
   const config = terraCloud(packageJson);
   return config
@@ -139,6 +147,8 @@ function resolveServer({ env = process.env, root, packageJson, managedFile }) {
     : { config: null, locked: false, source: 'none' };
 }
 
+// config: a server to remember, 'terra' for the built-in one (kept even when a managed default
+// exists), or null to forget the choice and use the default.
 function saveServerChoice(root, config) {
   const file = personalServerFile(root);
   if (!config) {
@@ -147,10 +157,14 @@ function saveServerChoice(root, config) {
   }
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const temp = file + '.tmp';
-  const { name, url, key, signIn, address } = config;
+  const { name, url, key, signIn, address } = config === 'terra' ? {} : config;
   fs.writeFileSync(
     temp,
-    JSON.stringify({ name, supabaseUrl: url, publicKey: key, signIn, address }),
+    JSON.stringify(
+      config === 'terra'
+        ? { terra: true }
+        : { name, supabaseUrl: url, publicKey: key, signIn, address },
+    ),
   );
   fs.renameSync(temp, file);
 }

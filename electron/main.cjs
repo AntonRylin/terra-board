@@ -411,6 +411,15 @@ app
       app.quit();
       return;
     }
+    // Registered at once: a link opened while this copy is still starting must not be lost.
+    app.on('second-instance', (_event, argv) => {
+      if (win && !win.isDestroyed()) {
+        if (win.isMinimized()) win.restore();
+        win.show();
+        win.focus();
+      }
+      void sendDeepLink(argv);
+    });
     // Only the installed app claims terraboard:// links; a dev build would take them from it.
     if (app.isPackaged && !smoke && !app.isDefaultProtocolClient(SCHEME))
       app.setAsDefaultProtocolClient(SCHEME);
@@ -825,10 +834,11 @@ app
       if (chosenServer().locked)
         throw Error('Your organization manages the server for this computer.');
       const { config, terra } = await serverFromInput(input);
-      await checkServer(config, { fetch: serverFetch });
+      // The built-in server ships with this app, so it is not checked.
+      if (!terra) await checkServer(config, { fetch: serverFetch });
       // Reconfigure first: it refuses while sync is on, and then nothing has been saved.
       await cloud.reconfigure(config, serverStatus(config, false));
-      saveServerChoice(root, terra ? null : config);
+      saveServerChoice(root, terra ? 'terra' : config);
       return cloud.status;
     });
     liveShare = new LiveShare({
@@ -1165,12 +1175,6 @@ app
       officeConverter?.dispose();
       extensions?.cancelAll();
       void backgroundRemoval?.stop();
-    });
-    app.on('second-instance', (_event, argv) => {
-      if (win.isMinimized()) win.restore();
-      win.show();
-      win.focus();
-      void sendDeepLink(argv);
     });
     void sendDeepLink(process.argv);
     await Promise.all([storageReady, win.loadURL(dev || 'canvas-app://app/index.html')]);

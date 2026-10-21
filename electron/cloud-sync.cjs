@@ -134,11 +134,38 @@ class CloudSync {
     this.stop();
     await this.presenceQueue;
     this.client?.auth.stopAutoRefresh();
-    fs.rmSync(path.join(this.root, 'settings', 'cloud-session'), { force: true });
+    this.forgetSession();
     this.workspace = null;
     this.userId = null;
     this.makeClient(config);
     return this.emit({ configured: !!config, server: server || null, state: 'off', error: null });
+  }
+
+  // The saved session belongs to one server; this file records which, so a different server
+  // at the next start (a new managed file, a changed setting) is noticed.
+  sessionServerFile() {
+    return path.join(this.root, 'settings', 'cloud-session-server');
+  }
+
+  recordedServer() {
+    try {
+      return fs.readFileSync(this.sessionServerFile(), 'utf8').trim() || null;
+    } catch {
+      return null;
+    }
+  }
+
+  recordSessionServer() {
+    if (!this.config) return;
+    try {
+      fs.mkdirSync(path.dirname(this.sessionServerFile()), { recursive: true });
+      fs.writeFileSync(this.sessionServerFile(), this.config.url);
+    } catch {}
+  }
+
+  forgetSession() {
+    fs.rmSync(path.join(this.root, 'settings', 'cloud-session'), { force: true });
+    fs.rmSync(this.sessionServerFile(), { force: true });
   }
 
   emit(patch) {
@@ -159,9 +186,27 @@ class CloudSync {
   }
 
   async start() {
-    if (!this.client) return this.status;
+    if (!this.client && !this.recordedServer()) return this.status;
     const local = await this.local();
     if (!local.identity) return this.emit({ state: 'off', ...local, shared: [], sharedWithMe: [] });
+    const recorded = this.recordedServer();
+    if (recorded && recorded !== this.config?.url) {
+      // Another server than the one this sync was set up with: nothing to say to either.
+      this.stop();
+      await this.turnOffLocally();
+      this.forgetSession();
+      return this.emit({
+        state: 'off',
+        identity: false,
+        library: false,
+        pending: 0,
+        lastSync: null,
+        shared: [],
+        sharedWithMe: [],
+        error: 'The server for this computer changed, so sync was turned off.',
+      });
+    }
+    if (!recorded) this.recordSessionServer();
     this.workspace = local.workspace;
     this.emit({ state: 'syncing', ...local });
     const { data } = await this.client.auth.getSession();
@@ -179,9 +224,13 @@ class CloudSync {
 
   async signIn() {
     const { data } = await this.client.auth.getSession();
-    if (data.session) return data.session.user;
+    if (data.session) {
+      this.recordSessionServer();
+      return data.session.user;
+    }
     const result = await this.client.auth.signInAnonymously();
     fail(result.error, 'Could not reach the sync service');
+    this.recordSessionServer();
     return result.data.user;
   }
 
@@ -257,6 +306,15 @@ class CloudSync {
     return this.start();
   }
 
+  // The part of turning sync off that only touches this computer.
+  async turnOffLocally() {
+    await this.transaction(async () => {
+      await this.call('syncDisable');
+      return { library: true, boards: [] };
+    });
+    this.workspace = null;
+  }
+
   async disable() {
     this.stop();
     if (this.client && this.workspace && this.userId) {
@@ -268,10 +326,8 @@ class CloudSync {
         await this.client.auth.signOut();
       } catch {}
     }
-    await this.transaction(async () => {
-      await this.call('syncDisable');
-      return { library: true, boards: [] };
-    });
+    await this.turnOffLocally();
+    fs.rmSync(this.sessionServerFile(), { force: true });
     this.workspace = null;
     return this.emit({
       state: 'off',

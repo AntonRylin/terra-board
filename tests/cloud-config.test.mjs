@@ -208,6 +208,41 @@ test('saveServerChoice writes a file resolveServer reads back, and null removes 
   saveServerChoice(root, null);
 });
 
+test('the Terra Cloud marker beats an unlocked managed file, not a locked one', () => {
+  const root = tempDir();
+  const managedFile = path.join(tempDir(), 'server.json');
+  const input = { env: {}, root, packageJson, managedFile };
+
+  saveServerChoice(root, 'terra');
+  assert.deepEqual(JSON.parse(fs.readFileSync(personalServerFile(root), 'utf8')), { terra: true });
+  assert.equal(fs.existsSync(personalServerFile(root) + '.tmp'), false);
+  let result = resolveServer(input);
+  assert.equal(result.source, 'personal');
+  assert.equal(result.config.kind, 'terra');
+  assert.equal(result.locked, false);
+
+  writeJson(managedFile, description('Managed'));
+  result = resolveServer(input);
+  assert.equal(result.source, 'personal');
+  assert.equal(result.config.kind, 'terra');
+
+  writeJson(managedFile, description('Managed', { locked: true }));
+  result = resolveServer(input);
+  assert.equal(result.source, 'managed');
+  assert.equal(result.locked, true);
+
+  const env = { TERRA_CLOUD_URL: 'https://dev.terra.test', TERRA_CLOUD_KEY: 'd'.repeat(30) };
+  assert.equal(resolveServer({ ...input, env }).source, 'env');
+
+  // No built-in server in this build: the marker counts as absent.
+  writeJson(managedFile, description('Managed'));
+  result = resolveServer({ ...input, packageJson: {} });
+  assert.equal(result.source, 'managed');
+
+  saveServerChoice(root, null);
+  assert.equal(resolveServer(input).source, 'managed');
+});
+
 const json = (body, init = {}) =>
   new Response(typeof body === 'string' ? body : JSON.stringify(body), {
     status: 200,

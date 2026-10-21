@@ -17,15 +17,19 @@ const second = {
   signIn: { email: true, google: false, microsoft: false },
 };
 
-function setup({ identity = false, server } = {}) {
+function setup({ identity = false, server, recorded, calls = [] } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'terra-reconfigure-'));
   const session = path.join(root, 'settings', 'cloud-session');
   fs.mkdirSync(path.dirname(session), { recursive: true });
   fs.writeFileSync(session, '{"terra-cloud":"old server session"}');
+  const marker = path.join(root, 'settings', 'cloud-session-server');
+  if (recorded) fs.writeFileSync(marker, recorded);
   const sync = new CloudSync({
     call: async (command) => {
+      calls.push(command);
       if (command === 'syncStatus')
         return { identity, library: false, name: '', pending: 0, workspace: null };
+      if (command === 'syncDisable') return {};
       throw Error('unexpected call ' + command);
     },
     root,
@@ -38,7 +42,7 @@ function setup({ identity = false, server } = {}) {
     sync.client?.auth.stopAutoRefresh();
     fs.rmSync(root, { recursive: true, force: true });
   };
-  return { sync, root, session, done };
+  return { sync, root, session, marker, done };
 }
 
 test('the constructor shows the server it was given', () => {
@@ -83,5 +87,71 @@ test('reconfigure to nothing leaves no client', async () => {
   assert.equal(status.server, null);
   assert.ok(!sync.client);
   assert.equal((await sync.start()).state, 'off');
+  done();
+});
+
+test('a different server than the session was made for turns sync off locally', async () => {
+  const calls = [];
+  const { sync, session, marker, done } = setup({
+    identity: true,
+    recorded: second.url,
+    calls,
+  });
+  const status = await sync.start();
+  assert.ok(calls.includes('syncDisable'));
+  assert.equal(fs.existsSync(session), false);
+  assert.equal(fs.existsSync(marker), false);
+  assert.equal(status.state, 'off');
+  assert.equal(status.identity, false);
+  assert.match(status.error, /server for this computer changed/);
+  done();
+});
+
+test('no server at all with a recorded session also turns sync off', async () => {
+  const calls = [];
+  const { sync, session, marker, done } = setup({ identity: true, recorded: config.url, calls });
+  // The engine starts again without any server configured.
+  const bare = new CloudSync({
+    call: async (command) => {
+      calls.push(command);
+      return command === 'syncStatus'
+        ? { identity: true, library: false, name: '', pending: 0, workspace: null }
+        : {};
+    },
+    root: sync.root,
+    config: null,
+    transaction: (job) => job(),
+  });
+  const status = await bare.start();
+  assert.ok(calls.includes('syncDisable'));
+  assert.equal(fs.existsSync(session), false);
+  assert.equal(fs.existsSync(marker), false);
+  assert.equal(status.identity, false);
+  done();
+});
+
+test('the same server keeps sync on, and an older install gets its marker', async () => {
+  const calls = [];
+  const { sync, session, marker, done } = setup({ identity: true, recorded: config.url, calls });
+  sync.client.auth.getSession = async () => ({ data: { session: null } });
+  const status = await sync.start();
+  assert.equal(calls.includes('syncDisable'), false);
+  assert.ok(fs.existsSync(session));
+  assert.match(status.error, /Signed out/);
+  done();
+
+  const old = setup({ identity: true, calls: [] });
+  old.sync.client.auth.getSession = async () => ({ data: { session: null } });
+  assert.equal(fs.existsSync(old.marker), false);
+  await old.sync.start();
+  assert.equal(fs.readFileSync(old.marker, 'utf8'), config.url);
+  assert.ok(fs.existsSync(old.session));
+  old.done();
+});
+
+test('reconfigure forgets which server the session was for', async () => {
+  const { sync, marker, done } = setup({ recorded: config.url });
+  await sync.reconfigure(second, null);
+  assert.equal(fs.existsSync(marker), false);
   done();
 });
