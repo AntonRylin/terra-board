@@ -3,6 +3,7 @@ import { pdfComposerValue } from './pdf-composer.ts';
 import { sanitizeMarks } from './rich-text.ts';
 import { htmlSourceLimit } from './html-card.ts';
 import { albumValue } from './album.ts';
+import { tableValue } from './table.ts';
 export function pastedUrl(text: string): string | null {
   const value = text.trim();
   if (value.length > 8192 || !/^https?:\/\/\S+$/i.test(value)) return null;
@@ -33,6 +34,7 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
         'arrow',
         'highlight',
         'list',
+        'table',
         'paper',
         'html',
         'browser',
@@ -307,8 +309,11 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
       )
         throw Error('Invalid highlight');
     }
+    if (o.table !== undefined && o.type !== 'table') throw Error('Invalid clipboard table');
+    const table = o.type === 'table' ? tableValue(o.table) : undefined;
     return {
       ...(pdfComposer === undefined ? {} : { pdfComposer }),
+      ...(table ? { table } : {}),
       ...(o.type === 'list'
         ? {
             items: o.items.map(({ id, text, checked, marks }: any) => {

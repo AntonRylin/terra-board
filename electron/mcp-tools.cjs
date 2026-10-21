@@ -22,6 +22,51 @@ const revision = z
   );
 const point = z.object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1) });
 const head = z.enum(['none', 'arrow', 'triangle', 'open', 'diamond', 'circle']);
+const table = z
+  .object({
+    columns: z
+      .array(
+        z.object({
+          id,
+          name: z.string().max(120),
+          type: z.enum(['text', 'number', 'select', 'checkbox', 'date', 'progress']),
+          width: z.number().min(60).max(1200).optional(),
+          options: z
+            .array(
+              z.object({
+                id,
+                name: z.string().max(120),
+                color: z.enum([
+                  'gray',
+                  'brown',
+                  'orange',
+                  'yellow',
+                  'green',
+                  'blue',
+                  'purple',
+                  'pink',
+                  'red',
+                ]),
+              }),
+            )
+            .max(100)
+            .optional(),
+        }),
+      )
+      .min(1)
+      .max(30),
+    rows: z
+      .array(
+        z.object({
+          id,
+          cells: z.record(z.string(), z.union([z.string().max(10000), z.number(), z.boolean()])),
+        }),
+      )
+      .max(2000),
+  })
+  .describe(
+    'Table data (type table). cells maps column id to a value: text a string, number a number, progress 0–100, checkbox true, date "YYYY-MM-DD", select an option id. Leave empty cells out. Width (60–1200) is the column width at scale 1.',
+  );
 const pdfComposer = z
   .object({
     view: z.enum(['stacked', 'full']).optional(),
@@ -106,6 +151,7 @@ const object = z
       'arrow',
       'highlight',
       'list',
+      'table',
       'paper',
       'html',
       'browser',
@@ -169,6 +215,7 @@ const object = z
     galleryId: id.optional(),
     frameLink: z.object({ boardId: id, frameId: id }).optional(),
     pdfComposer: pdfComposer.optional(),
+    table: table.optional(),
     galleryIndex: z.number().min(0).max(1e7).optional(),
     galleryRow: z.number().int().min(0).max(10000).optional(),
     galleryColumn: z.number().int().min(0).max(10000).optional(),
@@ -320,7 +367,7 @@ function tools(call, services = {}) {
   );
   add(
     'edit_board',
-    'Atomically create, replace or delete objects. Upserts are COMPLETE objects, not partial patches; preserve fields read earlier, including gallery layout, image membership, document metadata, pdfComposer and inline formatting (textMarks on text and frame names, titleMarks on image and document titles, marks on list items: non-overlapping {start,end,...style} ranges; spoiler ranges hide text until a viewer clicks; spoiler: true on an image, video, document, link or frame hides the whole object, and a plain frame also hides what it holds). Coordinates are board units; z controls stacking. Images/videos/documents require imported assetId; document text retains its filename and documentTitle is an independent board title; arrows require normalized points; links require http(s) URL. Browser frames (type browser) show a website like a browser tab: url is the page, text its title, height includes a 40-unit address bar. HTML embeds (type html) hold a complete web page in html; prefer html_embed to create and change them. They run while the pointer rests on them; hoverLive false makes one wait for a double-click instead. An embed upsert that omits html keeps its stored source. Web cards show a picture that Terra captures and refreshes after their page or size changes; omit assetId and snapshotKey on new ones. Galleries are frames with gallery settings; member images use galleryId, galleryIndex, galleryRow and galleryColumn. PDF composers are non-gallery frames with sources and columns; page references use source IDs, zero-based pageIndex and 90-degree rotation deltas. Preserve original source asset IDs. This is undoable on the open board. Edits to separate objects merge automatically. If a target object changed or was deleted since your read, the whole edit is rejected with conflicting IDs; read again and preserve those changes.',
+    'Atomically create, replace or delete objects. Upserts are COMPLETE objects, not partial patches; preserve fields read earlier, including gallery layout, image membership, document metadata, pdfComposer and inline formatting (textMarks on text and frame names, titleMarks on image and document titles, marks on list items: non-overlapping {start,end,...style} ranges; spoiler ranges hide text until a viewer clicks; spoiler: true on an image, video, document, link or frame hides the whole object, and a plain frame also hides what it holds). Coordinates are board units; z controls stacking. Images/videos/documents require imported assetId; document text retains its filename and documentTitle is an independent board title; arrows require normalized points; links require http(s) URL. Tables (type table) hold typed columns and rows in table; give text a title and any height, Terra fits the height to the rows, and the width sets the scale (scale 1 width is 58 plus the column widths). Browser frames (type browser) show a website like a browser tab: url is the page, text its title, height includes a 40-unit address bar. HTML embeds (type html) hold a complete web page in html; prefer html_embed to create and change them. They run while the pointer rests on them; hoverLive false makes one wait for a double-click instead. An embed upsert that omits html keeps its stored source. Web cards show a picture that Terra captures and refreshes after their page or size changes; omit assetId and snapshotKey on new ones. Galleries are frames with gallery settings; member images use galleryId, galleryIndex, galleryRow and galleryColumn. PDF composers are non-gallery frames with sources and columns; page references use source IDs, zero-based pageIndex and 90-degree rotation deltas. Preserve original source asset IDs. This is undoable on the open board. Edits to separate objects merge automatically. If a target object changed or was deleted since your read, the whole edit is rejected with conflicting IDs; read again and preserve those changes.',
     {
       id,
       revision,

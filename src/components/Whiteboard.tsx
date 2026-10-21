@@ -1,6 +1,7 @@
 import ArrowControls from './ArrowControls';
 import CanvasLists, { listHeight, type ListView } from './CanvasLists';
 import CanvasPapers, { type PaperView } from './CanvasPapers';
+import CanvasTables, { type TableView } from './CanvasTables';
 import PinnedViews from './PinnedViews';
 import {
   pinKey,
@@ -13,6 +14,12 @@ import {
 } from '../canvas/pins';
 import { pictureBounds } from '../canvas/frame-label';
 import { paperHeight, paperWidth } from '../canvas/paper-layout';
+import {
+  estimatedTableHeight,
+  fitTableHeight,
+  starterTable,
+  tableLayoutWidth,
+} from '../canvas/table';
 import CanvasPdfComposers from './CanvasPdfComposers';
 import { HtmlEmbedEditor, HtmlEmbedFrame, type HtmlRelay } from './HtmlEmbed';
 import { BrowserFrame, type BrowserView } from './BrowserFrame';
@@ -94,6 +101,7 @@ import {
   ImagePlus,
   FileText,
   ListTodo,
+  Table2,
   NotebookPen,
   CodeXml,
   Globe,
@@ -811,6 +819,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   // The open board's objects for pins to the screen; a new array after each edit.
   const [pinSource, setPinSource] = useState<CanvasObject[] | null>(null);
   const [listView, setListView] = useState<ListView>({ objects: [], camera: doc.camera });
+  const [tableView, setTableView] = useState<TableView>({ objects: [], camera: doc.camera });
+  const [editingTableId, setEditingTableId] = useState<string | null>(null);
   const [composerView, setComposerView] = useState<ListView>({ objects: [], camera: doc.camera });
   const [editingComposerId, setEditingComposerId] = useState<string | null>(null);
   const [pdfDropTarget, setPdfDropTarget] = useState<CanvasObject | null>(null);
@@ -1160,6 +1170,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     }
   };
   const listViewKey = useRef('');
+  const tableViewKey = useRef('');
   // Live copies of objects on the screen; each object stays where it is. A
   // frame brings what is inside it, so objects inside a chosen frame are not
   // pinned again on their own.
@@ -1171,9 +1182,9 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       c = e.camera;
     const view = { width: surface.clientWidth, height: surface.clientHeight };
     const inside = new Set(
-      chosen.flatMap((o) => (o.type === 'frame' ? pinnedObjects(all, o.id).slice(1) : [])).map(
-        (o) => o.id,
-      ),
+      chosen
+        .flatMap((o) => (o.type === 'frame' ? pinnedObjects(all, o.id).slice(1) : []))
+        .map((o) => o.id),
     );
     const roots = chosen.filter((o) => !inside.has(o.id)).slice(0, 24);
     const added = roots.map((o, i) => {
@@ -1215,6 +1226,47 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       ...view,
       objects: view.objects.map((item) => (item.id === o.id ? o : item)),
     }));
+  };
+  const updateTable = (o: CanvasObject) => {
+    if (engine.current?.objects.get(o.id)?.locked) return;
+    engine.current?.apply({ upserts: [o], deleted: [] });
+    setTableView((view) => ({
+      ...view,
+      objects: view.objects.map((item) => (item.id === o.id ? o : item)),
+    }));
+  };
+  // A table's height follows its rows as laid out on screen; not an undo step of its own.
+  const fitTable = (o: CanvasObject, layoutHeight: number) => {
+    const current = engine.current?.objects.get(o.id);
+    if (!current || current.locked) return;
+    if (current.table !== o.table && JSON.stringify(current.table) !== JSON.stringify(o.table))
+      return;
+    if (current.width !== o.width) return;
+    const next = fitTableHeight(current, layoutHeight);
+    if (next) engine.current?.apply({ upserts: [next], deleted: [] }, false);
+  };
+  const createTable = (point?: { x: number; y: number }) => {
+    finishEdit();
+    const e = engine.current;
+    if (!e) return;
+    const p = e.center();
+    const table = starterTable(uid);
+    const width = tableLayoutWidth(table.columns),
+      height = estimatedTableHeight(table.rows.length);
+    const o: CanvasObject = {
+      id: uid(),
+      type: 'table',
+      text: 'Table',
+      table,
+      x: point?.x ?? p.x - width / 2,
+      y: point?.y ?? p.y - height / 2,
+      width,
+      height,
+      z: e.topZ() + 1,
+    };
+    e.apply({ upserts: [o], deleted: [] });
+    e.setSelection([o.id]);
+    selectTool('select');
   };
   const fitPaper = (o: CanvasObject) => {
     const current = engine.current?.objects.get(o.id);
@@ -1429,6 +1481,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         'arrow',
         'highlight',
         'list',
+        'table',
         'paper',
         'html',
         'browser',
@@ -1481,6 +1534,10 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     }
     if (o.type === 'paper') {
       setEditingPaperId(o.id);
+      return;
+    }
+    if (o.type === 'table') {
+      setEditingTableId(o.id);
       return;
     }
     if (o.type === 'html') {
@@ -1657,6 +1714,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     else if (o.type === 'document') void openDocument(o).catch(error);
     else if (o.type === 'image') void openImageViewer(o).catch(error);
     else if (o.type === 'list') setEditingListId(o.id);
+    else if (o.type === 'table') setEditingTableId(o.id);
     else if (o.type === 'paper') setEditingPaperId(o.id);
     else if (o.type === 'html') interactHtml(o);
     else if (o.type === 'browser') void openBrowser(o);
@@ -1854,6 +1912,13 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             ? view
             : { objects, camera: { ...camera } },
         );
+      },
+      tables: (objects, camera) => {
+        const key = objects.length ? JSON.stringify([objects, camera]) : '';
+        if (key !== tableViewKey.current) {
+          tableViewKey.current = key;
+          setTableView({ objects, camera: { ...camera } });
+        }
       },
       lists: (objects, camera) => {
         const key = objects.length ? JSON.stringify([objects, camera]) : '';
@@ -2780,6 +2845,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         finishEdit();
         arrowDraft.current?.flush();
         setEditingListId(null);
+        setEditingTableId(null);
         setEditingPaperId(null);
         setEditingComposerId(null);
         const e = engine.current;
@@ -3350,6 +3416,22 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         }}
         update={updateList}
       />
+      <CanvasTables
+        view={tableView}
+        editingId={editingTableId}
+        onEdit={setEditingTableId}
+        host={host.current}
+        interactive={tool === 'select'}
+        beginPointer={(event) => engine.current?.beginOverlayPointer(event)}
+        selected={selected.map((o) => o.id)}
+        select={(id) => {
+          finishEdit();
+          if (!engine.current?.selection.has(id) || engine.current.selection.size > 1)
+            engine.current?.setSelection([id]);
+        }}
+        update={updateTable}
+        fit={fitTable}
+      />
       {pinning && (
         <PinnedViews
           boardId={doc.board.id}
@@ -3765,6 +3847,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
                   'frame',
                   'arrow',
                   'list',
+                  'table',
                   'paper',
                   'html',
                   'browser',
@@ -4281,6 +4364,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
               action: () => selectTool(id),
             })),
             { id: 'list', label: 'List', icon: ListTodo, action: createList },
+            { id: 'table', label: 'Table', icon: Table2, action: createTable },
             { id: 'paper', label: 'Document', icon: NotebookPen, action: createPaper },
             { id: 'html', label: 'HTML embed', icon: CodeXml, action: () => createHtml() },
             { id: 'browser', label: 'Browser', icon: Globe, action: () => createBrowser() },
@@ -4296,6 +4380,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
               const rect = surface.getBoundingClientRect();
               e.beginQuickArrow(anchor, { x: pointer.x - rect.left, y: pointer.y - rect.top });
             } else if (id === 'list') createList(anchor);
+            else if (id === 'table') createTable(anchor);
             else if (id === 'paper') createPaper(anchor);
             else if (id === 'html') createHtml(anchor);
             else if (id === 'browser') createBrowser(anchor);
@@ -4318,6 +4403,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
               action: () => selectTool(id),
             })),
             { id: 'list', label: 'Add list', icon: ListTodo, action: createList },
+            { id: 'table', label: 'Add table', icon: Table2, action: createTable },
             { id: 'paper', label: 'Add document', icon: NotebookPen, action: createPaper },
             { id: 'html', label: 'Add HTML embed', icon: CodeXml, action: () => createHtml() },
             { id: 'browser', label: 'Add browser', icon: Globe, action: () => createBrowser() },

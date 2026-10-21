@@ -64,15 +64,17 @@ export default function CanvasToolbar({
     const name =
       id === 'list'
         ? 'List'
-        : id === 'paper'
-          ? 'Document'
-          : id === 'html'
-            ? 'HTML embed'
-            : id === 'browser'
-              ? 'Browser'
-              : id === 'media'
-                ? 'Images and video'
-                : item.label;
+        : id === 'table'
+          ? 'Table'
+          : id === 'paper'
+            ? 'Document'
+            : id === 'html'
+              ? 'HTML embed'
+              : id === 'browser'
+                ? 'Browser'
+                : id === 'media'
+                  ? 'Images and video'
+                  : item.label;
     const Icon = item.icon;
     return (
       <div

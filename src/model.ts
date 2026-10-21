@@ -12,6 +12,8 @@ export type ObjectType =
   | 'arrow'
   | 'highlight'
   | 'list'
+  // Rows and typed columns, like a small spreadsheet ('table').
+  | 'table'
   // A written document of A4 pages; 'document' is an attached file.
   | 'paper'
   // A web page written in HTML, CSS and JavaScript. It runs sandboxed while
@@ -24,6 +26,32 @@ export interface ListItem {
   text: string;
   checked: boolean;
   marks?: TextMark[];
+}
+export type TableColumnType = 'text' | 'number' | 'select' | 'checkbox' | 'date' | 'progress';
+// A choice of a select column; `color` names one of tableColors.
+export interface TableOption {
+  id: string;
+  name: string;
+  color: string;
+}
+export interface TableColumn {
+  id: string;
+  name: string;
+  type: TableColumnType;
+  // Layout width at scale 1.
+  width: number;
+  options?: TableOption[];
+}
+// Text and dates (YYYY-MM-DD) are strings, numbers and progress (0–100)
+// numbers, checkboxes booleans and selects an option id. Empty cells are left out.
+export type TableCell = string | number | boolean;
+export interface TableRow {
+  id: string;
+  cells: Record<string, TableCell>;
+}
+export interface TableData {
+  columns: TableColumn[];
+  rows: TableRow[];
 }
 // An album is an image card whose picture is its cover (`assetId`, one of
 // `images`). Each image keeps what it had on the board, for when it is released.
@@ -95,6 +123,7 @@ export interface CanvasObject {
   spoiler?: boolean;
   items?: ListItem[];
   listScale?: number;
+  table?: TableData;
   gallery?: { direction: 'right' | 'below'; size: number; gap: number };
   album?: Album;
   pdfComposer?: PdfComposer;

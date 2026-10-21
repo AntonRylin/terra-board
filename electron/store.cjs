@@ -35,6 +35,7 @@ const types = new Set([
   'arrow',
   'highlight',
   'list',
+  'table',
   'paper',
   'html',
   'browser',
@@ -116,6 +117,126 @@ function backgroundAppearanceValue(value = {}) {
     sharpness: result.sharpness,
     filter: result.filter,
   };
+}
+// Tables: keep equal to tableValue in src/canvas/table.ts (a test compares them).
+const tableColumnTypes = ['text', 'number', 'select', 'checkbox', 'date', 'progress'];
+const tableColorNames = [
+  'gray',
+  'brown',
+  'orange',
+  'yellow',
+  'green',
+  'blue',
+  'purple',
+  'pink',
+  'red',
+];
+const tableLimits = { columns: 30, rows: 2000, options: 100, text: 10000, name: 120 };
+const tableColumnWidths = {
+  text: 200,
+  number: 110,
+  select: 140,
+  checkbox: 80,
+  date: 140,
+  progress: 150,
+};
+const tableId = (value) => typeof value === 'string' && /^[\w-]{1,100}$/.test(value);
+const isTableDate = (value) =>
+  typeof value === 'string' &&
+  /^\d{4}-\d{2}-\d{2}$/.test(value) &&
+  !Number.isNaN(Date.parse(value + 'T00:00:00Z'));
+function tableCellValue(column, value) {
+  if (value === undefined || value === null || value === '') return undefined;
+  switch (column.type) {
+    case 'text':
+      return typeof value === 'string'
+        ? value.slice(0, tableLimits.text)
+        : typeof value === 'number' || typeof value === 'boolean'
+          ? String(value)
+          : undefined;
+    case 'number': {
+      const n = typeof value === 'number' ? value : Number(String(value).replace(',', '.'));
+      return Number.isFinite(n) && Math.abs(n) <= 1e15 ? n : undefined;
+    }
+    case 'progress': {
+      const n = typeof value === 'number' ? value : Number(String(value).replace(/[%\s]/g, ''));
+      return Number.isFinite(n) ? Math.round(Math.max(0, Math.min(100, n))) : undefined;
+    }
+    case 'checkbox':
+      return value === true || value === 'true' || value === 1 ? true : undefined;
+    case 'date':
+      return isTableDate(value) ? value : undefined;
+    case 'select': {
+      const options = column.options || [];
+      if (typeof value !== 'string') return undefined;
+      return (
+        options.find((o) => o.id === value)?.id ??
+        options.find((o) => o.name.trim().toLowerCase() === value.trim().toLowerCase())?.id
+      );
+    }
+  }
+}
+function tableValue(input) {
+  if (
+    !input ||
+    typeof input !== 'object' ||
+    !Array.isArray(input.columns) ||
+    !Array.isArray(input.rows) ||
+    input.columns.length < 1 ||
+    input.columns.length > tableLimits.columns ||
+    input.rows.length > tableLimits.rows
+  )
+    throw Error('Invalid table');
+  const text = (value, limit) => (typeof value === 'string' ? value.slice(0, limit) : '');
+  const columns = input.columns.map((raw) => {
+    if (
+      !raw ||
+      typeof raw !== 'object' ||
+      !tableId(raw.id) ||
+      !tableColumnTypes.includes(raw.type) ||
+      (raw.name !== undefined && typeof raw.name !== 'string')
+    )
+      throw Error('Invalid table column');
+    const width = Number.isFinite(raw.width) ? raw.width : tableColumnWidths[raw.type];
+    const column = {
+      id: raw.id,
+      name: text(raw.name, tableLimits.name),
+      type: raw.type,
+      width: Math.max(60, Math.min(1200, width)),
+    };
+    if (raw.type === 'select') {
+      const options = Array.isArray(raw.options) ? raw.options : [];
+      if (options.length > tableLimits.options) throw Error('Too many table options');
+      const seen = new Set();
+      column.options = options.flatMap((option) => {
+        if (!option || !tableId(option.id) || seen.has(option.id)) return [];
+        seen.add(option.id);
+        return [
+          {
+            id: option.id,
+            name: text(option.name, tableLimits.name),
+            color: tableColorNames.includes(option.color) ? option.color : 'gray',
+          },
+        ];
+      });
+    }
+    return column;
+  });
+  if (new Set(columns.map((c) => c.id)).size !== columns.length)
+    throw Error('Duplicate table column');
+  const rows = input.rows.map((raw) => {
+    if (!raw || !tableId(raw.id)) throw Error('Invalid table row');
+    const cells = {};
+    const source = raw.cells && typeof raw.cells === 'object' ? raw.cells : {};
+    for (const column of columns) {
+      if (!Object.prototype.hasOwnProperty.call(source, column.id)) continue;
+      const cell = tableCellValue(column, source[column.id]);
+      if (cell !== undefined) cells[column.id] = cell;
+    }
+    return { id: raw.id, cells };
+  });
+  if (new Set(rows.map((r) => r.id)).size !== rows.length) throw Error('Duplicate table row');
+  return { columns, rows };
 }
 function pdfComposerValue(value) {
   if (!value || !Array.isArray(value.sources) || !Array.isArray(value.columns))
@@ -243,7 +364,8 @@ function albumValue(value, coverAssetId) {
       !/^[a-f0-9]{64}$/.test(image.assetId) ||
       !number(image.width, 1, 1e6) ||
       !number(image.height, 1, 1e6) ||
-      (image.title !== undefined && (typeof image.title !== 'string' || image.title.length > 1000)) ||
+      (image.title !== undefined &&
+        (typeof image.title !== 'string' || image.title.length > 1000)) ||
       (image.rotation !== undefined && !number(image.rotation, 0, 360))
     )
       throw Error('Invalid album image');
@@ -273,7 +395,8 @@ function albumValue(value, coverAssetId) {
   });
   if (new Set(images.map((image) => image.id)).size !== images.length)
     throw Error('Invalid album images');
-  if (!images.some((image) => image.assetId === coverAssetId)) throw Error('Album cover is not in the album');
+  if (!images.some((image) => image.assetId === coverAssetId))
+    throw Error('Album cover is not in the album');
   return { name: value.name, storage: value.storage, images };
 }
 function objectValue(o) {
@@ -395,6 +518,8 @@ function objectValue(o) {
       result.listScale = o.listScale;
     }
   }
+  if (o.type === 'table') result.table = tableValue(o.table);
+  else if (o.table !== undefined) throw Error('Only tables hold table data');
   if (o.imageTitle !== undefined) {
     if (o.type !== 'image' || typeof o.imageTitle !== 'string' || o.imageTitle.length > 100000)
       throw Error('Invalid image title');
@@ -910,7 +1035,8 @@ class Store {
         json_extract(o.json, '$.linkDescription') AS linkDescription,
         (SELECT group_concat(json_extract(value, '$.text'), ' ') FROM json_each(o.json, '$.items')) AS listText,
         (SELECT group_concat(json_extract(value, '$.name'), ' ') FROM json_each(o.json, '$.pdfComposer.columns')) AS composerColumns,
-        (SELECT group_concat(json_extract(value, '$.name'), ' ') FROM json_each(o.json, '$.pdfComposer.sources')) AS composerSources
+        (SELECT group_concat(json_extract(value, '$.name'), ' ') FROM json_each(o.json, '$.pdfComposer.sources')) AS composerSources,
+        (SELECT group_concat(value, ' ') FROM json_tree(o.json, '$.table') WHERE type = 'text' AND (key = 'name' OR (path LIKE '%.cells' AND value NOT GLOB '????????-????-????-????-????????????'))) AS tableText
       FROM boards b JOIN objects o ON o.boardId = b.id
       WHERE b.trashed = 0 AND (
         search_contains(json_extract(o.json, '$.text'), ?) OR
@@ -921,11 +1047,12 @@ class Store {
         search_contains(json_extract(o.json, '$.linkDescription'), ?) OR
         EXISTS (SELECT 1 FROM json_each(o.json, '$.items') WHERE search_contains(json_extract(value, '$.text'), ?)) OR
         EXISTS (SELECT 1 FROM json_each(o.json, '$.pdfComposer.columns') WHERE search_contains(json_extract(value, '$.name'), ?)) OR
-        EXISTS (SELECT 1 FROM json_each(o.json, '$.pdfComposer.sources') WHERE search_contains(json_extract(value, '$.name'), ?)))
+        EXISTS (SELECT 1 FROM json_each(o.json, '$.pdfComposer.sources') WHERE search_contains(json_extract(value, '$.name'), ?)) OR
+        EXISTS (SELECT 1 FROM json_tree(o.json, '$.table') WHERE type = 'text' AND (key = 'name' OR (path LIKE '%.cells' AND value NOT GLOB '????????-????-????-????-????????????')) AND search_contains(value, ?)))
       ORDER BY b.position, b.id, o.id LIMIT 61
     `,
       )
-      .all(needle, needle, needle, needle, needle, needle, needle, needle, needle);
+      .all(needle, needle, needle, needle, needle, needle, needle, needle, needle, needle);
     return {
       results: rows.slice(0, 60).map((row) => {
         const text = [
@@ -938,6 +1065,7 @@ class Store {
           row.listText,
           row.composerColumns,
           row.composerSources,
+          row.tableText,
         ]
           .map(searchText)
           .find((value) => value.toLowerCase().includes(needle));
@@ -1358,7 +1486,9 @@ class Store {
       // Crop the original before resizing. Decode is off the renderer thread,
       // requests are concurrency-limited, and each GPU tile is at most 512px.
       // A missing linked original is cut from its preview, already upright.
-      const { width, height } = original.fallback ? await sharp(original.file).metadata() : original;
+      const { width, height } = original.fallback
+        ? await sharp(original.file).metadata()
+        : original;
       const left = Math.min(width - 1, Math.floor((x * width) / cols));
       const top = Math.min(height - 1, Math.floor((y * height) / rows));
       const right = Math.max(left + 1, Math.floor(((x + 1) * width) / cols));
@@ -1511,4 +1641,4 @@ class Store {
     this.db.prepare('UPDATE boards SET camera=? WHERE id=?').run(JSON.stringify(camera), id);
   }
 }
-module.exports = { Store, objectValue, cameraValue };
+module.exports = { Store, objectValue, cameraValue, tableValue };

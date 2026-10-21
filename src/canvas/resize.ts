@@ -33,15 +33,16 @@ export function resizeObject(
   let width: number,
     height: number,
     fontSize = o.fontSize;
-  if (o.type === 'paper') {
-    // Documents keep the A4 proportions: every handle scales the whole stack of pages.
+  if (o.type === 'paper' || o.type === 'table') {
+    // Documents keep the A4 proportions: every handle scales the whole stack of
+    // pages. Tables lay out their columns and rows, so they scale the same way.
     const requested = edge
       ? /[ew]/.test(corner)
         ? 1 + dw / o.width
         : 1 + dh / o.height
       : 1 + (dw * o.width + dh * o.height) / (o.width ** 2 + o.height ** 2);
     const scale = Math.max(
-      (paperWidth * 0.15) / o.width,
+      (o.type === 'paper' ? paperWidth * 0.15 : 120) / o.width,
       Math.min(1e6 / o.width, 1e6 / o.height, requested),
     );
     width = o.width * scale;
@@ -129,6 +130,7 @@ export function resizeSelection(
       size ? 8 / size : 0,
       o.type === 'list' ? 240 / o.width : 0,
       o.type === 'paper' ? (paperWidth * 0.15) / o.width : 0,
+      o.type === 'table' ? 120 / o.width : 0,
     );
     maximum = Math.min(
       maximum,

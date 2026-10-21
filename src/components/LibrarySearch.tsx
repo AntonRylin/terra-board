@@ -10,6 +10,7 @@ import {
   Video,
   Shapes,
   ListTodo,
+  Table2,
   NotebookPen,
   CodeXml,
   Globe,
@@ -30,6 +31,7 @@ interface Props {
 }
 const kinds: Record<ObjectType, { label: string; icon: typeof Search }> = {
   list: { label: 'List', icon: ListTodo },
+  table: { label: 'Table', icon: Table2 },
   paper: { label: 'Document', icon: NotebookPen },
   text: { label: 'Text', icon: FileText },
   note: { label: 'Note', icon: StickyNote },

@@ -438,7 +438,9 @@ test('MCP builds HTML embed mockups: create from a file, cheap edits, compact re
     await call('edit_board', {
       id: board.id,
       revision: 0,
-      upserts: [{ id: 'note', type: 'note', x: 0, y: 0, width: 200, height: 200, z: 3, text: 'Hi' }],
+      upserts: [
+        { id: 'note', type: 'note', x: 0, y: 0, width: 200, height: 200, z: 3, text: 'Hi' },
+      ],
     });
     // A page with its stylesheet, script and image next to it.
     const dir = join(f.root, 'mockup');
