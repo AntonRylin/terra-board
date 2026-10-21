@@ -3,6 +3,7 @@ import type { CanvasObject } from '../model';
 import { rotatePoint } from './transform.ts';
 import { listLayout } from './list-layout.ts';
 import { paperWidth } from './paper-layout.ts';
+import { autoNoteText } from './text-style.ts';
 
 export type Corner = 'nw' | 'ne' | 'sw' | 'se';
 export const corners: Corner[] = ['nw', 'ne', 'sw', 'se'];
@@ -116,8 +117,9 @@ export function resizeSelection(
     ((west ? -dx : dx) * bounds.width + (north ? -dy : dy) * bounds.height) /
       Math.max(1, bounds.width ** 2 + bounds.height ** 2);
   const font = (o: CanvasObject) =>
-    ['text', 'note', 'rect', 'ellipse', 'frame', 'arrow'].includes(o.type)
-      ? o.fontSize || (o.type === 'note' ? 21 : o.type === 'frame' ? 14 : 18)
+    // Auto-sized note text follows the note's new size by itself.
+    ['text', 'note', 'rect', 'ellipse', 'frame', 'arrow'].includes(o.type) && !autoNoteText(o)
+      ? o.fontSize || (o.type === 'frame' ? 14 : 18)
       : undefined;
   let minimum = 0,
     maximum = Infinity;

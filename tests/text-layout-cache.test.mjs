@@ -28,7 +28,7 @@ function halfEmContext() {
 
 // The real fitting and caching code with a deterministic stand-in for the font
 // engine: every character is half an em wide. `measured` counts layout passes.
-function fixture() {
+function fixture({ probeWidth = 1 } = {}) {
   let measured = 0;
   const lines = (text, fontSize, wrapWidth) =>
     Math.max(1, Math.ceil((text.length * fontSize * 0.5) / wrapWidth));
@@ -58,7 +58,7 @@ function fixture() {
     get scrollHeight() {
       const fontSize = parseFloat(/ ([\d.e-]+)px /.exec(this.style.font)[1]);
       return (
-        lines(this.value, fontSize, parseFloat(this.style.width)) *
+        lines(this.value, fontSize, parseFloat(this.style.width) * probeWidth) *
         parseFloat(this.style.lineHeight)
       );
     },
@@ -195,4 +195,27 @@ test('formatted notes lay out their own lines and shrink until they fit', () => 
     textLayout({ ...plain, type: 'rect', textMarks: formatted.textMarks }).rich,
     undefined,
   );
+});
+
+test('auto notes grow short text to fill the note; a chosen size stays the ceiling', () => {
+  const { textLayout } = fixture();
+  const small = { ...note(0, 'Take CT'), width: 104, height: 90 };
+  for (const o of [small, { ...small, fontSize: undefined }]) {
+    const layout = textLayout(o);
+    const { fontSize, padding, lineHeight } = layout.appearance;
+    assert.ok(fontSize > 21, `short text grows past the old 21 ceiling (got ${fontSize})`);
+    assert.ok(layout.metrics.lines.length * lineHeight <= o.height - padding * 2 - 1);
+    assert.ok(layout.metrics.maxLineWidth <= o.width - padding * 2);
+  }
+  assert.equal(textLayout({ ...small, fontSize: 14 }).appearance.fontSize, 14);
+});
+
+test('a stricter editor probe still gets text that fits the editor', () => {
+  const o = note(3, words.repeat(5));
+  const loose = fixture().textLayout(o);
+  // The editor wraps a little earlier than Pixi measures, so it needs more lines.
+  const strict = fixture({ probeWidth: 0.8 }).textLayout(o);
+  const box = o.height - strict.appearance.padding * 2 - 1;
+  assert.ok(strict.editorContentHeight <= box, 'the editor shows every line');
+  assert.ok(strict.appearance.fontSize < loose.appearance.fontSize);
 });

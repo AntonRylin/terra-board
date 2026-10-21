@@ -374,6 +374,31 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       localStorage.setItem('terra-board.text-size', String(size));
     } catch {}
   };
+  // New notes and shapes take the size of the last one used on this board: the one
+  // last selected or created, read at its current size so later resizes count too.
+  const sizedTypes = ['note', 'rect', 'ellipse'];
+  const lastShapesKey = `terra-board.last-shapes.${doc.board.id}`;
+  const rememberShape = (o: CanvasObject) => {
+    if (!sizedTypes.includes(o.type)) return;
+    try {
+      const saved = JSON.parse(localStorage.getItem(lastShapesKey) || '{}');
+      if (saved[o.type] === o.id) return;
+      localStorage.setItem(lastShapesKey, JSON.stringify({ ...saved, [o.type]: o.id }));
+    } catch {}
+  };
+  const lastShapeSize = (e: Engine, type: string) => {
+    let id: string | undefined;
+    try {
+      id = JSON.parse(localStorage.getItem(lastShapesKey) || '{}')[type];
+    } catch {}
+    let last = id ? e.objects.get(id) : undefined;
+    if (last?.type !== type) {
+      last = undefined;
+      for (const o of e.objects.values())
+        if (o.type === type && (!last || o.z > last.z)) last = o;
+    }
+    return last ? { width: last.width, height: last.height } : { width: 240, height: 200 };
+  };
   const [highlightStyle, setHighlightStyle] = useState(() => {
     try {
       return readHighlightStyle(
@@ -1800,19 +1825,43 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       return;
     }
     const type = t === 'hand' || t === 'select' ? 'text' : t;
+    let box = sizedTypes.includes(type)
+      ? lastShapeSize(e, type)
+      : { width: type === 'frame' ? 520 : 360, height: type === 'frame' ? 360 : 72 };
+    let at = { x: p.x, y: p.y };
+    // Dropped into a frame, it shrinks to fit inside rather than spilling over the edge.
+    const frame = type === 'frame' ? undefined : e.frameAt(p);
+    if (frame && !frame.rotation) {
+      const margin = Math.min(16, frame.width * 0.05, frame.height * 0.05);
+      const scale = Math.min(
+        1,
+        (frame.width - margin * 2) / box.width,
+        (frame.height - margin * 2) / box.height,
+      );
+      if (scale > 0) {
+        box = { width: box.width * scale, height: box.height * scale };
+        const within = (v: number, from: number, span: number, size: number) =>
+          Math.max(from + margin, Math.min(v, from + span - margin - size));
+        at = {
+          x: within(at.x, frame.x, frame.width, box.width),
+          y: within(at.y, frame.y, frame.height, box.height),
+        };
+      }
+    }
     const o: CanvasObject = {
       id: uid(),
       type,
-      x: p.x,
-      y: p.y,
-      width: type === 'frame' ? 520 : type === 'text' ? 360 : 240,
-      height: type === 'frame' ? 360 : type === 'text' ? 72 : 200,
+      ...at,
+      ...box,
       z: type === 'frame' ? -1 : e.topZ() + 1,
       text: type === 'frame' ? 'Untitled frame' : '',
       color: type === 'note' ? '#f8efd4' : type === 'text' ? '#29313b' : '#e4ecfa',
-      fontSize:
-        type === 'frame' ? 14 : type === 'note' ? 21 : type === 'text' ? lastTextSize.current! : 24,
+      // Notes leave the size out: their text grows and shrinks to fill them.
+      ...(type === 'note'
+        ? {}
+        : { fontSize: type === 'frame' ? 14 : type === 'text' ? lastTextSize.current! : 24 }),
     };
+    rememberShape(o);
     e.apply({ upserts: [o], deleted: [] });
     e.setSelection([o.id]);
     selectTool('select');
@@ -1995,7 +2044,10 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         cameraQueue.current!.enqueue(c);
       },
       selection: (objects) => {
-        if (objects.length === 1) rememberTextSize(objects[0]);
+        if (objects.length === 1) {
+          rememberTextSize(objects[0]);
+          rememberShape(objects[0]);
+        }
         setSelected(objects);
         if (liveHtmlId.current && !(objects.length === 1 && objects[0].id === liveHtmlId.current))
           setLiveHtml(null);

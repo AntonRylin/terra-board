@@ -67,7 +67,7 @@ Drag any empty space in the board panel toward the left, right, top or bottom wi
 
 The Create **+** is always the last item after the boards and folders, and scrolls with them. There is no divider before it; library options stay at the far edge.
 
-Double-click a board name, folder name, or canvas title to rename it directly where it appears. Enter saves a name, Escape cancels; canvas text uses Ctrl+Enter to save. Local video titles also edit in place; use the selection toolbar to play a video. Notes keep their dimensions and automatically shrink long text to fit, expanding the text back toward its chosen size as content is removed.
+Double-click a board name, folder name, or canvas title to rename it directly where it appears. Enter saves a name, Escape cancels; canvas text uses Ctrl+Enter to save. Local video titles also edit in place; use the selection toolbar to play a video. Notes keep their dimensions and size their text to fill them: short text grows, long text shrinks, as you type or resize the note. A new note or shape takes the size of the last one you selected or made on that board, and one placed inside a frame shrinks to fit the frame.
 
 The selection outline, handles and nearby actions remain visible during text editing. Plain-text boxes initially fit their content with a small margin and resize as you type; Enter adds a new line. Drag a middle edge handle to change only the box width or height without scaling its font. Manually sized text boxes keep those dimensions and wrap text, including after reopening the board. Notes continue to shrink their text to fit. Clicking away from empty or whitespace-only plain text removes it; Ctrl+Z restores deleted content. Empty notes, frames and shapes remain on the board.
 

@@ -186,7 +186,9 @@ export function textLayout(
     }
   }
   if (fittedBox) {
-    const fits = (layout: Layout) => {
+    // `quick` skips the hidden editor probe. It only ever accepts more than the full
+    // check does, so it narrows the search cheaply before the full check confirms.
+    const fits = (layout: Layout, quick = false) => {
       const width = Math.max(1, o.width - layout.appearance.padding * 2);
       const height = Math.max(1, o.height - layout.appearance.padding * 2);
       // Pixi wraps by adding up word widths, so a wrapped line can measure a hair wider
@@ -203,11 +205,11 @@ export function textLayout(
           layout.metrics.lines.length * layout.appearance.lineHeight,
         ) <=
           height - 1 &&
-        editorHeight(text, layout.appearance) <= height - 1
+        (quick || editorHeight(text, layout.appearance) <= height - 1)
       );
     };
     if (!fits(result)) {
-      // The search below ends on the largest of its 2^16 steps that fits.
+      // The search ends on the largest of 2^16 equal steps below the base size that fits.
       const shape = JSON.stringify([
         o.type,
         o.width,
@@ -217,7 +219,9 @@ export function textLayout(
         o.bold,
         rich,
       ]);
-      const step = (base.fontSize - 0.0001) / 65536;
+      const steps = 65536;
+      const step = (base.fontSize - 0.0001) / steps;
+      const size = (i: number) => 0.0001 + i * step;
       const hint = fitHints.get(o.id);
       let found = false;
       if (hint?.shape === shape && hint.size > 0.0001 && hint.size + step <= base.fontSize) {
@@ -228,18 +232,25 @@ export function textLayout(
         }
       }
       if (!found) {
-        let low = 0.0001,
-          high = base.fontSize;
-        result = measure(low);
-        for (let i = 0; i < 16; i++) {
-          const mid = (low + high) / 2,
-            candidate = measure(mid);
-          if (fits(candidate)) {
-            low = mid;
-            result = candidate;
-          } else high = mid;
-        }
-        remember(fitHints, o.id, { shape, size: low }, 4000);
+        const search = (top: number, quick: boolean) => {
+          let low = 0,
+            high = top,
+            best: Layout | undefined;
+          while (high - low > 1) {
+            const mid = (low + high) >> 1,
+              candidate = measure(size(mid));
+            if (fits(candidate, quick)) {
+              low = mid;
+              best = candidate;
+            } else high = mid;
+          }
+          return { index: low, layout: best };
+        };
+        let { index, layout } = search(steps, true);
+        // Nothing larger passed the quick check, so nothing larger passes the full one.
+        if (layout && !fits(layout)) ({ index, layout } = search(index, false));
+        result = layout || measure(size(0));
+        remember(fitHints, o.id, { shape, size: size(index) }, 4000);
       }
     }
   }

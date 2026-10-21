@@ -1258,7 +1258,8 @@ for (const corner of ['nw', 'ne', 'sw', 'se'])
         y: 200,
         width: 100,
         height: 100,
-        fontSize: 21,
+        // A chosen note size scales with the group.
+        fontSize: 18,
         text: 'Together',
         z: 2,
       },
@@ -1307,7 +1308,8 @@ test('multi-selection scaling includes frame contents exactly once', () => {
   const child = f.engine.objects.get('inside');
   assert.equal(child.width, 150);
   assert.equal(child.x, 175);
-  assert.equal(child.fontSize, 31.5);
+  // Auto-sized note text needs no stored size: it refits to the larger note.
+  assert.equal(child.fontSize, 21);
   f.engine.undo();
   for (const o of items) assert.deepEqual({ ...f.engine.objects.get(o.id) }, o);
 });

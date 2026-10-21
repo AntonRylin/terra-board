@@ -1300,7 +1300,7 @@ export class Engine {
       if (frame) this.setSelection(this.members(frame));
     }
   };
-  private frameAt(p: Point) {
+  frameAt(p: Point) {
     return this.index
       .search({ x: p.x, y: p.y, width: 0, height: 0 })
       .filter((o) => {
