@@ -130,6 +130,13 @@ contextBridge.exposeInMainWorld('canvas', {
     devices: () => ipcRenderer.invoke('canvas:cloud-devices'),
     removeDevice: (id) => ipcRenderer.invoke('canvas:cloud-remove-device', id),
     syncNow: () => ipcRenderer.invoke('canvas:cloud-sync-now'),
+    serverTest: (input) => ipcRenderer.invoke('canvas:cloud-server-test', input),
+    serverSet: (input) => ipcRenderer.invoke('canvas:cloud-server-set', input),
+    onDeepLink: (callback) => {
+      const handler = (_event, link) => callback(link);
+      ipcRenderer.on('canvas:deep-link', handler);
+      return () => ipcRenderer.removeListener('canvas:deep-link', handler);
+    },
     onStatus: (callback) => {
       const handler = (_event, status) => callback(status);
       ipcRenderer.on('canvas:cloud-status', handler);

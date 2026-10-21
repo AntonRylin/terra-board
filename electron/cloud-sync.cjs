@@ -1047,10 +1047,4 @@ class CloudSync {
   }
 }
 
-function cloudConfig(packageJson) {
-  const url = process.env.TERRA_CLOUD_URL || packageJson.terraCloud?.url;
-  const key = process.env.TERRA_CLOUD_KEY || packageJson.terraCloud?.key;
-  return url && key ? { url, key } : null;
-}
-
-module.exports = { CloudSync, cloudConfig };
+module.exports = { CloudSync };

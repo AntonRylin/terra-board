@@ -25,8 +25,21 @@ export interface ReceivedShare {
   role: ShareRole;
   boards: string[];
 }
+export interface CloudServer {
+  name: string;
+  kind: 'terra' | 'custom' | 'dev';
+  locked: boolean;
+  address: string | null;
+}
+export interface ServerPreview {
+  name: string;
+  host: string;
+  billing: boolean;
+}
+export type ServerInput = { address: string } | { url: string; key: string };
 export interface CloudStatus {
   configured: boolean;
+  server: CloudServer | null;
   state: 'off' | 'syncing' | 'synced' | 'offline' | 'error';
   identity: boolean;
   library: boolean;
@@ -266,6 +279,9 @@ interface DesktopBridge {
     devices(): Promise<CloudDevice[]>;
     removeDevice(id: string): Promise<void>;
     syncNow(): Promise<CloudStatus>;
+    serverTest(input: ServerInput): Promise<ServerPreview>;
+    serverSet(input: ServerInput | { terra: true }): Promise<CloudStatus>;
+    onDeepLink(callback: (link: { kind: 'connect'; address: string }) => void): () => void;
     onStatus(callback: (status: CloudStatus) => void): () => void;
   };
   onClose(callback: () => void): () => void;

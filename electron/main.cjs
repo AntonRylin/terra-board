@@ -15,7 +15,16 @@ const {
   utilityProcess,
   webContents,
 } = require('electron');
-const { CloudSync, cloudConfig } = require('./cloud-sync.cjs');
+const { CloudSync } = require('./cloud-sync.cjs');
+const {
+  resolveServer,
+  discover,
+  checkServer,
+  manualServer,
+  saveServerChoice,
+  terraCloud,
+} = require('./cloud-config.cjs');
+const { SCHEME, parseDeepLink, findDeepLink } = require('./deep-link.cjs');
 const { LiveShare } = require('./live-share.cjs');
 const { createImageClipboard } = require('./image-clipboard.cjs');
 const { createVisualExport } = require('./visual-export.cjs');
@@ -241,6 +250,15 @@ let win,
   workerFailed = false;
 let readyResolve;
 const rendererReady = new Promise((resolve) => (readyResolve = resolve));
+const serverStatus = (config, locked) =>
+  config && { name: config.name, kind: config.kind, locked, address: config.address ?? null };
+// A terraboard:// link only reaches the window; Settings asks the person before anything changes.
+async function sendDeepLink(argv) {
+  const link = parseDeepLink(findDeepLink(argv));
+  if (!link) return;
+  await rendererReady;
+  if (win && !win.isDestroyed()) win.webContents.send('canvas:deep-link', link);
+}
 const pending = new Map();
 function startWorker() {
   workerFailed = false;
@@ -393,6 +411,9 @@ app
       app.quit();
       return;
     }
+    // Only the installed app claims terraboard:// links; a dev build would take them from it.
+    if (app.isPackaged && !smoke && !app.isDefaultProtocolClient(SCHEME))
+      app.setAsDefaultProtocolClient(SCHEME);
     startWorker();
     const storageReady = seed();
     const officeProgress = (message) => {
@@ -690,10 +711,14 @@ app
       transaction: mcpTransaction,
       services: { captureHtml: (args) => htmlCards.snapshot(args) },
     });
+    const packageJson = require('../package.json');
+    const chosenServer = () => resolveServer({ env: process.env, root, packageJson });
+    const startServer = chosenServer();
     cloud = new CloudSync({
       call,
       root,
-      config: cloudConfig(require('../package.json')),
+      config: startServer.config,
+      server: serverStatus(startServer.config, startServer.locked),
       safeStorage,
       transaction: cloudTransaction,
       onStatus: (status) => {
@@ -775,6 +800,37 @@ app
     cloudAction('devices', () => cloud.devices());
     cloudAction('remove-device', (id) => cloud.removeDevice(id));
     cloudAction('sync-now', () => cloud.run().then(() => cloud.status));
+    // Server requests go through their own session: the window's session blocks outside requests.
+    const serverFetch = (url, options) =>
+      session.fromPartition('terra-cloud', { cache: false }).fetch(url, options);
+    // The renderer only names a server; what it is gets worked out here.
+    const serverFromInput = async (input) => {
+      if (input?.terra === true) {
+        const config = terraCloud(packageJson);
+        if (!config) throw Error('This copy of Terra Board has no Terra Cloud address.');
+        return { config, terra: true };
+      }
+      if (typeof input?.address === 'string')
+        return { config: await discover(input.address, { fetch: serverFetch }) };
+      if (typeof input?.url === 'string' && typeof input?.key === 'string')
+        return { config: manualServer(input.url, input.key) };
+      throw Error('Enter the server address.');
+    };
+    cloudAction('server-test', async (input) => {
+      const { config } = await serverFromInput(input);
+      const { billing } = await checkServer(config, { fetch: serverFetch });
+      return { name: config.name, host: new URL(config.url).host, billing };
+    });
+    cloudAction('server-set', async (input) => {
+      if (chosenServer().locked)
+        throw Error('Your organization manages the server for this computer.');
+      const { config, terra } = await serverFromInput(input);
+      await checkServer(config, { fetch: serverFetch });
+      // Reconfigure first: it refuses while sync is on, and then nothing has been saved.
+      await cloud.reconfigure(config, serverStatus(config, false));
+      saveServerChoice(root, terra ? null : config);
+      return cloud.status;
+    });
     liveShare = new LiveShare({
       call,
       distDir: path.join(__dirname, '../dist'),
@@ -1110,11 +1166,13 @@ app
       extensions?.cancelAll();
       void backgroundRemoval?.stop();
     });
-    app.on('second-instance', () => {
+    app.on('second-instance', (_event, argv) => {
       if (win.isMinimized()) win.restore();
       win.show();
       win.focus();
+      void sendDeepLink(argv);
     });
+    void sendDeepLink(process.argv);
     await Promise.all([storageReady, win.loadURL(dev || 'canvas-app://app/index.html')]);
     await mcp.start();
     if (!smoke)
@@ -1137,6 +1195,7 @@ app
           sqlite: db.prepare('select sqlite_version() as v').get().v,
           node: process.versions.node,
           electron: process.versions.electron,
+          cloudServer: cloud.status.server?.kind ?? null,
           firstCanvasMs: Math.round(performance.now() - launchStarted),
           dataDirectory: root,
           userData: app.getPath('userData'),
