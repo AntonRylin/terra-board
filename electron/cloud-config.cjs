@@ -155,6 +155,108 @@ function saveServerChoice(root, config) {
   fs.renameSync(temp, file);
 }
 
+const MAX_BODY_BYTES = 65536;
+const DEFAULT_TIMEOUT = 10000;
+const NEEDS_SERVER_UPDATE = 'This server needs an update';
+const NEEDS_APP_UPDATE = 'Update Terra Board to use this server';
+const couldNotReach = (host) => `Could not reach ${host}.`;
+const noServerAt = (host) => `No Terra Board server found at ${host}.`;
+
+// Reads at most MAX_BODY_BYTES; returns null when the body is longer than that.
+async function readCapped(response) {
+  if (!response.body) return '';
+  const reader = response.body.getReader();
+  const chunks = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > MAX_BODY_BYTES) {
+      await reader.cancel().catch(() => {});
+      return null;
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+// Fetches a small JSON document. Resolves { status, json }, where json is undefined when the
+// body is too long or not JSON, whatever the status. Rejects with "Could not reach" on a
+// network failure or timeout.
+async function fetchJson(fetch, url, host, options, timeout) {
+  try {
+    const response = await fetch(url, { ...options, signal: AbortSignal.timeout(timeout) });
+    const text = await readCapped(response);
+    let json;
+    if (text !== null) {
+      try {
+        json = JSON.parse(text);
+      } catch {}
+    }
+    return { status: response.status, json };
+  } catch {
+    throw new Error(couldNotReach(host));
+  }
+}
+
+async function discover(input, { fetch, timeout = DEFAULT_TIMEOUT }) {
+  const origin = normalizeAddress(input);
+  const host = new URL(origin).host;
+  const { status, json } = await fetchJson(
+    fetch,
+    `${origin}/.well-known/terra-board.json`,
+    host,
+    { method: 'GET', redirect: 'error' },
+    timeout,
+  );
+  if (status !== 200 || json === undefined) throw new Error(noServerAt(host));
+  return parseServerFile(json, origin);
+}
+
+async function checkServer(config, { fetch, timeout = DEFAULT_TIMEOUT }) {
+  const host = new URL(config.url).host;
+  const { status, json } = await fetchJson(
+    fetch,
+    `${config.url}/rest/v1/rpc/server_info`,
+    host,
+    {
+      method: 'POST',
+      redirect: 'error',
+      headers: {
+        apikey: config.key,
+        Authorization: 'Bearer ' + config.key,
+        'Content-Type': 'application/json',
+      },
+      body: '{}',
+    },
+    timeout,
+  );
+  // PostgREST answers an unknown function with 404 and code PGRST202.
+  if (status === 404 || json?.code === 'PGRST202') throw new Error(NEEDS_SERVER_UPDATE);
+  if (status !== 200 || json === undefined) throw new Error(noServerAt(host));
+  // A null, non-object or malformed answer means the server predates server_info().
+  const number = (value) => typeof value === 'number' && Number.isFinite(value);
+  if (!json || typeof json !== 'object' || !number(json.schema) || !number(json.minClientSchema))
+    throw new Error(NEEDS_SERVER_UPDATE);
+  if (json.schema < MIN_SERVER_SCHEMA) throw new Error(NEEDS_SERVER_UPDATE);
+  if (json.minClientSchema > CLIENT_SCHEMA) throw new Error(NEEDS_APP_UPDATE);
+  return {
+    name: typeof json.name === 'string' && json.name ? json.name : host,
+    billing: json.billing === true,
+    schema: json.schema,
+  };
+}
+
+// The Advanced path: same validation as a discovery file, the name comes from the host.
+function manualServer(url, key) {
+  let name = null;
+  try {
+    name = new URL(normalizeAddress(url)).host;
+  } catch {}
+  return parseServerFile({ name, supabaseUrl: url, publicKey: key }, null);
+}
+
 module.exports = {
   CLIENT_SCHEMA,
   MIN_SERVER_SCHEMA,
@@ -165,4 +267,7 @@ module.exports = {
   personalServerFile,
   resolveServer,
   saveServerChoice,
+  discover,
+  checkServer,
+  manualServer,
 };

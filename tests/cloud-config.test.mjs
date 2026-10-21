@@ -13,6 +13,9 @@ const {
   personalServerFile,
   managedServerFile,
   terraCloud,
+  discover,
+  checkServer,
+  manualServer,
 } = require('../electron/cloud-config.cjs');
 
 const tempDir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'terra-server-'));
@@ -203,4 +206,142 @@ test('saveServerChoice writes a file resolveServer reads back, and null removes 
   assert.equal(fs.existsSync(personalServerFile(root)), false);
   assert.equal(resolveServer(input).source, 'default');
   saveServerChoice(root, null);
+});
+
+const json = (body, init = {}) =>
+  new Response(typeof body === 'string' ? body : JSON.stringify(body), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+    ...init,
+  });
+const stubFetch = (respond) => {
+  const calls = [];
+  const fetch = async (url, options) => {
+    calls.push({ url, options });
+    return respond(url, options);
+  };
+  return { fetch, calls };
+};
+const aServer = { schema: 1, minClientSchema: 1, name: 'Acme', billing: false };
+const serverConfig = parseServerFile(description('Acme boards'), 'https://terra.acme.eu');
+
+test('discover reads the well-known file', async () => {
+  const { fetch, calls } = stubFetch(() => json(description('Acme boards')));
+  const config = await discover('terra.acme.eu', { fetch });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, 'https://terra.acme.eu/.well-known/terra-board.json');
+  assert.equal(calls[0].options.redirect, 'error');
+  assert.ok(calls[0].options.signal);
+  assert.equal(config.name, 'Acme boards');
+  assert.equal(config.address, 'https://terra.acme.eu');
+});
+
+test('discover rejects html and oversized bodies', async () => {
+  const notFound = /No Terra Board server found at terra\.acme\.eu/;
+  const html = stubFetch(
+    () => new Response('<html>', { status: 200, headers: { 'content-type': 'text/html' } }),
+  );
+  await assert.rejects(discover('terra.acme.eu', { fetch: html.fetch }), notFound);
+  const big = stubFetch(() => json(JSON.stringify({ name: 'x'.repeat(70000) })));
+  await assert.rejects(discover('terra.acme.eu', { fetch: big.fetch }), notFound);
+  const missing = stubFetch(() => json({}, { status: 404 }));
+  await assert.rejects(discover('terra.acme.eu', { fetch: missing.fetch }), notFound);
+});
+
+test('discover reports an unreachable server', async () => {
+  const down = async () => {
+    throw new TypeError('fetch failed');
+  };
+  await assert.rejects(
+    discover('terra.acme.eu', { fetch: down }),
+    /Could not reach terra\.acme\.eu\./,
+  );
+});
+
+test('discover times out', async () => {
+  const hangs = (url, options) =>
+    new Promise((resolve, reject) => {
+      options.signal.addEventListener('abort', () => reject(options.signal.reason));
+    });
+  const started = Date.now();
+  await assert.rejects(
+    discover('terra.acme.eu', { fetch: hangs, timeout: 50 }),
+    /Could not reach terra\.acme\.eu/,
+  );
+  assert.ok(Date.now() - started < 1000);
+});
+
+test('checkServer accepts a matching server', async () => {
+  const { fetch, calls } = stubFetch(() => json(aServer));
+  assert.deepEqual(await checkServer(serverConfig, { fetch }), {
+    name: 'Acme',
+    billing: false,
+    schema: 1,
+  });
+  assert.equal(calls[0].url, 'https://api.acme.eu/rest/v1/rpc/server_info');
+  assert.equal(calls[0].options.method, 'POST');
+  assert.equal(calls[0].options.body, '{}');
+  assert.equal(calls[0].options.headers.apikey, serverConfig.key);
+  assert.equal(calls[0].options.headers.Authorization, `Bearer ${serverConfig.key}`);
+  assert.equal(calls[0].options.headers['Content-Type'], 'application/json');
+});
+
+test('checkServer explains version mismatches', async () => {
+  const check = (response) => checkServer(serverConfig, { fetch: stubFetch(() => response).fetch });
+  await assert.rejects(check(json({}, { status: 404 })), /needs an update/);
+  await assert.rejects(
+    check(json({ code: 'PGRST202', message: 'no function' }, { status: 200 })),
+    /needs an update/,
+  );
+  await assert.rejects(check(json({ schema: 0, minClientSchema: 0 })), /needs an update/);
+  await assert.rejects(check(json(null)), /needs an update/);
+  await assert.rejects(check(json({ name: 'x' })), /needs an update/);
+  await assert.rejects(check(json({ schema: 'one', minClientSchema: 1 })), /needs an update/);
+  await assert.rejects(check(json({ schema: 2, minClientSchema: 2 })), /Update Terra Board/);
+});
+
+test('checkServer reports unreachable and wrong servers', async () => {
+  const down = async () => {
+    throw new TypeError('fetch failed');
+  };
+  await assert.rejects(
+    checkServer(serverConfig, { fetch: down }),
+    /Could not reach api\.acme\.eu\./,
+  );
+  const wrong = stubFetch(() => json({ message: 'nope' }, { status: 500 }));
+  await assert.rejects(
+    checkServer(serverConfig, { fetch: wrong.fetch }),
+    /No Terra Board server found at api\.acme\.eu\./,
+  );
+  const html = stubFetch(() => new Response('<html>', { status: 200 }));
+  await assert.rejects(
+    checkServer(serverConfig, { fetch: html.fetch }),
+    /No Terra Board server found at api\.acme\.eu\./,
+  );
+});
+
+test('manualServer validates like a discovery file', () => {
+  const config = manualServer('https://abc.supabase.co', publicKey);
+  assert.equal(config.kind, 'custom');
+  assert.equal(config.name, 'abc.supabase.co');
+  assert.equal(config.address, null);
+  assert.equal(config.url, 'https://abc.supabase.co');
+  assert.throws(
+    () => manualServer('https://abc.supabase.co', 'sb_secret_' + 'x'.repeat(20)),
+    /secret key/,
+  );
+  assert.throws(() => manualServer('http://abc.supabase.co', publicKey), /https/);
+});
+
+test('checkServer spots a missing function from the body alone', async () => {
+  const missing = stubFetch(() => json({ code: 'PGRST202', message: 'x' }, { status: 400 }));
+  await assert.rejects(checkServer(serverConfig, { fetch: missing.fetch }), /needs an update/);
+});
+
+test('manualServer explains an unusable address', () => {
+  assert.throws(() => manualServer('not a url', publicKey), /Enter just the server address/);
+  assert.throws(
+    () => manualServer('https://abc.supabase.co/rest', publicKey),
+    /Enter just the server address/,
+  );
 });
