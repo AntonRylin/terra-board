@@ -32,14 +32,14 @@ export default function BoardInfoCard({
   board,
   library,
   status,
-  saved,
+  saving,
 }: {
   anchor: RefObject<HTMLElement | null>;
   board: Board;
   library: Library;
   status: CloudStatus | null;
-  /** All edits are saved; a change to it refreshes the numbers while open. */
-  saved: boolean;
+  /** Edits are on their way to disk; the numbers refresh once they land (or fail). */
+  saving: boolean;
 }) {
   const card = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
@@ -143,9 +143,10 @@ export default function BoardInfoCard({
     if (!open) {
       setInfo(null);
       setSyncs(undefined);
+      setPeople({ state: 'loading' });
       return;
     }
-    if (!saved) return;
+    if (saving) return;
     let current = true;
     boardInfo(board.id).then(
       (value) => current && setInfo(value),
@@ -153,12 +154,12 @@ export default function BoardInfoCard({
     );
     boardSyncs(board.id).then(
       (value) => current && setSyncs(value),
-      () => current && setSyncs(false),
+      () => {},
     );
     return () => {
       current = false;
     };
-  }, [open, board.id, board.updated, saved]);
+  }, [open, board.id, board.updated, saving]);
 
   const cloud = window.canvas?.cloud;
   const place = boardPlace({
@@ -174,24 +175,29 @@ export default function BoardInfoCard({
   const peopleKey = owned ? `${owned.board}:${owned.folder?.id || ''}` : '';
   useEffect(() => {
     if (!open || !owned || !cloud) return;
+    // Like the share dialog: without a cloud identity there is nobody to ask about.
+    if (!status?.identity) {
+      setPeople({ state: 'done', people: [] });
+      return;
+    }
     let current = true;
     setPeople({ state: 'loading' });
-    Promise.all([
-      owned.board ? cloud.sharePeople('board', board.id) : null,
-      owned.folder ? cloud.sharePeople('folder', owned.folder.id) : null,
-    ]).then(
-      (lists) =>
-        current &&
-        setPeople({
-          state: 'done',
-          people: mergePeople(...lists.map((list) => list?.people || [])),
-        }),
-      () => current && setPeople({ state: 'error' }),
-    );
+    const asked = [
+      ...(owned.board ? [cloud.sharePeople('board', board.id)] : []),
+      ...(owned.folder ? [cloud.sharePeople('folder', owned.folder.id)] : []),
+    ];
+    // One share that fails to load still leaves the other's people.
+    void Promise.allSettled(asked).then((results) => {
+      if (!current) return;
+      const loaded = results.flatMap((r) => (r.status === 'fulfilled' ? [r.value.people] : []));
+      setPeople(
+        loaded.length ? { state: 'done', people: mergePeople(...loaded) } : { state: 'error' },
+      );
+    });
     return () => {
       current = false;
     };
-  }, [open, board.id, peopleKey]);
+  }, [open, board.id, peopleKey, status?.identity]);
 
   useLayoutEffect(() => {
     const tip = card.current,

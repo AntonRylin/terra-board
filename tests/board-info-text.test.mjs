@@ -11,6 +11,7 @@ import {
 
 test('formatBytes uses one decimal below 10 and whole numbers above', () => {
   assert.equal(formatBytes(0), '0 KB');
+  assert.equal(formatBytes(1), '1 byte');
   assert.equal(formatBytes(512), '512 bytes');
   assert.equal(formatBytes(1536), '1.5 KB');
   assert.equal(formatBytes(812 * 1024), '812 KB');

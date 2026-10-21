@@ -923,7 +923,7 @@ export default function App() {
                   board={doc.board}
                   library={library}
                   status={cloudStatus}
-                  saved={saveState === 'saved'}
+                  saving={saveState === 'pending' || saveState === 'saving'}
                 />
                 <button
                   className={'save-indicator ' + saveState}

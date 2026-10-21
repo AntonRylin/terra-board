@@ -1531,7 +1531,6 @@ class Store {
   boardInfo({ id }) {
     const b = this.board(id);
     const ids = new Set([iconAssetId(b.icon), b.backgroundAssetId].filter(Boolean));
-    const mentionsAsset = /"(assetId|linkIconId|documentPreviewId|pdfComposer|album)"/;
     let objects = 0,
       contentBytes = 0;
     for (const { json } of this.db
@@ -1539,19 +1538,12 @@ class Store {
       .iterate(id)) {
       objects++;
       contentBytes += Buffer.byteLength(json);
-      if (mentionsAsset.test(json))
-        for (const asset of objectAssetIds(JSON.parse(json))) ids.add(asset);
+      for (const asset of objectAssetIds(JSON.parse(json))) ids.add(asset);
     }
     const known = this.db.prepare('SELECT 1 FROM assets WHERE id=?'),
       linked = this.db.prepare('SELECT 1 FROM asset_links WHERE id=?'),
       folder = path.join(this.root, 'assets');
-    const size = (file) => {
-      try {
-        return fs.statSync(file).size;
-      } catch {
-        return 0;
-      }
-    };
+    const size = (file) => fs.statSync(file, { throwIfNoEntry: false })?.size ?? 0;
     let files = 0,
       fileBytes = 0,
       linkedFiles = 0;

@@ -4,7 +4,10 @@ import type { ShareRole } from '../bridge';
 /** 245 MB, 2.4 MB, 812 KB: one decimal below 10, binary units like Explorer. */
 export function formatBytes(bytes: number) {
   if (!(bytes > 0)) return '0 KB';
-  if (bytes < 1024) return `${Math.round(bytes)} bytes`;
+  if (bytes < 1024) {
+    const whole = Math.round(bytes);
+    return `${whole} ${whole === 1 ? 'byte' : 'bytes'}`;
+  }
   const units = ['KB', 'MB', 'GB', 'TB'];
   let value = bytes / 1024,
     unit = 0;
