@@ -75,6 +75,17 @@ const note = (id, text) => ({ id, type: 'note', x: 0, y: 0, width: 200, height: 
 const results = {};
 
 try {
+  const anon = createClient(config.url, config.key);
+  const info = await anon.rpc('server_info');
+  assert.equal(info.error, null, info.error?.message);
+  assert.equal(info.data.schema, 1);
+  assert.equal(info.data.minClientSchema, 1);
+  assert.equal(typeof info.data.name, 'string');
+  assert.equal(info.data.billing, false);
+  const direct = await anon.from('server_settings').select('*');
+  assert.equal(direct.data?.length ?? 0, 0, 'settings are only readable through server_info');
+  results.serverInfo = true;
+
   const a = device('a');
   const folder = a.store.createFolder({ name: 'Work' });
   const board = a.store.createBoard({ name: 'Synced plan', folderId: folder.id });
