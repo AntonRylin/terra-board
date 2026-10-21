@@ -3,6 +3,7 @@ import { Copy, RefreshCw } from 'lucide-react';
 import type { CloudDevice, CloudStatus } from '../../bridge';
 import type { Library } from '../../model';
 import { Group, Notice, Row, Switch, useNotice } from './controls';
+import { ServerSettings } from './ServerSettings';
 
 const since = (time: number | null) => {
   if (!time) return '';
@@ -30,9 +31,11 @@ const clean = (e: unknown) =>
 export function CloudSettings({
   library,
   onManageShare,
+  connectAddress,
 }: {
   library?: Library;
   onManageShare?: (kind: 'folder' | 'board', id: string) => void;
+  connectAddress?: string;
 }) {
   const cloud = window.canvas?.cloud;
   const [status, setStatus] = useState<CloudStatus | null>(null);
@@ -86,14 +89,16 @@ export function CloudSettings({
         <Row title="Cloud sync" description="Available in the desktop app." />
       </Group>
     );
+  const server = (
+    <ServerSettings status={status} connectAddress={connectAddress} busy={busy} act={act} />
+  );
   if (!status.configured)
     return (
-      <Group>
-        <Row
-          title="Cloud sync"
-          description="This build of Terra Board is not connected to a sync service."
-        />
-      </Group>
+      <>
+        {server}
+        <p className="st-hint cloud-hint">Choose a server to use cloud sync.</p>
+        <Notice notice={notice} />
+      </>
     );
 
   const itemName = (kind: 'folder' | 'board', id: string) =>
@@ -158,6 +163,7 @@ export function CloudSettings({
   if (!identity)
     return (
       <>
+        {server}
         <Group>
           {nameRow}
           <Row id="cloudEnable">
@@ -182,6 +188,7 @@ export function CloudSettings({
 
   return (
     <>
+      {server}
       <Group>
         {nameRow}
         <Row

@@ -1,4 +1,5 @@
 import SettingsPage from './components/SettingsPage';
+import type { SectionId } from './components/settings/settings-index';
 import { UpdatePrompt } from './components/UpdatePrompt';
 import { finishStartup } from './startup';
 import { isCommand } from './shortcuts/active';
@@ -83,6 +84,9 @@ type ModalState = {
   shareKind?: 'folder' | 'board';
   folderId?: string | null;
   iconFile?: File;
+  // Settings only: the section to open, and a server address from a link.
+  section?: SectionId;
+  address?: string;
 };
 export default function App() {
   const glass = useGlassAppearance();
@@ -339,6 +343,17 @@ export default function App() {
     window.addEventListener('keydown', key, true);
     return () => window.removeEventListener('keydown', key, true);
   }, [aiBusy, modal?.kind, openSearch]);
+  useEffect(() => {
+    // A terraboard://connect link opens Settings with the address filled in.
+    // Nothing changes until the person checks the server and connects.
+    return window.canvas?.cloud.onDeepLink((link) => {
+      if (link.kind !== 'connect') return;
+      void flushInlineNames()
+        .then(() => whiteboard.current?.flush())
+        .then(() => ask({ kind: 'settings', section: 'cloud', address: link.address }))
+        .catch((error) => report(String(error)));
+    });
+  }, []);
   useEffect(() => {
     const cleanup = window.canvas?.onClose(async () => {
       try {
@@ -1317,6 +1332,8 @@ export default function App() {
       </div>
       {modal?.kind === 'settings' && (
         <SettingsPage
+          // A link opened while Settings is showing starts the page over on the server row.
+          key={modal.address ?? ''}
           appearance={appearance}
           onClose={() => setModal(null)}
           transparency={glass.transparency}
@@ -1331,6 +1348,8 @@ export default function App() {
           }}
           library={library}
           onManageShare={(shareKind, id) => ask({ kind: 'share', shareKind, id })}
+          initialSection={modal.section}
+          connectAddress={modal.address}
         />
       )}
     </>

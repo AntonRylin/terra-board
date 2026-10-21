@@ -243,6 +243,12 @@ export const rows = {
     description: 'Choose the tool for each direction.',
     keywords: 'quick tools tab',
   },
+  cloudServer: {
+    section: 'cloud',
+    title: 'Server',
+    description: "Where your cloud boards are kept: Terra Cloud or your organization's server.",
+    keywords: 'server address self-hosted company organization supabase connect',
+  },
   cloudName: {
     section: 'cloud',
     title: 'Your name',

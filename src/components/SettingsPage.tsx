@@ -28,6 +28,8 @@ export default function SettingsPage({
   panel,
   library,
   onManageShare,
+  initialSection,
+  connectAddress,
 }: {
   onClose: () => void;
   transparency: number;
@@ -36,11 +38,13 @@ export default function SettingsPage({
   panel: PanelOptions;
   library?: Library;
   onManageShare?: (kind: 'folder' | 'board', id: string) => void;
+  initialSection?: SectionId;
+  connectAddress?: string;
 }) {
   const page = useRef<HTMLElement>(null);
   const back = useRef<HTMLButtonElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
-  const [section, setSection] = useState<SectionId>(lastSection);
+  const [section, setSection] = useState<SectionId>(initialSection ?? lastSection);
   const [query, setQuery] = useState('');
   const [target, setTarget] = useState<string | null>(null);
   useEffect(() => {
@@ -231,7 +235,11 @@ export default function SettingsPage({
               {section === 'radial' && <RadialSettings />}
               {section === 'shortcuts' && <ShortcutSettings />}
               {section === 'cloud' && (
-                <CloudSettings library={library} onManageShare={onManageShare} />
+                <CloudSettings
+                  library={library}
+                  onManageShare={onManageShare}
+                  connectAddress={connectAddress}
+                />
               )}
               {section === 'storage' && <StorageSettings />}
               {section === 'ai' && <McpSettings />}
