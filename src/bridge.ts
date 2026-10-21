@@ -382,6 +382,16 @@ export async function importAlbumFiles(
 export const assetLinks = (ids: string[]) =>
   ids.length ? invoke<AssetLink[]>('assetLinks', { ids }) : Promise.resolve([]);
 export const boardSyncs = (id: string) => invoke<boolean>('boardSyncs', { id });
+export interface BoardInfo {
+  created: number | null;
+  updated: number;
+  objects: number;
+  contentBytes: number;
+  files: number;
+  fileBytes: number;
+  linkedFiles: number;
+}
+export const boardInfo = (id: string) => invoke<BoardInfo>('boardInfo', { id });
 export async function importPortable() {
   if (window.canvas) return window.canvas.importPortable();
   const [file] = await chooseFiles('.canvas');

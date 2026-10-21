@@ -138,6 +138,8 @@ test('two libraries converge on boards, objects, deletions and images', async ()
     const copy = b.loadBoard({ id: board.id });
     assert.equal(copy.board.name, 'Shared plan');
     assert.equal(copy.board.folderId, folder.id);
+    // The other computer shows when the board was made, not when it arrived.
+    assert.equal(b.boardInfo({ id: board.id }).created, a.boardInfo({ id: board.id }).created);
     assert.deepEqual(copy.objects.map((o) => o.id).sort(), ['img', 'n1']);
     assert.ok(b.asset({ id: image.id, variant: 'original' }));
     // Applying remote rows must not queue them to be pushed back.

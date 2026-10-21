@@ -149,6 +149,7 @@ function createSync(store, helpers) {
     folderId: b.folderId,
     position: b.position,
     trashed: !!b.trashed,
+    created: b.created ?? null,
   });
   // Queue a folder or board this person owns, with all its content.
   const queueOwned = (kind, targetId) => {
@@ -624,6 +625,9 @@ function createSync(store, helpers) {
           'INSERT INTO boards(name,icon,color,iconShape,showInitial,backgroundAssetId,backgroundAppearance,folderId,position,trashed,updated,id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
         )
         .run(...values, r.id);
+    // The creating computer's time, when it recorded one.
+    if (Number.isSafeInteger(d.created) && d.created > 0)
+      db().prepare('UPDATE boards SET created=? WHERE id=?').run(d.created, r.id);
     return true;
   }
 

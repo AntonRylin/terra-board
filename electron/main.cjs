@@ -318,6 +318,7 @@ const commands = new Set([
   'removeBackground',
   'assetLinks',
   'boardSyncs',
+  'boardInfo',
 ]);
 const albumImageExtensions = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'avif', 'tif', 'tiff'];
 const dev = process.env.CANVAS_DEV_URL;

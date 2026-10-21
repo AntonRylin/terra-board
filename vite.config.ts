@@ -65,6 +65,7 @@ export default defineConfig({
           'exportBoard',
           'assetLinks',
           'boardSyncs',
+          'boardInfo',
         ]);
         server.middlewares.use('/__local', async (req, res) => {
           try {

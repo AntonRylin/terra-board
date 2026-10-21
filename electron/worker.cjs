@@ -24,6 +24,7 @@ const allowed = new Set([
   'assetLinks',
   'relinkAsset',
   'boardSyncs',
+  'boardInfo',
   'exportBoard',
   'importBoard',
   'syncStatus',

@@ -787,6 +787,14 @@ class Store {
         .some((column) => column.name === 'backgroundAppearance')
     )
       this.db.exec("ALTER TABLE boards ADD COLUMN backgroundAppearance TEXT NOT NULL DEFAULT '{}'");
+    // When the board was made. Boards from before this column stay NULL.
+    if (
+      !this.db
+        .prepare('PRAGMA table_info(boards)')
+        .all()
+        .some((column) => column.name === 'created')
+    )
+      this.db.exec('ALTER TABLE boards ADD COLUMN created INTEGER DEFAULT NULL');
     this.sync = createSync(this, {
       idValue,
       nameValue,
@@ -934,9 +942,9 @@ class Store {
     };
     this.db
       .prepare(
-        'INSERT INTO boards(id,name,icon,color,folderId,position,updated) VALUES(?,?,?,?,?,?,?)',
+        'INSERT INTO boards(id,name,icon,color,folderId,position,updated,created) VALUES(?,?,?,?,?,?,?,?)',
       )
-      .run(b.id, b.name, b.icon, b.color, b.folderId, b.position, b.updated);
+      .run(b.id, b.name, b.icon, b.color, b.folderId, b.position, b.updated, b.updated);
     return b;
   }
   createFolder({ name }) {
@@ -1516,6 +1524,54 @@ class Store {
   boardSyncs({ id }) {
     idValue(id);
     return !!this.db.prepare('SELECT 1 FROM sync_tracked WHERE id=?').get(id);
+  }
+  // What the board info card shows: when it was made and changed, and how much
+  // room its objects and pictures take in the library. Linked originals live
+  // outside the library, so only their saved preview and thumbnail count.
+  boardInfo({ id }) {
+    const b = this.board(id);
+    const ids = new Set([iconAssetId(b.icon), b.backgroundAssetId].filter(Boolean));
+    const mentionsAsset = /"(assetId|linkIconId|documentPreviewId|pdfComposer|album)"/;
+    let objects = 0,
+      contentBytes = 0;
+    for (const { json } of this.db
+      .prepare('SELECT json FROM objects WHERE boardId=?')
+      .iterate(id)) {
+      objects++;
+      contentBytes += Buffer.byteLength(json);
+      if (mentionsAsset.test(json))
+        for (const asset of objectAssetIds(JSON.parse(json))) ids.add(asset);
+    }
+    const known = this.db.prepare('SELECT 1 FROM assets WHERE id=?'),
+      linked = this.db.prepare('SELECT 1 FROM asset_links WHERE id=?'),
+      folder = path.join(this.root, 'assets');
+    const size = (file) => {
+      try {
+        return fs.statSync(file).size;
+      } catch {
+        return 0;
+      }
+    };
+    let files = 0,
+      fileBytes = 0,
+      linkedFiles = 0;
+    for (const asset of ids) {
+      if (!known.get(asset)) continue;
+      const file = path.join(folder, asset);
+      const original = size(file + '.original');
+      if (!original && linked.get(asset)) linkedFiles++;
+      else files++;
+      fileBytes += original + size(file + '.preview') + size(file + '.thumb');
+    }
+    return {
+      created: b.created ?? null,
+      updated: b.updated,
+      objects,
+      contentBytes,
+      files,
+      fileBytes,
+      linkedFiles,
+    };
   }
   asset({ id, variant = 'preview' }) {
     if (!/^[a-f0-9]{64}$/.test(id) || !['original', 'preview', 'thumb'].includes(variant))

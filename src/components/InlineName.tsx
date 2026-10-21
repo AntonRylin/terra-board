@@ -133,7 +133,7 @@ export default function InlineName({
       aria-invalid={!!error}
       aria-busy={saving}
       title={
-        error || activationTitle || (singleClick ? 'Click to rename' : 'Double-click to rename')
+        error || (activationTitle ?? (singleClick ? 'Click to rename' : 'Double-click to rename'))
       }
       tabIndex={onActivate && !editing ? undefined : 0}
       contentEditable={editing && !saving ? 'plaintext-only' : false}

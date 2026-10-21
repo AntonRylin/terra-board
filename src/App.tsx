@@ -1,6 +1,7 @@
 import SettingsPage from './components/SettingsPage';
 import type { SectionId } from './components/settings/settings-index';
 import { UpdatePrompt } from './components/UpdatePrompt';
+import BoardInfoCard from './components/BoardInfoCard';
 import { finishStartup } from './startup';
 import { isCommand } from './shortcuts/active';
 import { bindingsFor, commands, fixedShortcuts } from './shortcuts/commands';
@@ -189,6 +190,7 @@ export default function App() {
     launcherCentered,
     doc?.board.id,
   );
+  const boardIdentity = useRef<HTMLDivElement>(null);
   const [renameRequest, setRenameRequest] = useState<{
     kind: 'board' | 'folder';
     id: string;
@@ -876,12 +878,13 @@ export default function App() {
             {doc && (
               <>
                 <div
+                  ref={boardIdentity}
                   className="board-identity"
                   role="button"
                   tabIndex={0}
                   aria-label={launcherHidden ? 'Show board panel' : 'Hide board panel'}
                   aria-expanded={!launcherHidden}
-                  title={launcherHidden ? 'Show board panel' : 'Hide board panel'}
+                  aria-describedby="board-info-card"
                   onClick={toggleLauncher}
                   onKeyDown={(e) => {
                     if (e.target !== e.currentTarget) return;
@@ -904,7 +907,7 @@ export default function App() {
                     key={doc.board.id}
                     className="board-title"
                     onActivate={toggleLauncher}
-                    activationTitle={launcherHidden ? 'Show board panel' : 'Hide board panel'}
+                    activationTitle=""
                     label="Board name"
                     value={doc.board.name}
                     editRequest={
@@ -915,6 +918,13 @@ export default function App() {
                     onCommit={(name) => change(doc.board.id, { name })}
                   />
                 </div>
+                <BoardInfoCard
+                  anchor={boardIdentity}
+                  board={doc.board}
+                  library={library}
+                  status={cloudStatus}
+                  saved={saveState === 'saved'}
+                />
                 <button
                   className={'save-indicator ' + saveState}
                   title={
