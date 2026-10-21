@@ -728,6 +728,11 @@ app
       root,
       config: startServer.config,
       server: serverStatus(startServer.config, startServer.locked),
+      // Sessions saved before the app recorded their server belong to the one it used then.
+      legacyServerUrl:
+        process.env.TERRA_CLOUD_URL && process.env.TERRA_CLOUD_KEY
+          ? process.env.TERRA_CLOUD_URL
+          : packageJson.terraCloud?.url,
       safeStorage,
       transaction: cloudTransaction,
       onStatus: (status) => {

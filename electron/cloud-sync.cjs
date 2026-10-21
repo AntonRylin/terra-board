@@ -71,7 +71,18 @@ function sessionStorage(file, safeStorage) {
 // on, and otherwise only what they share. Folders and boards other people
 // share are pulled from those people's workspaces with view or edit rights.
 class CloudSync {
-  constructor({ call, root, config, server, safeStorage, transaction, onStatus, onPresence }) {
+  // legacyServerUrl: the server a session saved without a marker (by 0.1.28 and earlier) is for.
+  constructor({
+    call,
+    root,
+    config,
+    server,
+    legacyServerUrl,
+    safeStorage,
+    transaction,
+    onStatus,
+    onPresence,
+  }) {
     this.call = call;
     this.root = root;
     this.safeStorage = safeStorage;
@@ -102,7 +113,25 @@ class CloudSync {
     this.roles = { boards: {}, folders: {} };
     this.foreign = [];
     this.client = null;
+    this.dropSessionForOtherServer(legacyServerUrl);
     this.makeClient(config);
+  }
+
+  // A session saved for another server must never reach this one: a new client refreshes its
+  // session straight away. The marker keeps naming the old server, so start() still turns
+  // sync off and says why.
+  dropSessionForOtherServer(legacyServerUrl) {
+    const session = path.join(this.root, 'settings', 'cloud-session');
+    if (!fs.existsSync(session)) return;
+    const recorded = this.recordedServer();
+    const owner = recorded ?? legacyServerUrl ?? null;
+    if (!owner || owner === this.config?.url) return;
+    fs.rmSync(session, { force: true });
+    if (!recorded) {
+      try {
+        fs.writeFileSync(this.sessionServerFile(), owner);
+      } catch {}
+    }
   }
 
   // The client for one server. The person's session lives next to the library
@@ -132,6 +161,7 @@ class CloudSync {
   async reconfigure(config, server) {
     if ((await this.local()).identity) throw Error('Turn off sync before changing servers.');
     this.stop();
+    await this.idle();
     await this.presenceQueue;
     this.client?.auth.stopAutoRefresh();
     this.forgetSession();
@@ -195,6 +225,9 @@ class CloudSync {
       this.stop();
       await this.turnOffLocally();
       this.forgetSession();
+      // A fresh client, so no old session stays in memory either.
+      this.client?.auth.stopAutoRefresh();
+      this.makeClient(this.config);
       return this.emit({
         state: 'off',
         identity: false,
@@ -317,6 +350,7 @@ class CloudSync {
 
   async disable() {
     this.stop();
+    await this.idle();
     if (this.client && this.workspace && this.userId) {
       try {
         await this.client.rpc('remove_member', {
@@ -327,7 +361,10 @@ class CloudSync {
       } catch {}
     }
     await this.turnOffLocally();
-    fs.rmSync(this.sessionServerFile(), { force: true });
+    // The session goes too, even when signing out failed or was skipped.
+    this.client?.auth.stopAutoRefresh();
+    this.forgetSession();
+    this.makeClient(this.config);
     this.workspace = null;
     return this.emit({
       state: 'off',
@@ -813,6 +850,14 @@ class CloudSync {
     this.timer = this.poll = null;
     for (const channel of this.channels.values()) this.client?.removeChannel(channel);
     this.channels.clear();
+  }
+
+  // Waits for a sync round in progress to finish. stop() cleared the timers, so no round
+  // starts by itself; a timer the finished round set for its next one is cleared here.
+  async idle() {
+    while (this.running) await this.running.catch(() => {});
+    clearTimeout(this.timer);
+    this.timer = null;
   }
 
   // People who change a workspace ping its channel; listeners pull within a second.
