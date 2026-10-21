@@ -60,6 +60,14 @@
   },
   "build": {
     "appId": "terra.board.desktop",
+    "protocols": [
+      {
+        "name": "Terra Board",
+        "schemes": [
+          "terraboard"
+        ]
+      }
+    ],
     "productName": "Terra Board",
     "directories": {
       "output": "release"
