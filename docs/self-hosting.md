@@ -17,9 +17,9 @@ Accounts arrive in the next release. Until then a company server uses the same a
    npx supabase db push
    ```
 
-   This includes `server_info()`, which the app calls to check the server is one it understands. A server without it shows "This server needs an update".
+   This includes `server_info()`. When someone connects from Settings, the app calls it first to check the server speaks a protocol it understands. A server without it shows "This server needs an update", and an app too old for the server shows "Update Terra Board to use this server".
 
-3. Optionally set the name people see:
+3. Optionally set the server's own label (the app does not show it yet; people see the `name` from the description file below):
 
    ```sql
    update public.server_settings set name = 'Acme boards';
@@ -37,16 +37,16 @@ Accounts arrive in the next release. Until then a company server uses the same a
    ```
 
    - `signIn` is optional. Email is on by default, Google and Microsoft are off.
-   - The address must be `https://`. Only `localhost`, `127.0.0.1` and `[::1]` may use plain http. The same goes for `supabaseUrl`.
+   - The address must be `https://`. Only `localhost`, `127.0.0.1` and `[::1]` may use plain http. The same goes for `supabaseUrl`, which must be just the origin: no path, no trailing details.
    - The app does not follow redirects and ignores replies over 64 KB.
    - **Never put the service role or secret key here.** A key starting with `sb_secret_`, or a service_role JWT, is refused.
 
 ## Connect people
 
-- Each person opens Settings → Cloud sync → Server → **Change**, types the address (`terra.example.com`) and chooses **Connect**. **Advanced** takes a Supabase URL and public key directly, with no description file.
-- Or send them a link: `terraboard://connect?address=<your address>`. It opens Settings → Cloud sync with the address filled in. The person still checks and confirms; a link never switches servers by itself.
+- Each person opens Settings → Cloud sync → Server → **Change**, types the address (`terra.example.com`), chooses **Check** (the app shows "Found <name> at <host>."), then **Connect**. **Advanced** takes a Supabase URL and public key directly, with no description file.
+- Or send them a link: `terraboard://connect?address=<your address>`. It opens Settings → Cloud sync with the address filled in. The person still checks and confirms; a link never switches servers by itself. It does nothing on a computer whose server is locked, and only the installed app registers `terraboard://` (a development build does not).
 
-Switching turns sync off first (after a warning about changes not yet sent). Boards other people shared with you are removed from that computer; your own boards stay. **Use Terra Cloud** switches back.
+If sync is on, the app warns first (with the number of changes not yet sent, if any) and then turns sync off. Boards other people shared with you are removed from that computer; your own boards stay. **Use Terra Cloud** switches back.
 
 ## Managed computers
 
