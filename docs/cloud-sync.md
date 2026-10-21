@@ -36,13 +36,27 @@ To try it in the app, start Terra Board with `TERRA_CLOUD_URL` and `TERRA_CLOUD_
    npx supabase db push
    ```
 
-4. Add the public values to `package.json`:
+4. Add the public values to `package.json` to make it the built-in Terra Cloud:
 
    ```json
    "terraCloud": { "url": "https://<ref>.supabase.co", "key": "<publishable or anon key>" }
    ```
 
    The key is public by design; access is enforced by row-level security and the database functions. Never put the service role or secret key in the app.
+
+For a company server, leave `package.json` alone and follow [self-hosting.md](self-hosting.md): people connect from Settings, and IT can pre-set the server.
+
+## Which server the app uses
+
+Settings → Cloud sync → Server shows the current server and **Change**. The app picks one in this order:
+
+1. `TERRA_CLOUD_URL` and `TERRA_CLOUD_KEY` environment variables.
+2. `%ProgramData%\Terra Board\server.json` with `"locked": true`.
+3. The person's choice, in `<Library>/settings/server.json`.
+4. `%ProgramData%\Terra Board\server.json` without `locked`.
+5. `terraCloud` in `package.json` (Terra Cloud).
+
+Before using a server the app calls its `server_info()` function, so every server needs the latest migrations. A server can only be changed while sync is off; the app turns it off first. Boards other people shared are removed from the computer, your own boards stay.
 
 ## Limits to know
 
