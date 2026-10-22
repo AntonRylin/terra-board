@@ -111,6 +111,56 @@ test('embed pages are served once registered, from their own origin', async () =
   assert.equal(cards.handle({ url }).status, 404);
 });
 
+test('pictures of pages taller than the screen are not stretched', async () => {
+  // Windows caps a new window at the screen's height (1392 here), even offscreen.
+  const screenHeight = 1392;
+  const resized = [];
+  const image = (width, height) => ({
+    isEmpty: () => false,
+    getSize: () => ({ width, height }),
+    crop: (r) => image(r.width, r.height),
+    resize: (r) => (resized.push(r), image(r.width, r.height)),
+    toPNG: () => Buffer.from([width, height]),
+  });
+  class BrowserWindow {
+    constructor({ width, height, webPreferences }) {
+      this.size = [width, Math.min(height, screenHeight)];
+      const scale = webPreferences.offscreen.deviceScaleFactor;
+      this.webContents = {
+        on() {},
+        setWindowOpenHandler() {},
+        setAudioMuted() {},
+        invalidate() {},
+        loadURL: async () => {},
+        capturePage: async () =>
+          image(Math.round(this.size[0] * scale), Math.round(this.size[1] * scale)),
+      };
+    }
+    setContentSize(width, height) {
+      this.size = [width, height];
+    }
+    isDestroyed() {
+      return false;
+    }
+    destroy() {}
+  }
+  const session = {
+    fromPartition: () => ({
+      protocol: { handle() {} },
+      setPermissionRequestHandler() {},
+      setPermissionCheckHandler() {},
+      on() {},
+      webRequest: { onBeforeRequest() {} },
+    }),
+  };
+  const imported = [];
+  const call = async (_name, { bytes }) => (imported.push([...bytes]), { id: 'asset' });
+  const cards = createHtmlCards({ BrowserWindow, session, call });
+  await cards.snapshot({ html: '<p>Tall</p>', width: 960, height: 2760 });
+  assert.deepEqual(resized, []);
+  assert.deepEqual(imported, [[1425 & 255, 4096 & 255]]);
+});
+
 test('running embeds may use the web but not frames or local schemes', () => {
   const page = 'terra-html://page/00000000-0000-0000-0000-000000000000/';
   const from = (url, resourceType, frame = page) => ({ url, resourceType, frame: { url: frame } });

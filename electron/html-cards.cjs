@@ -132,6 +132,9 @@ function createHtmlCards({ BrowserWindow, session, call, browserSession }) {
         backgroundThrottling: false,
       },
     });
+    // Windows caps a new window at the screen's height, even offscreen; a tall
+    // page would come out short and get stretched. Resizing afterwards isn't capped.
+    win.setContentSize(width, height);
     const contents = win.webContents;
     let painted = null;
     contents.on('paint', (_event, _dirty, image) => {
