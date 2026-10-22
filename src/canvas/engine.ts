@@ -610,6 +610,37 @@ export class Engine {
       new WheelEvent('wheel', { ...init, bubbles: true, cancelable: true }),
     );
   }
+  /**
+   * A press on a running web page that the page did not take: the board
+   * drags, pans, selects or opens its menu as it does over the canvas. Points
+   * are client pixels of the board's window.
+   */
+  relayPointer(
+    phase: 'start' | 'move' | 'end' | 'cancel',
+    button: number,
+    clientX: number,
+    clientY: number,
+    keys: Pick<PointerEventInit, 'ctrlKey' | 'metaKey' | 'shiftKey' | 'altKey'> = {},
+  ) {
+    const event = (type: string, buttons: number) =>
+      new PointerEvent(type, {
+        ...keys,
+        clientX,
+        clientY,
+        button,
+        buttons,
+        pointerType: 'mouse',
+        isPrimary: true,
+        cancelable: true,
+      });
+    const mask = [1, 4, 2][button] ?? 0;
+    if (phase === 'start') {
+      if (!this.gesture) this.down(event('pointerdown', mask), true);
+    } else if (!this.gesture) return;
+    else if (phase === 'move') this.move(event('pointermove', mask));
+    else if (phase === 'end') this.up(event('pointerup', 0));
+    else this.cancel();
+  }
   get canOpenQuickTools() {
     return !this.gesture && !this.editingId;
   }
@@ -822,7 +853,7 @@ export class Engine {
       const connector = !additive && e.button === 0 && this.connectorAt(p);
       if (connector) {
         this.beginConnection(connector, p);
-        this.host.setPointerCapture(e.pointerId);
+        this.capturePointer(e);
         return;
       } else if (arrowHandle) {
         const o = this.selected[0],
@@ -935,8 +966,14 @@ export class Engine {
         };
     }
     this.updateCursor();
-    this.host.setPointerCapture(e.pointerId);
+    this.capturePointer(e);
   };
+  // Presses relayed from a web page have no live pointer to capture.
+  private capturePointer(e: PointerEvent) {
+    try {
+      this.host.setPointerCapture(e.pointerId);
+    } catch {}
+  }
   private move = (e: PointerEvent) => {
     const g = this.gesture;
     if (this.tool === 'highlight') {

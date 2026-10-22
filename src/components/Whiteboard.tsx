@@ -772,31 +772,38 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   };
   // A running page passes back wheel turns it did not scroll with, and presses
   // away from anything clickable, which select a hover embed.
+  const pageDrag = useRef<{ x: number; y: number; button: number } | null>(null);
+  // A running page passes back wheel turns and presses it did not take (see
+  // HtmlRelay); they act on the board as they would over the canvas.
   const relayHtml = (id: string, m: HtmlRelay) => {
     const e = engine.current,
       o = e?.objects.get(id),
       box = host.current?.getBoundingClientRect();
     if (!e || !o || !box) return;
+    const { ctrlKey, metaKey, shiftKey, altKey } = m,
+      keys = { ctrlKey, metaKey, shiftKey, altKey };
+    if (m.kind === 'pointer' && m.phase !== 'start') {
+      // Screen pixels moved since the press: the page itself moves as the
+      // board pans, so its own coordinates would drift.
+      const start = pageDrag.current;
+      if (!start || start.button !== m.button) return;
+      if (m.phase !== 'move') pageDrag.current = null;
+      e.relayPointer(m.phase, m.button, start.x + m.x, start.y + m.y, keys);
+      return;
+    }
     const w = localToWorld(o, { x: m.x, y: m.y });
     const clientX = box.left + w.x * e.camera.zoom + e.camera.x,
       clientY = box.top + w.y * e.camera.zoom + e.camera.y;
     if (m.kind === 'wheel') {
-      const { deltaX, deltaY, deltaMode, ctrlKey, metaKey, shiftKey, altKey } = m;
-      e.relayWheel({
-        clientX,
-        clientY,
-        deltaX,
-        deltaY,
-        deltaMode,
-        ctrlKey,
-        metaKey,
-        shiftKey,
-        altKey,
-      });
-    } else if (hoverShownId.current === id) {
-      showHover(null);
-      e.setSelection([o.id]);
+      const { deltaX, deltaY, deltaMode } = m;
+      e.relayWheel({ clientX, clientY, deltaX, deltaY, deltaMode, ...keys });
+      return;
     }
+    // While running with Interact, the left button is the page's.
+    if (m.button === 0 && hoverShownId.current !== id) return;
+    if (m.button === 0) showHover(null);
+    pageDrag.current = { x: clientX, y: clientY, button: m.button };
+    e.relayPointer('start', m.button, clientX, clientY, keys);
   };
   const toggleHoverLive = (o: CanvasObject) => {
     const next = { ...(engine.current?.objects.get(o.id) || o) };

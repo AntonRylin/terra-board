@@ -339,6 +339,30 @@ try {
   // 5. Clicking the board stops a running page.
   await clickAt(center.x, center.y, 2);
   await until(() => read(`!!document.querySelector('.board-html-live')`), 'live again');
+  // A right-drag over a running page pans the board, and the page keeps running.
+  for (const [dx, dy] of [
+    [60, 40],
+    [-60, -40],
+  ]) {
+    const live = await until(() => rect('.board-html-live[data-ready]'), 'running page ready');
+    await sleep(300);
+    const from = { x: live.x + 20, y: live.y + 20 };
+    const right = (type, x, y, buttons) =>
+      send('Input.dispatchMouseEvent', { type, x, y, button: 'right', buttons, clickCount: 1 });
+    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: from.x, y: from.y });
+    await right('mousePressed', from.x, from.y, 2);
+    for (let i = 1; i <= 6; i++) {
+      await sleep(30);
+      await right('mouseMoved', from.x + (dx * i) / 6, from.y + (dy * i) / 6, 2);
+    }
+    await right('mouseReleased', from.x + dx, from.y + dy, 0);
+    await until(async () => {
+      const now = await rect('.board-html-live');
+      return now && Math.abs(now.x - live.x - dx) < 4 && Math.abs(now.y - live.y - dy) < 4;
+    }, 'right-drag pans the board over a running page');
+    await sleep(600);
+    assert.equal(await read(`!!document.querySelector('.context-menu')`), false, 'no menu');
+  }
   await clickAt(center.x + 400, center.y + 300);
   await until(() => read(`!document.querySelector('.board-html-live')`), 'live stops');
 
@@ -507,6 +531,128 @@ try {
   assert.ok(
     Math.abs((await rect('.board-page[data-shown]')).width - zoomed.width) < 1,
     'the board did not zoom over a page that handles the wheel',
+  );
+
+  // 8b. Other buttons work as over the board unless the page takes them.
+  const press = async (type, button, x, y, buttons) =>
+    send('Input.dispatchMouseEvent', { type, x, y, button, buttons, clickCount: 1 });
+  const buttonMask = { left: 1, right: 2, middle: 4 };
+  async function dragOnPage(button, dx, dy) {
+    const box = await until(() => rect('.board-page[data-shown]'), 'hover page shown');
+    const from = { x: box.x + 30, y: box.y + 30 };
+    await press('mouseMoved', 'none', from.x, from.y, 0);
+    await press('mousePressed', button, from.x, from.y, buttonMask[button]);
+    for (let i = 1; i <= 6; i++) {
+      await sleep(30);
+      await press(
+        'mouseMoved',
+        button,
+        from.x + (dx * i) / 6,
+        from.y + (dy * i) / 6,
+        buttonMask[button],
+      );
+    }
+    await press('mouseReleased', button, from.x + dx, from.y + dy, 0);
+    await sleep(300);
+    // The page takes the pointer back on the next move, as after any drag.
+    for (let i = 1; i <= 4; i++) {
+      await sleep(30);
+      await press('mouseMoved', 'none', from.x + dx + i, from.y + dy, 0);
+    }
+    const after = await until(() => rect('.board-page[data-shown]'), 'hover after drag');
+    return { x: after.x - box.x, y: after.y - box.y, to: { x: from.x + dx, y: from.y + dy } };
+  }
+  const menuOpen = () => read(`!!document.querySelector('.context-menu')`);
+  // Right-drag pans the board with the page under the pointer.
+  let moved = await dragOnPage('right', 60, 40);
+  assert.ok(
+    Math.abs(moved.x - 60) < 4 && Math.abs(moved.y - 40) < 4,
+    `right-drag pans: ${JSON.stringify(moved)}`,
+  );
+  assert.equal(await menuOpen(), false, 'no menu after a right-drag');
+  // So does a middle-drag.
+  moved = await dragOnPage('middle', -50, -30);
+  assert.ok(
+    Math.abs(moved.x + 50) < 4 && Math.abs(moved.y + 30) < 4,
+    `middle-drag pans: ${JSON.stringify(moved)}`,
+  );
+  // A right-click opens the board's menu.
+  let spot = await rect('.board-page[data-shown]');
+  await press('mousePressed', 'right', spot.x + 30, spot.y + 30, 2);
+  await press('mouseReleased', 'right', spot.x + 30, spot.y + 30, 0);
+  await until(menuOpen, 'right-click opens the board menu');
+  await key('Escape');
+  await until(async () => !(await menuOpen()), 'menu closes');
+  // Clear the selection the menu made, and rest on the page again.
+  await key('Escape');
+  await until(
+    async () => (await read(`document.querySelectorAll('.selection-tools').length`)) === 0,
+    'selection cleared',
+  );
+  // The camera has not moved since, so the page is still where it was.
+  for (let i = 0; i <= 5; i++) {
+    await sleep(30);
+    await press('mouseMoved', 'none', spot.x + 40 + i, spot.y + 40, 0);
+  }
+  await until(() => read(`!!document.querySelector('.board-page[data-shown]')`), 'hover again');
+  // A page with its own right-click menu keeps the right-click.
+  assert.equal(
+    await frameRead(
+      `document.getElementById('box') ? (addEventListener('contextmenu', (e) => { e.preventDefault(); window.ownMenu = (window.ownMenu || 0) + 1; }), 'on') : ''`,
+    ),
+    'on',
+  );
+  spot = await rect('.board-page[data-shown]');
+  await press('mousePressed', 'right', spot.x + 30, spot.y + 30, 2);
+  await press('mouseReleased', 'right', spot.x + 30, spot.y + 30, 0);
+  await until(
+    async () => Number(await frameRead(`String(window.ownMenu || '')`)) >= 1,
+    'the page shows its own menu',
+  );
+  await sleep(600);
+  assert.equal(await menuOpen(), false, 'no board menu over a page with its own');
+  // A page that takes the right button for itself is not panned.
+  assert.equal(
+    await frameRead(
+      `document.getElementById('box') ? (addEventListener('mousedown', (e) => { if (e.button === 2) e.preventDefault(); }), 'on') : ''`,
+    ),
+    'on',
+  );
+  moved = await dragOnPage('right', 60, 40);
+  assert.ok(
+    Math.abs(moved.x) < 2 && Math.abs(moved.y) < 2,
+    `page kept its right-drag: ${JSON.stringify(moved)}`,
+  );
+
+  // A left-drag away from the page's controls moves the embed, like any object.
+  const hoverBefore = (await state()).objects.find((o) => o.id === 'hover');
+  spot = await rect('.board-page[data-shown]');
+  const grab = { x: spot.x + 50, y: spot.y + 50 };
+  await press('mousePressed', 'left', grab.x, grab.y, 1);
+  for (let i = 1; i <= 6; i++) {
+    await sleep(30);
+    await press('mouseMoved', 'left', grab.x + (40 * i) / 6, grab.y, 1);
+  }
+  await press('mouseReleased', 'left', grab.x + 40, grab.y, 0);
+  await until(async () => {
+    const o = (await state()).objects.find((o) => o.id === 'hover');
+    // Snapping to nearby edges may shift it a little.
+    return (
+      o.x - hoverBefore.x > 25 && o.x - hoverBefore.x < 50 && Math.abs(o.y - hoverBefore.y) < 3
+    );
+  }, 'left-drag moves the embed');
+  await key('Escape');
+  await until(
+    async () => (await read(`document.querySelectorAll('.selection-tools').length`)) === 0,
+    'selection cleared after the move',
+  );
+  for (let i = 0; i <= 5; i++) {
+    await sleep(30);
+    await press('mouseMoved', 'none', grab.x + 40 + i, grab.y, 0);
+  }
+  await until(
+    () => read(`!!document.querySelector('.board-page[data-shown]')`),
+    'hover after move',
   );
 
   // 9. Pressing the page away from controls selects the embed and shows its picture.
