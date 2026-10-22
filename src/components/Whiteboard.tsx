@@ -194,7 +194,13 @@ import DocumentReader, { type DocumentReaderHandle } from './DocumentReader';
 import PdfWorkspace, { type PdfWorkspaceHandle } from './PdfWorkspace';
 import ImageViewer from './ImageViewer';
 import { documentKind, withDocumentTitle, withImageTitle } from '../canvas/document-files';
-import { shownMarks, shownMarksKey, shownText, trimTrailingBreaks } from '../canvas/rich-text';
+import {
+  shownMarks,
+  shownMarksKey,
+  shownText,
+  trimTrailingBreaks,
+  withoutTrailingBreaks,
+} from '../canvas/rich-text';
 import { listBreak } from '../canvas/text-lists';
 import {
   documentBytes,
@@ -1888,7 +1894,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       if (editing.type === 'text') {
         if (!draft.trim()) engine.current.apply({ upserts: [], deleted: [editing.id] });
         else {
-          const next = fitTextObject(editing, draft);
+          const next = fitTextObject(withoutTrailingBreaks({ ...editing, text: draft }));
           if (JSON.stringify(next) !== JSON.stringify(engine.current.objects.get(editing.id)))
             engine.current.apply({ upserts: [next], deleted: [] });
         }
@@ -1951,7 +1957,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       o.locked
         ? o
         : o.type === 'text'
-          ? fitTextObject(o)
+          ? fitTextObject(withoutTrailingBreaks(o))
           : o.type === 'link' && !o.assetId
             ? normalizeLinkSize(o)
             : o,

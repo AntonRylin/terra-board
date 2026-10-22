@@ -8,6 +8,7 @@ import {
   spoilerRegions,
   styleRuns,
   trimTrailingBreaks,
+  withoutTrailingBreaks,
 } from '../src/canvas/rich-text.ts';
 
 test('titles lose trailing line breaks but keep inner ones and their styles', () => {
@@ -16,6 +17,22 @@ test('titles lose trailing line breaks but keep inner ones and their styles', ()
     marks: [{ start: 5, end: 7, bold: true }],
   });
   assert.deepEqual(trimTrailingBreaks('  Plan  '), { text: '  Plan  ', marks: [] });
+  // A blank last line that only holds spaces is still an empty row.
+  assert.deepEqual(trimTrailingBreaks('Title\n  '), { text: 'Title', marks: [] });
+});
+
+test('board text drops a trailing empty line and keeps its styles in range', () => {
+  const text = { id: 't', type: 'text', x: 0, y: 0, width: 10, height: 10, z: 1 };
+  assert.deepEqual(
+    withoutTrailingBreaks({ ...text, text: 'Title\n', textMarks: [{ start: 0, end: 6, bold: true }] }),
+    { ...text, text: 'Title', textMarks: [{ start: 0, end: 5, bold: true }] },
+  );
+  assert.deepEqual(withoutTrailingBreaks({ ...text, text: 'Title\n', textMarks: [{ start: 5, end: 6, bold: true }] }), {
+    ...text,
+    text: 'Title',
+  });
+  const plain = { ...text, text: 'Two\nlines' };
+  assert.equal(withoutTrailingBreaks(plain), plain);
 });
 
 test('styles split, merge and toggle across ranges', () => {

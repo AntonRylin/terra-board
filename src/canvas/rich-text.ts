@@ -122,8 +122,21 @@ export function trimMarked(text: string, marks?: readonly TextMark[]) {
 
 // Drops line breaks left at the end of a title, clipping styles to the text that remains.
 export function trimTrailingBreaks(text: string, marks?: readonly TextMark[]) {
-  const trimmed = text.replace(/[\r\n]+$/, '');
+  const trimmed = text.replace(/[\r\n]\s*$/, '');
   return { text: trimmed, marks: normalizeMarks(trimmed.length, marks) };
+}
+
+// Enter in board text starts a new line, so a habitual Enter before clicking
+// away leaves an empty last row that makes a one-line title two lines tall.
+export function withoutTrailingBreaks(o: CanvasObject): CanvasObject {
+  if (o.type !== 'text' || !o.text || !/[\r\n]\s*$/.test(o.text)) return o;
+  const { textMarks: _, ...rest } = o,
+    trimmed = trimTrailingBreaks(o.text, o.textMarks);
+  return {
+    ...rest,
+    text: trimmed.text,
+    ...(trimmed.marks.length ? { textMarks: trimmed.marks } : {}),
+  };
 }
 
 // Untrusted data: drop anything malformed rather than rejecting the whole object.
