@@ -127,7 +127,8 @@
     };
     $$('.obj', board).forEach(wire);
     board.addEventListener('pointerdown', (e) => {
-      if (board.dataset.tool === 'select' && !e.target.closest('.obj, .toolbar, .rail')) select(null);
+      if (board.dataset.tool === 'select' && !e.target.closest('.obj, .toolbar, .rail'))
+        select(null);
     });
 
     // New notes land near the middle, in the next colour.
@@ -153,9 +154,7 @@
       for (let i = 1; i < pts.length; i++) {
         const p = pts[i];
         const to =
-          i === pts.length - 1
-            ? p
-            : { x: (p.x + pts[i + 1].x) / 2, y: (p.y + pts[i + 1].y) / 2 };
+          i === pts.length - 1 ? p : { x: (p.x + pts[i + 1].x) / 2, y: (p.y + pts[i + 1].y) / 2 };
         d += ` Q${p.x} ${p.y} ${to.x} ${to.y}`;
       }
       if (pts.length === 1) d += ` L${pts[0].x + 0.1} ${pts[0].y}`;
@@ -198,7 +197,12 @@
 
     // Keys, as in the app, while the board is in view and nobody is typing.
     document.addEventListener('keydown', (e) => {
-      if (e.ctrlKey || e.metaKey || e.altKey || e.target.closest('input, textarea, [contenteditable="true"]'))
+      if (
+        e.ctrlKey ||
+        e.metaKey ||
+        e.altKey ||
+        e.target.closest('input, textarea, [contenteditable="true"]')
+      )
         return;
       const key = e.key.toLowerCase();
       if (key === 'v') setTool('select');
@@ -357,7 +361,10 @@
     <div class="lbl">Days until 1 December</div><div class="days" id="d"></div>
     <div class="lbl">Tasks done per week</div>
     <div class="bars">${[4, 7, 5, 9, 11]
-      .map((n) => `<div class="bar" style="height:${n * 9}px" title="${n} tasks"><span>${n}</span></div>`)
+      .map(
+        (n) =>
+          `<div class="bar" style="height:${n * 9}px" title="${n} tasks"><span>${n}</span></div>`,
+      )
       .join('')}</div>
     <div class="weeks"><i>W40</i><i>W41</i><i>W42</i><i>W43</i><i>W44</i></div>
     <script>

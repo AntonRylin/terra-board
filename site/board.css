@@ -72,7 +72,9 @@
   color: var(--b-ink);
   touch-action: none;
   box-shadow: var(--shadow);
-  transition: background-color 300ms, color 300ms;
+  transition:
+    background-color 300ms,
+    color 300ms;
 }
 .board[data-tool='pen'] {
   cursor: crosshair;
