@@ -22,6 +22,7 @@
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="board.css">
 <script src="board.js" defer></script>
+<script src="hero.js" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
@@ -38,49 +39,85 @@
 </header>
 
 <main id="main">
-  <div class="wrap">
-  </div>
   <section class="stage" aria-labelledby="title">
-    <div class="board" id="board" data-tool="select">
-      <nav class="rail" aria-label="Boards in this example">
-        <button class="app-icon shape-circle picture active" type="button" data-board="0" aria-label="Board: Terra Board"><img src="img/boards/terra.webp" alt="" width="38" height="38"></button>
-        <button class="app-icon picture" type="button" data-board="1" aria-label="Board: Lisbon trip"><img src="img/boards/trip.webp" alt="" width="38" height="38"></button>
-        <button class="app-icon purple" type="button" data-board="2" aria-label="Board: Reading list"><span aria-hidden="true">📚</span></button>
-        <button class="app-icon green" type="button" data-board="3" aria-label="Board: Q4 launch">Q</button>
+    <div class="app-shell" id="board" data-tool="select">
+      <nav class="launcher" aria-label="Boards in this example">
+        <div class="launcher-scroll">
+          <button class="launch-item active" type="button" data-board="0" aria-label="Terra Board"><span class="app-icon shape-circle picture"><img src="img/boards/terra.webp" alt="" width="38" height="38"></span></button>
+          <button class="launch-item" type="button" data-board="1" aria-label="Website relaunch"><span class="app-icon blue">W</span></button>
+          <button class="launch-item" type="button" data-board="2" aria-label="Lisbon trip"><span class="app-icon picture"><img src="img/boards/trip.webp" alt="" width="38" height="38"></span></button>
+          <button class="launch-item" type="button" data-board="3" aria-label="Q4 launch"><span class="app-icon green">Q</span></button>
+          <button class="launch-item" type="button" data-board="4" aria-label="Work folder"><span class="app-icon folder-mosaic"><i class="mini"></i><i class="mini green"></i><i class="mini purple"></i><i class="mini orange"></i><i class="mini rose"></i><i class="mini gray"></i></span></button>
+        </div>
+        <div class="launcher-create"><button class="create-button" type="button" aria-label="New board" data-soon="New boards"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button></div>
       </nav>
-      <div class="board-name"><img src="img/boards/terra.webp" alt="" width="22" height="22"><span id="board-title">Terra Board</span></div>
-
-      <div class="obj text-obj selected" style="--x:12%;--y:64px">
-        <h1 id="title">Terra Board</h1>
-        <p class="sub">A whiteboard for Windows that works <span class="circled">offline</span>.<br>Your boards stay on your PC.</p>
-        <p class="by">by Social Artworks</p>
-        <span class="handles" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
-      </div>
-      <div class="obj note yellow" style="--x:61%;--y:58px;--r:-2.5deg"><p>No account. Open it and start drawing.</p></div>
-      <div class="obj note blue" style="--x:79%;--y:118px;--r:2deg"><p>Free and open source (MIT).</p></div>
-      <div class="obj note green" style="--x:55%;--y:250px;--r:1.5deg"><p>No analytics or tracking of our own.</p></div>
-      <div class="obj cta-card" style="--x:12%;--y:330px">
-        <a class="button" href="https://github.com/AntonRylin/terra-board/releases/latest/download/Terra-Board-Setup-x64.exe">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/></svg>
-          Download for Windows
-        </a>
-        <p class="small">64-bit installer, about 115 MB, always the newest version. <a href="https://github.com/AntonRylin/terra-board/releases">Release notes</a></p>
-      </div>
-      <figure class="obj picture-obj" style="--x:69%;--y:372px;--r:-1deg">
-        <img src="img/board-dark-960.webp" width="960" height="600" alt="The real app on the night board">
-        <figcaption>Screenshot.png</figcaption>
-      </figure>
-      <svg class="ink" id="ink" aria-hidden="true"></svg>
-      <div class="toolbar" role="toolbar" aria-label="Try this board">
-        <button type="button" data-tool="select" aria-pressed="true" title="Select and move (V)"><svg viewBox="0 0 24 24"><path d="M5 3l14 8-6 2-3 7z"/></svg><span>Move</span></button>
-        <button type="button" data-tool="pen" aria-pressed="false" title="Pen (P)"><svg viewBox="0 0 24 24"><path d="M4 20l4-1 11-11-3-3L5 16z"/><path d="M14 6l3 3"/></svg><span>Pen</span></button>
-        <button type="button" data-action="note" title="Add a note (N)"><svg viewBox="0 0 24 24"><path d="M5 4h14v10l-6 6H5z"/><path d="M13 20v-6h6"/></svg><span>Note</span></button>
-        <span class="divider" aria-hidden="true"></span>
-        <button type="button" data-action="night" aria-pressed="false" title="Night board"><svg viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg><span>Night</span></button>
+      <div class="workspace" id="workspace">
+        <div class="world" id="world">
+          <div class="obj text-obj title-obj" data-x="0" data-y="0">
+            <h1 id="title">Terra Board</h1>
+          </div>
+          <div class="obj text-obj sub-obj" data-x="2" data-y="92">
+            <p>A whiteboard for Windows that works offline.<br>Your boards stay on your PC. <span class="by">by Social Artworks</span></p>
+          </div>
+          <div class="obj frame-obj" data-x="0" data-y="196" style="width:520px;height:330px">
+            <span class="frame-label">Why Terra</span>
+          </div>
+          <div class="obj note yellow" data-x="26" data-y="222"><p>No account. Open it and start drawing.</p></div>
+          <div class="obj note green" data-x="270" data-y="222"><p>Works offline, files stay on your PC</p></div>
+          <div class="obj note blue" data-x="26" data-y="374" style="height:128px"><p>Free and open source (MIT)</p></div>
+          <div class="obj note purple" data-x="270" data-y="374" style="height:128px"><p>No analytics or tracking of our own</p></div>
+          <a class="obj link-card" data-x="600" data-y="10" href="https://github.com/AntonRylin/terra-board/releases/latest/download/Terra-Board-Setup-x64.exe">
+            <span class="link-icon"><img src="img/boards/terra.webp" alt="" width="28" height="28"></span>
+            <span class="link-text"><b>Download Terra Board for Windows</b><span>github.com · 64-bit installer, about 115 MB</span></span>
+          </a>
+          <figure class="obj picture-obj" data-x="600" data-y="110">
+            <img src="img/board-dark-960.webp" width="960" height="600" alt="The real app on the night board">
+            <figcaption>Night board.png</figcaption>
+          </figure>
+          <svg class="ink" id="ink" aria-hidden="true"></svg>
+        </div>
+        <div class="board-head">
+          <span class="board-identity"><span class="app-icon small shape-circle picture"><img id="board-glyph" src="img/boards/terra.webp" alt="" width="26" height="26"></span><span class="board-title" id="board-title">Terra Board</span><span class="saved" title="Saved"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></span></span>
+        </div>
+        <button class="icon-button fullscreen-toggle" type="button" aria-label="Full screen" data-soon="Full screen"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>
+        <div class="canvas-toolbar" role="toolbar" aria-label="Board tools">
+          <button class="icon-button" type="button" data-tool="select" aria-pressed="true" aria-label="Select" title="Select (V)"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z"/></svg></button>
+          <button class="icon-button" type="button" data-tool="hand" aria-pressed="false" aria-label="Pan" title="Pan (H)"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2"/><path d="M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2"/><path d="M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg></button>
+          <button class="icon-button" type="button" data-tool="text" aria-pressed="false" aria-label="Text" title="Text (T)"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" x2="15" y1="20" y2="20"/><line x1="12" x2="12" y1="4" y2="20"/></svg></button>
+          <button class="icon-button" type="button" data-tool="note" aria-pressed="false" aria-label="Note" title="Note (N)"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8Z"/><path d="M15 3v4a2 2 0 0 0 2 2h4"/></svg></button>
+          <button class="icon-button" type="button" data-tool="rect" aria-pressed="false" aria-label="Shape" title="Shape (R)"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/></svg></button>
+          <button class="icon-button" type="button" data-tool="arrow" aria-pressed="false" aria-label="Arrow" title="Arrow (A)"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 5H19V11"/><path d="M19 5L5 19"/></svg></button>
+          <button class="icon-button" type="button" data-tool="pen" aria-pressed="false" aria-label="Pen" title="Pen (P)"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838a.5.5 0 0 1-.62-.62l.838-2.872a2 2 0 0 1 .506-.854z"/></svg></button>
+          <button class="icon-button" type="button" data-tool="highlight" aria-pressed="false" aria-label="Highlighter" title="Highlighter (M)"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg></button>
+          <button class="icon-button" type="button" data-tool="frame" aria-pressed="false" aria-label="Frame" title="Frame (F)"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" x2="2" y1="6" y2="6"/><line x1="22" x2="2" y1="18" y2="18"/><line x1="6" x2="6" y1="2" y2="22"/><line x1="18" x2="18" y1="2" y2="22"/></svg></button>
+          <button class="icon-button" type="button" data-tool="link" aria-pressed="false" aria-label="Link" title="Link (L)"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" x2="16" y1="12" y2="12"/></svg></button>
+          <button class="icon-button" type="button" data-tool="media" aria-pressed="false" aria-label="Add files" title="Add files"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 5h6"/><path d="M19 2v6"/><path d="M21 11.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7.5"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/><circle cx="9" cy="9" r="2"/></svg></button>
+          <span class="divider" aria-hidden="true"></span>
+          <button class="icon-button" type="button" aria-label="More tools" data-soon="Lists, tables, documents and web pages"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button>
+        </div>
+        <div class="canvas-zoom">
+          <button class="icon-button" type="button" data-zoom="-1" aria-label="Zoom out"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/></svg></button>
+          <span class="zoom-value" id="zoom-value">100%</span>
+          <button class="icon-button" type="button" data-zoom="1" aria-label="Zoom in"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button>
+          <button class="icon-button" type="button" id="more" aria-label="Board menu" aria-haspopup="true" aria-expanded="false"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>
+          <div class="menu" id="menu" role="menu" hidden>
+            <button type="button" role="menuitemcheckbox" aria-checked="false" id="night"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>Night board</button>
+            <button type="button" role="menuitem" id="fit">Fit the board</button>
+          </div>
+        </div>
+        <div class="toast" id="toast" role="status" hidden></div>
       </div>
     </div>
-    <p class="stage-hint">This is a live board: drag the notes, pick the pen and draw, or switch to the night board. The app does all of this offline, on your PC.</p>
+    <p class="stage-hint">This is a live copy of the app's board: pick a tool and click to place it, draw with the pen, drag things around, zoom, and find the night board under <b>⋯</b>.</p>
+    <div class="stage-cta">
+      <a class="button" href="https://github.com/AntonRylin/terra-board/releases/latest/download/Terra-Board-Setup-x64.exe">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/></svg>
+        Download for Windows
+      </a>
+      <p class="small">64-bit installer, about 115 MB, always the newest version. <a href="https://github.com/AntonRylin/terra-board/releases">Release notes</a></p>
+    </div>
   </section>
+
   <div class="wrap">
     <section class="hero" aria-label="Before you install">
       <p class="note"><strong>Windows will probably warn you.</strong> The installer isn't code-signed yet, so SmartScreen shows “Windows protected your PC”. Click <strong>More info</strong>, then <strong>Run anyway</strong>. The <a href="https://github.com/AntonRylin/terra-board">source code</a> is public if you want to check what you're running.</p>
