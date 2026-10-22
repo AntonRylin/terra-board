@@ -20,6 +20,8 @@
 <link rel="icon" href="favicon-32.png" type="image/png" sizes="32x32">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="board.css">
+<script src="board.js" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
@@ -37,26 +39,113 @@
 
 <main id="main">
   <div class="wrap">
-    <section class="hero" aria-labelledby="title">
-      <p class="eyebrow">Free · Open source (MIT) · Windows</p>
-      <h1 id="title">Terra Board <span class="by">by Social Artworks</span></h1>
-      <p class="lead">A whiteboard for Windows that works offline. No account, and no analytics or tracking of our own. Your boards stay on your PC.</p>
-      <div class="cta">
+  </div>
+  <section class="stage" aria-labelledby="title">
+    <div class="board" id="board" data-tool="select">
+      <nav class="rail" aria-label="Boards in this example">
+        <button class="app-icon shape-circle picture active" type="button" data-board="0" aria-label="Board: Terra Board"><img src="img/boards/terra.webp" alt="" width="38" height="38"></button>
+        <button class="app-icon picture" type="button" data-board="1" aria-label="Board: Lisbon trip"><img src="img/boards/trip.webp" alt="" width="38" height="38"></button>
+        <button class="app-icon purple" type="button" data-board="2" aria-label="Board: Reading list"><span aria-hidden="true">📚</span></button>
+        <button class="app-icon green" type="button" data-board="3" aria-label="Board: Q4 launch">Q</button>
+      </nav>
+      <div class="board-name"><img src="img/boards/terra.webp" alt="" width="22" height="22"><span id="board-title">Terra Board</span></div>
+
+      <div class="obj text-obj selected" style="--x:12%;--y:64px">
+        <h1 id="title">Terra Board</h1>
+        <p class="sub">A whiteboard for Windows that works <span class="circled">offline</span>.<br>Your boards stay on your PC.</p>
+        <p class="by">by Social Artworks</p>
+        <span class="handles" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+      </div>
+      <div class="obj note yellow" style="--x:61%;--y:58px;--r:-2.5deg"><p>No account. Open it and start drawing.</p></div>
+      <div class="obj note blue" style="--x:79%;--y:118px;--r:2deg"><p>Free and open source (MIT).</p></div>
+      <div class="obj note green" style="--x:55%;--y:250px;--r:1.5deg"><p>No analytics or tracking of our own.</p></div>
+      <div class="obj cta-card" style="--x:12%;--y:330px">
         <a class="button" href="https://github.com/AntonRylin/terra-board/releases/latest/download/Terra-Board-Setup-x64.exe">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/></svg>
           Download for Windows
         </a>
-        <p class="small">64-bit installer, about 115 MB, always the newest version · <a href="https://github.com/AntonRylin/terra-board/releases">Release notes</a></p>
+        <p class="small">64-bit installer, about 115 MB, always the newest version. <a href="https://github.com/AntonRylin/terra-board/releases">Release notes</a></p>
       </div>
+      <figure class="obj picture-obj" style="--x:69%;--y:372px;--r:-1deg">
+        <img src="img/board-dark-960.webp" width="960" height="600" alt="The real app on the night board">
+        <figcaption>Screenshot.png</figcaption>
+      </figure>
+      <svg class="ink" id="ink" aria-hidden="true"></svg>
+      <div class="toolbar" role="toolbar" aria-label="Try this board">
+        <button type="button" data-tool="select" aria-pressed="true" title="Select and move (V)"><svg viewBox="0 0 24 24"><path d="M5 3l14 8-6 2-3 7z"/></svg><span>Move</span></button>
+        <button type="button" data-tool="pen" aria-pressed="false" title="Pen (P)"><svg viewBox="0 0 24 24"><path d="M4 20l4-1 11-11-3-3L5 16z"/><path d="M14 6l3 3"/></svg><span>Pen</span></button>
+        <button type="button" data-action="note" title="Add a note (N)"><svg viewBox="0 0 24 24"><path d="M5 4h14v10l-6 6H5z"/><path d="M13 20v-6h6"/></svg><span>Note</span></button>
+        <span class="divider" aria-hidden="true"></span>
+        <button type="button" data-action="night" aria-pressed="false" title="Night board"><svg viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg><span>Night</span></button>
+      </div>
+    </div>
+    <p class="stage-hint">This is a live board: drag the notes, pick the pen and draw, or switch to the night board. The app does all of this offline, on your PC.</p>
+  </section>
+  <div class="wrap">
+    <section class="hero" aria-label="Before you install">
       <p class="note"><strong>Windows will probably warn you.</strong> The installer isn't code-signed yet, so SmartScreen shows “Windows protected your PC”. Click <strong>More info</strong>, then <strong>Run anyway</strong>. The <a href="https://github.com/AntonRylin/terra-board">source code</a> is public if you want to check what you're running.</p>
       <figure class="shot">
         <picture>
           <source media="(prefers-color-scheme: dark)" srcset="img/board-dark-960.webp 960w, img/board-dark-1600.webp 1600w" sizes="(min-width: 1120px) 1056px, 100vw">
           <img src="img/board-light-1600.webp" srcset="img/board-light-960.webp 960w, img/board-light-1600.webp 1600w" sizes="(min-width: 1120px) 1056px, 100vw" width="1600" height="1000" alt="Terra Board showing a board called Website relaunch: four sticky notes in an Ideas frame, a Tasks table with owners, status, due dates and progress, a Before launch checklist, and arrows between them.">
         </picture>
-        <figcaption>A real screenshot of Terra Board 0.1.35. Light or dark follows your Windows setting.</figcaption>
+        <figcaption>A real screenshot of the app. Light or dark follows your Windows setting.</figcaption>
       </figure>
     </section>
+  </div>
+
+  <section class="night-band" aria-labelledby="boards-title">
+    <div class="wrap">
+      <h2 id="boards-title">All your boards, one click apart</h2>
+      <p class="section-intro">Boards sit in a dock, each with its own picture, emoji or colour. Folders show what's inside. This is how they look on the night board; hover or tap one.</p>
+      <div class="dock-demo">
+        <div class="dock" role="tablist" aria-label="Example boards">
+          <button class="app-icon shape-circle picture" role="tab" aria-selected="true" data-preview="terra" type="button"><img src="img/boards/terra.webp" alt="" width="44" height="44"><span class="tip">Terra Board</span></button>
+          <button class="app-icon picture" role="tab" aria-selected="false" data-preview="trip" type="button"><img src="img/boards/trip.webp" alt="" width="44" height="44"><span class="tip">Lisbon trip</span></button>
+          <button class="app-icon picture" role="tab" aria-selected="false" data-preview="sea" type="button"><img src="img/boards/sea.webp" alt="" width="44" height="44"><span class="tip">Surf spots</span></button>
+          <button class="app-icon shape-circle picture" role="tab" aria-selected="false" data-preview="mood" type="button"><img src="img/boards/mood.webp" alt="" width="44" height="44"><span class="tip">Brand moodboard</span></button>
+          <button class="app-icon purple" role="tab" aria-selected="false" data-preview="reading" type="button"><span aria-hidden="true">📚</span><span class="tip">Reading list</span></button>
+          <button class="app-icon green" role="tab" aria-selected="false" data-preview="q4" type="button">Q<span class="tip">Q4 launch</span></button>
+          <button class="app-icon orange" role="tab" aria-selected="false" data-preview="recipes" type="button"><span aria-hidden="true">🍋</span><span class="tip">Recipes</span></button>
+          <button class="app-icon folder-mosaic" role="tab" aria-selected="false" data-preview="work" type="button"><i class="mini"></i><i class="mini green"></i><i class="mini purple"></i><i class="mini orange"></i><i class="mini rose"></i><i class="mini gray"></i><span class="tip">Work (folder)</span></button>
+        </div>
+        <div class="preview" id="preview" role="tabpanel" aria-live="polite">
+          <div class="preview-head"><span id="preview-name">Terra Board</span><span class="preview-count" id="preview-count">5 objects</span></div>
+          <div class="preview-canvas" id="preview-canvas"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="ai-demo" aria-labelledby="ai-title">
+    <div class="wrap">
+      <h2 id="ai-title">Ask Claude to build on your board</h2>
+      <p class="section-intro">Turn on AI access in Settings, and Claude or Codex on your PC can read your boards and add to them, including small web pages that run right on the board. Press Run to see one prompt play out.</p>
+      <div class="ai-grid">
+        <div class="chat" aria-label="Example conversation with Claude">
+          <div class="chat-head"><span class="chat-dot" aria-hidden="true"></span>Claude</div>
+          <div class="chat-log" id="chat-log" aria-live="polite">
+            <div class="msg user">Add a launch dashboard to my “Q4 launch” board: days left until 1 December and the tasks done each week.</div>
+          </div>
+          <div class="chat-input">
+            <span>Reply to Claude…</span>
+            <button type="button" class="run" id="run-prompt">Run this prompt</button>
+          </div>
+        </div>
+        <div class="mini-board" id="mini-board" aria-label="The Q4 launch board">
+          <div class="mini-title"><span class="app-icon green small">Q</span>Q4 launch</div>
+          <div class="mini-note yellow">Press kit by 20 Nov</div>
+          <div class="mini-note blue">Beta feedback call</div>
+          <div class="embed" id="embed" hidden>
+            <div class="embed-bar"><span>Launch dashboard</span><span class="embed-kind">HTML</span></div>
+            <iframe id="embed-frame" title="Launch dashboard, a small web page on the board" sandbox="allow-scripts" loading="lazy"></iframe>
+          </div>
+        </div>
+      </div>
+      <p class="small ai-note">An illustration of the real flow. Terra itself never contacts an AI provider; the AI app you connect does, so turn it on only for boards you're happy to share with it.</p>
+    </div>
+  </section>
+  <div class="wrap">
 
     <section class="facts" aria-label="The short version">
       <div class="grid four">
@@ -85,7 +174,7 @@
       <div class="grid three">
         <article class="card">
           <h3>An infinite canvas</h3>
-          <p>Pan and zoom freely. Add text, sticky notes, shapes, frames, arrows (straight, curved or elbow), checklists and tables with typed columns. Undo, search with <kbd>Ctrl</kbd>+<kbd>K</kbd>, and a board history (<kbd>Ctrl</kbd>+<kbd>H</kbd>) that brings back deleted things for 30 days.</p>
+          <p>Pan and zoom freely. Add text, sticky notes, shapes, frames, arrows (straight, curved or elbow), a freehand pen and a highlighter, checklists and tables with typed columns. Undo, search with <kbd>Ctrl</kbd>+<kbd>K</kbd>, and a board history (<kbd>Ctrl</kbd>+<kbd>H</kbd>) that brings back deleted things for 30 days.</p>
         </article>
         <article class="card">
           <h3>Images, video and PDFs</h3>
@@ -128,7 +217,6 @@
       <p class="section-intro">Better you hear it here than after installing.</p>
       <ul class="plain-list">
         <li><strong>Windows only.</strong> 64-bit Windows. No Mac, Linux, phone or browser version.</li>
-        <li><strong>No freehand pen yet.</strong> There's a highlighter for marking things up; a drawing pen is being built now.</li>
         <li><strong>The installer isn't code-signed,</strong> so Windows shows a warning the first time.</li>
         <li><strong>No email sign-in for sync yet.</strong> Each computer joins as its own device. If you lose every paired computer, the cloud copy can't be reached.</li>
         <li><strong>It can't open Miro or Microsoft Whiteboard files.</strong> Anything you can save as an image or PDF can be dropped onto a board.</li>

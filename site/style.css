@@ -15,8 +15,9 @@
   --wrap: 1120px;
   color-scheme: light dark;
 }
+/* Dark follows the system, unless the night switch on the board says otherwise. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme='light']) {
     --bg: #11151b;
     --surface: #182029;
     --ink: #e6ebf2;
@@ -29,6 +30,23 @@
     --note-ink: #f1e3b6;
     --shadow: 0 1px 2px rgb(0 0 0 / 30%), 0 12px 32px rgb(0 0 0 / 35%);
   }
+}
+:root[data-theme='dark'] {
+  --bg: #11151b;
+  --surface: #182029;
+  --ink: #e6ebf2;
+  --muted: #a3adba;
+  --line: #2a3440;
+  --accent: #8fb4e6;
+  --accent-ink: #0f1a29;
+  --accent-soft: #1d2a3b;
+  --note: #2f2a1b;
+  --note-ink: #f1e3b6;
+  --shadow: 0 1px 2px rgb(0 0 0 / 30%), 0 12px 32px rgb(0 0 0 / 35%);
+  color-scheme: dark;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
 }
 
 *,
