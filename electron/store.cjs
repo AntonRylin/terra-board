@@ -91,6 +91,17 @@ function marksValue(value, length) {
 }
 const number = (value, min = -1e9, max = 1e9) =>
   typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max;
+// When an image was added to a board, and the profile name of who added it.
+function addedValue(value) {
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    !number(value.at, 0, 1e14) ||
+    (value.by !== undefined && (typeof value.by !== 'string' || value.by.length > 200))
+  )
+    throw Error('Invalid image details');
+  return value.by ? { at: value.at, by: value.by } : { at: value.at };
+}
 function cameraValue(c) {
   if (!c || !number(c.x) || !number(c.y) || !number(c.zoom, 0.01, 16))
     throw Error('Invalid camera');
@@ -408,6 +419,7 @@ function albumValue(value, coverAssetId) {
     };
     if (image.title !== undefined) result.title = image.title;
     if (image.rotation !== undefined) result.rotation = image.rotation;
+    if (image.added !== undefined) result.added = addedValue(image.added);
     if (image.crop !== undefined) {
       const c = image.crop;
       if (
@@ -557,6 +569,10 @@ function objectValue(o) {
     if (o.type !== 'image' || typeof o.imageTitle !== 'string' || o.imageTitle.length > 100000)
       throw Error('Invalid image title');
     result.imageTitle = o.imageTitle;
+  }
+  if (o.added !== undefined) {
+    if (o.type !== 'image') throw Error('Invalid image details');
+    result.added = addedValue(o.added);
   }
   for (const [key, limit] of [
     ['documentTitle', 100000],
@@ -1572,6 +1588,16 @@ class Store {
         ? 'changed'
         : 'ok';
     return { id, path: link.path, state };
+  }
+  // The file behind an image or document, for its Details.
+  assetInfo({ id }) {
+    if (typeof id !== 'string' || !/^[a-f0-9]{64}$/.test(id)) throw Error('Invalid asset');
+    const a = this.db
+      .prepare('SELECT id,name,mime,width,height,bytes FROM assets WHERE id=?')
+      .get(id);
+    if (!a) throw Error('Asset not found');
+    const link = this.linkState(id);
+    return { ...a, ...(link ? { linkedPath: link.path } : {}) };
   }
   assetLinks({ ids }) {
     if (!Array.isArray(ids) || ids.length > 10000) throw Error('Invalid asset list');

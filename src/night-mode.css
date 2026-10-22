@@ -425,6 +425,8 @@
 :root[data-theme='dark']
   :is(
     .quiet,
+    .image-details dt,
+    .image-details-muted,
     .modal label,
     .export-description,
     .export-quality-note,

@@ -60,6 +60,9 @@ import CollabLayer from './CollabLayer';
 import { activeCommand, isCommand, useShortcutLabels } from '../shortcuts/active';
 import type { CommandId } from '../shortcuts/commands';
 import { getPreferences, subscribePreferences } from '../settings/preferences';
+import { useCloudStatus } from './ShareDialog';
+import { addedNow, stampAdded } from '../canvas/image-added';
+import ImageDetails from './ImageDetails';
 import { BackgroundImage } from './BoardBackground';
 import type { BackgroundAppearance } from '../model';
 import SelectionToolbar from './SelectionToolbar';
@@ -143,6 +146,7 @@ import {
   BookImage,
   Settings2,
   History as HistoryIcon,
+  Info,
 } from 'lucide-react';
 import type { Asset, CanvasObject, Document, Edit, Tool, ImageCrop as CropBounds } from '../model';
 import { uid } from '../model';
@@ -933,6 +937,14 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     null,
   );
   const [albumSettingsId, setAlbumSettingsId] = useState<string | null>(null);
+  const [detailsId, setDetailsId] = useState<string | null>(null);
+  // New images record when they were added and the profile name of who added
+  // them, unless that is turned off in Settings → Canvas.
+  const cloudStatus = useCloudStatus();
+  const profileName = useRef('');
+  profileName.current = cloudStatus?.name?.trim() || '';
+  const newImageAdded = () =>
+    getPreferences().recordImageDetails ? addedNow(profileName.current) : null;
   const [editingImageId, setEditingImageId] = useState<string | null>(null);
   const [, setAlbumRevision] = useState(0);
   // Broken links of the hovered album, shown beside its count.
@@ -1097,7 +1109,10 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       const current = engine.current?.objects.get(albumId);
       if (!alive.current || engine.current !== e || !isAlbum(current)) return;
       const images = assets.filter((a) => a.mime.startsWith('image/'));
-      applyAlbumEdit({ upserts: images.length ? [addToAlbum(current, images)] : [], deleted: [] });
+      applyAlbumEdit({
+        upserts: images.length ? [addToAlbum(current, images, newImageAdded() || undefined)] : [],
+        deleted: [],
+      });
       const notes = [
         assets.length > images.length
           ? `${assets.length - images.length} of the files were not images and were left out of the album.`
@@ -1182,14 +1197,17 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       gap,
     );
     const top = e.topZ();
-    const images: CanvasObject[] = pages.map((page, index) => ({
-      id: uid(),
-      type: 'image',
-      assetId: page.asset.id,
-      text: page.asset.name,
-      ...places[index],
-      z: top + index + 1,
-    }));
+    const images = stampAdded(
+      pages.map((page, index) => ({
+        id: uid(),
+        type: 'image',
+        assetId: page.asset.id,
+        text: page.asset.name,
+        ...places[index],
+        z: top + index + 1,
+      })),
+      newImageAdded(),
+    );
     // One undo step adds every page.
     e.apply({ upserts: images, deleted: [] });
     e.setSelection(images.map((o) => o.id));
@@ -2181,6 +2199,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       error: onError,
     });
     engine.current = e;
+    e.imageAdded = newImageAdded;
     const applyInput = () => {
       const { wheel, zoomSpeed, snapping } = getPreferences();
       e.setInputPreferences({ wheel, zoomSpeed, snapping });
@@ -2321,7 +2340,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     if (!e || !alive.current) return;
     const p = point || e.center();
     const top = e.topZ();
-    const objects = assets.map((a, i) => {
+    const placed = assets.map((a, i) => {
       const isDocument = !a.mime.startsWith('image/') && !a.mime.startsWith('video/');
       const width = isDocument ? 320 : Math.min(a.width, 480),
         height = isDocument ? 400 : (width * a.height) / a.width;
@@ -2338,6 +2357,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         ...(isDocument ? { documentMime: a.mime, documentBytes: a.bytes } : {}),
       } as CanvasObject;
     });
+    const objects = stampAdded(placed, newImageAdded());
     const edit = insertGalleryImages(e.objects, objects, target);
     e.apply(edit);
     const gallery =
@@ -2642,7 +2662,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       point && bounds
         ? { x: point.x - bounds.x - bounds.width / 2, y: point.y - bounds.y - bounds.height / 2 }
         : { x: 30, y: 30 };
-    const copies = objects.map((o, i) => {
+    const placed = objects.map((o, i) => {
       if (o.groupId && !groups.has(o.groupId)) groups.set(o.groupId, uid());
       return {
         ...o,
@@ -2657,6 +2677,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         z: top + i + 1,
       };
     });
+    // A pasted copy is a new image on this board, added now.
+    const copies = stampAdded(placed, newImageAdded());
     const edit = insertGalleryImages(e.objects, copies, target);
     e.apply(edit);
     const gallery =
@@ -3335,6 +3357,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
                 },
               ]
             : []),
+          { label: 'Details', icon: <Info />, action: () => setDetailsId(selected[0].id) },
           null,
         ]
       : []),
@@ -3699,6 +3722,12 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
               }}
             />
           );
+        })()}
+      {detailsId &&
+        (() => {
+          const image = engine.current?.objects.get(detailsId);
+          if (image?.type !== 'image') return null;
+          return <ImageDetails object={image} onClose={() => setDetailsId(null)} />;
         })()}
       {albumSettingsId &&
         (() => {
@@ -4768,6 +4797,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
                       'Full image preview',
                       'Copy as image',
                       'Copy text',
+                      'Details',
                       'Find usages',
                     ].includes(item.label)),
               },

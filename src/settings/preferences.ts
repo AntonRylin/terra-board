@@ -19,6 +19,8 @@ export type Preferences = {
   playJoinSongs: boolean;
   // Play this person's own entrance song when they open a shared board.
   hearOwnSong: boolean;
+  // New images remember when they were added and the profile name of who added them.
+  recordImageDetails: boolean;
   radial: ToolbarId[];
   shortcuts: ShortcutOverrides;
 };
@@ -33,6 +35,7 @@ export const defaultPreferences = (): Preferences => ({
   snapping: true,
   playJoinSongs: true,
   hearOwnSong: true,
+  recordImageDetails: true,
   radial: defaultRadialLayout(),
   shortcuts: {},
 });
@@ -56,6 +59,7 @@ export function readPreferences(value: unknown, legacyRadial?: unknown): Prefere
     snapping: pick(raw.snapping, [true, false], d.snapping),
     playJoinSongs: pick(raw.playJoinSongs, [true, false], d.playJoinSongs),
     hearOwnSong: pick(raw.hearOwnSong, [true, false], d.hearOwnSong),
+    recordImageDetails: pick(raw.recordImageDetails, [true, false], d.recordImageDetails),
     radial: readRadialLayout(raw.radial !== undefined ? raw.radial : legacyRadial),
     shortcuts: cleanOverrides(raw.shortcuts),
   };

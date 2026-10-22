@@ -64,6 +64,13 @@ export function CanvasSettings() {
           onChange={(snapping) => updatePreferences({ snapping })}
         />
       </Row>
+      <Row id="recordImageDetails">
+        <Switch
+          label="Remember who added images"
+          checked={preferences.recordImageDetails}
+          onChange={(recordImageDetails) => updatePreferences({ recordImageDetails })}
+        />
+      </Row>
     </Group>
   );
 }

@@ -1,4 +1,5 @@
-import type { Album, AlbumImage, Asset, CanvasObject, Edit } from '../model';
+import type { Album, AlbumImage, Asset, CanvasObject, Edit, ImageAdded } from '../model';
+import { addedValue } from './image-added.ts';
 import { uid } from '../model.ts';
 
 // An album is an image card: its picture is the cover, one of `album.images`.
@@ -30,6 +31,7 @@ function asAlbumImage(o: CanvasObject): AlbumImage[] {
       ...(o.imageTitle?.trim() ? { title: o.imageTitle } : {}),
       ...(o.crop ? { crop: { ...o.crop } } : {}),
       ...(o.rotation ? { rotation: o.rotation } : {}),
+      ...(o.added ? { added: { ...o.added } } : {}),
     },
   ];
 }
@@ -107,6 +109,7 @@ function imageObject(image: AlbumImage, x: number, y: number, z: number): Canvas
     ...(image.title ? { imageTitle: image.title } : {}),
     ...(image.crop ? { crop: { ...image.crop } } : {}),
     ...(image.rotation ? { rotation: image.rotation } : {}),
+    ...(image.added ? { added: { ...image.added } } : {}),
   };
 }
 
@@ -127,7 +130,11 @@ export function setAlbumCover(album: CanvasObject & { album: Album }, imageId: s
 }
 
 // New images join at the end, at the size an imported image has on the board.
-export function addToAlbum(album: CanvasObject & { album: Album }, assets: Asset[]): CanvasObject {
+export function addToAlbum(
+  album: CanvasObject & { album: Album },
+  assets: Asset[],
+  added?: ImageAdded,
+): CanvasObject {
   const images = assets
     .filter((a) => a.mime.startsWith('image/'))
     .map((a): AlbumImage => {
@@ -137,6 +144,7 @@ export function addToAlbum(album: CanvasObject & { album: Album }, assets: Asset
         assetId: a.id,
         width: Math.max(1, a.width * scale),
         height: Math.max(1, a.height * scale),
+        ...(added ? { added: { ...added } } : {}),
       };
     });
   return { ...album, album: { ...album.album, images: [...album.album.images, ...images] } };
@@ -196,6 +204,7 @@ export function albumValue(value: any, coverAssetId: unknown): Album {
         ? { crop: { x: i.crop.x, y: i.crop.y, width: i.crop.width, height: i.crop.height } }
         : {}),
       ...(Number.isFinite(i.rotation) ? { rotation: i.rotation } : {}),
+      ...(addedValue(i.added) ? { added: addedValue(i.added) } : {}),
     })),
   };
 }

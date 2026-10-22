@@ -1083,6 +1083,31 @@ body.reordering * {
   padding: 10px 11px;
   font-size: 14px;
 }
+.image-details {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 9px 16px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.image-details dt {
+  color: #7b8796;
+  font-size: 12px;
+  padding-top: 1px;
+}
+.image-details dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.image-details-muted {
+  color: #7b8796;
+}
+.image-details-note {
+  margin: 16px 0 0;
+  line-height: 1.5;
+}
 .dialog-actions {
   display: flex;
   justify-content: flex-end;

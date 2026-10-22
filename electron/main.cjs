@@ -317,6 +317,7 @@ const commands = new Set([
   'importAsset',
   'removeBackground',
   'assetLinks',
+  'assetInfo',
   'boardSyncs',
   'boardInfo',
 ]);

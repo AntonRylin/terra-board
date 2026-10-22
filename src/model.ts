@@ -63,12 +63,18 @@ export interface AlbumImage {
   title?: string;
   crop?: ImageCrop;
   rotation?: number;
+  added?: ImageAdded;
 }
 export interface Album {
   name: string;
   // Images added later: copied into the library, or linked to their file.
   storage: 'copy' | 'link';
   images: AlbumImage[];
+}
+export interface ImageAdded {
+  // Milliseconds since 1970 (Date.now()).
+  at: number;
+  by?: string;
 }
 export interface ImageCrop {
   x: number;
@@ -146,6 +152,9 @@ export interface CanvasObject {
   // Inline formatting of `text`: edited on list titles, board text, notes and frame names.
   textMarks?: TextMark[];
   imageTitle?: string;
+  // When an image was put on the board, and the profile name of who did it
+  // (left out without a profile). Settings → Canvas can stop recording it.
+  added?: ImageAdded;
   documentTitle?: string;
   // Inline formatting of `imageTitle` or `documentTitle`; there `text` is the file name.
   titleMarks?: TextMark[];

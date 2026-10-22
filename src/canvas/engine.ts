@@ -54,8 +54,9 @@ import {
   Rectangle,
   Texture,
 } from 'pixi.js';
-import type { CanvasObject, Camera, Edit, Tool, ImageCrop } from '../model';
+import type { CanvasObject, Camera, Edit, Tool, ImageCrop, ImageAdded } from '../model';
 import { uid } from '../model';
+import { stampAdded } from './image-added.ts';
 import { SpatialIndex, screenToWorld, zoomAt, boundsOf, type Point, type Bounds } from './geometry';
 import { History } from './history';
 import {
@@ -1816,6 +1817,9 @@ export class Engine {
     if (this.selection.size)
       this.apply({ upserts: [], deleted: this.clipboardSelection.map((o) => o.id) });
   }
+  // What a new copy of an image records about being added (null: nothing);
+  // unset keeps what the original had.
+  imageAdded: (() => ImageAdded | null) | null = null;
   duplicate() {
     const ids = new Map<string, string>();
     const objects = this.copySelection;
@@ -1837,7 +1841,10 @@ export class Engine {
       };
     });
     if (copies.length) {
-      this.apply({ upserts: copies, deleted: [] });
+      this.apply({
+        upserts: this.imageAdded ? stampAdded(copies, this.imageAdded()) : copies,
+        deleted: [],
+      });
       const chosen = new Set(this.selected.map((o) => objectIds.get(o.id)));
       this.setSelection(copies.filter((o) => !o.galleryId && chosen.has(o.id)).map((o) => o.id));
     }

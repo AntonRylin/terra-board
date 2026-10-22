@@ -64,6 +64,7 @@ export default defineConfig({
           'importBoard',
           'exportBoard',
           'assetLinks',
+          'assetInfo',
           'boardSyncs',
           'boardInfo',
         ]);

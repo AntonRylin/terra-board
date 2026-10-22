@@ -237,6 +237,13 @@ export const rows = {
     description: 'Align edges and centers while moving or resizing. Hold Alt to skip once.',
     keywords: 'guides align',
   },
+  recordImageDetails: {
+    section: 'canvas',
+    title: 'Remember who added images',
+    description:
+      'New images keep the date and time they were added, and your profile name if you have one. Right-click an image and choose Details to see them.',
+    keywords: 'image details added date time timestamp user name author history info',
+  },
   radialSlots: {
     section: 'radial',
     title: 'Tools in the wheel',

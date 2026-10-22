@@ -24,6 +24,7 @@ const allowed = new Set([
   'importAsset',
   'asset',
   'assetLinks',
+  'assetInfo',
   'relinkAsset',
   'boardSyncs',
   'boardInfo',

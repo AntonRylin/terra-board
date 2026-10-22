@@ -3,6 +3,7 @@ import { pdfComposerValue } from './pdf-composer.ts';
 import { sanitizeMarks } from './rich-text.ts';
 import { htmlSourceLimit } from './html-card.ts';
 import { albumValue } from './album.ts';
+import { addedValue } from './image-added.ts';
 import { tableValue } from './table.ts';
 export function pastedUrl(text: string): string | null {
   const value = text.trim();
@@ -381,6 +382,7 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
           }
         : {}),
       ...(o.assetId ? { assetId: o.assetId } : {}),
+      ...(o.type === 'image' && addedValue(o.added) ? { added: addedValue(o.added) } : {}),
       ...(o.type === 'image' && o.album !== undefined && !o.galleryId
         ? { album: albumValue(o.album, o.assetId) }
         : {}),

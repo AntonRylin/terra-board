@@ -385,6 +385,8 @@ export async function importAlbumFiles(
 export const assetLinks = (ids: string[]) =>
   ids.length ? invoke<AssetLink[]>('assetLinks', { ids }) : Promise.resolve([]);
 export const boardSyncs = (id: string) => invoke<boolean>('boardSyncs', { id });
+export type AssetInfo = Asset & { linkedPath?: string };
+export const assetInfo = (id: string) => invoke<AssetInfo>('assetInfo', { id });
 export interface BoardInfo {
   created: number | null;
   updated: number;

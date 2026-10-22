@@ -175,6 +175,11 @@ const object = z
     text: z.string().max(100000).optional(),
     textMarks: textMarks.optional(),
     imageTitle: z.string().max(100000).optional(),
+    added: z
+      .object({ at: z.number().min(0).max(1e14), by: z.string().max(200).optional() })
+      .strict()
+      .optional()
+      .describe('When an image was added and by whom; Terra keeps it, leave it as read.'),
     documentTitle: z.string().max(100000).optional(),
     titleMarks: textMarks.optional(),
     documentMime: z.string().max(200).optional(),
@@ -464,11 +469,20 @@ function tools(call, services = {}) {
     async (a) => {
       let upserts = a.upserts;
       // Board reads leave embed sources out; an upsert without one keeps it.
-      if (upserts.some((o) => o.type === 'html' && o.html === undefined)) {
+      // An image upsert without its added details keeps them too.
+      if (
+        upserts.some(
+          (o) => (o.type === 'html' && o.html === undefined) || (o.type === 'image' && !o.added),
+        )
+      ) {
         const stored = new Map(
           (await call('loadBoard', { id: a.id })).objects.map((o) => [o.id, o]),
         );
         upserts = upserts.map((o) => {
+          if (o.type === 'image') {
+            const added = !o.added && stored.get(o.id)?.added;
+            return added ? { ...o, added } : o;
+          }
           if (o.type !== 'html' || o.html !== undefined) return o;
           const current = stored.get(o.id);
           if (current?.type !== 'html')
