@@ -7,6 +7,7 @@ import { fitListHeight, listLayout, withListItems } from '../canvas/list-layout'
 import ListEditOutline from './ListEditOutline';
 import RichTextField, { fieldRange, focusField } from './RichTextField';
 import './canvas-lists.css';
+import { forwardWheel } from './forward-wheel';
 
 export interface ListView {
   objects: CanvasObject[];
@@ -323,21 +324,7 @@ export default function CanvasLists({
     <div
       className="canvas-lists"
       data-interactive={interactive}
-      onWheel={(event) => {
-        host?.dispatchEvent(
-          new WheelEvent('wheel', {
-            bubbles: true,
-            cancelable: true,
-            clientX: event.clientX,
-            clientY: event.clientY,
-            deltaX: event.deltaX,
-            deltaY: event.deltaY,
-            deltaMode: event.deltaMode,
-            ctrlKey: event.ctrlKey,
-            shiftKey: event.shiftKey,
-          }),
-        );
-      }}
+      onWheel={(event) => forwardWheel(host, event.nativeEvent, { overlay: event.currentTarget })}
       onContextMenu={(event) => {
         event.preventDefault();
         host?.dispatchEvent(

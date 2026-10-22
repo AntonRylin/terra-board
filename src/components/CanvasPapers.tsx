@@ -27,6 +27,7 @@ import {
 } from '../canvas/paper-layout';
 import RichTextField, { focusField } from './RichTextField';
 import './canvas-papers.css';
+import { forwardWheel } from './forward-wheel';
 
 export interface PaperView {
   objects: CanvasObject[];
@@ -463,22 +464,7 @@ export default function CanvasPapers({
     <div
       className="canvas-papers"
       data-interactive={interactive}
-      onWheel={(event) => {
-        // The engine only takes wheel input aimed at its own canvas.
-        (host?.querySelector('canvas') || host)?.dispatchEvent(
-          new WheelEvent('wheel', {
-            bubbles: true,
-            cancelable: true,
-            clientX: event.clientX,
-            clientY: event.clientY,
-            deltaX: event.deltaX,
-            deltaY: event.deltaY,
-            deltaMode: event.deltaMode,
-            ctrlKey: event.ctrlKey,
-            shiftKey: event.shiftKey,
-          }),
-        );
-      }}
+      onWheel={(event) => forwardWheel(host, event.nativeEvent, { overlay: event.currentTarget })}
       onContextMenu={(event) => {
         event.preventDefault();
         host?.dispatchEvent(
