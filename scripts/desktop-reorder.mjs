@@ -346,6 +346,70 @@ try {
   await finish(out);
   assert.equal(await folderOf(inner[5].id), null, 'board leaves the folder');
   assert.ok((await rootOrder()).includes(inner[5].id), 'board lands on the strip');
+  await key('Escape', 'Escape');
+  await until(() => read(`!document.querySelector('.folder-sheet')`), 'folder closes');
+  const glide = async (from, to) => {
+    for (let i = 1; i <= 10; i++)
+      await mouse(
+        'mouseMoved',
+        from.x + ((to.x - from.x) * i) / 10,
+        from.y + ((to.y - from.y) * i) / 10,
+      );
+  };
+  // A board aimed near the edge of a folder icon still goes in, with a clear label.
+  const folderSlot = await rect(selector(folder.id));
+  const nearEdge = {
+    x: folderSlot.x + folderSlot.width / 2,
+    y: folderSlot.y + folderSlot.height * 0.2,
+  };
+  await begin(extra[1].id, nearEdge);
+  assert.equal(
+    await read(
+      `document.querySelector(${JSON.stringify(selector(folder.id))}).classList.contains('drop-target')`,
+    ),
+    true,
+    'folder edge is part of the target',
+  );
+  assert.equal(
+    await read(`document.querySelector('.launcher-tooltip:popover-open')?.textContent`),
+    'Move to Docking folder',
+    'label names the destination',
+  );
+  assert.equal(
+    await read(
+      `document.querySelector(${JSON.stringify(lifted)}).hasAttribute('data-into-folder')`,
+    ),
+    true,
+    'held board shrinks over the folder',
+  );
+  assert.equal(await read(`!!document.querySelector('.folder-sheet')`), false, 'no instant open');
+  // Resting on the folder opens it, and the board can be placed among the others.
+  await until(() => rect('.folder-sheet'), 'folder springs open', 3000);
+  await sleep(300);
+  await shot('reorder-spring-open.png');
+  const spot = center(await rect(selector(inner[2].id)));
+  await glide(nearEdge, spot);
+  await finish(spot);
+  assert.equal(await folderOf(extra[1].id), folder.id, 'board dropped into the opened folder');
+  assert.equal(await read(`!!document.querySelector('.folder-sheet')`), true, 'folder stays open');
+  const placed = await read(
+    `window.canvas.invoke('library').then(l=>l.boards.filter(b=>b.folderId==='${folder.id}').sort((a,b)=>a.position-b.position).map(b=>b.id))`,
+  );
+  assert.ok(placed.indexOf(extra[1].id) < placed.length - 1, 'board keeps the chosen place');
+  await key('Escape', 'Escape');
+  await until(() => read(`!document.querySelector('.folder-sheet')`), 'folder closes');
+  // A spring-opened folder closes again when the board is dropped elsewhere.
+  const into2 = center(await rect(selector(folder.id)));
+  await begin(extra[0].id, into2);
+  await until(() => rect('.folder-sheet'), 'folder springs open again', 3000);
+  const back = center(await rect(selector(board.id)));
+  await glide(into2, back);
+  await finish(back);
+  assert.equal(await folderOf(extra[0].id), null, 'board stays on the strip');
+  await until(
+    () => read(`!document.querySelector('.folder-sheet')`),
+    'spring-opened folder closes',
+  );
   assert.deepEqual(await read('dragLog'), [], 'no browser drag events');
   await read(`localStorage.setItem('terra-board.launcher-edge','top')`);
   await send('Page.reload');
@@ -376,6 +440,7 @@ try {
       horizontal: true,
       folders: true,
       folderGrid: true,
+      springOpen: true,
       liveAnimation: true,
       cancel: true,
       errors,

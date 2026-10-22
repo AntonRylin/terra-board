@@ -9,6 +9,7 @@ import { useLauncherDock, type DockEdge } from './useLauncherDock';
 import { useLauncherReorder } from './useLauncherReorder';
 import { useLauncherAlignment } from './useLauncherAlignment';
 import type { MenuPlacement } from './Dialogs';
+const SPRING_DELAY = 600;
 export function ShareBadge({ mark }: { mark?: SharingMark }) {
   if (!mark) return null;
   return (
@@ -62,15 +63,34 @@ export default function Launcher(p: Props) {
   const dock = useLauncherDock(rail, p.dockEdge, p.onDock, () => p.onFolder(null));
   useLauncherAlignment(rail, p.centered, p.dockEdge);
   const horizontal = p.dockEdge === 'top' || p.dockEdge === 'bottom';
+  // A folder that opened itself under a held board, and where that board landed.
+  const springOpened = useRef<string | null>(null),
+    landed = useRef<string | null>(null);
   const reorder = useLauncherReorder(p.library, async (change) => {
     if (change.kind === 'folder') await p.onReorderFolder(change.id, change.position!);
-    else
-      await p.onMove(
-        change.id,
-        change.folder || (change.group === 'root' ? null : change.group),
-        change.folder ? undefined : change.position,
-      );
+    else {
+      const folderId = change.folder || (change.group === 'root' ? null : change.group);
+      landed.current = folderId;
+      await p.onMove(change.id, folderId, change.folder ? undefined : change.position);
+    }
   });
+  // Resting a board on a folder opens it, so it can be placed among the others.
+  useEffect(() => {
+    const target = reorder.folder;
+    if (!target || reorder.origin !== 'root' || p.opened === target) return;
+    const timer = setTimeout(() => {
+      springOpened.current = target;
+      p.onFolder(target);
+    }, SPRING_DELAY);
+    return () => clearTimeout(timer);
+  }, [reorder.folder, reorder.origin, p.opened]);
+  useEffect(() => {
+    if (reorder.source) return;
+    const opened = springOpened.current;
+    springOpened.current = null;
+    if (opened && landed.current !== opened && p.opened === opened) p.onFolder(null);
+    landed.current = null;
+  }, [reorder.source]);
   const boards = p.library.boards.filter((b) => !b.trashed);
   const items = [
     ...boards.filter((b) => !b.folderId).map((b) => ({ kind: 'board', item: b })),
@@ -188,7 +208,21 @@ export default function Launcher(p: Props) {
   return (
     <>
       {!p.hidden && (
-        <LauncherTooltip key={`${p.dockEdge}-${p.opened}-${p.active}`} edge={p.dockEdge} />
+        <LauncherTooltip
+          key={`${p.dockEdge}-${p.opened}-${p.active}`}
+          edge={p.dockEdge}
+          pinned={
+            // Once the folder is open, its sheet already shows the destination.
+            reorder.folder && p.opened !== reorder.folder
+              ? {
+                  id: reorder.folder,
+                  text:
+                    'Move to ' +
+                    (p.library.folders.find((f) => f.id === reorder.folder)?.name || 'folder'),
+                }
+              : null
+          }
+        />
       )}
       {dock.target && <div className="dock-preview" data-edge={dock.target} aria-hidden="true" />}
       {dock.floating && (

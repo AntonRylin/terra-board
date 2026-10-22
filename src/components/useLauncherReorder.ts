@@ -47,6 +47,26 @@ const snapshot = (container: HTMLElement): Group => ({
 });
 const inside = (x: number, y: number, r: DOMRect, slack = 0) =>
   x >= r.left - slack && x <= r.right + slack && y >= r.top - slack && y <= r.bottom + slack;
+// An open folder accepts drops anywhere on its sheet, even while it is empty.
+const dropArea = (group: Group) =>
+  (
+    group.container.closest<HTMLElement>('.folder-sheet') || group.container
+  ).getBoundingClientRect();
+// Pick up folder sheets that opened or closed while a tile is held.
+const refreshGroups = (g: Gesture) => {
+  const containers = [...document.querySelectorAll<HTMLElement>('[data-reorder-group]')];
+  if (
+    containers.length === g.groups.length &&
+    containers.every((container, i) => g.groups[i].container === container)
+  )
+    return;
+  g.groups = containers.map(
+    (container) => g.groups.find((group) => group.container === container) || snapshot(container),
+  );
+};
+// Entering a folder needs the inner part of its slot; staying needs only the slot.
+const ENTER_EDGE = 0.15,
+  STAY_SLACK = 6;
 
 export function useLauncherReorder(
   library: unknown,
@@ -67,6 +87,7 @@ export function useLauncherReorder(
   const suppressClick = useRef(false);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [source, setSource] = useState<string | null>(null);
+  const [origin, setOrigin] = useState<string | null>(null);
   const clear = () => {
     cancelAnimationFrame(frame.current);
     settling.current?.cancel();
@@ -77,6 +98,7 @@ export function useLauncherReorder(
       if (g.avatar.matches(':popover-open')) g.avatar.hidePopover();
       g.avatar.removeAttribute('popover');
       delete g.avatar.dataset.reorderAvatar;
+      g.avatar.removeAttribute('data-into-folder');
       if (g.avatarStyle === null) g.avatar.removeAttribute('style');
       else g.avatar.setAttribute('style', g.avatarStyle);
       if (g.element.hasPointerCapture(g.pointer)) g.element.releasePointerCapture(g.pointer);
@@ -84,6 +106,7 @@ export function useLauncherReorder(
     document.body.classList.remove('reordering');
     draft.current = null;
     setSource(null);
+    setOrigin(null);
     setPreview(null);
   };
   useLayoutEffect(() => {
@@ -95,9 +118,10 @@ export function useLauncherReorder(
     if (!g || !g.active || g.released) return;
     g.avatar.style.left = `${g.x - g.offsetX}px`;
     g.avatar.style.top = `${g.y - g.offsetY}px`;
+    refreshGroups(g);
     // Drifting slightly off the narrow strip keeps sorting instead of cancelling.
     const group =
-      g.groups.find(({ container }) => inside(g.x, g.y, container.getBoundingClientRect())) ||
+      g.groups.find((candidate) => inside(g.x, g.y, dropArea(candidate))) ||
       (inside(g.x, g.y, g.origin.container.getBoundingClientRect(), 40) ? g.origin : undefined);
     let next: Preview | null = null;
     if (group && (group === g.origin || g.kind === 'board')) {
@@ -117,19 +141,18 @@ export function useLauncherReorder(
       const x = g.x - bounds.left + group.container.scrollLeft,
         y = g.y - bounds.top + group.container.scrollTop;
       // Stable layout slots avoid repeatedly swapping targets as siblings animate.
+      // A targeted folder holds its slot, so it stays under the pointer.
+      const held = draft.current?.group === group ? draft.current.folder : null;
       const folder =
         g.kind === 'board' && group.id === 'root'
-          ? group.items.find(
-              (item) =>
-                item.kind === 'folder' &&
-                x >= item.x &&
-                x <= item.x + item.width &&
-                y >= item.y &&
-                y <= item.y + item.height &&
-                (horizontal
-                  ? x > item.x + item.width * 0.3 && x < item.x + item.width * 0.7
-                  : y > item.y + item.height * 0.3 && y < item.y + item.height * 0.7),
-            )
+          ? group.items.find((item) => {
+              if (item.kind !== 'folder') return false;
+              const at = horizontal ? x : y,
+                start = horizontal ? item.x : item.y,
+                size = horizontal ? item.width : item.height;
+              const edge = item.id === held ? -STAY_SLACK : size * ENTER_EDGE;
+              return at >= start + edge && at <= start + size - edge;
+            })
           : null;
       const nearest = group.items.reduce(
         (best, item, index) => {
@@ -146,6 +169,7 @@ export function useLauncherReorder(
         folder: folder?.id || null,
       };
     }
+    g.avatar.toggleAttribute('data-into-folder', !!next?.folder);
     const previous = draft.current;
     if (
       previous?.group !== next?.group ||
@@ -265,6 +289,7 @@ export function useLauncherReorder(
         g.avatar.showPopover();
         document.body.classList.add('reordering');
         setSource(g.id);
+        setOrigin(g.origin.id);
       }
       cancelAnimationFrame(frame.current);
       update();
@@ -357,5 +382,5 @@ export function useLauncherReorder(
     if (!from || !to) return undefined;
     return { transform: `translate(${to.x - from.x}px, ${to.y - from.y}px)` };
   };
-  return { start, style, source, folder: preview?.folder };
+  return { start, style, source, origin, folder: preview?.folder };
 }

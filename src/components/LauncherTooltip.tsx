@@ -2,8 +2,20 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { DockEdge } from './useLauncherDock';
 
 /** One top-layer label, shared by the dock and boards inside folders. */
-export default function LauncherTooltip({ edge }: { edge: DockEdge }) {
-  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+export default function LauncherTooltip({
+  edge,
+  pinned,
+}: {
+  edge: DockEdge;
+  /** Shown beside a rail item regardless of hover, e.g. a folder under a held board. */
+  pinned?: { id: string; text: string } | null;
+}) {
+  const [hovered, setAnchor] = useState<HTMLElement | null>(null);
+  const pinnedAnchor = pinned
+    ? document.querySelector<HTMLElement>(`.launcher [data-item="${CSS.escape(pinned.id)}"]`)
+    : null;
+  const anchor = pinnedAnchor || hovered;
+  const text = pinnedAnchor ? pinned!.text : hovered?.dataset.launcherLabel;
   const tip = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -89,12 +101,12 @@ export default function LauncherTooltip({ edge }: { edge: DockEdge }) {
     if (side === 'bottom') y = r.top - height - 10;
     label.style.left = `${Math.max(8, Math.min(x, innerWidth - width - 8))}px`;
     label.style.top = `${Math.max(8, Math.min(y, innerHeight - height - 8))}px`;
-  }, [anchor, edge]);
+  }, [anchor, edge, text]);
 
   // Retain the element between hovers; names are already available on the tiles.
   return (
     <div ref={tip} className="launcher-tooltip" role="tooltip" popover="manual">
-      {anchor?.dataset.launcherLabel}
+      {text}
     </div>
   );
 }

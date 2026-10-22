@@ -272,6 +272,16 @@ body.reordering * {
 .app-icon[data-reorder-avatar]:not(.folder-mosaic) {
   padding: 0;
 }
+/* Over a folder, the held board shrinks a little as if going in. */
+.app-icon[data-reorder-avatar][data-into-folder] {
+  scale: 0.72;
+  opacity: 0.88;
+}
+.app-icon[data-reorder-avatar] {
+  transition:
+    scale 160ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 160ms;
+}
 .app-icon[data-reorder-avatar]::backdrop {
   background: transparent;
   pointer-events: none;
@@ -332,6 +342,19 @@ body.reordering * {
 .folder-board.drop-target .app-icon {
   outline: 1px solid #76a0d4;
   outline-offset: 4px;
+}
+/* A folder ready to take a held board. */
+.launch-item.drop-target .folder-mosaic {
+  scale: 1.16;
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  box-shadow: 0 6px 18px #2f6fc433;
+}
+.folder-mosaic {
+  transition:
+    transform 140ms,
+    scale 160ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 160ms;
 }
 .folder-mosaic {
   background: #e3e7ed;
