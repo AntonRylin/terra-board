@@ -99,6 +99,11 @@ CREATE TRIGGER sync_folder_delete AFTER DELETE ON folders
   BEGIN ${enqueue('folder', "''", 'OLD.id')} END;
 `;
 
+const dropForeignCopies = `
+  DELETE FROM boards WHERE id IN (SELECT id FROM sync_foreign WHERE kind='board')
+    OR folderId IN (SELECT id FROM sync_foreign WHERE kind='folder');
+  DELETE FROM folders WHERE id IN (SELECT id FROM sync_foreign WHERE kind='folder');`;
+
 const kindOrder = { folder: 0, board: 1, object: 2 };
 const roleRank = { view: 1, edit: 2 };
 
@@ -173,6 +178,12 @@ function createSync(store, helpers) {
     db().prepare("DELETE FROM sync_outbox WHERE kind='board' AND id=?").run(boardId);
     db().prepare("DELETE FROM sync_outbox WHERE kind='object' AND boardId=?").run(boardId);
   };
+  // Outbox entries for boards no longer in this library. Boards are only ever
+  // deleted here when they were someone else's copy.
+  const forgetOrphans = () =>
+    db().exec(`
+      DELETE FROM sync_outbox WHERE kind='object' AND boardId NOT IN (SELECT id FROM boards);
+      DELETE FROM sync_outbox WHERE kind='board' AND id NOT IN (SELECT id FROM boards);`);
   const quote = (value) => "'" + String(helpers.idValue(value)).replace(/'/g, "''") + "'";
   const withApplying = (fn) =>
     store.transaction(() => {
@@ -241,13 +252,20 @@ function createSync(store, helpers) {
       sync.identity({ workspace });
       return sync.library({ on: true });
     },
+    // Remove every copy of other people's boards and folders, with their unsent edits.
+    dropForeign() {
+      let changed = false;
+      withApplying(() => {
+        changed = !!db().prepare('SELECT 1 FROM sync_foreign LIMIT 1').get();
+        db().exec(dropForeignCopies + 'DELETE FROM sync_foreign;');
+        forgetOrphans();
+      });
+      return { changed };
+    },
     disable() {
       withApplying(() => {
         // Boards other people shared here belong to them; remove the copies.
-        db().exec(`
-          DELETE FROM boards WHERE id IN (SELECT id FROM sync_foreign WHERE kind='board')
-            OR folderId IN (SELECT id FROM sync_foreign WHERE kind='folder');
-          DELETE FROM folders WHERE id IN (SELECT id FROM sync_foreign WHERE kind='folder');
+        db().exec(`${dropForeignCopies}
           DELETE FROM sync_outbox; DELETE FROM sync_uploaded; DELETE FROM sync_owned;
           DELETE FROM sync_foreign; DELETE FROM sync_local;
           DELETE FROM sync_state WHERE key <> 'applying';`);
@@ -328,6 +346,8 @@ function createSync(store, helpers) {
         db().exec(
           `DELETE FROM sync_outbox WHERE kind='board' AND id IN (SELECT id FROM sync_foreign WHERE kind='board')`,
         );
+        // Edits waiting for a board that just went would be refused by the server.
+        forgetOrphans();
       });
       const has = db().prepare('SELECT 1 FROM boards WHERE id=?');
       const hasFolder = db().prepare('SELECT 1 FROM folders WHERE id=?');

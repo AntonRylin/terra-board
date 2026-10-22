@@ -243,8 +243,15 @@ class CloudSync {
     this.workspace = local.workspace;
     this.emit({ state: 'syncing', ...local });
     const { data } = await this.client.auth.getSession();
-    if (!data.session)
+    if (!data.session) {
+      // Signed out, the server can no longer say what is still shared here: copies of
+      // other people's boards go, as when sync is turned off.
+      await this.transaction(async () => {
+        const dropped = await this.call('syncDropForeign');
+        return { library: dropped.changed, boards: [] };
+      });
       return this.emit({ state: 'error', error: 'Signed out. Turn sync on again.' });
+    }
     this.userId = data.session.user.id;
     this.listen(this.workspace);
     void this.rejoin().catch(() => {});
@@ -927,8 +934,11 @@ class CloudSync {
       try {
         do {
           this.again = false;
-          const pushed = await this.push();
+          // What this person may still see comes first: copies whose access ended are
+          // dropped with their unsent edits, which the server would refuse and so
+          // stop every round from reaching this step.
           await this.reconcile();
+          const pushed = await this.push();
           await this.pull(this.workspace);
           for (const ws of this.foreign) await this.pull(ws);
           for (const ws of pushed) this.ping(ws);
@@ -1050,9 +1060,9 @@ class CloudSync {
       })),
     });
     this.roles = result.roles;
+    // The panel loses removed copies now, even if a download below fails.
+    if (result.changed) await this.transaction(async () => ({ library: true, boards: [] }));
     for (const group of result.missing) await this.download(group);
-    if (result.changed && !result.missing.length)
-      await this.transaction(async () => ({ library: true, boards: [] }));
   }
 
   // Everything of the given boards and folders, regardless of the cursor.

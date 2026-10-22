@@ -380,6 +380,48 @@ test('shared boards arrive with their rights; edits go back only with edit right
     assert.ok(left.includes('b-edit') && !left.includes('b-view'));
   }));
 
+// A board shared with edit rights, arrived on the friend's computer.
+function receiveSharedBoard(friend, id = 'b-shared') {
+  friend.syncIdentity({ workspace: friendWs });
+  friend.syncApply({
+    workspace: ownerWs,
+    cursor: 2,
+    roles: { folders: {}, boards: { [id]: { role: 'edit', owner: 'Anton' } } },
+    rows: [
+      {
+        kind: 'board',
+        board_id: '',
+        id,
+        data: { name: 'Shared', icon: 'none', color: 'blue', position: 1, trashed: false },
+        seq: 1,
+      },
+      { kind: 'object', board_id: id, id: 'n1', data: note('n1', 'from Anton'), seq: 2 },
+    ],
+  });
+}
+
+test('access ending removes the copy and its unsent edits', () =>
+  withStores((friend) => {
+    receiveSharedBoard(friend);
+    friend.patchBoard({ id: 'b-shared', revision: 1, upserts: [note('n1', 'friend edit')] });
+    assert.equal(friend.syncStatus().pending, 1);
+    const result = friend.syncReconcile({ shares: [] });
+    assert.ok(result.changed);
+    assert.ok(!friend.library().boards.some((b) => b.id === 'b-shared'));
+    assert.equal(friend.syncStatus().pending, 0, 'nothing is left for the server to refuse');
+    assert.deepEqual(friend.library().sharing.boards, {});
+  }));
+
+test('signing out removes copies of other people boards, never own ones', () =>
+  withStores((friend) => {
+    receiveSharedBoard(friend);
+    const own = friend.createBoard({ name: 'Mine' });
+    assert.deepEqual(friend.syncDropForeign(), { changed: true });
+    const ids = friend.library().boards.map((b) => b.id);
+    assert.ok(ids.includes(own.id) && !ids.includes('b-shared'));
+    assert.deepEqual(friend.syncDropForeign(), { changed: false });
+  }));
+
 test('a board newly placed in a shared folder is reported for download', () =>
   withStores((friend) => {
     friend.syncIdentity({ workspace: friendWs });

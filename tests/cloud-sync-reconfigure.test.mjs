@@ -38,6 +38,7 @@ function setup({
       if (command === 'syncStatus')
         return { identity, library: false, name: '', pending: 0, workspace: null };
       if (command === 'syncDisable') return {};
+      if (command === 'syncDropForeign') return { changed: false };
       throw Error('unexpected call ' + command);
     },
     root,

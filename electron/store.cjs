@@ -870,6 +870,9 @@ class Store {
   syncDisable() {
     return this.sync.disable();
   }
+  syncDropForeign() {
+    return this.sync.dropForeign();
+  }
   syncIdentity(args) {
     return this.sync.identity(args);
   }
