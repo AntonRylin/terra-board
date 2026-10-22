@@ -20,6 +20,7 @@
     "prepackage": "node scripts/check-package-idle.mjs",
     "package": "npm run build && node scripts/prepare-vc-runtime.mjs && node scripts/build-extensions.mjs && electron-builder --win dir",
     "installer": "npm run build && node scripts/prepare-vc-runtime.mjs && node scripts/build-extensions.mjs && electron-builder --config electron-builder.installer.cjs --win nsis --x64 --publish never",
+    "installer:linux": "npm run build && node scripts/build-extensions.mjs && electron-builder --config electron-builder.linux.cjs --linux --x64 --publish never",
     "prerelease": "node scripts/check-release.mjs",
     "release": "npm run build && node scripts/prepare-vc-runtime.mjs && node scripts/build-extensions.mjs && electron-builder --config electron-builder.installer.cjs --win nsis --x64 --publish always",
     "postrelease": "node scripts/check-extension-downloads.mjs",

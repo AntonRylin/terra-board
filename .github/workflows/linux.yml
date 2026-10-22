@@ -1,0 +1,92 @@
+# Builds Terra Board for Linux x64 (AppImage and .deb) on ubuntu-latest, runs
+# the unit tests and starts the built app once, then uploads the files as a
+# workflow artifact. It never publishes a release: attaching these files to a
+# GitHub release is a separate, manual step (docs/development.md).
+#
+# It builds on Linux because sharp and onnxruntime need their Linux binaries,
+# which npm installs only on Linux.
+name: Linux build
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      # onnxruntime-node's install script would fetch CUDA libraries on Linux;
+      # background removal runs on the CPU.
+      ONNXRUNTIME_NODE_INSTALL: skip
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.13'
+          cache: npm
+
+      # A display for the tests and the start-up check that open Electron
+      # windows, and fonts for the scripts the PDF tests print.
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth fonts-noto-core fonts-noto-cjk
+
+      # Ubuntu 24.04 blocks the unprivileged user namespaces Chromium's sandbox
+      # uses; without this Electron exits before opening a window. Only this
+      # build machine changes.
+      - name: Allow Electron's sandbox
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+
+      # The background-removal model (176 MB) the tests and the extension use.
+      - name: Cache the background-removal model
+        uses: actions/cache@v4
+        with:
+          path: assets/models/u2net.onnx
+          key: u2net-${{ hashFiles('scripts/payloads.mjs') }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Unit tests
+        run: xvfb-run -a npm test
+
+      - name: Build AppImage and .deb
+        run: npm run installer:linux
+
+      # Starts the built app with an empty library and checks it reached the
+      # board: its own storage, SQLite and the renderer. XDG_DATA_HOME points the
+      # installed copy at a throwaway folder instead of ~/.local/share.
+      - name: Start the AppImage once
+        run: |
+          appimage=$(ls release/linux/*.AppImage)
+          chmod +x "$appimage"
+          export XDG_DATA_HOME="$RUNNER_TEMP/xdg-data"
+          timeout 180 xvfb-run -a "$appimage" --appimage-extract-and-run --smoke-test 2>&1 | tee "$RUNNER_TEMP/smoke.log"
+          grep -F 'DESKTOP_SMOKE' "$RUNNER_TEMP/smoke.log"
+          grep -F "\"dataDirectory\":\"$XDG_DATA_HOME/Terra Board/Library\"" "$RUNNER_TEMP/smoke.log"
+
+      - name: Upload the Linux build
+        uses: actions/upload-artifact@v4
+        with:
+          name: terra-board-linux-x64
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            release/linux/*.AppImage
+            release/linux/*.deb
+            release/linux/latest-linux.yml
+            release/extensions/onnxruntime-*-linux-x64-*.zip

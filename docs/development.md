@@ -55,9 +55,44 @@ Background removal (the u2net model and onnxruntime), Song links (yt-dlp) and Of
 - `TERRA_EXTENSIONS_DIR` and `TERRA_EXTENSIONS_SOURCE` override the install folder and the local source; the desktop checks use them.
 - `scripts/desktop-extensions.mjs` installs and removes through the Settings tab.
 
+## Linux
+
+Terra Board also builds for Linux x64 as an AppImage and a .deb (`electron-builder.linux.cjs`). Build it on Linux: sharp and onnxruntime need their Linux binaries, and npm installs those only on Linux, so a Linux package made on Windows would not start.
+
+**With GitHub Actions** (the usual way)
+1. Push the branch, or a `v<version>` tag.
+2. On GitHub, open Actions → **Linux build** → **Run workflow** and pick the branch. A pushed `v*` tag runs it on its own.
+3. When it finishes, download the **terra-board-linux-x64** artifact at the bottom of the run's page. It holds `Terra-Board-x86_64.AppImage`, `terra-board_<version>_amd64.deb`, `latest-linux.yml` and the Linux onnxruntime zip.
+
+The workflow (`.github/workflows/linux.yml`) runs `npx tsc --noEmit`, `npm test` under Xvfb, `npm run installer:linux`, and starts the AppImage once with `--smoke-test` in a throwaway data folder. It only uploads a workflow artifact; it never creates or changes a release.
+
+**On a Linux machine**: Node 24.13 or later, then `npm ci` and `npm run installer:linux`. Output goes to `release/linux`. Set `ONNXRUNTIME_NODE_INSTALL=skip` before `npm ci` to stop onnxruntime downloading CUDA libraries it doesn't need. `npm test` needs a display (`xvfb-run -a npm test` without one): two tests print PDFs through Electron. Ubuntu 24.04 blocks the user namespaces Chromium's sandbox needs for an unpacked Electron, so tests that start Electron may need `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`.
+
+**Running it**
+- AppImage: `chmod +x Terra-Board-x86_64.AppImage`, then run it. It needs FUSE 2 (`libfuse2`, `libfuse2t64` on Ubuntu 24.04). On Ubuntu 24.04 and later, AppArmor may stop it with a sandbox error; the .deb installs an AppArmor profile and avoids that.
+- .deb: `sudo apt install ./terra-board_<version>_amd64.deb`. It adds Terra Board to the applications menu and registers `terraboard://` links.
+
+**What differs from Windows**
+- Text recognition (Copy text from images, reading scanned PDF pages) uses the Windows OCR engine, so it is off. The image menu shows Copy text disabled with "Text recognition is available on Windows."; PDFs with their own text still copy.
+- Office files uses the LibreOffice installed in the system (`/usr/bin/soffice` and the usual other places, see `officeLocation`). There is no LibreOffice download; without one, Settings → Extensions says to install it with the package manager.
+- Background removal and Song links work: the build packs onnxruntime's Linux library and the Linux yt-dlp (`scripts/payloads.mjs`).
+- Launch at login is not offered; people add the app to their desktop's startup applications.
+- The window keeps the desktop's own title bar; the extra Windows shadow window is Windows only.
+- IT can lock the server with `/etc/terra-board/server.json` (Windows: `%ProgramData%\Terra Board\server.json`).
+
+**Updates**: the AppImage updates itself like the Windows installer, from `latest-linux.yml` in the newest GitHub release. The .deb does not replace itself: it announces new versions, and its Download button fetches the new AppImage named in `latest-linux.yml`. Both read `latest-linux.yml`, so Linux copies hear of a version only once its release carries the Linux files.
+
+**Publishing a Linux build** (not automatic): after the Windows release of `v<version>` exists, upload the four files from the workflow artifact to it:
+
+```
+gh release upload v<version> Terra-Board-x86_64.AppImage terra-board_<version>_amd64.deb latest-linux.yml onnxruntime-<ort-version>-linux-x64-<hash>.zip
+```
+
+The onnxruntime zip must be there, or installed Linux copies cannot install Background removal. Check with `node scripts/check-extension-downloads.mjs` on a machine that built the Linux catalog, or by installing the extension.
+
 ## Where data lives
 
-Installed copies keep each user's boards in `%LOCALAPPDATA%\Terra Board\Library`, outside the installation directory, so upgrading or uninstalling the app preserves the library.
+Installed copies keep each user's boards in `%LOCALAPPDATA%\Terra Board\Library`, outside the installation directory, so upgrading or uninstalling the app preserves the library. On Linux that is `$XDG_DATA_HOME/Terra Board/Library`, normally `~/.local/share/Terra Board/Library`.
 
 Development and packaged repository builds share a repository-local `Library` folder (boards, original media, settings, browser caches, logs and temporary files), outside the replaceable `release` directory. `Library` and compiled builds are ignored by Git. `Open Terra Board.cmd` launches `release\win-unpacked\Terra Board.exe`; keep the executable's support files alongside it.
 
