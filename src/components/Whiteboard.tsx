@@ -129,6 +129,7 @@ import {
   ExternalLink,
   Crop,
   Eraser,
+  SlidersHorizontal,
   ScanText,
   AlignHorizontalJustifyCenter,
   AlignVerticalJustifyCenter,
@@ -176,6 +177,7 @@ import {
 } from '../bridge';
 import AlbumViewer from './AlbumViewer';
 import AlbumSettings from './AlbumSettings';
+import ImageEditor from './ImageEditor';
 import {
   addToAlbum,
   albumCountLabel,
@@ -896,6 +898,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     null,
   );
   const [albumSettingsId, setAlbumSettingsId] = useState<string | null>(null);
+  const [editingImageId, setEditingImageId] = useState<string | null>(null);
   const [, setAlbumRevision] = useState(0);
   // Broken links of the hovered album, shown beside its count.
   const [hoverAlbumBroken, setHoverAlbumBroken] = useState<{ id: string; count: number } | null>(
@@ -2454,6 +2457,24 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     setPdfExport({ composer: structuredClone(composer), columnId, name: column.name });
   }
   function removeImageBackground(object: CanvasObject) {
+    replaceImageAsset(
+      object,
+      async () => (await invoke<Asset>('removeBackground', { id: object.assetId })).id,
+    );
+  }
+  // Swaps an image's pixels for a new asset (background removal, the image
+  // editor) as one undoable change.
+  function closeImageEditor() {
+    setEditingImageId(null);
+    // The dialog hands focus back to its toolbar button, which keeps board
+    // shortcuts such as Ctrl+Z from reaching the board.
+    requestAnimationFrame(() => {
+      const focused = document.activeElement;
+      if (focused instanceof HTMLElement && focused.closest('.selection-toolbar-content'))
+        focused.blur();
+    });
+  }
+  function replaceImageAsset(object: CanvasObject, produce: () => Promise<string>) {
     if (engine.current?.objects.get(object.id)?.locked) return;
     const currentEngine = engine.current;
     if (!currentEngine || !object.assetId || backgroundJob.current || external.current) return;
@@ -2462,7 +2483,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     setRemovingBackground(true);
     const task = (async () => {
       try {
-        const asset = await invoke<Asset>('removeBackground', { id: object.assetId });
+        const assetId = await produce();
         // Let an in-progress drag, crop or title edit commit its original snapshot
         // before replacing pixels; otherwise its final commit could undo the cutout.
         while (
@@ -2483,7 +2504,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         )
           return;
         // Preserve any repositioning, crop or title edits made while processing.
-        currentEngine.apply({ upserts: [{ ...current, assetId: asset.id }], deleted: [] });
+        if (assetId !== current.assetId)
+          currentEngine.apply({ upserts: [{ ...current, assetId }], deleted: [] });
       } catch (e) {
         if (alive.current) error(e);
       } finally {
@@ -3203,6 +3225,16 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             action: () => startEdit(selected[0]),
           },
           { label: 'Crop image', icon: <Crop />, action: () => startCrop(selected[0]) },
+          ...(readOnly
+            ? []
+            : [
+                {
+                  label: 'Edit image…',
+                  icon: <SlidersHorizontal />,
+                  disabled: !!selected[0].locked || removingBackground,
+                  action: () => setEditingImageId(selected[0].id),
+                },
+              ]),
           {
             label: 'Full image preview',
             icon: <Maximize2 />,
@@ -3585,6 +3617,22 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
               onAddImages={() => void addImagesToAlbum(album.id, null)}
               onSettings={() => setAlbumSettingsId(album.id)}
               onError={error}
+            />
+          );
+        })()}
+      {editingImageId &&
+        (() => {
+          const image = engine.current?.objects.get(editingImageId);
+          if (image?.type !== 'image' || !image.assetId) return null;
+          return (
+            <ImageEditor
+              key={image.id}
+              image={image}
+              onClose={closeImageEditor}
+              onApply={(assetId) => {
+                closeImageEditor();
+                replaceImageAsset(image, async () => assetId);
+              }}
             />
           );
         })()}
@@ -4159,6 +4207,22 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
                   onClick={() => startEdit(selected[0])}
                 >
                   <Type size={17} />
+                </button>
+              )}
+            {selected.length === 1 &&
+              selected[0].type === 'image' &&
+              selected[0].assetId &&
+              !selected[0].album &&
+              !readOnly && (
+                <button
+                  key="edit-image"
+                  className="icon-button"
+                  aria-label="Edit image"
+                  title="Edit image"
+                  disabled={!!selected[0].locked || removingBackground}
+                  onClick={() => setEditingImageId(selected[0].id)}
+                >
+                  <SlidersHorizontal size={17} />
                 </button>
               )}
             {canExportFromSelectionBar && exportSelectionButton}

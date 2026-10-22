@@ -4,6 +4,12 @@ import { chooseFiles, importFiles, invoke, mediaUrl } from '../bridge';
 import type { Asset } from '../model';
 import { BoardGlyph } from './Icon';
 import { iconCrop } from '../canvas/icon-crop';
+import { imageFilterCss, type ImageFilterId } from '../canvas/image-filters';
+import {
+  BackgroundRemovalInstall,
+  ImageFilterStrip,
+  useBackgroundRemovalReady,
+} from './ImageFilters';
 
 export interface BoardIconImageHandle {
   save: () => Promise<string>;
@@ -39,6 +45,9 @@ const BoardIconImage = forwardRef<
   const [removing, setRemoving] = useState(false);
   const [removed, setRemoved] = useState(false);
   const [source, setSource] = useState<{ id: string; image: HTMLImageElement } | null>(null);
+  const [filter, setFilter] = useState<ImageFilterId>('original');
+  const [installing, setInstalling] = useState(false);
+  const removalReady = useBackgroundRemovalReady();
   const generation = useRef(0);
   const pending = useRef(false);
   useEffect(
@@ -84,15 +93,46 @@ const BoardIconImage = forwardRef<
       }
     }
   }
-  async function removeBackground() {
+  const savedId = /^asset-[a-f0-9]{64}$/.test(value) ? value.slice(6) : null;
+  // A filter on the saved icon needs its pixels in the crop view first.
+  async function openSaved() {
+    if (image || pending.current || !savedId) return;
+    const token = ++generation.current;
+    pending.current = true;
+    setLoading(true);
+    onBusy(true);
+    setError('');
+    try {
+      const next = await decodeIcon(savedId);
+      if (token !== generation.current) return;
+      setSource({ id: savedId, image: next });
+      setImage(next);
+      reset();
+    } catch (e) {
+      if (token === generation.current) setError(String(e).replace(/^Error: /, ''));
+    } finally {
+      if (token === generation.current) {
+        pending.current = false;
+        setLoading(false);
+        onBusy(false);
+      }
+    }
+  }
+  // `installed` skips the check right after the install card finishes.
+  async function removeBackground(installed = false) {
     if (pending.current) return;
     if (removed && source) {
       setImage(source.image);
       setRemoved(false);
       return;
     }
-    const id = source?.id || (/^asset-[a-f0-9]{64}$/.test(value) ? value.slice(6) : null);
+    const id = source?.id || savedId;
     if (!id) return;
+    if (!removalReady && !installed) {
+      setInstalling(true);
+      return;
+    }
+    setInstalling(false);
     const token = ++generation.current;
     pending.current = true;
     setLoading(true);
@@ -137,16 +177,27 @@ const BoardIconImage = forwardRef<
       setRemoved(false);
       setSource(null);
       setImage(null);
+      setFilter('original');
+      setInstalling(false);
       setError('');
       reset();
     },
     async save() {
       if (pending.current) throw Error('Wait for the icon to finish processing.');
       if (!image || !crop) return value;
+      if (
+        filter === 'original' &&
+        source &&
+        image === source.image &&
+        source.id === savedId &&
+        zoom === 1
+      )
+        return value;
       const canvas = document.createElement('canvas');
       canvas.width = canvas.height = 512;
       const context = canvas.getContext('2d')!;
       context.imageSmoothingQuality = 'high';
+      context.filter = imageFilterCss({ filter });
       context.drawImage(image, crop.x, crop.y, crop.size, crop.size, 0, 0, 512, 512);
       const blob = await new Promise<Blob>((resolve, reject) =>
         canvas.toBlob(
@@ -249,6 +300,7 @@ const BoardIconImage = forwardRef<
               alt="Icon crop preview"
               draggable={false}
               style={{
+                filter: imageFilterCss({ filter }),
                 width: (image.naturalWidth / crop.size) * viewport,
                 height: (image.naturalHeight / crop.size) * viewport,
                 left: (-crop.x / crop.size) * viewport,
@@ -317,16 +369,35 @@ const BoardIconImage = forwardRef<
               : 'Upload image'}
       </button>
       <p>{over ? 'Drop image here' : 'or drag an image here'}</p>
-      {(image || value.startsWith('asset-')) && (
-        <button
-          type="button"
-          className="button icon-background-action"
+      {(image || savedId) && (
+        <ImageFilterStrip
+          compact
+          src={image?.src || mediaUrl(savedId!)}
+          value={filter}
           disabled={loading}
-          onClick={() => void removeBackground()}
-        >
-          {removed ? <RotateCcw size={14} /> : <Eraser size={14} />}
-          {removed ? 'Restore original' : 'Remove background'}
-        </button>
+          onChange={(next) => {
+            setFilter(next);
+            void openSaved();
+          }}
+        />
+      )}
+      {installing ? (
+        <BackgroundRemovalInstall
+          onReady={() => void removeBackground(true)}
+          onCancel={() => setInstalling(false)}
+        />
+      ) : (
+        (image || savedId) && (
+          <button
+            type="button"
+            className="button icon-background-action"
+            disabled={loading}
+            onClick={() => void removeBackground()}
+          >
+            {removed ? <RotateCcw size={14} /> : <Eraser size={14} />}
+            {removed ? 'Restore original' : 'Remove background'}
+          </button>
+        )
       )}
       {removing && <p role="status">Removing background on your computer…</p>}
       {image && (

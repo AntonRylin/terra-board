@@ -19,6 +19,7 @@ export const selectionToolLabels = {
   'center-x': 'Center horizontally',
   'center-y': 'Center vertically',
   title: 'Title',
+  'edit-image': 'Edit image',
   'album-settings': 'Album settings',
   export: 'Export',
   'preview-document': 'Preview document',
