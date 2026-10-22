@@ -5,9 +5,11 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type MouseEvent,
   type PointerEvent,
 } from 'react';
-import { LocateFixed, PinOff } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Copy, CopyPlus, LocateFixed, MoreHorizontal, PinOff, Type } from 'lucide-react';
 import type { CanvasObject, Document } from '../model';
 import type { Engine } from '../canvas/engine';
 import { invoke, mediaUrl } from '../bridge';
@@ -28,6 +30,7 @@ import {
   unionBounds,
   type ScreenPin,
 } from '../canvas/pins';
+import { ContextMenu, type MenuItem, type MenuPlacement } from './Dialogs';
 import { ListCard } from './CanvasLists';
 import { PaperName, PinnedPaperPages } from './CanvasPapers';
 import './pinned-views.css';
@@ -77,6 +80,19 @@ const objectName = (o: CanvasObject) =>
 
 const handles = ['e', 's', 'w', 'se', 'sw'];
 
+// The words a pinned object shows, for copying them on their own.
+const plainText = (o: CanvasObject) =>
+  (o.type === 'link'
+    ? o.url
+    : ['text', 'note', 'rect', 'ellipse'].includes(o.type)
+      ? o.text
+      : undefined
+  )?.trim();
+
+// What duplicating or copying a pinned object needs: the object and the
+// board it is on, which may not be the open one.
+type PinAction = (o: CanvasObject, all: CanvasObject[]) => void;
+
 function PinPicture({
   pin,
   objects,
@@ -105,7 +121,11 @@ function PinPicture({
     if (!engine) return;
     const cached = pictures.get(key);
     // A resize redraws only once the picture would look soft or wastefully large.
-    if (cached?.content === content && pixels <= cached.pixels * 1.15 && pixels >= cached.pixels * 0.5)
+    if (
+      cached?.content === content &&
+      pixels <= cached.pixels * 1.15 &&
+      pixels >= cached.pixels * 0.5
+    )
       return;
     let cancelled = false;
     const timer = window.setTimeout(
@@ -189,6 +209,7 @@ function PinnedList({
 
 function Pin({
   pin,
+  layer,
   board,
   current,
   engine,
@@ -199,8 +220,14 @@ function Pin({
   update,
   fit,
   open,
+  duplicate,
+  copy,
+  onError,
 }: {
   pin: ScreenPin;
+  // Its place in the stack; the list order, not the page order, which stays
+  // fixed so a press that brings a pin forward still ends in a click.
+  layer: number;
   board: Board | undefined;
   current: boolean;
   engine: Engine | null;
@@ -211,8 +238,12 @@ function Pin({
   update: (o: CanvasObject) => void;
   fit: (o: CanvasObject) => void;
   open: () => void;
+  duplicate?: PinAction;
+  copy?: PinAction;
+  onError: (message: string) => void;
 }) {
   const all = board?.objects;
+  const [menu, setMenu] = useState<{ x: number; y: number; placement: MenuPlacement } | null>(null);
   const o = all?.find((item) => item.id === pin.objectId);
   const kind = o ? pinKind(o) : 'picture';
   const minimum = pinMinimum[kind];
@@ -266,6 +297,45 @@ function Pin({
   const missing = board && (!all || !o);
   const title = o ? objectName(o) : board ? 'Unavailable' : 'Loading…';
   const canEdit = editable && !!o && !o.locked;
+  const unpin = () => setScreenPins((list) => list.filter((item) => pinKey(item) !== pinKey(pin)));
+  const text = o && plainText(o);
+  // The board's own commands for the original, plus the pin's.
+  const items: (MenuItem | null)[] = [
+    ...(o && all && duplicate
+      ? [{ label: 'Duplicate here', icon: <CopyPlus />, action: () => duplicate(o, all) }]
+      : []),
+    ...(o && all && copy ? [{ label: 'Copy', icon: <Copy />, action: () => copy(o, all) }] : []),
+    ...(text
+      ? [
+          {
+            label: o?.type === 'link' ? 'Copy link' : 'Copy text',
+            icon: <Type />,
+            action: () => {
+              const task = window.canvas
+                ? window.canvas.copyText(text)
+                : navigator.clipboard.writeText(text);
+              task.catch(() => onError('The text could not be copied.'));
+            },
+          },
+        ]
+      : []),
+    ...(o && all && (duplicate || copy || text) ? [null] : []),
+    ...(o ? [{ label: 'Show on its board', icon: <LocateFixed />, action: open }] : []),
+    { label: 'Unpin from screen', icon: <PinOff />, action: unpin },
+  ];
+  const showMenu = (event: MouseEvent) => {
+    // Text being written keeps its own menu.
+    if (
+      editing &&
+      (event.target as HTMLElement).closest(
+        '[contenteditable]:not([contenteditable="false"]),input,textarea',
+      )
+    )
+      return;
+    event.preventDefault();
+    event.stopPropagation();
+    setMenu({ x: event.clientX, y: event.clientY, placement: 'pointer' });
+  };
   return (
     <section
       className="screen-pin"
@@ -273,15 +343,23 @@ function Pin({
       data-kind={kind}
       data-editing={editing}
       aria-label={`Pinned ${title}`}
-      style={{ left: pin.left, top: pin.top, width: pin.width, height: pin.height }}
-      onPointerDownCapture={() =>
+      style={{
+        left: pin.left,
+        top: pin.top,
+        width: pin.width,
+        height: pin.height,
+        zIndex: layer,
+      }}
+      onContextMenu={showMenu}
+      onPointerDownCapture={(event) => {
+        if (!(event.target as HTMLElement).closest('[aria-label="More"]')) setMenu(null);
         // The pin pressed last comes to the front.
         setScreenPins((list) =>
           pinKey(list[list.length - 1] || pin) === pinKey(pin)
             ? list
             : [...list.filter((item) => pinKey(item) !== pinKey(pin)), pin],
-        )
-      }
+        );
+      }}
     >
       <header className="screen-pin-bar" onPointerDown={(event) => drag(event, null)}>
         {o?.type === 'paper' && canEdit ? (
@@ -309,18 +387,46 @@ function Pin({
             <LocateFixed size={15} />
           </button>
         )}
+        {o && all && duplicate && (
+          <button
+            className="icon-button"
+            aria-label="Duplicate here"
+            title="Duplicate here"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={() => duplicate(o, all)}
+          >
+            <CopyPlus size={15} />
+          </button>
+        )}
         <button
           className="icon-button"
           aria-label="Unpin from screen"
           title="Unpin from screen"
           onPointerDown={(event) => event.stopPropagation()}
-          onClick={() =>
-            setScreenPins((list) => list.filter((item) => pinKey(item) !== pinKey(pin)))
-          }
+          onClick={unpin}
         >
           <PinOff size={15} />
         </button>
+        <button
+          className="icon-button"
+          aria-label="More"
+          title="More"
+          data-open={!!menu}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            if (menu) return setMenu(null);
+            const r = event.currentTarget.getBoundingClientRect();
+            setMenu({ x: r.right, y: r.bottom + 4, placement: 'left' });
+          }}
+        >
+          <MoreHorizontal size={15} />
+        </button>
       </header>
+      {menu &&
+        createPortal(
+          <ContextMenu {...menu} items={items} onClose={() => setMenu(null)} />,
+          document.body,
+        )}
       {missing ? (
         <div className="screen-pin-missing" style={{ height: body }}>
           <span className="screen-pin-note">
@@ -380,6 +486,8 @@ export default function PinnedViews({
   update,
   fit,
   open,
+  duplicate,
+  copy,
   onError,
 }: {
   boardId: string;
@@ -391,6 +499,9 @@ export default function PinnedViews({
   update: (o: CanvasObject) => void;
   fit: (o: CanvasObject) => void;
   open: (boardId: string, objectId: string) => void;
+  // Missing while this board cannot be edited, or copying is unavailable.
+  duplicate?: PinAction;
+  copy?: PinAction;
   onError: (message: string) => void;
 }) {
   const pins = useSyncExternalStore(subscribeScreenPins, screenPins);
@@ -411,7 +522,9 @@ export default function PinnedViews({
       // A smaller window keeps every pin in reach.
       setScreenPins((list) => {
         const fitted = list.map((pin) => clampPin(pin, next, { width: 80, height: pinBar + 48 }));
-        return fitted.every((pin, i) => pin === list[i] || JSON.stringify(pin) === JSON.stringify(list[i]))
+        return fitted.every(
+          (pin, i) => pin === list[i] || JSON.stringify(pin) === JSON.stringify(list[i]),
+        )
           ? list
           : fitted;
       });
@@ -511,28 +624,35 @@ export default function PinnedViews({
   return (
     <div className="screen-pins" ref={layer}>
       {!!view.width &&
-        pins.map((pin) => {
-          const key = pinKey(pin);
-          const current = pin.boardId === boardId;
-          return (
-            <Pin
-              key={key}
-              pin={pin}
-              board={shown.get(pin.boardId)}
-              current={current}
-              engine={engine}
-              view={view}
-              editable={current ? !readOnly : true}
-              editing={editingKey === key}
-              setEditing={(editing) =>
-                setEditingKey((now) => (editing ? key : now === key ? null : now))
-              }
-              update={(o) => (current ? update(o) : writeElsewhere(pin.boardId, o))}
-              fit={(o) => (current ? fit(o) : writeElsewhere(pin.boardId, o))}
-              open={() => open(pin.boardId, pin.objectId)}
-            />
-          );
-        })}
+        pins
+          .map((pin, layer) => ({ pin, layer }))
+          .sort((a, b) => (pinKey(a.pin) < pinKey(b.pin) ? -1 : 1))
+          .map(({ pin, layer }) => {
+            const key = pinKey(pin);
+            const current = pin.boardId === boardId;
+            return (
+              <Pin
+                key={key}
+                pin={pin}
+                layer={layer + 1}
+                board={shown.get(pin.boardId)}
+                current={current}
+                engine={engine}
+                view={view}
+                editable={current ? !readOnly : true}
+                editing={editingKey === key}
+                setEditing={(editing) =>
+                  setEditingKey((now) => (editing ? key : now === key ? null : now))
+                }
+                update={(o) => (current ? update(o) : writeElsewhere(pin.boardId, o))}
+                fit={(o) => (current ? fit(o) : writeElsewhere(pin.boardId, o))}
+                open={() => open(pin.boardId, pin.objectId)}
+                duplicate={duplicate}
+                copy={copy}
+                onError={onError}
+              />
+            );
+          })}
     </div>
   );
 }

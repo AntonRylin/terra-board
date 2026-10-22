@@ -1268,6 +1268,22 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     setPinSource(all);
     setScreenPins((list) => [...list.filter((pin) => !keys.has(pinKey(pin))), ...added]);
   };
+  // A pinned object, from this board or another, copied into the middle of
+  // the view on this board, the way pasting it would.
+  const pinnedCopy = (o: CanvasObject, all: CanvasObject[]) =>
+    structuredClone(copySelection(all, selectionWithGalleryImages([o], all)));
+  const duplicatePinned = (o: CanvasObject, all: CanvasObject[]) => {
+    const e = engine.current;
+    if (!e || readOnlyRef.current) return;
+    const area = visibleBoardArea(e);
+    finishEdit();
+    pasteObjects(
+      pinnedCopy(o, all),
+      null,
+      { x: area.x + area.width / 2, y: area.y + area.height / 2 },
+      true,
+    );
+  };
   const updatePaper = (o: CanvasObject) => {
     if (engine.current?.objects.get(o.id)?.locked) return;
     engine.current?.apply({ upserts: [o], deleted: [] });
@@ -2585,6 +2601,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     objects: CanvasObject[],
     target?: GalleryTarget | null,
     point?: { x: number; y: number },
+    centered = false,
   ) => {
     const e = engine.current;
     if (!e || !objects.length) return;
@@ -2592,7 +2609,9 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     const objectIds = new Map(objects.map((o) => [o.id, uid()]));
     const top = e.topZ();
     const bounds =
-      point && objects.some((o) => o.type === 'image' || o.frameLink) ? boundsOf(objects) : null;
+      point && (centered || objects.some((o) => o.type === 'image' || o.frameLink))
+        ? boundsOf(objects)
+        : null;
     const offset =
       point && bounds
         ? { x: point.x - bounds.x - bounds.width / 2, y: point.y - bounds.y - bounds.height / 2 }
@@ -2630,9 +2649,10 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     );
     for (const o of copies) if (o.type === 'link' && !o.assetId) refreshLink(o, e);
   };
-  const copyDesktop = (objects: CanvasObject[], cut = false) => {
+  // `from` is the board the objects are on, when it is not the open one.
+  const copyDesktop = (objects: CanvasObject[], cut = false, from?: CanvasObject[]) => {
     const e = engine.current;
-    const all = e?.all || [];
+    const all = from || e?.all || [];
     const snapshot = structuredClone(copySelection(all, selectionWithGalleryImages(objects, all)));
     const task = window.canvas!.copyObjects(snapshot).then((copied) => {
       if (copied && cut && alive.current && engine.current === e)
@@ -3577,6 +3597,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           }}
           fit={fitPaper}
           open={onOpenFrame}
+          duplicate={readOnly ? undefined : duplicatePinned}
+          copy={window.canvas ? (o, all) => void copyDesktop([o], false, all) : undefined}
           onError={onError}
         />
       )}

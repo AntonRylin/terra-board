@@ -3,6 +3,8 @@
 .screen-pins {
   position: absolute;
   inset: 0;
+  /* Pins stack among themselves only. */
+  isolation: isolate;
   pointer-events: none;
   overflow: hidden;
 }
@@ -27,7 +29,7 @@
 }
 .screen-pin-title {
   min-width: 0;
-  max-width: calc(100% - 76px);
+  max-width: calc(100% - 140px);
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -100,6 +102,7 @@
   transition: opacity 0.15s;
 }
 .screen-pin:hover .screen-pin-bar .icon-button,
+.screen-pin-bar .icon-button[data-open='true'],
 .screen-pin:hover .screen-pin-title,
 .screen-pin:hover .screen-pin-board,
 .screen-pin-bar .icon-button:focus-visible {
