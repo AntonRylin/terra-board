@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
-const { libraryRoot } = require('../electron/storage-paths.cjs');
+const { libraryRoot, userDataBase } = require('../electron/storage-paths.cjs');
 
 test('development and packaged apps use the same repository library from any working directory', () => {
   const repo = path.resolve('fixture', 'Проект с пробелами');
@@ -45,6 +45,31 @@ test('installed builds keep each user library outside the replaceable installati
     libraryRoot({ isPackaged: true, distribution: 'installed', dataDir: isolated }),
     isolated,
   );
+});
+
+test('installed copies keep the library in the per-user data folder of each platform', () => {
+  const appData = path.resolve('fixture', 'Roaming');
+  // Windows: %LOCALAPPDATA%, as before; Electron's appData only when it is unset.
+  assert.equal(
+    userDataBase({
+      platform: 'win32',
+      env: { LOCALAPPDATA: 'C:\\Users\\A\\AppData\\Local' },
+      appData,
+    }),
+    'C:\\Users\\A\\AppData\\Local',
+  );
+  assert.equal(userDataBase({ platform: 'win32', env: {}, appData }), appData);
+  // Linux: $XDG_DATA_HOME, or ~/.local/share when it is unset or relative.
+  assert.equal(
+    userDataBase({ platform: 'linux', env: { XDG_DATA_HOME: '/data/anna' }, home: '/home/anna' }),
+    '/data/anna',
+  );
+  for (const env of [{}, { XDG_DATA_HOME: '' }, { XDG_DATA_HOME: 'relative/share' }])
+    assert.equal(
+      userDataBase({ platform: 'linux', env, home: '/home/anna' }),
+      '/home/anna/.local/share',
+    );
+  assert.equal(userDataBase({ platform: 'linux', env: {} }), undefined);
 });
 
 test('installed builds reject missing or relative user storage instead of writing beside system files', () => {

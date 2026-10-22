@@ -97,4 +97,7 @@ async function downloadSongLink(value, exe) {
   }
 }
 
-module.exports = { downloadSongLink, songLinkValue };
+// The program's name in the Song links extension folder (scripts/payloads.mjs).
+const YT_DLP = process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp';
+
+module.exports = { downloadSongLink, songLinkValue, YT_DLP };

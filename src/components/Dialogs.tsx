@@ -86,6 +86,8 @@ export interface MenuItem {
   icon?: ReactNode;
   danger?: boolean;
   disabled?: boolean;
+  /** Tooltip, e.g. why the item is disabled. */
+  hint?: string;
 }
 export type MenuPlacement = 'below' | 'above' | 'left' | 'pointer';
 export function ContextMenu({
@@ -143,6 +145,7 @@ export function ContextMenu({
             key={i}
             role="menuitem"
             disabled={item.disabled}
+            title={item.hint}
             className={item.danger ? 'danger' : ''}
             onClick={() => {
               onClose();

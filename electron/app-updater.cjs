@@ -147,4 +147,11 @@ function createAppUpdater({
   };
 }
 
-module.exports = { createAppUpdater };
+// Whether an installed copy can replace itself with a newer version: the NSIS
+// installer on Windows, and on Linux only the AppImage (APPIMAGE names its
+// file). A .deb belongs to the system's package tools, so those copies are
+// told about new versions like builds from source.
+const installsUpdates = (platform = process.platform, env = process.env) =>
+  platform === 'win32' || (platform === 'linux' && !!env.APPIMAGE);
+
+module.exports = { createAppUpdater, installsUpdates };

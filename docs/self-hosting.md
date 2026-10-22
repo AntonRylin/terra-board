@@ -50,7 +50,7 @@ If sync is on, the app warns first (with the number of changes not yet sent, if 
 
 ## Managed computers
 
-IT can put the same JSON in `%ProgramData%\Terra Board\server.json`. This file may also carry an `"address"`.
+IT can put the same JSON in `%ProgramData%\Terra Board\server.json` (on Linux, `/etc/terra-board/server.json`). This file may also carry an `"address"`.
 
 ```json
 {
@@ -75,4 +75,4 @@ First match wins:
 4. `%ProgramData%\Terra Board\server.json` without `locked`.
 5. The built-in Terra Cloud.
 
-A missing or broken file is skipped, and the app moves to the next entry.
+On Linux the managed file is `/etc/terra-board/server.json` instead. A missing or broken file is skipped, and the app moves to the next entry.

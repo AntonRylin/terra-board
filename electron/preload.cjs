@@ -30,8 +30,13 @@ contextBridge.exposeInMainWorld('canvas', {
     return () => ipcRenderer.removeListener('canvas:office-progress', handler);
   },
   assetDimensions: (id) => ipcRenderer.invoke('canvas:asset-dimensions', id),
-  recognizeAsset: (id) => ipcRenderer.invoke('canvas:recognize-asset', id),
-  recognizeImage: (bytes) => ipcRenderer.invoke('canvas:recognize-image', bytes),
+  // Text recognition uses the Windows OCR engine. Elsewhere these are absent,
+  // so the board hides Copy text for images and reads PDFs by their own text.
+  ...(process.platform === 'win32' && {
+    recognizeAsset: (id) => ipcRenderer.invoke('canvas:recognize-asset', id),
+    recognizeImage: (bytes) => ipcRenderer.invoke('canvas:recognize-image', bytes),
+  }),
+  platform: process.platform,
   openExport: (id, folder) => ipcRenderer.invoke('canvas:open-export', id, folder),
   copyExport: (id) => ipcRenderer.invoke('canvas:copy-export', id),
   openExternal: (url) => ipcRenderer.invoke('canvas:open-link', url),

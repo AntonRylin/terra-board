@@ -35,7 +35,14 @@ const MAX_BYTES = 64 * 1024 * 1024;
 function run(executable, args, { signal, timeout = 120000 } = {}) {
   return new Promise((resolve, reject) => {
     signal?.throwIfAborted();
-    const child = spawn(executable, args, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    // Elsewhere LibreOffice's command is a script that starts the real program,
+    // so it runs in its own process group and stopping ends the whole group.
+    const group = process.platform !== 'win32';
+    const child = spawn(executable, args, {
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      ...(group && { detached: true }),
+    });
     const stop = () => {
       if (process.platform === 'win32' && child.pid)
         spawn(
@@ -43,7 +50,13 @@ function run(executable, args, { signal, timeout = 120000 } = {}) {
           ['/pid', String(child.pid), '/T', '/F'],
           { windowsHide: true, stdio: 'ignore' },
         ).on('error', () => child.kill());
-      else child.kill();
+      else if (group && child.pid) {
+        try {
+          process.kill(-child.pid, 'SIGKILL');
+        } catch {
+          child.kill();
+        }
+      } else child.kill();
     };
     signal?.addEventListener('abort', stop, { once: true });
     let output = '';
@@ -76,10 +89,47 @@ async function safeRemove(root, target) {
   await fs.promises.rm(resolved, { recursive: true, force: true });
 }
 
+// On Linux, Office files uses the system's LibreOffice rather than a download.
+const LINUX_OFFICE_HINT =
+  "Install LibreOffice from your system's software center or package manager (for example sudo apt install libreoffice), then try again.";
+
+// Where distributions put LibreOffice's command; /usr/bin/soffice is a wrapper
+// that starts the real program.
+const LINUX_OFFICE = [
+  '/usr/bin/soffice',
+  '/usr/bin/libreoffice',
+  '/usr/local/bin/soffice',
+  '/usr/local/bin/libreoffice',
+  '/usr/lib/libreoffice/program/soffice',
+  '/usr/lib64/libreoffice/program/soffice',
+  '/opt/libreoffice/program/soffice',
+  '/snap/bin/libreoffice',
+];
+
 // Where a usable LibreOffice is: the Office files extension (`extensionDir`),
 // the folder 0.1.28 and earlier extracted into the Library, or a LibreOffice
-// installed in Windows. Null when there is none.
-function officeLocation({ extensionDir, legacyRoot } = {}) {
+// installed in Windows. On Linux, only a LibreOffice installed in the system
+// (there is no extension download). Null when there is none.
+function officeLocation({
+  extensionDir,
+  legacyRoot,
+  platform = process.platform,
+  exists = fs.existsSync,
+  optFolders = () => fs.readdirSync('/opt'),
+} = {}) {
+  if (platform === 'linux') {
+    // The Document Foundation's own packages install into /opt/libreoffice<version>.
+    let opt = [];
+    try {
+      opt = optFolders()
+        .filter((name) => /^libreoffice[\d.]*$/.test(name))
+        .sort()
+        .reverse()
+        .map((name) => `/opt/${name}/program/soffice`);
+    } catch {}
+    const installed = [...LINUX_OFFICE, ...opt].find((file) => exists(file));
+    return installed ? { executable: installed, system: true } : null;
+  }
   const program = (dir) => path.join(dir, `libreoffice-${VERSION}`, 'program', 'soffice.com');
   if (extensionDir && fs.existsSync(program(extensionDir)))
     return { executable: program(extensionDir), system: false };
@@ -98,6 +148,7 @@ function officeLocation({ extensionDir, legacyRoot } = {}) {
 // folder) as `libreoffice-<VERSION>`. `progress` feeds Settings → Extensions;
 // `onText` feeds the progress line on the board.
 async function installOffice({ dir, signal, progress = () => {}, onText = () => {} }) {
+  if (process.platform === 'linux') throw Error(LINUX_OFFICE_HINT);
   if (process.platform !== 'win32' || process.arch !== 'x64')
     throw Error('Office conversion currently requires 64-bit Windows.');
   const packageFile = path.join(dir, `LibreOffice-${VERSION}.msi`);
@@ -243,5 +294,6 @@ module.exports = {
   OFFICE_EXTENSIONS,
   VERSION,
   SHA256,
+  LINUX_OFFICE_HINT,
   safeRemove,
 };

@@ -62,6 +62,11 @@ function extensionNotices(extensionsRoot) {
         file: at('song-links', 'yt-dlp.exe'),
         notice: { name: 'yt-dlp', version: '', license: 'Unlicense' },
       },
+      // The Linux build of the same program.
+      {
+        file: at('song-links', 'yt-dlp'),
+        notice: { name: 'yt-dlp', version: '', license: 'Unlicense' },
+      },
     ]
       .filter(({ file }) => fs.existsSync(file))
       .map(({ notice }) => notice),

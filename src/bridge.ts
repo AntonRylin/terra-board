@@ -147,6 +147,8 @@ export interface ExtensionStatus {
   progress?: { received: number; total: number; label?: string };
   /** Provided by Windows (a LibreOffice in Program Files): nothing to remove. */
   system?: boolean;
+  /** Can't be installed on this system (Office files on Linux); says what to do instead. */
+  unavailable?: string;
   error?: string;
   notice?: string;
 }
@@ -167,8 +169,11 @@ interface DesktopBridge {
   copyText(text: string): Promise<void>;
   // The audio of a song link (YouTube and other sites), for an entrance song.
   songFromLink(url: string): Promise<{ bytes: Uint8Array; name: string }>;
-  recognizeAsset(id: string): Promise<RecognizedText>;
-  recognizeImage(bytes: Uint8Array): Promise<RecognizedText>;
+  /** Windows only (the Windows OCR engine); absent on other systems. */
+  recognizeAsset?(id: string): Promise<RecognizedText>;
+  recognizeImage?(bytes: Uint8Array): Promise<RecognizedText>;
+  /** The desktop's operating system, as Node's process.platform ('win32', 'linux'). */
+  platform: string;
   cancelCopy(): void;
   clipboardObjects(): Promise<CanvasObject[] | null>;
   fullscreenState(): Promise<boolean>;

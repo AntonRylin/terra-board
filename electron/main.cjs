@@ -38,7 +38,7 @@ const {
 } = require('./office-converter.cjs');
 const { attachWindowShadow } = require('./window-shadow.cjs');
 const { fetchPreview } = require('./link-preview.cjs');
-const { downloadSongLink } = require('./song-link.cjs');
+const { downloadSongLink, YT_DLP } = require('./song-link.cjs');
 const { createOcr } = require('./ocr.cjs');
 const { createHtmlCards, embedRequest, fromEmbed } = require('./html-cards.cjs');
 const { browserSession, hardenWebviews, guestOf } = require('./browser-frames.cjs');
@@ -48,8 +48,8 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
 const { createHash, randomUUID } = require('node:crypto');
-const { libraryRoot } = require('./storage-paths.cjs');
-const { createAppUpdater } = require('./app-updater.cjs');
+const { libraryRoot, userDataBase } = require('./storage-paths.cjs');
+const { createAppUpdater, installsUpdates } = require('./app-updater.cjs');
 const { collectLicenses } = require('./licenses.cjs');
 const { createExtensions } = require('./extensions.cjs');
 const { createBackgroundRemoval, removeAssetBackground } = require('./background-removal.cjs');
@@ -194,7 +194,7 @@ const root = libraryRoot({
   exePath: app.getPath('exe'),
   dataDir: process.env.CANVAS_DATA_DIR,
   distribution: require('../package.json').terraDistribution,
-  localAppData: process.env.LOCALAPPDATA || app.getPath('appData'),
+  localAppData: userDataBase({ home: app.getPath('home'), appData: app.getPath('appData') }),
 });
 for (const [name, directory] of Object.entries({
   userData: 'settings',
@@ -754,7 +754,10 @@ app
       app,
       automatic: automaticUpdates,
       enabled:
-        app.isPackaged && require('../package.json').terraDistribution === 'installed' && !smoke,
+        app.isPackaged &&
+        require('../package.json').terraDistribution === 'installed' &&
+        installsUpdates() &&
+        !smoke,
       // Every packaged copy, including ones built from source, hears about new versions.
       notify: app.isPackaged && !smoke,
       // Its own session: the window's session blocks outside requests.
@@ -898,7 +901,7 @@ app
     ipcMain.handle('canvas:song-from-link', (e, url) => {
       trusted(e);
       const dir = extensions.path('song-links');
-      return downloadSongLink(url, dir && path.join(dir, 'yt-dlp.exe'));
+      return downloadSongLink(url, dir && path.join(dir, YT_DLP));
     });
     ipcMain.handle('canvas:copy-text', (e, text) => {
       trusted(e);
@@ -1111,13 +1114,17 @@ app
         version: app.getVersion(),
         libraryPath: root,
         backupsPath: path.join(root, 'backups'),
-        loginItemSupported: app.isPackaged,
-        openAtLogin: app.isPackaged && app.getLoginItemSettings().openAtLogin,
+        // Electron's login items exist on Windows and macOS, not on Linux.
+        loginItemSupported: app.isPackaged && process.platform !== 'linux',
+        openAtLogin:
+          app.isPackaged && process.platform !== 'linux' && app.getLoginItemSettings().openAtLogin,
       };
     });
     ipcMain.handle('canvas:set-open-at-login', (e, enabled) => {
       trusted(e);
       if (!app.isPackaged) throw Error('Launch at login is available in the installed app.');
+      if (process.platform === 'linux')
+        throw Error("Add Terra Board to your desktop's startup applications instead.");
       app.setLoginItemSettings({ openAtLogin: enabled === true });
       return app.getLoginItemSettings().openAtLogin;
     });

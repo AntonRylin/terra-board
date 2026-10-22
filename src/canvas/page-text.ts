@@ -17,12 +17,16 @@ function remember(key: string, load: () => Promise<RecognizedText>) {
   return task;
 }
 
+// Text recognition uses the Windows OCR engine; other systems' desktop bridge
+// leaves it out (electron/preload.cjs).
 export const canRecognizeText = () => !!window.canvas?.recognizeImage;
+export const textRecognitionUnavailable = 'Text recognition is available on Windows.';
 
 export function imageAssetText(assetId: string): Promise<RecognizedText> {
   if (!window.canvas) return Promise.reject(Error('Text recognition needs the desktop app.'));
+  if (!window.canvas.recognizeAsset) return Promise.reject(Error(textRecognitionUnavailable));
   return remember('asset:' + assetId, () =>
-    window.canvas!.recognizeAsset(assetId).then((text) => ({ ...text, source: 'ocr' as const })),
+    window.canvas!.recognizeAsset!(assetId).then((text) => ({ ...text, source: 'ocr' as const })),
   );
 }
 
@@ -43,7 +47,7 @@ async function recognizePage(pdf: PDFDocumentProxy, pageIndex: number, rotation:
         'image/png',
       ),
     );
-    const text = await window.canvas!.recognizeImage(new Uint8Array(await blob.arrayBuffer()));
+    const text = await window.canvas!.recognizeImage!(new Uint8Array(await blob.arrayBuffer()));
     return { ...text, source: 'ocr' as const };
   } finally {
     canvas.width = canvas.height = 1;

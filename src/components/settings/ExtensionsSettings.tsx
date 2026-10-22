@@ -38,11 +38,15 @@ function Details({ extension }: { extension: ExtensionStatus }) {
   return (
     <div className="st-extension-details">
       <span>
-        {state !== 'installed'
-          ? `${megabytes(extension.downloadBytes)} download`
-          : extension.system
-            ? 'Uses the LibreOffice installed in Windows.'
-            : `Uses ${megabytes(extension.installedBytes ?? 0)} on this PC.`}
+        {extension.unavailable
+          ? extension.unavailable
+          : state !== 'installed'
+            ? `${megabytes(extension.downloadBytes)} download`
+            : extension.system
+              ? window.canvas?.platform === 'win32'
+                ? 'Uses the LibreOffice installed in Windows.'
+                : 'Uses the LibreOffice installed on this computer.'
+              : `Uses ${megabytes(extension.installedBytes ?? 0)} on this PC.`}
         {extension.outdated && ' A newer version is ready to install.'}
       </span>
       {notice && <span>{notice}</span>}
@@ -126,7 +130,7 @@ export function ExtensionsSettings() {
                   </button>
                 </>
               )
-            ) : (
+            ) : extension.unavailable ? null : (
               <button type="button" className="st-button" onClick={() => install(extension.id)}>
                 <Download size={14} />
                 Install
@@ -137,8 +141,9 @@ export function ExtensionsSettings() {
       </Group>
       <Notice notice={notice} />
       <p className="st-hint st-extensions-note">
-        Extensions download from GitHub and LibreOffice's website, and every file is checked before
-        it's installed.
+        {window.canvas.platform === 'linux'
+          ? "Extensions download from GitHub, and every file is checked before it's installed."
+          : "Extensions download from GitHub and LibreOffice's website, and every file is checked before it's installed."}
       </p>
     </>
   );

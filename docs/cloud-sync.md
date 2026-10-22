@@ -56,6 +56,8 @@ Settings → Cloud sync → Server shows the current server and **Change**. The 
 4. `%ProgramData%\Terra Board\server.json` without `locked`.
 5. `terraCloud` in `package.json` (Terra Cloud).
 
+On Linux the managed file is `/etc/terra-board/server.json`.
+
 When someone connects to a server from Settings, the app first calls its `server_info()` function, so a server connected this way needs the latest migrations. Servers from the environment, a managed file, a saved choice or the built-in Terra Cloud are not checked at start-up. A server can only be changed while sync is off; the app turns it off first. Boards other people shared are removed from the computer, your own boards stay.
 
 ## Limits to know

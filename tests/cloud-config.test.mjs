@@ -111,10 +111,20 @@ test('terraCloud reads the built-in server from package.json', () => {
 
 test('server file locations', () => {
   assert.equal(
-    managedServerFile({ ProgramData: 'D:\\PD' }),
-    path.join('D:\\PD', 'Terra Board', 'server.json'),
+    managedServerFile({ ProgramData: 'D:\\PD' }, 'win32'),
+    path.win32.join('D:\\PD', 'Terra Board', 'server.json'),
   );
-  assert.equal(managedServerFile({}), path.join('C:\\ProgramData', 'Terra Board', 'server.json'));
+  assert.equal(
+    managedServerFile({}, 'win32'),
+    path.win32.join('C:\\ProgramData', 'Terra Board', 'server.json'),
+  );
+  // Linux: one fixed system-wide location, whatever the environment says.
+  assert.equal(
+    managedServerFile({ ProgramData: 'D:\\PD' }, 'linux'),
+    '/etc/terra-board/server.json',
+  );
+  if (process.platform === 'win32')
+    assert.equal(managedServerFile({}), path.join('C:\\ProgramData', 'Terra Board', 'server.json'));
   assert.equal(personalServerFile('lib'), path.join('lib', 'settings', 'server.json'));
 });
 

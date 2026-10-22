@@ -218,7 +218,12 @@ import {
   prepareDocumentPreview,
   type DocumentPreview,
 } from '../canvas/document-preview';
-import { imageAssetText, pdfPageText } from '../canvas/page-text';
+import {
+  canRecognizeText,
+  imageAssetText,
+  pdfPageText,
+  textRecognitionUnavailable,
+} from '../canvas/page-text';
 import { cropRecognizedText, recognizedString } from '../canvas/recognized-text';
 import { downloadAsset } from '../bridge';
 import { useExtensionInstalled } from '../extensions';
@@ -3353,7 +3358,9 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
                   label: 'Copy text',
                   icon: <ScanText />,
                   action: () => copyObjectText(selected[0]),
-                  disabled: copying,
+                  // Reading text in images uses Windows' text recognition.
+                  disabled: copying || !canRecognizeText(),
+                  hint: canRecognizeText() ? undefined : textRecognitionUnavailable,
                 },
               ]
             : []),

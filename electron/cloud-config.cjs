@@ -98,8 +98,12 @@ function terraCloud(packageJson) {
   };
 }
 
-const managedServerFile = (env = process.env) =>
-  path.join(env.ProgramData || 'C:\\ProgramData', 'Terra Board', 'server.json');
+// The file IT places for every user of the computer: %ProgramData% on Windows,
+// /etc/terra-board on Linux.
+const managedServerFile = (env = process.env, platform = process.platform) =>
+  platform === 'win32'
+    ? path.win32.join(env.ProgramData || 'C:\\ProgramData', 'Terra Board', 'server.json')
+    : '/etc/terra-board/server.json';
 const personalServerFile = (root) => path.join(root, 'settings', 'server.json');
 
 // A missing, unreadable or invalid file counts as absent, so the next source is used.

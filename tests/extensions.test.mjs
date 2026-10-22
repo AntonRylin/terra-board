@@ -7,6 +7,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -315,4 +316,52 @@ test('cancelAll stops every running install', async () => {
   extensions.cancelAll();
   await assert.rejects(install, /cancel/i);
   assert.equal(status(extensions, 'office').state, 'available');
+});
+
+// yt-dlp on Linux is a program the app runs, so it must be executable there.
+test(
+  'files marked executable may be run once installed',
+  { skip: process.platform === 'win32' && 'Windows has no execute permission' },
+  async () => {
+    const { root, source } = workspace();
+    const tool = { ...payload(source, 'tool', Buffer.from('#!/bin/sh\n')), executable: true };
+    const plain = payload(source, 'data.bin', Buffer.from('data'));
+    const extensions = createExtensions({
+      root,
+      catalog: { extensions: [entry('tool', [tool, plain])] },
+      source: { dir: source },
+    });
+    await extensions.install('tool');
+    const dir = extensions.path('tool');
+    assert.equal(statSync(join(dir, 'tool')).mode & 0o111, 0o111);
+    assert.equal(statSync(join(dir, 'data.bin')).mode & 0o111, 0);
+  },
+);
+
+// Office files on Linux: no download, the system's LibreOffice instead.
+test('an extension this system cannot install says what to do instead', async () => {
+  const { root, source } = workspace();
+  const hint = 'Install LibreOffice from your package manager.';
+  let system = false;
+  const extensions = createExtensions({
+    root,
+    catalog: { extensions: [{ ...entry('office', []), installer: 'office', unavailable: hint }] },
+    source: { dir: source },
+    installers: {
+      office: () => {
+        throw Error('never runs');
+      },
+    },
+    systemInstalled: () => system,
+  });
+  assert.equal(status(extensions, 'office').state, 'available');
+  assert.equal(status(extensions, 'office').unavailable, hint);
+  await assert.rejects(extensions.install('office'), { message: hint });
+  assert.equal(status(extensions, 'office').state, 'available');
+  assert.deepEqual(existsSync(root) ? readdirSync(root) : [], []);
+  // Once the system has it, it shows as installed by the system.
+  system = true;
+  assert.equal(status(extensions, 'office').state, 'installed');
+  assert.equal(status(extensions, 'office').system, true);
+  assert.equal(status(extensions, 'office').unavailable, undefined);
 });

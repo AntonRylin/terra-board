@@ -35,19 +35,49 @@ test('finds LibreOffice in the extension, the old Library tools folder, or Progr
   process.env.ProgramFiles = programFiles;
   process.env['ProgramFiles(x86)'] = join(base, 'missing');
 
-  assert.deepEqual(officeLocation({ extensionDir: extension, legacyRoot: library }), {
-    executable: inExtension,
-    system: false,
-  });
-  assert.deepEqual(officeLocation({ extensionDir: null, legacyRoot: library }), {
+  assert.deepEqual(
+    officeLocation({ extensionDir: extension, legacyRoot: library, platform: 'win32' }),
+    {
+      executable: inExtension,
+      system: false,
+    },
+  );
+  assert.deepEqual(officeLocation({ extensionDir: null, legacyRoot: library, platform: 'win32' }), {
     executable: legacy,
     system: false,
     legacy: true,
   });
-  assert.deepEqual(officeLocation({ extensionDir: null, legacyRoot: join(base, 'empty') }), {
-    executable: system,
+  assert.deepEqual(
+    officeLocation({ extensionDir: null, legacyRoot: join(base, 'empty'), platform: 'win32' }),
+    {
+      executable: system,
+      system: true,
+    },
+  );
+  process.env.ProgramFiles = join(base, 'missing');
+  assert.equal(
+    officeLocation({ extensionDir: null, legacyRoot: join(base, 'empty'), platform: 'win32' }),
+    null,
+  );
+});
+
+// Linux has no LibreOffice download: Office files uses the one the system's
+// packages installed, whatever the extension folders hold.
+test('on Linux, finds the LibreOffice installed in the system', () => {
+  const files = new Set();
+  const find = (opt = []) =>
+    officeLocation({
+      extensionDir: '/home/anna/.local/share/Terra Board/Extensions/office-files',
+      platform: 'linux',
+      exists: (file) => files.has(file),
+      optFolders: () => opt,
+    });
+  assert.equal(find(), null);
+  files.add('/opt/libreoffice25.8/program/soffice').add('/opt/libreoffice26.2/program/soffice');
+  assert.deepEqual(find(['google', 'libreoffice25.8', 'libreoffice26.2']), {
+    executable: '/opt/libreoffice26.2/program/soffice',
     system: true,
   });
-  process.env.ProgramFiles = join(base, 'missing');
-  assert.equal(officeLocation({ extensionDir: null, legacyRoot: join(base, 'empty') }), null);
+  files.add('/usr/bin/soffice');
+  assert.deepEqual(find(['libreoffice26.2']), { executable: '/usr/bin/soffice', system: true });
 });

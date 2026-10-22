@@ -96,6 +96,8 @@ function createExtensions({
         outdated: info.version !== entry.version,
       }),
       ...(system && { system: true }),
+      // This build can't install it on this system; the text says what to do instead.
+      ...(entry.unavailable && !info && !system && { unavailable: entry.unavailable }),
       ...(job && { progress: job.progress }),
       ...(errors.has(entry.id) && { error: errors.get(entry.id) }),
       ...(notices.has(entry.id) && { notice: notices.get(entry.id) }),
@@ -145,6 +147,8 @@ function createExtensions({
     signal.throwIfAborted();
     if (size !== file.size || hash.digest('hex') !== file.sha256)
       throw Error(`The download of ${entry.name} was damaged. Try again.`);
+    // Programs the app runs (yt-dlp on Linux) need permission to run.
+    if (file.executable) await fs.promises.chmod(path.join(dir, file.name), 0o755);
   }
 
   async function unpack(entry, archive, dir) {
@@ -227,6 +231,7 @@ function createExtensions({
 
   function install(id) {
     const entry = entryOf(id);
+    if (entry.unavailable) return Promise.reject(Error(entry.unavailable));
     if (jobs.has(id)) return jobs.get(id).promise;
     const job = {
       controller: new AbortController(),

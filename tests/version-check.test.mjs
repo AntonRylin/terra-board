@@ -2,8 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
-const { isNewer, latestRelease } = require('../electron/version-check.cjs');
-const { createAppUpdater } = require('../electron/app-updater.cjs');
+const { isNewer, latestRelease, versionUrl } = require('../electron/version-check.cjs');
+const { createAppUpdater, installsUpdates } = require('../electron/app-updater.cjs');
 
 const latestYml = (version, file = `Terra-Board-Setup-${version}-x64.exe`) =>
   `version: ${version}\nfiles:\n  - url: ${file}\n    sha512: abc\n    size: 1\npath: ${file}\nsha512: abc\nreleaseDate: '2026-10-19T12:00:00.000Z'\n`;
@@ -129,4 +129,23 @@ test('development and smoke-test runs do not check', async () => {
   await settle();
   assert.equal(calls, 0);
   assert.equal(updater.status().state, 'idle');
+});
+
+test('each system reads its own update file; only the installer and the AppImage update themselves', () => {
+  assert.equal(
+    versionUrl('win32'),
+    'https://github.com/AntonRylin/terra-board/releases/latest/download/latest.yml',
+  );
+  assert.equal(
+    versionUrl('linux'),
+    'https://github.com/AntonRylin/terra-board/releases/latest/download/latest-linux.yml',
+  );
+  assert.equal(installsUpdates('win32', {}), true);
+  assert.equal(
+    installsUpdates('linux', { APPIMAGE: '/home/anna/Apps/Terra-Board.AppImage' }),
+    true,
+  );
+  // A .deb install is updated through the system's package tools.
+  assert.equal(installsUpdates('linux', {}), false);
+  assert.equal(installsUpdates('darwin', {}), false);
 });

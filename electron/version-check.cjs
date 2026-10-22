@@ -2,7 +2,10 @@
 // installed or built from source, learns when a newer installer is published.
 // `npm run release` (or uploading latest.yml with the installer) announces it.
 const RELEASES_URL = 'https://github.com/AntonRylin/terra-board/releases';
-const VERSION_URL = `${RELEASES_URL}/latest/download/latest.yml`;
+// electron-builder writes latest.yml for the Windows installer and
+// latest-linux.yml for the AppImage; each system reads its own.
+const versionUrl = (platform = process.platform) =>
+  `${RELEASES_URL}/latest/download/${platform === 'linux' ? 'latest-linux.yml' : 'latest.yml'}`;
 const PAGE_URL = `${RELEASES_URL}/latest`;
 
 const parts = (version) =>
@@ -27,7 +30,7 @@ function isNewer(candidate, current) {
 // The release page for one version.
 const releasePage = (version) => `${RELEASES_URL}/tag/v${version}`;
 
-// Top-level `key: value` from electron-builder's latest.yml.
+// Top-level `key: value` from electron-builder's latest.yml (or latest-linux.yml).
 const field = (yml, key) =>
   yml
     .match(new RegExp(`^${key}:\\s*(.+)$`, 'm'))?.[1]
@@ -36,7 +39,7 @@ const field = (yml, key) =>
 
 // Resolves to { version, page, download } for the newest release, or throws when
 // GitHub cannot be read.
-async function latestRelease(fetch, url = process.env.TERRA_VERSION_URL || VERSION_URL) {
+async function latestRelease(fetch, url = process.env.TERRA_VERSION_URL || versionUrl()) {
   const response = await fetch(url, { cache: 'no-store' });
   if (!response.ok) throw Error(`GitHub answered ${response.status}`);
   const yml = await response.text();
@@ -50,4 +53,4 @@ async function latestRelease(fetch, url = process.env.TERRA_VERSION_URL || VERSI
   };
 }
 
-module.exports = { isNewer, latestRelease, releasePage, PAGE_URL };
+module.exports = { isNewer, latestRelease, releasePage, versionUrl, PAGE_URL };
