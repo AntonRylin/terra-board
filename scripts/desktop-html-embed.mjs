@@ -35,7 +35,7 @@ fetch('canvas-media://asset/${'a'.repeat(64)}/preview')
 
 const hoverPage = `<!doctype html><html><head><style>
 body{margin:0;height:100vh}
-#box{height:100%;background:#ddd}
+#box{height:300%;background:#ddd}
 #box:hover{background:#e4572e}
 </style></head><body><div id="box"></div></body></html>`;
 const plainPage = `<!doctype html><html><head><style>
@@ -463,7 +463,7 @@ try {
   );
   await screenshot('5-hover.png');
 
-  // 8. A wheel turn the page cannot scroll with zooms the board.
+  // 8. A wheel turn zooms the board, even over a page that could scroll.
   const before = await rect('.board-page[data-shown]');
   await send('Input.dispatchMouseEvent', {
     type: 'mouseWheel',
@@ -475,6 +475,38 @@ try {
   await until(
     async () => ((await rect('.board-page[data-shown]'))?.width || 0) > before.width + 1,
     'wheel zooms the board',
+  );
+  assert.equal(
+    await frameRead(`document.getElementById('box') ? String(scrollY) : ''`),
+    '0',
+    'the hovered page did not scroll',
+  );
+
+  // A page with its own wheel handling (a map's zoom, say) keeps the wheel.
+  assert.equal(
+    await frameRead(
+      `document.getElementById('box') ? (document.getElementById('box').addEventListener('wheel', (e) => { e.preventDefault(); window.ownWheel = (window.ownWheel || 0) + 1; }, { passive: false }), 'on') : ''`,
+    ),
+    'on',
+  );
+  // The first turn's zoom eases in; let it finish.
+  await sleep(800);
+  const zoomed = await rect('.board-page[data-shown]');
+  await send('Input.dispatchMouseEvent', {
+    type: 'mouseWheel',
+    x: at.x + 4,
+    y: at.y + 2,
+    deltaX: 0,
+    deltaY: -100,
+  });
+  await until(
+    async () => Number(await frameRead(`String(window.ownWheel || '')`)) >= 1,
+    'the page handles its own wheel',
+  );
+  await sleep(400);
+  assert.ok(
+    Math.abs((await rect('.board-page[data-shown]')).width - zoomed.width) < 1,
+    'the board did not zoom over a page that handles the wheel',
   );
 
   // 9. Pressing the page away from controls selects the embed and shows its picture.

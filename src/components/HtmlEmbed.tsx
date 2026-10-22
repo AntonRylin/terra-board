@@ -8,8 +8,11 @@ import './html-embed.css';
 // board. Pages may run scripts, submit forms and load from the web.
 const sandbox = 'allow-scripts allow-forms allow-modals allow-pointer-lock';
 
-// What a page on the board passes back: wheel turns it did not scroll with,
-// and presses away from anything clickable. Coordinates are page CSS pixels.
+// What a page on the board passes back: wheel turns it did not scroll or
+// handle itself (a page's own wheel handler that cancels or stops the turn
+// keeps it, say for a map's zoom), and presses away from anything clickable.
+// With scrolling left to the board, a scrollable page passes its turns back
+// too. Coordinates are page CSS pixels.
 export type HtmlRelay =
   | {
       kind: 'wheel';
@@ -24,17 +27,19 @@ export type HtmlRelay =
       altKey: boolean;
     }
   | { kind: 'press'; x: number; y: number };
-const relayScript = `<script>(()=>{
+const relayScript = (scroll: boolean) => `<script>(()=>{
+const scroll=${scroll};
 const send=(m)=>parent.postMessage({terraRelay:m},'*');
 const scrolls=(el,e)=>{const s=getComputedStyle(el),root=el===document.scrollingElement;
 const can=(o)=>root?o!=='hidden':/auto|scroll|overlay/.test(o);
 if(e.deltaY&&can(s.overflowY)&&(e.deltaY<0?el.scrollTop>0:el.scrollTop+el.clientHeight<el.scrollHeight-1))return true;
 return !!e.deltaX&&can(s.overflowX)&&(e.deltaX<0?el.scrollLeft>0:el.scrollLeft+el.clientWidth<el.scrollWidth-1);};
 addEventListener('wheel',(e)=>{
-if(!e.ctrlKey&&!e.metaKey)for(let el=e.target instanceof Element?e.target:null;el;el=el.parentElement)if(scrolls(el,e))return;
+if(e.defaultPrevented)return;
+if(scroll&&!e.ctrlKey&&!e.metaKey)for(let el=e.target instanceof Element?e.target:null;el;el=el.parentElement)if(scrolls(el,e))return;
 e.preventDefault();
 send({kind:'wheel',x:e.clientX,y:e.clientY,deltaX:e.deltaX,deltaY:e.deltaY,deltaMode:e.deltaMode,ctrlKey:e.ctrlKey,metaKey:e.metaKey,shiftKey:e.shiftKey,altKey:e.altKey});
-},{passive:false,capture:true});
+},{passive:false});
 const clickable='a[href],button,input,select,textarea,label,summary,details,video,audio,[contenteditable],[onclick],[tabindex],[role=button],[role=link],[role=checkbox],[role=tab]';
 addEventListener('pointerdown',(e)=>{
 if(e.button!==0)return;
@@ -46,17 +51,20 @@ send({kind:'press',x:e.clientX,y:e.clientY});
 
 // A running HTML embed. The desktop app serves the page from its own origin so
 // the board's Content-Security-Policy does not apply to it. With onRelay, the
-// page also reports what the board should handle (HtmlRelay).
+// page also reports what the board should handle (HtmlRelay); with
+// wheelToBoard, the page scrolls none of its own and every wheel turn goes back.
 export function HtmlEmbedFrame({
   html,
   title,
   onRelay,
   onLoad,
+  wheelToBoard = false,
 }: {
   html: string;
   title: string;
   onRelay?: (message: HtmlRelay) => void;
   onLoad?: () => void;
+  wheelToBoard?: boolean;
 }) {
   const [src, setSrc] = useState<string | null>(null);
   const frame = useRef<HTMLIFrameElement>(null);
@@ -64,7 +72,7 @@ export function HtmlEmbedFrame({
   relay.current = onRelay;
   const relayed = !!onRelay;
   // After the page's own markup, so a doctype stays first.
-  const page = relayed ? html + relayScript : html;
+  const page = relayed ? html + relayScript(!wheelToBoard) : html;
   useEffect(() => {
     if (!window.canvas) return;
     let current = true;

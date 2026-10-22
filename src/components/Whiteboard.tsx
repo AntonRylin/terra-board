@@ -3448,6 +3448,9 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
                 html={page.html}
                 title="HTML embed"
                 onRelay={(m) => relayHtml(page.id, m)}
+                // A resting pointer zooms the board like anywhere else; the
+                // page scrolls once opened with Interact.
+                wheelToBoard
                 // The picture stays until the page has drawn.
                 onLoad={() => pageReady(page.id, true)}
               />
