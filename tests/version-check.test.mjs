@@ -80,6 +80,39 @@ test('an up-to-date build or an unreachable GitHub shows no newer version', asyn
   assert.equal(offline.status().latest, undefined);
 });
 
+test('automatic checks can be turned off; checking by hand still works', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let calls = 0;
+  const updater = createAppUpdater({
+    app: app('0.1.24'),
+    enabled: false,
+    notify: true,
+    automatic: false,
+    fetch: async () => {
+      calls++;
+      return respond(latestYml('0.1.24'))();
+    },
+    onStatus() {},
+  });
+  t.mock.timers.tick(5 * 60 * 60 * 1000);
+  await settle();
+  assert.equal(calls, 0);
+  assert.equal(updater.status().automatic, false);
+  updater.check();
+  await settle();
+  assert.equal(calls, 1);
+  updater.setAutomatic(true);
+  assert.equal(updater.status().automatic, true);
+  t.mock.timers.tick(3_000);
+  await settle();
+  assert.equal(calls, 2);
+  updater.setAutomatic(false);
+  t.mock.timers.tick(5 * 60 * 60 * 1000);
+  await settle();
+  assert.equal(calls, 2);
+  updater.stop();
+});
+
 test('development and smoke-test runs do not check', async () => {
   let calls = 0;
   const updater = createAppUpdater({

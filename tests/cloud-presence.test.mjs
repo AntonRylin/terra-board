@@ -159,6 +159,23 @@ test('presence says whether this person owns the board', async () => {
   assert.equal(received.board.channel.tracked.role, 'view');
 });
 
+test('cursors are only sent while someone else is on the board', async () => {
+  const s = sync();
+  await s.joinBoard('b1');
+  await tick();
+  const channel = s.board.channel,
+    sent = [];
+  channel.send = (message) => sent.push(message);
+  const here = { 'user-me': [{ person: 'ws-me' }] };
+  channel.presenceState = () => here;
+  s.sendCursor({ x: 1, y: 2, view: null });
+  assert.equal(sent.length, 0);
+  here['user-sam'] = [{ person: 'ws-sam' }];
+  s.sendCursor({ x: 1, y: 2, view: null });
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].payload.key, 'user-me');
+});
+
 test('the shares covering a board include its folder share', () => {
   const s = sync();
   s.status.shared = [

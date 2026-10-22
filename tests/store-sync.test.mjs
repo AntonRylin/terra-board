@@ -229,6 +229,35 @@ test('malformed remote rows are skipped without blocking the batch', () =>
     assert.equal(a.syncStatus().cursor, 2);
   }));
 
+test('remote rows this version cannot read are kept and retried', () =>
+  withStores((a) => {
+    a.syncEnable({ workspace });
+    const board = a.createBoard({ name: 'Newer' });
+    a.syncAck({ entries: a.syncTake({ limit: 500 }).entries });
+    const bad = { kind: 'object', board_id: board.id, id: 'future', seq: 1 };
+    a.syncApply({ cursor: 1, rows: [{ ...bad, data: { id: 'future', type: 'hologram' } }] });
+    assert.equal(a.syncStatus().held, 1);
+    // A newer version of the app can read it: the next sync applies it.
+    a.db
+      .prepare('UPDATE sync_held SET row=?')
+      .run(JSON.stringify({ ...bad, data: note('future', 'from a newer app') }));
+    a.syncApply({ cursor: 1, rows: [] });
+    assert.deepEqual(
+      a.loadBoard({ id: board.id }).objects.map((o) => o.text),
+      ['from a newer app'],
+    );
+    assert.equal(a.syncStatus().held, 0);
+    // A newer change to a held object replaces it.
+    a.syncApply({
+      cursor: 2,
+      rows: [{ ...bad, id: 'x', seq: 2, data: { id: 'x', type: 'nope' } }],
+    });
+    assert.equal(a.syncStatus().held, 1);
+    a.syncApply({ cursor: 3, rows: [{ ...bad, id: 'x', seq: 3, data: note('x', 'fixed') }] });
+    assert.equal(a.syncStatus().held, 0);
+    assert.equal(a.loadBoard({ id: board.id }).objects.length, 2);
+  }));
+
 const ownerWs = '11111111-2222-4333-8444-555555555555';
 const friendWs = '99999999-8888-4777-8666-555555555555';
 const entriesOf = (store) => store.syncTake({ limit: 500 });

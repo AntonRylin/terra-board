@@ -47,6 +47,11 @@ CREATE TABLE IF NOT EXISTS sync_foreign(kind TEXT NOT NULL, id TEXT NOT NULL,
   workspace TEXT NOT NULL, role TEXT NOT NULL, owner TEXT NOT NULL DEFAULT '',
   PRIMARY KEY(kind, id));
 CREATE TABLE IF NOT EXISTS sync_local(id TEXT PRIMARY KEY);
+-- Remote rows this version could not apply (from a newer app, say). The sync
+-- cursor moves past them, so they are kept here and retried on every pull.
+CREATE TABLE IF NOT EXISTS sync_held(workspace TEXT NOT NULL, kind TEXT NOT NULL,
+  boardId TEXT NOT NULL DEFAULT '', id TEXT NOT NULL, row TEXT NOT NULL,
+  PRIMARY KEY(workspace, kind, boardId, id));
 DELETE FROM sync_state WHERE key='applying';
 ${triggerNames.map((name) => `DROP TRIGGER IF EXISTS ${name};`).join('\n')}
 DROP VIEW IF EXISTS sync_tracked;
@@ -190,6 +195,7 @@ function createSync(store, helpers) {
         name: state('name') || '',
         cursor: Number(state('cursor') || 0),
         pending: db().prepare('SELECT count(*) AS n FROM sync_outbox').get().n,
+        held: db().prepare('SELECT count(*) AS n FROM sync_held').get().n,
       };
     },
     // This library gets a personal workspace; nothing uploads until something is shared.
@@ -199,7 +205,7 @@ function createSync(store, helpers) {
         if (typeof name === 'string' && name.trim()) setState('name', name.trim().slice(0, 60));
         if (state('workspace') !== workspace) {
           db().exec(
-            'DELETE FROM sync_outbox; DELETE FROM sync_uploaded; DELETE FROM sync_owned; DELETE FROM sync_local;',
+            'DELETE FROM sync_outbox; DELETE FROM sync_uploaded; DELETE FROM sync_owned; DELETE FROM sync_local; DELETE FROM sync_held;',
           );
           setState('workspace', workspace);
           setState('cursor', 0);
@@ -461,48 +467,72 @@ function createSync(store, helpers) {
           OR b.folderId IN (SELECT id FROM sync_foreign WHERE kind='folder'))`,
       );
       const isLocal = db().prepare('SELECT 1 FROM sync_local WHERE id=?');
+      const heldRows = db().prepare('SELECT row FROM sync_held WHERE workspace=?');
+      const hold = db().prepare(
+        'INSERT INTO sync_held VALUES(?,?,?,?,?) ON CONFLICT(workspace,kind,boardId,id) DO UPDATE SET row=excluded.row',
+      );
+      const release = db().prepare(
+        'DELETE FROM sync_held WHERE workspace=? AND kind=? AND boardId=? AND id=?',
+      );
       const touched = new Map();
       let library = false;
+      const applyRow = (r) => {
+        if (pending.get(r.kind, r.board_id || '', r.id)) return;
+        if (r.kind === 'board' && !r.deleted && r.data?.removed) {
+          // Taken out of the cloud on another computer: keep this copy, stop syncing it.
+          if (!foreign && db().prepare('SELECT 1 FROM boards WHERE id=?').get(r.id)) {
+            db().prepare('INSERT OR IGNORE INTO sync_local VALUES(?)').run(r.id);
+            forgetOutbox(r.id);
+            library = true;
+          }
+          return;
+        }
+        if (r.kind === 'object' && isLocal.get(r.board_id)) return;
+        // Shared again from another computer: it syncs again.
+        if (r.kind === 'board' && !foreign && !r.deleted)
+          db().prepare('DELETE FROM sync_local WHERE id=?').run(r.id);
+        if (foreign) {
+          if (r.kind === 'folder') {
+            const access = roles?.folders?.[r.id];
+            if (!access) return;
+            markForeign.run('folder', r.id, workspace, access.role, access.owner || '');
+          } else if (r.kind === 'board') {
+            const access = roles?.boards?.[r.id];
+            if (!access) return;
+            markForeign.run('board', r.id, workspace, access.role, access.owner || '');
+          } else if (!isForeign.get(r.board_id)) return;
+        }
+        if (r.kind === 'folder') library = applyFolder(r) || library;
+        else if (r.kind === 'board') library = applyBoard(r, foreign) || library;
+        else if (applyObject(r)) {
+          if (!touched.has(r.board_id)) touched.set(r.board_id, new Set());
+          touched.get(r.board_id).add(r.id);
+        }
+      };
       withApplying(() => {
-        const sorted = rows
+        const keyOf = (r) => r.kind + '\n' + (r.board_id || '') + '\n' + r.id;
+        const incoming = new Set(rows.map(keyOf));
+        // Rows held from earlier pulls, unless this pull brings a newer version.
+        const earlier = heldRows
+          .all(workspace)
+          .map((h) => JSON.parse(h.row))
+          .filter((r) => !incoming.has(keyOf(r)));
+        const sorted = [...earlier, ...rows]
           .filter((r) => r.kind in kindOrder)
           .sort((a, b) => kindOrder[a.kind] - kindOrder[b.kind] || a.seq - b.seq);
         for (const r of sorted) {
-          if (pending.get(r.kind, r.board_id || '', r.id)) continue;
-          if (r.kind === 'board' && !r.deleted && r.data?.removed) {
-            // Taken out of the cloud on another computer: keep this copy, stop syncing it.
-            if (!foreign && db().prepare('SELECT 1 FROM boards WHERE id=?').get(r.id)) {
-              db().prepare('INSERT OR IGNORE INTO sync_local VALUES(?)').run(r.id);
-              forgetOutbox(r.id);
-              library = true;
-            }
-            continue;
-          }
-          if (r.kind === 'object' && isLocal.get(r.board_id)) continue;
-          // Shared again from another computer: it syncs again.
-          if (r.kind === 'board' && !foreign && !r.deleted)
-            db().prepare('DELETE FROM sync_local WHERE id=?').run(r.id);
+          const key = [workspace, r.kind, r.board_id || '', r.id];
+          // A savepoint, so a row that fails halfway leaves nothing behind.
+          db().exec('SAVEPOINT sync_row');
           try {
-            if (foreign) {
-              if (r.kind === 'folder') {
-                const access = roles?.folders?.[r.id];
-                if (!access) continue;
-                markForeign.run('folder', r.id, workspace, access.role, access.owner || '');
-              } else if (r.kind === 'board') {
-                const access = roles?.boards?.[r.id];
-                if (!access) continue;
-                markForeign.run('board', r.id, workspace, access.role, access.owner || '');
-              } else if (!isForeign.get(r.board_id)) continue;
-            }
-            if (r.kind === 'folder') library = applyFolder(r) || library;
-            else if (r.kind === 'board') library = applyBoard(r, foreign) || library;
-            else if (applyObject(r)) {
-              if (!touched.has(r.board_id)) touched.set(r.board_id, new Set());
-              touched.get(r.board_id).add(r.id);
-            }
+            applyRow(r);
+            db().exec('RELEASE sync_row');
+            release.run(...key);
           } catch (e) {
-            // A malformed remote row must not stop the rest of the library syncing.
-            console.warn('Skipped remote ' + r.kind + ' ' + r.id + ': ' + e.message);
+            db().exec('ROLLBACK TO sync_row; RELEASE sync_row');
+            // Kept for a later app version; the rest of the library keeps syncing.
+            console.warn('Held remote ' + r.kind + ' ' + r.id + ': ' + e.message);
+            hold.run(...key, JSON.stringify(r));
           }
         }
         for (const [boardId, ids] of touched) bumpRevision(boardId, ids);

@@ -115,6 +115,8 @@ export interface UpdateStatus {
   supported: boolean;
   /** This build checks GitHub for a newer version, installed or not. */
   notify?: boolean;
+  /** Checks on its own after launch and every few hours (Settings → About). */
+  automatic?: boolean;
   /** 'available': a newer version exists that this build cannot install itself. */
   state: 'idle' | 'checking' | 'current' | 'available' | 'downloading' | 'ready' | 'error';
   version: string;
@@ -223,6 +225,7 @@ interface DesktopBridge {
   updates: {
     status(): Promise<UpdateStatus>;
     check(): Promise<UpdateStatus>;
+    setAutomatic(on: boolean): Promise<UpdateStatus>;
     install(): Promise<boolean>;
     onStatus(callback: (status: UpdateStatus) => void): () => void;
   };

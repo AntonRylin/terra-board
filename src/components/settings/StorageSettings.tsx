@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { FolderOpen } from 'lucide-react';
 import type { AppInfo } from '../../bridge';
-import { Group, Notice, Row, useNotice } from './controls';
+import { Group, Notice, Row, Switch, useNotice } from './controls';
 import {
   downloadUpdate,
   installUpdate,
@@ -102,6 +102,7 @@ export function AboutSettings() {
           <span className="st-value">{info?.version ?? '—'}</span>
         </Row>
         <UpdateRow />
+        <AutomaticUpdatesRow />
         <Row
           id="licenses"
           below={
@@ -167,6 +168,20 @@ function updateText(status: UpdateStatus | null) {
     case 'error':
       return `Could not check for updates. ${status.error ?? ''}`.trim();
   }
+}
+
+function AutomaticUpdatesRow() {
+  const status = useUpdateStatus();
+  return (
+    <Row id="autoUpdates">
+      <Switch
+        label="Check for updates automatically"
+        checked={status?.automatic ?? true}
+        disabled={!status?.notify}
+        onChange={(on) => void window.canvas?.updates.setAutomatic(on).catch(() => {})}
+      />
+    </Row>
+  );
 }
 
 function UpdateRow() {

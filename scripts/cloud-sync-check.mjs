@@ -186,12 +186,36 @@ try {
       .toBuffer(),
     name: 'orange.png',
   });
+  // An album shows its first image; the others live only in its image list.
+  const albumImage = await owner.store.importAsset({
+    bytes: await sharp({ create: { width: 8, height: 8, channels: 3, background: '#264653' } })
+      .png()
+      .toBuffer(),
+    name: 'blue.png',
+  });
+  const albumImages = [planImage, albumImage].map((a, i) => ({
+    id: 'ai' + i,
+    assetId: a.id,
+    width: 8,
+    height: 8,
+  }));
   owner.store.patchBoard({
     id: plan.id,
     revision: 0,
     upserts: [
       note('p1', 'shared note'),
       { id: 'pimg', type: 'image', x: 0, y: 0, width: 8, height: 8, z: 2, assetId: planImage.id },
+      {
+        id: 'palbum',
+        type: 'image',
+        x: 20,
+        y: 0,
+        width: 8,
+        height: 8,
+        z: 3,
+        assetId: planImage.id,
+        album: { name: 'Album', storage: 'copy', images: albumImages },
+      },
     ],
   });
   const diary = owner.store.createBoard({ name: 'Diary' });
@@ -215,6 +239,10 @@ try {
   assert.equal(friend.store.library().sharing.boards[plan.id].shared, 'edit');
   assert.equal(friend.store.library().sharing.folders[withSam.id].owner, 'Anton');
   assert.ok(friend.store.asset({ id: planImage.id, variant: 'original' }), 'shared image arrives');
+  assert.ok(
+    friend.store.asset({ id: albumImage.id, variant: 'original' }),
+    'images inside a shared album arrive',
+  );
   assert.equal(friend.sync.status.sharedWithMe[0].owner, 'Anton');
   await assert.rejects(friend.sync.join(invite, 'Sam'), /wrong or has expired/);
   results.friendJoinedFolder = true;

@@ -2,7 +2,7 @@
 
 Terra Board syncs through Terra Cloud by default. A company can run its own Supabase and point the app at it instead. Local boards never need a server.
 
-Accounts arrive in the next release. Until then a company server uses the same anonymous device sync as Terra Cloud, so enable **Anonymous sign-ins** (and CAPTCHA for production) as described in [cloud-sync.md](cloud-sync.md).
+Accounts arrive in the next release. Until then a company server uses the same anonymous device sync as Terra Cloud, so enable **Anonymous sign-ins** and keep their rate limit low, as described in [cloud-sync.md](cloud-sync.md). Anyone who can reach the server can create a device and upload files, so keep a company server behind your VPN until accounts arrive.
 
 ## Set up the server
 

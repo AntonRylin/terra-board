@@ -743,8 +743,15 @@ app
         if (win && !win.isDestroyed()) win.webContents.send('canvas:presence', event);
       },
     });
+    // Settings → About: whether to check GitHub for new versions on its own.
+    const updateSettings = path.join(root, 'settings', 'updates.json');
+    let automaticUpdates = true;
+    try {
+      automaticUpdates = JSON.parse(fs.readFileSync(updateSettings, 'utf8')).automatic !== false;
+    } catch {}
     updater = createAppUpdater({
       app,
+      automatic: automaticUpdates,
       enabled:
         app.isPackaged && require('../package.json').terraDistribution === 'installed' && !smoke,
       // Every packaged copy, including ones built from source, hears about new versions.
@@ -764,6 +771,13 @@ app
       trusted(e);
       updater.check();
       return updater.status();
+    });
+    ipcMain.handle('canvas:update-automatic', (e, on) => {
+      trusted(e);
+      if (typeof on !== 'boolean') throw Error('Expected on or off.');
+      fs.mkdirSync(path.dirname(updateSettings), { recursive: true });
+      fs.writeFileSync(updateSettings, JSON.stringify({ automatic: on }));
+      return updater.setAutomatic(on);
     });
     // Saves and closes like a normal quit, then installs once the library is closed.
     ipcMain.handle('canvas:update-install', (e) => {

@@ -25,7 +25,7 @@ To try it in the app, start Terra Board with `TERRA_CLOUD_URL` and `TERRA_CLOUD_
 ## Connect a real Supabase project
 
 1. Create a project at supabase.com (the free tier works for testing).
-2. Authentication → Sign In / Providers: enable **Anonymous sign-ins**. For production also enable CAPTCHA (Turnstile or hCaptcha), because anonymous sign-up is otherwise open to abuse.
+2. Authentication → Sign In / Providers: enable **Anonymous sign-ins**. Anonymous sign-up is open to anyone who has the server address, so keep its limit low: Authentication → Rate Limits → anonymous sign-ins, for example 30 an hour per IP address. Don't turn on CAPTCHA yet: the app doesn't send a CAPTCHA token, so every sign-in would fail.
 3. Link and push the schema:
 
    ```bash

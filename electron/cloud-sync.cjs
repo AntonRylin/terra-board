@@ -653,7 +653,10 @@ class CloudSync {
 
   sendCursor(data) {
     const current = this.board;
-    if (!current || !data || typeof data !== 'object') return;
+    if (!current?.subscribed || !data || typeof data !== 'object') return;
+    // Realtime bills every message: send only when someone else can see it.
+    const others = Object.keys(current.channel.presenceState()).some((k) => k !== this.userId);
+    if (!others) return;
     void current.channel.send({
       type: 'broadcast',
       event: 'cursor',

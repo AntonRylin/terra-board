@@ -13,12 +13,22 @@ const CHECK_EVERY_MS = 4 * 60 * 60 * 1000;
 // Other packaged builds (`notify`, e.g. built from source) cannot install
 // updates; they report the newer version as the 'available' state with a link
 // to its release and installer.
-function createAppUpdater({ app, enabled, notify = enabled, fetch = globalThis.fetch, onStatus }) {
+//
+// Automatic checks can be turned off in Settings; "Check now" still works.
+function createAppUpdater({
+  app,
+  enabled,
+  notify = enabled,
+  automatic = true,
+  fetch = globalThis.fetch,
+  onStatus,
+}) {
   const feed = process.env.TERRA_UPDATE_FEED;
   const supported = enabled || !!feed;
   let status = {
     supported,
     notify: supported || notify,
+    automatic: !!automatic,
     state: 'idle',
     version: app.getVersion(),
     page: PAGE_URL,
@@ -37,7 +47,14 @@ function createAppUpdater({ app, enabled, notify = enabled, fetch = globalThis.f
         .split('\n')[0]
         .slice(0, 200),
     });
-  if (!status.notify) return { status: () => status, check() {}, install: () => false, stop() {} };
+  if (!status.notify)
+    return {
+      status: () => status,
+      check() {},
+      install: () => false,
+      setAutomatic: () => status,
+      stop() {},
+    };
 
   if (supported) {
     // Loaded only by builds that install updates themselves.
@@ -98,14 +115,25 @@ function createAppUpdater({ app, enabled, notify = enabled, fetch = globalThis.f
     if (status.state === 'downloading' || status.state === 'ready') return;
     autoUpdater.checkForUpdates().catch(() => {});
   };
-  timer = setTimeout(function next() {
-    check();
-    timer = setTimeout(next, CHECK_EVERY_MS);
-  }, FIRST_CHECK_MS);
+  const schedule = () => {
+    clearTimeout(timer);
+    if (!status.automatic) return;
+    timer = setTimeout(function next() {
+      check();
+      timer = setTimeout(next, CHECK_EVERY_MS);
+    }, FIRST_CHECK_MS);
+  };
+  schedule();
 
   return {
     status: () => status,
     check,
+    setAutomatic(on) {
+      if (status.automatic === !!on) return status;
+      set({ automatic: !!on });
+      schedule();
+      return status;
+    },
     // Call only after the library is saved and closed: it starts the installer
     // and quits. Returns false when there is nothing to install.
     install() {

@@ -168,16 +168,19 @@ export default function CollabLayer({
     }
   }, [cloud, people]);
 
-  // Share this person's pointer and view, a few times a second.
+  // Share this person's pointer and view, up to 10 times a second, and only
+  // while someone else is here: each message costs money on the server.
   const pointer = useRef<{ x: number; y: number } | null>(null);
   const lastSent = useRef(0);
   const pendingSend = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const others = useRef(0);
+  others.current = people.length;
   const send = () => {
     const e = engine.current,
       h = host.current;
-    if (!cloud || !e || !h || !status?.identity) return;
+    if (!cloud || !e || !h || !status?.identity || !others.current) return;
     const now = Date.now();
-    const wait = 70 - (now - lastSent.current);
+    const wait = 100 - (now - lastSent.current);
     if (wait > 0) {
       pendingSend.current ??= setTimeout(() => {
         pendingSend.current = null;

@@ -352,6 +352,13 @@ export const rows = {
     description: 'Terra Board checks for new versions and installs them when you close it.',
     keywords: 'update upgrade new version release download',
   },
+  autoUpdates: {
+    section: 'about',
+    title: 'Check automatically',
+    description:
+      'Asks GitHub for a new version after launch and every 4 hours. When off, use Check now.',
+    keywords: 'update automatic privacy network github offline',
+  },
   licenses: {
     section: 'about',
     title: 'Open-source licenses',

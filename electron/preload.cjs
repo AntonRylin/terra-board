@@ -68,6 +68,7 @@ contextBridge.exposeInMainWorld('canvas', {
   updates: {
     status: () => ipcRenderer.invoke('canvas:update-status'),
     check: () => ipcRenderer.invoke('canvas:update-check'),
+    setAutomatic: (on) => ipcRenderer.invoke('canvas:update-automatic', on),
     install: () => ipcRenderer.invoke('canvas:update-install'),
     onStatus: (callback) => {
       const handler = (_event, status) => callback(status);
