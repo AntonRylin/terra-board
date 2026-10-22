@@ -11,6 +11,15 @@ import {
 } from './arrows';
 import { drawArrow } from './arrow-rendering';
 import {
+  canConnect,
+  connectionPoint,
+  connectorDot,
+  connectorSides,
+  facingSide,
+  sidePoint,
+  type ConnectorSide,
+} from './connectors';
+import {
   clampHighlightSize,
   defaultHighlightStyle,
   highlightAlpha,
@@ -113,6 +122,7 @@ import {
   pictureBounds,
   hasExternalLabel,
   arrowLabelObject,
+  frameLabel,
 } from './frame-label';
 import { galleryEdit, selectionWithGalleryImages } from './gallery';
 import {
@@ -182,6 +192,9 @@ type Gesture = {
   arrowDraft?: CanvasObject;
   arrowPointer?: Point;
   clickToPlace?: boolean;
+  // An arrow dragged out of a selected object's side dot, and the object it will point at.
+  connectFrom?: { id: string; side: ConnectorSide };
+  connectTarget?: string;
   arrowIndex?: number;
   arrowPoints?: Point[];
   start: Point;
@@ -351,6 +364,7 @@ export class Engine {
   private snapGuides: SnapGuide[] = [];
   private input: InputPreferences = { wheel: 'zoom', zoomSpeed: 'normal', snapping: true };
   private readOnly = false;
+  private hoverConnector: ConnectorSide | null = null;
   private views = new Map<string, { container: Container; signature: string; sharpness: string }>();
   private textures: TextureCache;
   private observer: ResizeObserver;
@@ -634,6 +648,17 @@ export class Engine {
     const anchor = g.mode === 'drawArrow' ? g.world : g.arrowPoints![index === 0 ? 1 : index - 1];
     if (ctrl) end.x = anchor.x;
     else if (shift) end.y = anchor.y;
+    if (g.connectFrom) {
+      // Over another object, the arrow lands on the middle of its facing side.
+      const pointer = this.screenPoint(g.arrowPointer),
+        target = this.connectTargetAt(pointer, g);
+      g.connectTarget = target?.id;
+      if (target)
+        Object.assign(
+          end,
+          connectionPoint(target, facingSide(target, anchor), pointer, 48 / this.camera.zoom),
+        );
+    }
     if (g.mode === 'drawArrow') this.preview(arrowFromPoints(g.arrowDraft!, [anchor, end]));
     else {
       const points = g.arrowPoints!.map((p) => ({ ...p }));
@@ -654,6 +679,48 @@ export class Engine {
     this.beginArrow(anchor, pointer, false);
     this.gesture!.clickToPlace = true;
     this.preview(arrowFromPoints(this.gesture!.arrowDraft!, [anchor, this.screenPoint(pointer)]));
+    this.invalidate();
+  }
+  private connectorAt(p: Point): ConnectorSide | undefined {
+    if (
+      this.readOnly ||
+      this.tool !== 'select' ||
+      this.selection.size !== 1 ||
+      this.selectionLocked ||
+      this.editingId ||
+      this.cropPreview
+    )
+      return;
+    const o = this.selected[0];
+    if (!canConnect(o)) return;
+    const c = this.camera,
+      top = hasExternalLabel(o) ? frameLabel(o, c.zoom).top : 0;
+    return connectorSides.find((side) => {
+      const q = connectorDot(o, side, c.zoom, top);
+      return Math.hypot(p.x - q.x * c.zoom - c.x, p.y - q.y * c.zoom - c.y) < 10;
+    });
+  }
+  /** The object an arrow end at world point `w` connects to: not frames, nor the source. */
+  private connectTargetAt(w: Point, g: Gesture) {
+    const pad = 4 / this.camera.zoom;
+    return this.index
+      .search({ x: w.x - pad, y: w.y - pad, width: pad * 2, height: pad * 2 })
+      .filter((o) => {
+        if (o.id === g.connectFrom?.id || o.id === g.arrowDraft?.id) return false;
+        if (!canConnect(o) || o.type === 'frame') return false;
+        if (this.coveringFrames.length && concealedBy(o, this.coveringFrames)) return false;
+        const q = worldToLocal(o, w);
+        return q.x >= -pad && q.y >= -pad && q.x <= o.width + pad && q.y <= o.height + pad;
+      })
+      .sort((a, b) => b.z - a.z)[0];
+  }
+  private beginConnection(side: ConnectorSide, p: Point) {
+    const o = this.selected[0];
+    this.hoverConnector = null;
+    this.beginArrow(sidePoint(o, side), p, false);
+    const g = this.gesture!;
+    g.connectFrom = { id: o.id, side };
+    this.preview(arrowFromPoints(g.arrowDraft!, [g.world, this.screenPoint(p)]));
     this.invalidate();
   }
   private down = (e: PointerEvent, overlay = false) => {
@@ -683,7 +750,8 @@ export class Engine {
       !e.shiftKey &&
       !e.ctrlKey &&
       !e.metaKey &&
-      (this.tool === 'hand' || (this.tool === 'select' && !this.resizeCorner(p)))
+      (this.tool === 'hand' ||
+        (this.tool === 'select' && !this.resizeCorner(p) && !this.connectorAt(p)))
     ) {
       // Peeking at a spoiler neither selects nor drags.
       const spoiler = this.spoilerAt(w);
@@ -751,7 +819,12 @@ export class Engine {
         additive = e.shiftKey || e.ctrlKey || e.metaKey;
       const resize = !e.ctrlKey && !e.metaKey && this.resizeCorner(p);
       const arrowHandle = !e.metaKey && this.arrowHandle(p);
-      if (arrowHandle) {
+      const connector = !additive && e.button === 0 && this.connectorAt(p);
+      if (connector) {
+        this.beginConnection(connector, p);
+        this.host.setPointerCapture(e.pointerId);
+        return;
+      } else if (arrowHandle) {
         const o = this.selected[0],
           points = arrowPoints(o).map((q) => localToWorld(o, q));
         if (arrowHandle.insert) points.splice(arrowHandle.index, 0, localToWorld(o, arrowHandle));
@@ -905,6 +978,13 @@ export class Engine {
         this.arrowHandle(this.point(e))
       )
         this.host.style.cursor = 'move';
+      const connector =
+        (!this.space && e.target === this.app.canvas && this.connectorAt(this.point(e))) || null;
+      if (connector) this.host.style.cursor = 'crosshair';
+      if (connector !== this.hoverConnector) {
+        this.hoverConnector = connector;
+        this.invalidate();
+      }
       return;
     }
     this.callbacks.hover?.(null);
@@ -1066,6 +1146,16 @@ export class Engine {
       this.preview(o);
       this.history.push({ upserts: [o], deleted: [] }, { upserts: [], deleted: [o.id] });
       this.callbacks.edit({ upserts: [o], deleted: [] });
+    } else if (
+      g.mode === 'drawArrow' &&
+      g.connectFrom &&
+      !g.connectTarget &&
+      Math.hypot(this.point(e).x - g.start.x, this.point(e).y - g.start.y) < 12
+    ) {
+      // A click (or a twitch) on a side dot creates nothing.
+      this.objects.delete(g.arrowDraft!.id);
+      this.index.remove(g.arrowDraft!.id);
+      this.setSelection([g.connectFrom.id]);
     } else if (g.mode === 'drawArrow') {
       const o = this.objects.get(g.arrowDraft!.id)!;
       this.history.push({ upserts: [o], deleted: [] }, { upserts: [], deleted: [o.id] });
@@ -1130,7 +1220,7 @@ export class Engine {
       if (g.mode === 'drawArrow') {
         this.objects.delete(g.arrowDraft!.id);
         this.index.remove(g.arrowDraft!.id);
-        this.setSelection([]);
+        this.setSelection(g.connectFrom ? [g.connectFrom.id] : []);
       }
       if (g.mode === 'drawHighlight') {
         this.objects.delete(g.highlightDraft!.id);
@@ -2698,12 +2788,17 @@ export class Engine {
         };
       }
       const handle = localToWorld(o, rotationHandlePoint(o, c.zoom));
-      const hy = handle.y * c.zoom + c.y;
-      const top = Math.min(toolbarBounds.y, hy - 14);
+      // Keep the toolbar clear of the rotation handle and the connector dots.
+      const labelTop = hasExternalLabel(o) ? frameLabel(o, c.zoom).top : 0;
+      const ys = [
+        handle.y,
+        ...(canConnect(o) ? connectorSides.map((s) => connectorDot(o, s, c.zoom, labelTop).y) : []),
+      ].map((y) => y * c.zoom + c.y);
+      const top = Math.min(toolbarBounds.y, ...ys.map((y) => y - 14));
       toolbarBounds = {
         ...toolbarBounds,
         y: top,
-        height: Math.max(toolbarBounds.y + toolbarBounds.height, hy + 14) - top,
+        height: Math.max(toolbarBounds.y + toolbarBounds.height, ...ys.map((y) => y + 14)) - top,
       };
     }
     this.callbacks.selectionView?.(toolbarBounds, {
@@ -2798,7 +2893,26 @@ export class Engine {
               : null,
           );
         }
+        if (!this.gesture && !this.editingId && !this.readOnly && canConnect(o)) {
+          // Side dots: drag one out to draw an arrow from that side.
+          const labelTop = hasExternalLabel(o) ? frameLabel(o, c.zoom).top : 0;
+          for (const side of connectorSides) {
+            const p = screen(worldToLocal(o, connectorDot(o, side, c.zoom, labelTop)));
+            if (side === this.hoverConnector)
+              g.circle(p.x, p.y, 7).fill('#4486d9').stroke({ color: '#ffffff', width: 2 });
+            else g.circle(p.x, p.y, 4.5).fill('#ffffff').stroke({ color: '#4486d9', width: 1.5 });
+          }
+        }
       }
+    }
+    const connectTarget =
+      this.gesture?.connectTarget && this.objects.get(this.gesture.connectTarget);
+    if (connectTarget) {
+      const outline = ['nw', 'ne', 'se', 'sw'].flatMap((h) => {
+        const q = localToWorld(connectTarget, handlePoint(connectTarget, h as ResizeHandle));
+        return [q.x * c.zoom + c.x, q.y * c.zoom + c.y];
+      });
+      g.poly(outline).stroke({ color: '#4486d9', width: 2 });
     }
     if (this.gesture?.mode !== 'rotate') this.callbacks.rotation?.(null);
     if (this.tool === 'highlight' && this.pointer && !this.space && this.gesture?.mode !== 'pan') {
