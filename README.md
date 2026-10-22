@@ -17,7 +17,7 @@ Your boards are saved in `%LOCALAPPDATA%\Terra Board\Library`, so updating or un
 
 ## What it does
 
-- **Infinite canvas** — pan, zoom, text, sticky notes, shapes, frames, arrows, highlighter, undo/redo.
+- **Infinite canvas** — pan, zoom, text, sticky notes, shapes, frames, arrows, freehand pen, highlighter, undo/redo.
 - **Images and video** — paste or drag them in; full-resolution viewer, cropping, rotation.
 - **PDFs and documents** — read PDFs, reorder and merge pages, convert to images or text, preview Word files.
 - **Copy text from images** — select and copy text from screenshots and scanned PDFs (uses Windows' built-in OCR).

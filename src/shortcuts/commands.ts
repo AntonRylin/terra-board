@@ -27,6 +27,7 @@ export const commands = [
   { id: 'tool.note', name: 'Note', group: 'Tools', scope: 'board', defaults: [key('KeyN')] },
   { id: 'tool.rect', name: 'Shape', group: 'Tools', scope: 'board', defaults: [key('KeyR')] },
   { id: 'tool.arrow', name: 'Arrow', group: 'Tools', scope: 'board', defaults: [key('KeyA')] },
+  { id: 'tool.pen', name: 'Pen', group: 'Tools', scope: 'board', defaults: [key('KeyP')] },
   {
     id: 'tool.highlight',
     name: 'Highlighter',

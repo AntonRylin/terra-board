@@ -114,6 +114,8 @@ export interface ArrowStyle {
 export interface HighlightStroke {
   points: { x: number; y: number }[];
   size: number;
+  // Opaque pen ink instead of the translucent highlighter.
+  pen?: boolean;
 }
 export interface CanvasObject {
   frameLink?: { boardId: string; frameId: string };
@@ -278,5 +280,6 @@ export type Tool =
   | 'frame'
   | 'link'
   | 'arrow'
+  | 'pen'
   | 'highlight';
 export const uid = () => crypto.randomUUID();

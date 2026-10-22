@@ -29,6 +29,10 @@ import {
   highlightSize,
   hitsHighlight,
   simplifyStroke,
+  clampPenSize,
+  defaultPenStyle,
+  isPen,
+  smoothStroke,
 } from './highlight';
 import {
   snapMove,
@@ -172,6 +176,7 @@ interface Callbacks {
   create: (tool: Tool, p: Point) => void;
   context: (p: Point) => void;
   highlightSize?: (size: number) => void;
+  penSize?: (size: number) => void;
   ready: () => void;
   error: (message: string) => void;
 }
@@ -350,6 +355,26 @@ export class Engine {
   camera: Camera;
   tool: Tool = 'select';
   highlightStyle = { ...defaultHighlightStyle };
+  penStyle = { ...defaultPenStyle };
+  // The pen and the highlighter draw the same kind of stroke with their own style.
+  private get inkTool() {
+    return this.tool === 'highlight' || this.tool === 'pen';
+  }
+  private get inkStyle() {
+    return this.tool === 'pen' ? this.penStyle : this.highlightStyle;
+  }
+  private clampInk(size: number) {
+    return this.tool === 'pen' ? clampPenSize(size) : clampHighlightSize(size);
+  }
+  private setInkSize(size: number) {
+    if (this.tool === 'pen') {
+      this.penStyle = { ...this.penStyle, size };
+      this.callbacks.penSize?.(size);
+    } else {
+      this.highlightStyle = { ...this.highlightStyle, size };
+      this.callbacks.highlightSize?.(size);
+    }
+  }
   private pointer: Point | null = null;
   objects = new Map<string, CanvasObject>();
   selection = new Set<string>();
@@ -793,7 +818,7 @@ export class Engine {
       // Nor does the second press of a double-click that revealed an object.
       if (performance.now() - this.lastObjectReveal < 400) return;
     }
-    if (this.tool === 'highlight' && e.button === 2 && !this.space && !this.hit(w)) {
+    if (this.inkTool && e.button === 2 && !this.space && !this.hit(w)) {
       // Right-drag on empty canvas sizes the marker: left shrinks it, right grows it.
       this.gesture = {
         mode: 'highlightSize',
@@ -802,7 +827,7 @@ export class Engine {
         camera: { ...this.camera },
         original: [],
         secondary: true,
-        highlightSize: this.highlightStyle.size,
+        highlightSize: this.inkStyle.size,
       };
     } else if (this.space || this.tool === 'hand' || e.button === 1 || e.button === 2) {
       this.gesture = {
@@ -816,7 +841,8 @@ export class Engine {
       this.updateCursor();
     } else if (this.tool === 'arrow') {
       this.beginArrow(w, p);
-    } else if (this.tool === 'highlight') {
+    } else if (this.inkTool) {
+      const style = this.inkStyle;
       const draft = highlightFromPoints(
         {
           id: uid(),
@@ -826,8 +852,12 @@ export class Engine {
           width: 1,
           height: 1,
           z: this.topZ() + 1,
-          color: this.highlightStyle.color,
-          highlight: { points: [], size: this.highlightStyle.size / this.camera.zoom },
+          color: style.color,
+          highlight: {
+            points: [],
+            size: style.size / this.camera.zoom,
+            ...(this.tool === 'pen' ? { pen: true } : {}),
+          },
         },
         [w],
       );
@@ -976,7 +1006,7 @@ export class Engine {
   }
   private move = (e: PointerEvent) => {
     const g = this.gesture;
-    if (this.tool === 'highlight') {
+    if (this.inkTool) {
       this.pointer = e.target === this.app.canvas || g ? this.point(e) : null;
       this.invalidate();
     }
@@ -1035,11 +1065,9 @@ export class Engine {
     if (g.mode === 'highlightSize') {
       if (!g.changed) return;
       // The ring's edge follows the pointer: every pixel changes the radius by one.
-      const size = clampHighlightSize(g.highlightSize! + dx * 2);
-      if (size !== this.highlightStyle.size) {
-        this.highlightStyle = { ...this.highlightStyle, size };
-        this.callbacks.highlightSize?.(size);
-      }
+      // The pen's sizes are small, so it grows more slowly.
+      const size = this.clampInk(g.highlightSize! + dx * (this.tool === 'pen' ? 0.25 : 2));
+      if (size !== this.inkStyle.size) this.setInkSize(size);
       this.invalidate();
     } else if (g.mode === 'drawHighlight') {
       const path = g.highlightPath!,
@@ -1176,10 +1204,9 @@ export class Engine {
     if (g.mode === 'highlightSize') {
       if (!g.changed) this.openContext(e);
     } else if (g.mode === 'drawHighlight') {
-      const o = highlightFromPoints(
-        g.highlightDraft!,
-        simplifyStroke(g.highlightPath!, 0.75 / this.camera.zoom),
-      );
+      // Handwriting keeps finer detail than a marker sweep.
+      const tolerance = (isPen(g.highlightDraft!) ? 0.35 : 0.75) / this.camera.zoom;
+      const o = highlightFromPoints(g.highlightDraft!, simplifyStroke(g.highlightPath!, tolerance));
       this.preview(o);
       this.history.push({ upserts: [o], deleted: [] }, { upserts: [], deleted: [o.id] });
       this.callbacks.edit({ upserts: [o], deleted: [] });
@@ -1263,10 +1290,8 @@ export class Engine {
         this.objects.delete(g.highlightDraft!.id);
         this.index.remove(g.highlightDraft!.id);
       }
-      if (g.mode === 'highlightSize' && g.highlightSize !== this.highlightStyle.size) {
-        this.highlightStyle = { ...this.highlightStyle, size: g.highlightSize! };
-        this.callbacks.highlightSize?.(g.highlightSize!);
-      }
+      if (g.mode === 'highlightSize' && g.highlightSize !== this.inkStyle.size)
+        this.setInkSize(g.highlightSize!);
       for (const o of g.original) this.preview(o);
       if (g.mode === 'pan') this.camera = g.camera;
       if (g.clickToPlace) {
@@ -1478,6 +1503,10 @@ export class Engine {
   }
   setHighlightStyle(style: { color: string; size: number }) {
     this.highlightStyle = { color: style.color, size: clampHighlightSize(style.size) };
+    this.invalidate();
+  }
+  setPenStyle(style: { color: string; size: number }) {
+    this.penStyle = { color: style.color, size: clampPenSize(style.size) };
     this.invalidate();
   }
   private spoilerAt(w: Point) {
@@ -2488,6 +2517,21 @@ export class Engine {
       container.addChild(sprite);
       return container;
     }
+    if (o.type === 'highlight' && isPen(o)) {
+      const points = highlightPoints(o),
+        width = highlightSize(o),
+        color = o.color || defaultPenStyle.color,
+        // Dark ink turns light on the night board, as arrows and text do.
+        ink = dark ? nightInk({ type: 'arrow', color }, color) : color;
+      const path = smoothStroke(points);
+      g.moveTo(path.start.x, path.start.y);
+      for (const c of path.curves) g.quadraticCurveTo(c.control.x, c.control.y, c.to.x, c.to.y);
+      g.stroke({ color: ink, width, cap: 'round', join: 'round' });
+      if (points.every((p) => p.x === points[0].x && p.y === points[0].y))
+        g.circle(points[0].x, points[0].y, width / 2).fill(ink);
+      container.addChild(g);
+      return container;
+    }
     if (o.type === 'highlight') {
       const points = highlightPoints(o),
         width = highlightSize(o),
@@ -2952,12 +2996,13 @@ export class Engine {
       g.poly(outline).stroke({ color: '#4486d9', width: 2 });
     }
     if (this.gesture?.mode !== 'rotate') this.callbacks.rotation?.(null);
-    if (this.tool === 'highlight' && this.pointer && !this.space && this.gesture?.mode !== 'pan') {
+    if (this.inkTool && this.pointer && !this.space && this.gesture?.mode !== 'pan') {
       // The ring is the marker's true footprint, pinned in place while it is resized.
+      const style = this.inkStyle;
       const at = this.gesture?.mode === 'highlightSize' ? this.gesture.start : this.pointer,
-        radius = this.highlightStyle.size / 2;
+        radius = Math.max(style.size / 2, this.tool === 'pen' ? 2 : 0);
       g.circle(at.x, at.y, radius)
-        .fill({ color: this.highlightStyle.color, alpha: this.gesture ? 0.25 : 0.12 })
+        .fill({ color: style.color, alpha: this.gesture ? 0.25 : 0.12 })
         .stroke({ color: this.dark ? '#ffffff' : '#252d38', width: 1, alpha: 0.55 });
     }
     if (this.gesture?.box) {

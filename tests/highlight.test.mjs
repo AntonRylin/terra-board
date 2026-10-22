@@ -8,6 +8,11 @@ import {
   readHighlightStyle,
   defaultHighlightStyle,
   highlightSizeRange,
+  isPen,
+  readPenStyle,
+  defaultPenStyle,
+  penSizeRange,
+  smoothStroke,
 } from '../src/canvas/highlight.ts';
 import { clipboardObjects } from '../src/canvas/content.ts';
 import { resizeSelection } from '../src/canvas/resize.ts';
@@ -65,6 +70,48 @@ test('scaling a selection scales the marker width with the stroke', () => {
   assert.equal(scaled.width, 200);
   assert.equal(scaled.highlight.size, 40);
   assert.deepEqual(scaled.highlight.points, o.highlight.points);
+});
+
+test('pen strokes keep their pen ink through drawing, scaling and the clipboard', () => {
+  const pen = { ...base, color: '#1f2328', highlight: { points: [], size: 3, pen: true } };
+  const o = highlightFromPoints(pen, [
+    { x: 0, y: 0 },
+    { x: 40, y: 10 },
+    { x: 80, y: 0 },
+  ]);
+  assert.ok(isPen(o));
+  assert.ok(!isPen(highlightFromPoints(base, [{ x: 0, y: 0 }])));
+  assert.equal(clipboardObjects([o])[0].highlight.pen, true);
+  assert.equal(
+    clipboardObjects([highlightFromPoints(base, [{ x: 0, y: 0 }])])[0].highlight.pen,
+    undefined,
+  );
+  const [scaled] = resizeSelection([o], { x: 0, y: 0, width: 80, height: 10 }, 'se', 80, 10);
+  assert.ok(isPen(scaled));
+  assert.throws(() => clipboardObjects([{ ...o, highlight: { ...o.highlight, pen: 'yes' } }]));
+  assert.deepEqual(readPenStyle(null), defaultPenStyle);
+  assert.deepEqual(readPenStyle({ color: '#2563eb', size: 999 }), {
+    color: '#2563eb',
+    size: penSizeRange.max,
+  });
+});
+
+test('smoothing passes through the ends and the midpoints between samples', () => {
+  const points = [
+    { x: 0, y: 0 },
+    { x: 10, y: 0 },
+    { x: 10, y: 10 },
+  ];
+  const path = smoothStroke(points);
+  assert.deepEqual(path.start, points[0]);
+  // A curve through each midpoint, with the sample as its control point, then to the end.
+  assert.deepEqual(path.curves, [
+    { control: { x: 10, y: 0 }, to: { x: 10, y: 5 } },
+    { control: { x: 10, y: 10 }, to: { x: 10, y: 10 } },
+  ]);
+  assert.deepEqual(smoothStroke(points.slice(0, 2)).curves, [
+    { control: { x: 10, y: 0 }, to: { x: 10, y: 0 } },
+  ]);
 });
 
 test('clipboard rejects malformed strokes and saved preferences are repaired', () => {

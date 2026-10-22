@@ -113,9 +113,11 @@ A daily SQLite metadata snapshot is created on startup under `Library\backups`. 
 - The canvas is not yet fully screen-reader navigable. Reduced-motion behavior and keyboard-operable controls are implemented, but a full accessibility audit remains open.
 - The build is unsigned, so Windows SmartScreen may warn before the installer runs. Only installed copies update themselves: they show a prompt with the new version and a **Restart to update** button. Builds from source, such as `release/win-unpacked`, show the same prompt with a **Download** link to the new installer. The large-board startup test is not a certification of sustained 60 FPS, 10,000 distinct high-resolution photos, 4K displays, or long editing sessions.
 
-## Arrows and highlighter
+## Arrows, pen and highlighter
 
 Arrows: choose **Arrow (A)** and drag between two points. Drag an endpoint to reposition it; drag a small dot along the path to insert a bend. Double-click an interior bend to remove it. The selection toolbar provides straight, curved and elbow paths, solid/dashed/dotted strokes, thickness, color, independent start/end markers, a swap action and a text label. Labels save on Enter, blur or app close; Escape cancels the label draft. Arrows move and scale with selections and frames, and retain their shape through undo, clipboard, reopening and board export/import. Endpoints are freely positioned; they do not automatically attach to other objects.
+
+Pen: choose **Pen (P)** and draw or write freehand. The pen draws solid, smoothed ink; it works like the highlighter below (Shift for a straight line, right-drag to resize, its own colours and size in the strip above the toolbar). On the night board, dark ink is shown light so it stays readable.
 
 Highlighter: choose **Highlighter (M)** and drag to mark anything on the board; hold **Shift** for a straight line. The strip above the toolbar sets the colour and size. Right-drag on an empty spot to resize the marker in place: left makes it thinner, right thicker, and the ring under the pointer shows its exact footprint. The size is in screen pixels, so the marker feels the same at any zoom. Strokes are ordinary objects: click one to recolour, duplicate or delete it; double-clicking through a stroke still opens the object underneath. Lists and PDF workspaces are drawn above the canvas, so ink does not show on top of them.
 

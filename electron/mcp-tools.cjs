@@ -253,6 +253,8 @@ const object = z
       .object({
         points: z.array(point).min(2).max(2000),
         size: z.number().min(0.25).max(10000),
+        // true: opaque pen ink; omitted: translucent highlighter.
+        pen: z.boolean().optional(),
       })
       .optional(),
   })

@@ -75,6 +75,11 @@ import {
   highlightSizeRange,
   readHighlightStyle,
   defaultHighlightStyle,
+  penColors,
+  penSizeRange,
+  readPenStyle,
+  defaultPenStyle,
+  isPen,
 } from '../canvas/highlight';
 import { useZoomControlSpace } from './useZoomControlSpace';
 import {
@@ -92,6 +97,7 @@ import {
   MousePointer2,
   MoveUpRight,
   Highlighter,
+  PenLine,
   Hand,
   Type,
   StickyNote,
@@ -247,6 +253,7 @@ const tools: { id: Tool & ToolbarId; label: string; icon: typeof Type; command: 
   { id: 'note', label: 'Note', icon: StickyNote, command: 'tool.note' },
   { id: 'rect', label: 'Shape', icon: Square, command: 'tool.rect' },
   { id: 'arrow', label: 'Arrow', icon: MoveUpRight, command: 'tool.arrow' },
+  { id: 'pen', label: 'Pen', icon: PenLine, command: 'tool.pen' },
   { id: 'highlight', label: 'Highlighter', icon: Highlighter, command: 'tool.highlight' },
   { id: 'frame', label: 'Frame', icon: Frame, command: 'tool.frame' },
   { id: 'link', label: 'Link', icon: Link2, command: 'tool.link' },
@@ -424,6 +431,21 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       localStorage.setItem('terra-board.highlighter', JSON.stringify(highlightStyle));
     } catch {}
   }, [highlightStyle]);
+  const [penStyle, setPenStyle] = useState(() => {
+    try {
+      return readPenStyle(JSON.parse(localStorage.getItem('terra-board.pen') || 'null'));
+    } catch {
+      return { ...defaultPenStyle };
+    }
+  });
+  const penStyleRef = useRef(penStyle);
+  penStyleRef.current = penStyle;
+  useEffect(() => {
+    engine.current?.setPenStyle(penStyle);
+    try {
+      localStorage.setItem('terra-board.pen', JSON.stringify(penStyle));
+    } catch {}
+  }, [penStyle]);
   const backgroundJob = useRef<Promise<void> | null>(null);
   const [removingBackground, setRemovingBackground] = useState(false);
   // "Remove background" appears once its extension is installed.
@@ -1856,6 +1878,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       selectTool('select');
       return;
     }
+    // The pen draws strokes itself; it never places an object here.
+    if (t === 'pen') return;
     const type = t === 'hand' || t === 'select' ? 'text' : t;
     let box = sizedTypes.includes(type)
       ? lastShapeSize(e, type)
@@ -2143,6 +2167,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       create,
       context: (p) => setMenu(p),
       highlightSize: (size) => setHighlightStyle((style) => ({ ...style, size })),
+      penSize: (size) => setPenStyle((style) => ({ ...style, size })),
       ready: () => {
         if (pinning) setPinSource(e.all);
         // Opening a board counts as looking at it, even before the camera moves.
@@ -2212,6 +2237,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       void refreshFrames();
     }, 1500);
     e.setHighlightStyle(highlightStyleRef.current);
+    e.setPenStyle(penStyleRef.current);
     const recoverPreviews = () => {
       for (const o of e.all) if (o.type === 'link' && !o.assetId) refreshLink(o, e);
     };
@@ -4024,17 +4050,20 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
                 ].includes(o.type),
             ) && (
               <div key="colors" className="color-options">
-                {(selected.every((o) => o.type === 'highlight') ? highlightColors : colors).map(
-                  (color) => (
-                    <button
-                      key={color}
-                      style={{ background: color }}
-                      aria-label={'Set color ' + color}
-                      title={color === '#000000' ? 'Black' : color}
-                      onClick={() => setSelectionColor(color)}
-                    />
-                  ),
-                )}
+                {(selected.every((o) => o.type === 'highlight' && isPen(o))
+                  ? penColors
+                  : selected.every((o) => o.type === 'highlight')
+                    ? highlightColors
+                    : colors
+                ).map((color) => (
+                  <button
+                    key={color}
+                    style={{ background: color }}
+                    aria-label={'Set color ' + color}
+                    title={color === '#000000' ? 'Black' : color}
+                    onClick={() => setSelectionColor(color)}
+                  />
+                ))}
                 <label className="custom-color" title="Custom color">
                   <Plus size={12} aria-hidden="true" />
                   <input
@@ -4594,7 +4623,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             else if (id === 'browser') createBrowser(anchor);
             else if (id === 'gallery') createGallery(anchor);
             else if (id === 'media') void performImport(pickMedia, anchor);
-            else if (id === 'select' || id === 'hand' || id === 'highlight') selectTool(id);
+            else if (id === 'select' || id === 'hand' || id === 'highlight' || id === 'pen')
+              selectTool(id);
             else create(id, anchor);
           }}
         />
@@ -4618,51 +4648,67 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             { id: 'media', label: 'Add files', icon: ImagePlus, action: importMedia },
             { id: 'gallery', label: 'Gallery', icon: Images, action: createGallery },
           ]}
-          options={
-            tool === 'highlight' && (
-              <div
-                className="highlighter-options glass-surface"
-                role="group"
-                aria-label="Highlighter"
-              >
+          options={(() => {
+            // The pen and the highlighter share one options bar, each with its own style.
+            const ink =
+              tool === 'pen'
+                ? {
+                    name: 'Pen',
+                    palette: penColors,
+                    range: penSizeRange,
+                    style: penStyle,
+                    set: setPenStyle,
+                  }
+                : tool === 'highlight'
+                  ? {
+                      name: 'Highlighter',
+                      palette: highlightColors,
+                      range: highlightSizeRange,
+                      style: highlightStyle,
+                      set: setHighlightStyle,
+                    }
+                  : null;
+            if (!ink) return false;
+            return (
+              <div className="highlighter-options glass-surface" role="group" aria-label={ink.name}>
                 <div className="color-options">
-                  {highlightColors.map((color) => (
+                  {ink.palette.map((color) => (
                     <button
                       key={color}
                       style={{ background: color }}
-                      aria-label={'Highlight color ' + color}
-                      aria-pressed={highlightStyle.color === color}
-                      onClick={() => setHighlightStyle((style) => ({ ...style, color }))}
+                      aria-label={ink.name + ' color ' + color}
+                      aria-pressed={ink.style.color === color}
+                      onClick={() => ink.set((style) => ({ ...style, color }))}
                     />
                   ))}
                   <label className="custom-color" title="Custom color">
                     <Plus size={12} aria-hidden="true" />
                     <input
                       type="color"
-                      aria-label="Custom highlight color"
-                      value={highlightStyle.color}
+                      aria-label={'Custom ' + ink.name.toLowerCase() + ' color'}
+                      value={ink.style.color}
                       onChange={(event) =>
-                        setHighlightStyle((style) => ({ ...style, color: event.target.value }))
+                        ink.set((style) => ({ ...style, color: event.target.value }))
                       }
                     />
                   </label>
                 </div>
                 <input
                   type="range"
-                  min={highlightSizeRange.min}
-                  max={highlightSizeRange.max}
+                  min={ink.range.min}
+                  max={ink.range.max}
                   step="1"
-                  aria-label="Highlighter size"
+                  aria-label={ink.name + ' size'}
                   title="Size. Right-drag on the board: left is thinner, right is thicker"
-                  value={highlightStyle.size}
+                  value={ink.style.size}
                   onChange={(event) =>
-                    setHighlightStyle((style) => ({ ...style, size: Number(event.target.value) }))
+                    ink.set((style) => ({ ...style, size: Number(event.target.value) }))
                   }
                 />
-                <output aria-hidden="true">{highlightStyle.size}</output>
+                <output aria-hidden="true">{ink.style.size}</output>
               </div>
-            )
-          }
+            );
+          })()}
         />
       )}
       <div ref={zoomControls} className="canvas-zoom">

@@ -305,7 +305,8 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
         ) ||
         !Number.isFinite(h.size) ||
         h.size < 0.25 ||
-        h.size > 10000
+        h.size > 10000 ||
+        (h.pen !== undefined && typeof h.pen !== 'boolean')
       )
         throw Error('Invalid highlight');
     }
@@ -330,6 +331,7 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
             highlight: {
               points: o.highlight.points.map((p: any) => ({ x: p.x, y: p.y })),
               size: o.highlight.size,
+              ...(o.highlight.pen ? { pen: true } : {}),
             },
           }
         : {}),

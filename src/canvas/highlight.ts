@@ -23,6 +23,43 @@ export function readHighlightStyle(value: unknown) {
   };
 }
 
+// The pen draws opaque ink on the same stroke object; `pen: true` marks it.
+// Older app versions ignore the flag and show the stroke as a highlighter.
+export const penColors = ['#1f2328', '#2563eb', '#dc2626', '#16a34a', '#ea580c', '#9333ea'];
+export const penSizeRange = { min: 1, max: 40 };
+export const defaultPenStyle = { color: penColors[0], size: 3 };
+export const clampPenSize = (size: number) =>
+  Math.max(penSizeRange.min, Math.min(penSizeRange.max, Math.round(size)));
+export function readPenStyle(value: unknown) {
+  const raw = value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+  return {
+    color:
+      typeof raw.color === 'string' && /^#[0-9a-f]{6}$/i.test(raw.color)
+        ? raw.color
+        : defaultPenStyle.color,
+    size:
+      typeof raw.size === 'number' && Number.isFinite(raw.size)
+        ? clampPenSize(raw.size)
+        : defaultPenStyle.size,
+  };
+}
+export const isPen = (o: CanvasObject) => o.highlight?.pen === true;
+// Handwriting looks smooth when the line curves through the midpoints between
+// samples, with each sample as the control point; the ends stay where they were.
+export function smoothStroke(points: Point[]) {
+  const curves: { control: Point; to: Point }[] = [];
+  for (let i = 1; i < points.length; i++) {
+    const last = i === points.length - 1;
+    curves.push({
+      control: points[i],
+      to: last
+        ? points[i]
+        : { x: (points[i].x + points[i + 1].x) / 2, y: (points[i].y + points[i + 1].y) / 2 },
+    });
+  }
+  return { start: points[0], curves };
+}
+
 const stroke = (o: CanvasObject): HighlightStroke =>
   o.highlight || {
     points: [
@@ -51,6 +88,7 @@ export function highlightFromPoints(o: CanvasObject, points: Point[]): CanvasObj
     highlight: {
       size: stroke(o).size,
       points: points.map((p) => ({ x: (p.x - x) / width, y: (p.y - y) / height })),
+      ...(stroke(o).pen ? { pen: true } : {}),
     },
   };
 }

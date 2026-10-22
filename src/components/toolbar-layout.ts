@@ -5,6 +5,7 @@ export const toolbarIds = [
   'note',
   'rect',
   'arrow',
+  'pen',
   'highlight',
   'frame',
   'link',
@@ -23,7 +24,19 @@ export type ToolbarZone = keyof ToolbarLayout;
 export const toolbarStorageKey = 'terra-board.toolbar-layout';
 
 export const defaultToolbarLayout = (): ToolbarLayout => ({
-  bar: ['select', 'hand', 'text', 'note', 'rect', 'arrow', 'highlight', 'frame', 'link', 'media'],
+  bar: [
+    'select',
+    'hand',
+    'text',
+    'note',
+    'rect',
+    'arrow',
+    'pen',
+    'highlight',
+    'frame',
+    'link',
+    'media',
+  ],
   inventory: ['gallery', 'list', 'table', 'paper', 'html', 'browser'],
 });
 
@@ -42,6 +55,12 @@ export function readToolbarLayout(value: unknown): ToolbarLayout {
     });
   const bar = clean(raw.bar);
   const inventory = clean(raw.inventory);
+  // Layouts saved before the pen existed get it beside the highlighter.
+  const marker = bar.indexOf('highlight');
+  if (!seen.has('pen') && marker >= 0) {
+    bar.splice(marker, 0, 'pen');
+    seen.add('pen');
+  }
   inventory.push(...toolbarIds.filter((id) => !seen.has(id)));
   return { bar, inventory };
 }

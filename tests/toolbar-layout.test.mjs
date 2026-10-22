@@ -21,6 +21,17 @@ test('tools can move both ways and reorder without duplicates or loss', () => {
   assert.deepEqual(readToolbarLayout(JSON.parse(JSON.stringify(layout))), layout);
 });
 
+test('the pen joins a saved toolbar beside the highlighter', () => {
+  const saved = { bar: ['select', 'highlight', 'frame'], inventory: ['note'] };
+  const layout = readToolbarLayout(saved);
+  assert.deepEqual(layout.bar, ['select', 'pen', 'highlight', 'frame']);
+  assert.ok(defaultToolbarLayout().bar.includes('pen'));
+  // Someone who put the pen away keeps it away.
+  const away = readToolbarLayout({ bar: ['highlight'], inventory: ['pen'] });
+  assert.deepEqual(away.bar, ['highlight']);
+  assert.equal(away.inventory[0], 'pen');
+});
+
 test('preferences recover missing tools, ignore unknown tools and allow an empty bar', () => {
   const layout = readToolbarLayout({ bar: [], inventory: ['list', 'list', 'old-tool', null] });
   assert.deepEqual(layout.bar, []);
