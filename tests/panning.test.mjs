@@ -659,7 +659,14 @@ function fixture(tool = 'select') {
       observe() {}
       disconnect() {}
     },
-    window: { addEventListener() {}, removeEventListener() {}, matchMedia: () => motion },
+    window: {
+      addEventListener() {},
+      removeEventListener() {},
+      matchMedia: () => motion,
+      // Touch long-press timers; tests never wait for them.
+      setTimeout: () => 1,
+      clearTimeout() {},
+    },
     document: { documentElement: { dataset: { theme: 'light' } } },
     devicePixelRatio: 1,
     requestAnimationFrame: (cb) => {
@@ -1442,4 +1449,30 @@ test('matrix resize excludes fixed gaps and does not rescale again on release', 
   assert.equal(f.engine.objects.get('cell-0').width, 300);
   f.engine.undo();
   for (const o of original) assert.deepEqual({ ...f.engine.objects.get(o.id) }, o);
+});
+
+test('finger gestures are Android-only: desktop touch still box-selects, Android pans and pinches', () => {
+  const touch = (f, id, x, y) => ({ ...f.event(x, y, 0), pointerType: 'touch', pointerId: id });
+  const desktop = fixture();
+  desktop.engine.camera = { x: 0, y: 0, zoom: 1 };
+  desktop.engine.down(touch(desktop, 1, 200, 200));
+  assert.equal(desktop.engine.gesture.mode, 'box');
+  desktop.engine.up(touch(desktop, 1, 200, 200));
+
+  const phone = fixture();
+  phone.engine.setTouchGestures(true);
+  phone.engine.camera = { x: 0, y: 0, zoom: 1 };
+  phone.engine.down(touch(phone, 1, 200, 200));
+  assert.equal(phone.engine.gesture.mode, 'pan');
+  phone.engine.move(touch(phone, 1, 230, 210));
+  assert.deepEqual([phone.engine.camera.x, phone.engine.camera.y], [30, 10]);
+  // A second finger turns it into a pinch around the midpoint.
+  phone.engine.down(touch(phone, 2, 330, 210));
+  assert.equal(phone.engine.gesture, null);
+  phone.engine.move(touch(phone, 1, 180, 210));
+  phone.engine.move(touch(phone, 2, 380, 210));
+  assert.equal(phone.engine.camera.zoom, 2);
+  phone.engine.up(touch(phone, 2, 380, 210));
+  phone.engine.up(touch(phone, 1, 180, 210));
+  phone.engine.destroy?.();
 });

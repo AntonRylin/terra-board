@@ -47,7 +47,13 @@ error and leaves the files alone.
 
 Not kept from desktop on Android: SQLite WAL (the pool VFS has no shared memory, so SQLite keeps a
 rollback journal) and the daily `VACUUM INTO` backup in `backups/` (it would double the library on
-the phone every day; Android's own app backup applies instead).
+the phone every day).
+
+Backups: there is no automatic backup of the library on Android yet. Android's Auto Backup stops at
+25 MB of app data, so a library with pictures is usually not backed up, and uninstalling the app or
+clearing its storage deletes every board. Today the way to keep a copy is Export / share a copy… on
+each board (a portable `.canvas` file through the share sheet, to Drive, Files or another app),
+which imports on desktop and Android alike. A one-step library export is listed under What's next.
 
 Requirements: Android 8+ (minSdk 26) with an up-to-date Android System WebView (Chromium 109+ for
 OPFS synchronous access handles in workers). Application ID: `terra.board.android` (change it in
@@ -107,8 +113,11 @@ and Canvas; Keyboard shortcuts and the full-screen button are hidden.
 
 ## Touch input
 
-The canvas engine (`src/canvas/engine.ts`) knew mouse and pen only. Touch, for
-`pointerType === 'touch'` only, so mouse and pen behave exactly as before:
+The canvas engine (`src/canvas/engine.ts`) knew mouse and pen only. Finger gestures are switched
+on only in the Android app (`engine.setTouchGestures(android)` in `Whiteboard.tsx`) and only for
+`pointerType === 'touch'`, so mouse, pen and desktop touchscreens behave exactly as before.
+Enabling them on Windows/Linux touchscreens is a one-line change, to make after testing there.
+On Android:
 
 - One finger on empty board with the Select tool pans (a tap still clears the selection). One
   finger on an object selects and drags it; resize, rotate and arrow handles take a finger with
@@ -175,6 +184,9 @@ reaching a menu that opened under the finger after a long-press.
 
 ## What's next
 
+- Back up the whole library in one step: an "Export library…" item that zips every board's
+  `.canvas` export and hands it to the share sheet (and an import for it), and a reminder when
+  boards have never been exported. Cloud sync (below) would also cover this.
 - Try it on a physical phone (performance with large boards, older WebViews, tablets).
 - Cloud sync on Android: construct `CloudSync` inside the storage worker (it needs only `fs`, `os`
   and supabase-js, all available there), port main.cjs's cloud transaction / board refresh

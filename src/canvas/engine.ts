@@ -420,6 +420,15 @@ export class Engine {
   private longPress = 0;
   private longPressOpened = 0;
   private lastTap: { at: number; point: Point } | null = null;
+  // Finger gestures are on only in the Android app for now; desktop
+  // touchscreens keep their mouse-like behaviour until tested there.
+  private touchGestures = false;
+  setTouchGestures(on: boolean) {
+    this.touchGestures = on;
+  }
+  private isTouch(e: PointerEvent) {
+    return this.touchGestures && e.pointerType === 'touch';
+  }
   private cropPreview: CanvasObject | null = null;
   // Spoilers this viewer has revealed, by object and region start. Local only:
   // never saved, synced or exported.
@@ -789,7 +798,7 @@ export class Engine {
     this.invalidate();
   }
   private down = (e: PointerEvent, overlay = false) => {
-    this.touchInput = e.pointerType === 'touch';
+    this.touchInput = this.isTouch(e);
     if (this.touchInput && (overlay || e.target === this.app.canvas)) {
       this.touches.set(e.pointerId, this.point(e));
       this.clearLongPress();
@@ -1078,7 +1087,7 @@ export class Engine {
   // Lifting a finger: a pinch ends once fewer than two remain; the last finger
   // does nothing until it lifts too. Returns whether the event is handled.
   private releaseTouch(e: PointerEvent) {
-    if (e.pointerType !== 'touch' || !this.touches.delete(e.pointerId)) return false;
+    if (!this.isTouch(e) || !this.touches.delete(e.pointerId)) return false;
     this.clearLongPress();
     if (!this.pinch) return false;
     if (this.touches.size < 2) {
@@ -1098,7 +1107,7 @@ export class Engine {
     } catch {}
   }
   private move = (e: PointerEvent) => {
-    if (e.pointerType === 'touch' && this.touches.has(e.pointerId)) {
+    if (this.isTouch(e) && this.touches.has(e.pointerId)) {
       this.touches.set(e.pointerId, this.point(e));
       if (this.pinch) {
         if (this.touches.size >= 2) this.movePinch();
@@ -1109,7 +1118,7 @@ export class Engine {
         if (Math.hypot(p.x - this.gesture.start.x, p.y - this.gesture.start.y) > 8)
           this.clearLongPress();
       }
-    } else if (e.pointerType !== 'touch') this.touchInput = false;
+    } else if (!this.isTouch(e)) this.touchInput = false;
     const g = this.gesture;
     if (this.inkTool) {
       this.pointer = e.target === this.app.canvas || g ? this.point(e) : null;
@@ -1289,7 +1298,7 @@ export class Engine {
     if (this.releaseTouch(e)) return;
     const g = this.gesture;
     if (!g || g.clickToPlace) return;
-    if (e.pointerType === 'touch' && !g.dragged && this.doubleTap(e)) {
+    if (this.isTouch(e) && !g.dragged && this.doubleTap(e)) {
       this.gesture = null;
       for (const o of g.original) this.preview(o);
       this.invalidate();
@@ -1555,7 +1564,7 @@ export class Engine {
   private doubleClick = (e: MouseEvent, tap = false) => {
     const source = (e as MouseEvent & { sourceCapabilities?: { firesTouchEvents?: boolean } })
       .sourceCapabilities;
-    if (!tap && (source?.firesTouchEvents || this.touchInput)) return;
+    if (!tap && this.touchGestures && (source?.firesTouchEvents || this.touchInput)) return;
     if (this.editingId || this.readOnly) return;
     if (performance.now() - this.lastObjectReveal < 600) return;
     // Pointer capture on the surface retargets Chromium's subsequent click /

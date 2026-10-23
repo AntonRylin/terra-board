@@ -225,7 +225,7 @@ import {
   textRecognitionUnavailable,
 } from '../canvas/page-text';
 import { cropRecognizedText, recognizedString } from '../canvas/recognized-text';
-import { downloadAsset } from '../bridge';
+import { android, downloadAsset } from '../bridge';
 import { useExtensionInstalled } from '../extensions';
 import { cropImage, uncroppedImage, fullCrop } from '../canvas/crop';
 import { selectionToolsPosition } from '../canvas/selection-tools';
@@ -2210,6 +2210,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       e.setInputPreferences({ wheel, zoomSpeed, snapping });
     };
     applyInput();
+    e.setTouchGestures(android);
     e.setReadOnly(readOnlyRef.current);
     const stopInput = subscribePreferences(applyInput);
     e.setFrameBoard(doc.board.id, fitted, true);

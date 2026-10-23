@@ -56,14 +56,44 @@ function androidBuild(): Plugin {
   };
 }
 
+// The renderer imports src/mobile/platform.ts (desktop: everything off). Android
+// builds get src/mobile/index.ts in its place, whatever relative path imports it,
+// and each build fails if it ends up with the other one.
+function mobilePlatform(android: boolean): Plugin {
+  const stub = path.normalize(mobile('platform.ts')),
+    bridge = path.normalize(mobile('index.ts'));
+  const name = (file: string) => path.relative(process.cwd(), file);
+  return {
+    name: 'terra-mobile-platform',
+    enforce: 'pre',
+    async resolveId(source, importer, options) {
+      if (!android || !/(^|\/)platform(\.ts)?$/.test(source)) return null;
+      const resolved = await this.resolve(source, importer, { ...options, skipSelf: true });
+      return resolved && path.normalize(resolved.id) === stub ? bridge : null;
+    },
+    generateBundle(_options, bundle) {
+      const ids = new Set(
+        Object.values(bundle).flatMap((output) =>
+          output.type === 'chunk'
+            ? Object.keys(output.modules).map((id) => path.normalize(id.split('?')[0]))
+            : [],
+        ),
+      );
+      if (android && ids.has(stub))
+        this.error(`The Android build includes ${name(stub)}, the desktop stub.`);
+      if (android && !ids.has(bridge)) this.error(`The Android build is missing ${name(bridge)}.`);
+      if (!android && ids.has(bridge))
+        this.error(`The desktop build includes ${name(bridge)}, the Android bridge.`);
+    },
+  };
+}
+
 export default defineConfig(({ mode }) => ({
   base: './',
   resolve: {
     alias:
       mode === 'android'
         ? {
-            // src/mobile/platform.ts (desktop) becomes the Android bridge.
-            './mobile/platform': mobile('index.ts'),
             'node:sqlite': mobile('shims/sqlite.ts'),
             'node:fs': mobile('shims/fs.ts'),
             'node:path': mobile('shims/path.ts'),
@@ -84,6 +114,7 @@ export default defineConfig(({ mode }) => ({
   },
   plugins: [
     bundledLicenses(),
+    mobilePlatform(mode === 'android'),
     mode === 'android' && androidBuild(),
     {
       name: 'local-development-library',
