@@ -224,16 +224,19 @@ class CloudSync {
     this.knownDevice = id;
   }
 
+  // The id belongs to this computer: a library copied or restored onto another computer
+  // gets a new one there, or both would skip each other's changes.
   loadDeviceId() {
     const file = path.join(this.root, 'settings', 'device.json');
+    const host = os.hostname();
     try {
-      const id = JSON.parse(fs.readFileSync(file, 'utf8')).id;
-      if (uuid.test(id)) return id;
+      const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+      if (uuid.test(saved.id) && saved.host === host) return saved.id;
     } catch {}
     const id = randomUUID();
     try {
       fs.mkdirSync(path.dirname(file), { recursive: true });
-      fs.writeFileSync(file, JSON.stringify({ id }));
+      fs.writeFileSync(file, JSON.stringify({ id, host }));
     } catch {}
     return id;
   }
@@ -296,6 +299,7 @@ class CloudSync {
       name: l.name,
       pending: l.pending,
       workspace: l.workspace,
+      rejoin: !!l.rejoin,
     };
   }
 
@@ -486,14 +490,26 @@ class CloudSync {
     return !!this.vault?.getItem(ANONYMOUS_KEY) || !!this.readRetire();
   }
 
-  async runClaim() {
+  // One at a time: a second claim would replace the first one's secret.
+  runClaim() {
+    this.claiming ??= this.claimOnce().finally(() => {
+      this.claiming = null;
+    });
+    return this.claiming;
+  }
+
+  async claimOnce() {
     const raw = this.vault.getItem(ANONYMOUS_KEY);
     if (raw) {
       const local = await this.local();
       let outcome = null;
       if (local.identity) {
         try {
-          outcome = await this.auth.claim(JSON.parse(raw), () => this.tempClient());
+          outcome = await this.auth.claim(
+            JSON.parse(raw),
+            () => this.tempClient(),
+            local.workspace,
+          );
         } catch (e) {
           if (e.tokens) this.vault.setItem(ANONYMOUS_KEY, JSON.stringify(e.tokens));
           throw e;
@@ -552,7 +568,8 @@ class CloudSync {
       fs.rmSync(this.retireFile(), { force: true });
       return;
     }
-    if (local.pending > 0) return;
+    // Not before this library has been pulled and everything it adds is uploaded.
+    if (local.rejoin || local.pending > 0) return;
     try {
       await this.auth.retireWorkspace(pending.old, pending.next);
     } catch (e) {
@@ -1280,6 +1297,10 @@ class CloudSync {
           // dropped with their unsent edits, which the server would refuse and so
           // stop every round from reaching this step.
           await this.reconcile();
+          if ((await this.call('syncStatus')).rejoin) {
+            await this.pull(this.workspace);
+            await this.call('syncRejoined');
+          }
           const pushed = await this.push();
           await this.pull(this.workspace);
           for (const ws of this.foreign) await this.pull(ws);
@@ -1461,12 +1482,14 @@ class CloudSync {
       // This computer's own pushes come back too; only changes from elsewhere matter. All
       // computers of an account are one user, so pushes name their device; rows from
       // 0.1.28 computers name only the user.
-      const remote = rows.filter((r) =>
-        r.updated_device ? r.updated_device !== this.deviceId : r.updated_by !== this.userId,
-      );
+      const own = (r) =>
+        r.updated_by === this.userId && (!r.updated_device || r.updated_device === this.deviceId);
+      const remote = rows.filter((r) => !own(r));
+      // Rows this computer pushed itself still tell a rejoining library what the server has.
+      const seen = rows.filter(own).map((r) => ({ kind: r.kind, board_id: r.board_id, id: r.id }));
       await this.fetchAssets(remote, workspace);
       const content = remote.filter((r) => r.kind !== 'asset');
-      const args = { workspace, rows: content, cursor: next, roles: this.roles };
+      const args = { workspace, rows: content, cursor: next, roles: this.roles, seen };
       if (content.length) await this.transaction(() => this.call('syncApply', args));
       else await this.call('syncApply', { ...args, rows: [] });
     }

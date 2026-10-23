@@ -53,7 +53,10 @@ function setup({ library = true, auth = fakeAuth() } = {}) {
   const board = store.createBoard({ name: 'Mine' });
   store.patchBoard({ id: board.id, revision: 0, upserts: [note('n1', 'hello')] });
   store.syncIdentity({ workspace: oldWs, name: 'Anton' });
-  if (library) store.syncLibrary({ on: true });
+  if (library) {
+    store.syncLibrary({ on: true });
+    store.syncRejoined();
+  }
   // Everything was uploaded before the claim.
   const batch = store.syncTake({ limit: 500 });
   store.syncAck({ entries: batch.entries, dropped: batch.dropped, assets: [] });
@@ -99,6 +102,8 @@ test('combining uploads the library to the account, then retires the old workspa
   try {
     keepTokens(sync);
     await sync.runClaim();
+    assert.equal(store.syncStatus().rejoin, true, 'the account library is pulled first');
+    store.syncRejoined();
     const status = store.syncStatus();
     assert.equal(status.workspace, accountWs);
     assert.equal(status.name, 'Anton');

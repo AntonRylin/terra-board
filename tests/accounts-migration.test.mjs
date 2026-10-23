@@ -434,3 +434,53 @@ test('files the person added to someone else board do not block deleting the sig
     0,
   );
 });
+
+test('the claim takes the workspace the computer syncs with now, not an older one', async () => {
+  const server = await supabaseDb();
+  // This computer once had its own workspace, then was paired into another one.
+  const { computer, workspace: stale } = await anonymousLibrary(server, 'old');
+  const { computer: first, workspace: current } = await anonymousLibrary(server, 'current');
+  const code = await first.rpc('create_pairing_code', { p_workspace: current });
+  await computer.rpc('redeem_pairing_code', { p_code: code, p_device: 'Laptop' });
+  const account = await server.user();
+  // Ordered by age it would pick the stale one.
+  const secret = await computer.rpc('begin_claim', { p_workspace: current });
+  const outcome = await account.rpc('finish_claim', { p_secret: secret });
+  assert.deepEqual(outcome, { result: 'moved', workspace: current });
+  assert.ok(stale);
+  await assert.rejects(
+    computer.rpc('begin_claim', { p_workspace: randomUUID() }),
+    /does not sync with that workspace/,
+  );
+});
+
+test('a claim never brings the account into another account library', async () => {
+  const server = await supabaseDb();
+  const { computer: first, workspace: theirs } = await anonymousLibrary(server, 'theirs');
+  const { computer, workspace: mine } = await anonymousLibrary(server, 'mine');
+  const code = await first.rpc('create_pairing_code', { p_workspace: theirs });
+  await computer.rpc('redeem_pairing_code', { p_code: code, p_device: 'Shared PC' });
+  const owner = await server.user();
+  await claim(first, owner);
+
+  const account = await server.user();
+  const secret = await computer.rpc('begin_claim', { p_workspace: mine });
+  assert.deepEqual(await account.rpc('finish_claim', { p_secret: secret }), {
+    result: 'moved',
+    workspace: mine,
+  });
+  assert.equal(await account.rpc('workspace_role', { p_workspace: theirs }), null);
+  assert.equal(await account.rpc('workspace_role', { p_workspace: mine }), 'owner');
+});
+
+test('check_retire refuses before any file is touched', async () => {
+  const server = await supabaseDb();
+  const { computer, workspace } = await anonymousLibrary(server);
+  const account = await server.user();
+  await claim(computer, account);
+  const other = await anonymousLibrary(server, 'x');
+  await assert.rejects(
+    account.rpc('check_retire', { p_old: other.workspace, p_new: workspace }),
+    /cannot combine/,
+  );
+});

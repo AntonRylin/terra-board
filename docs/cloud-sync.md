@@ -13,6 +13,7 @@ People sign in with an **email code** (6 digits, no passwords), **Google** or **
 - **One account, one personal workspace.** The first computer that syncs or shares creates it (`ensure_personal_workspace`); every other computer that signs in uses the same one. Its name is what people you share with see.
 - **Your computers** (Settings → Account) lists `devices`. Each installation has an id in `<Library>/settings/device.json` and registers it on every start (`register_device`). Pushes carry that id, so an account's computers see each other's changes. **Remove** calls `revoke_device`, which ends that computer's session; it signs out on its next start and keeps its boards.
 - **Signing out** turns sync off, removes copies of boards other people shared, and keeps your own boards. With changes not yet uploaded, Settings offers **Sync now** first. **Turn off** in Cloud sync stops syncing on this computer but keeps you signed in.
+- **Turning sync on against a library that may already be in the cloud** (signing in again, a second computer, a claim) pulls first and then uploads only what the server doesn't have (`rejoin` in `sync_state`, `sync_seen`). Edits made while signed out to boards and objects that are in the cloud are replaced by the cloud's version; board history (Ctrl+H) keeps them. Boards, folders and objects made while signed out upload.
 - **Delete account** (Settings → Account; "Delete my cloud data" on a computer from before accounts) removes your cloud library with its files, your shares, your computers and the sign-in: `my_deletable_workspaces`, then the Storage API for the files, then `delete_my_cloud_data`. People you shared with lose those boards; boards on your computers stay. If the database refuses to delete the sign-in itself, the data is still deleted and the request is recorded in `deletion_requests` for an admin.
 
 The code lives in `electron/cloud-auth.cjs`, which uses no Node or Electron API so the Android app shares it, and `electron/cloud-sync.cjs`, which connects it to the library.
@@ -104,7 +105,9 @@ When someone connects to a server from Settings, the app first calls its `server
 - Free plan: 500 MB database, 1 GB file storage, 50 MB per uploaded file. Files above the plan limit fail to upload and sync reports an error.
 - A computer from before accounts that never signs in is still its own anonymous user: if every such computer is lost, its cloud copy can't be reached.
 - When a computer turns on sync for an account, its existing boards are merged into the synced library, including the starter boards of a fresh install.
-- After a combine, a computer from before accounts that was paired with the retired workspace stops syncing until someone signs in on it.
+- After a combine, a computer from before accounts that was paired with the retired workspace stops syncing until someone signs in on it. Changes it pushed after the combining computer's last pull are only on that computer; when it signs in, the account's version wins for things both have (board history keeps the rest).
+- Signing out while a claim is still waiting (it failed offline) drops the claim: the old workspace stays on the server without an owner who can reach it. Sign in again first, or use "Delete my cloud data" before signing in.
+- Removing a computer ends its session only if the database allows deleting from `auth.sessions`; otherwise it is signed out on its next start.
 - Each of an account's computers announces itself on a shared board, so the same person can appear twice.
 
 ## What syncs

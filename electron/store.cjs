@@ -870,6 +870,9 @@ class Store {
   syncDisable() {
     return this.sync.disable();
   }
+  syncRejoined() {
+    return this.sync.rejoined();
+  }
   syncDropForeign() {
     return this.sync.dropForeign();
   }

@@ -240,11 +240,15 @@ test('the claim restores the anonymous session aside and finishes as the account
     rpc: { data: 'secret', error: null },
   });
   const auth = createCloudAuth({ client, openUrl: () => {} });
-  const outcome = await auth.claim({ access_token: 'a0', refresh_token: 'r0' }, () => anonymous);
+  const outcome = await auth.claim(
+    { access_token: 'a0', refresh_token: 'r0' },
+    () => anonymous,
+    'w0',
+  );
   assert.deepEqual(outcome, { result: 'moved', workspace: 'w1' });
   assert.deepEqual(anonymous.calls, [
     ['setSession', { access_token: 'a0', refresh_token: 'r0' }],
-    ['rpc', 'begin_claim', {}],
+    ['rpc', 'begin_claim', { p_workspace: 'w0' }],
   ]);
   assert.deepEqual(client.calls, [['rpc', 'finish_claim', { p_secret: 'secret' }]]);
 
@@ -301,4 +305,45 @@ test('deleting cloud data removes files page by page, then the data', async () =
   });
   await assert.rejects(createCloudAuth({ client: stuck }).deleteCloudData(), /delete your files/);
   assert.ok(!stuck.calls.some((c) => c[1] === 'delete_my_cloud_data'));
+});
+
+test('Cancel during the code exchange does not leave a half sign-in', async () => {
+  let finishExchange;
+  const client = fakeClient({
+    exchange: () =>
+      new Promise((resolve) => {
+        finishExchange = () => resolve({ data: { session: sessionOf(user()) }, error: null });
+      }),
+  });
+  const auth = createCloudAuth({ client, openUrl: () => {} });
+  const signingIn = auth.signInWithProvider('google');
+  await new Promise((r) => setImmediate(r));
+  const finishing = auth.finishOAuth('terraboard://auth/callback?code=abcdef123456');
+  await new Promise((r) => setImmediate(r));
+  auth.cancel();
+  finishExchange();
+  await finishing;
+  assert.equal((await signingIn).state, 'signedIn', 'the sign-in finished despite Cancel');
+});
+
+test('combining checks with the server before removing any file', async () => {
+  const removed = [];
+  const client = fakeClient({
+    session: sessionOf(user()),
+    storage: {
+      from: () => ({
+        list: async () => ({ data: [{ id: 'f', name: 'f' }], error: null }),
+        remove: async (paths) => {
+          removed.push(...paths);
+          return { data: paths, error: null };
+        },
+      }),
+    },
+    rpc: (name) =>
+      name === 'check_retire'
+        ? { data: null, error: { message: 'You cannot combine these libraries', code: '42501' } }
+        : { data: null, error: null },
+  });
+  await assert.rejects(createCloudAuth({ client }).retireWorkspace('old', 'new'), /combine/);
+  assert.deepEqual(removed, []);
 });

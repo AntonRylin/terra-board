@@ -290,6 +290,8 @@ function createCloudAuth({
         return true;
       }
       const flow = pending;
+      // From here on the session changes; Cancel no longer interrupts, the sign-in finishes.
+      flow.exchanging = true;
       let result;
       try {
         await onBeforeSignIn();
@@ -298,7 +300,6 @@ function createCloudAuth({
         if (pending === flow) settle(friendly(e, BROWSER_FAILED));
         return true;
       }
-      // Cancelled while the code was being exchanged: the session stays, the caller decides.
       if (pending !== flow) return true;
       if (result.error || !result.data?.session) settle(friendly(result.error, BROWSER_FAILED));
       else settle(userInfo(result.data.session));
@@ -306,13 +307,14 @@ function createCloudAuth({
     },
 
     cancel() {
+      if (pending?.exchanging) return;
       settle(new AuthError(CANCELLED, 'cancelled'));
     },
 
     // Signs out on this computer only (other computers stay signed in) and, when device is
     // given, removes it from the account's list.
     async signOut({ device } = {}) {
-      auth.cancel();
+      settle(new AuthError(CANCELLED, 'cancelled'));
       const current = userInfo(await session());
       if (device && current.state === 'signedIn')
         await client.rpc('revoke_device', { p_id: device }).catch(() => {});
@@ -389,7 +391,7 @@ function createCloudAuth({
     // Returns the server's answer ({ result: 'moved' | 'joined' | 'combine' | 'none',
     // workspace, retire }) or { result: 'lost' } when the anonymous session no longer works.
     // tokens: the latest anonymous tokens, to keep if this fails for a reason worth retrying.
-    async claim(tokens, makeClient) {
+    async claim(tokens, makeClient, workspace = null) {
       const me = userInfo(await session());
       if (me.state !== 'signedIn') throw new AuthError(NOT_SIGNED_IN, 'signed_out');
       const anonymous = makeClient();
@@ -406,7 +408,12 @@ function createCloudAuth({
       const fresh = restored.data.session;
       const keep = { access_token: fresh.access_token, refresh_token: fresh.refresh_token };
       try {
-        const secret = await rpc(anonymous, 'begin_claim', {}, 'Could not move your cloud boards.');
+        const secret = await rpc(
+          anonymous,
+          'begin_claim',
+          workspace ? { p_workspace: workspace } : {},
+          'Could not move your cloud boards.',
+        );
         const outcome = await rpc(
           client,
           'finish_claim',
@@ -425,6 +432,12 @@ function createCloudAuth({
     // After a combine, once the library is uploaded to the account's workspace: removes the
     // old workspace's files, then the workspace (its shares move to the new one).
     async retireWorkspace(old, next) {
+      await rpc(
+        client,
+        'check_retire',
+        { p_old: old, p_new: next },
+        'Could not combine your cloud libraries.',
+      );
       await removeWorkspaceFiles(client, old);
       await rpc(
         client,
