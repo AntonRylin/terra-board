@@ -216,6 +216,15 @@ body::before {
 .nav .mcp-link:hover {
   background: var(--panel);
 }
+.nav .mcp-logos {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.nav .mcp-logos .app-logo {
+  width: 16px;
+  height: 16px;
+}
 .nav .get {
   color: var(--accent-ink);
   background: var(--accent);
