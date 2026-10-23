@@ -4,7 +4,7 @@
 // the cloud (the "external transaction"), and forwards status and presence.
 import { CloudSync } from '../../electron/cloud-sync.cjs';
 import { terraCloud } from '../../electron/cloud-config.cjs';
-import { terraCloud as server } from '../../package.json';
+import { terraCloud as server, version } from '../../package.json';
 
 type Post = (message: Record<string, unknown>) => void;
 type Queue = <T>(job: () => T | Promise<T>) => Promise<T>;
@@ -37,6 +37,12 @@ const methods = new Set([
   'devices',
   'removeDevice',
   'syncNow',
+  'sendEmailCode',
+  'verifyEmailCode',
+  'signInWithProvider',
+  'cancelSignIn',
+  'signInMethods',
+  'finishOAuth',
   'signOut',
 ]);
 
@@ -49,6 +55,7 @@ export function startCloud({
 }: {
   store: any;
   queue: Queue;
+  // Also how the page is asked to open a sign-in page (a Custom Tab): workers can't.
   post: Post;
   root: string;
   // Deletes the whole library on this phone (signing out); the page reloads after.
@@ -103,6 +110,14 @@ export function startCloud({
     legacyServerUrl: config?.url,
     safeStorage: null,
     transaction,
+    appVersion: version,
+    // Google and Microsoft sign-in, in the system browser; it comes back through the
+    // terraboard://auth/callback link (finishOAuth).
+    openUrl: (url: string) => {
+      if (new URL(url).protocol !== 'https:')
+        throw Error('Only secure sign-in pages can be opened');
+      post({ type: 'open-url', url });
+    },
     onStatus: (status: unknown) => post({ type: 'cloud-status', status }),
     onPresence: (event: unknown) => post({ type: 'presence', event }),
   });
@@ -119,20 +134,22 @@ export function startCloud({
 
   const extra: Record<string, (...params: any[]) => unknown> = {
     status: () => cloud.status,
-    syncNow: () => cloud.run().then(() => cloud.status),
+    // A claim that did not finish (offline after signing in) is retried by a fresh start.
+    syncNow: () => (cloud.claimWaiting() ? cloud.start() : cloud.run()).then(() => cloud.status),
+    signInMethods: () => cloud.loadMethods().then(() => cloud.status),
     async join(code: string, name?: string) {
       const status = await cloud.join(code, name);
       void learnName().catch(() => {});
       return status;
     },
-    // Signing out of a phone removes this phone from the workspace and deletes
-    // its copy of the library: the next person to sign in must not see it, and
-    // nothing local-only is left behind (the boards live in the cloud).
+    // Signing out of a phone signs out of the account (this phone leaves its device
+    // list) and deletes its copy of the library: the next person to sign in must not see
+    // it, and nothing local-only is left behind (the boards live in the cloud).
     async signOut() {
-      await cloud.disable();
+      const status = await cloud.signOut();
       cloud.stop();
       await wipe();
-      return true;
+      return status;
     },
   };
 

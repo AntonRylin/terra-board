@@ -4,10 +4,10 @@ import { App } from '@capacitor/app';
 import { Browser } from '@capacitor/browser';
 import { Directory, Filesystem } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
-import { startMobile as startStorage } from './host.ts';
+import { onWorker, startMobile as startStorage } from './host.ts';
 export { call, onExternal, externalReady } from './host.ts';
 export { cloud } from './cloud.ts';
-import { cloud } from './cloud.ts';
+import { cloud, finishOAuth } from './cloud.ts';
 export { MobileGate } from './ui/MobileGate';
 export { AccountSettings as MobileAccountSettings } from './ui/AccountSettings';
 
@@ -173,11 +173,27 @@ function installTouchMenus() {
   );
 }
 
-let touchMenus = false;
+// Google and Microsoft sign-in: the page opens in a Custom Tab (Google refuses sign-in
+// inside an app's WebView) and comes back as terraboard://auth/callback, which Android
+// hands to this app (the intent filter in AndroidManifest.xml).
+function installSignInLinks() {
+  onWorker('open-url', (url: string) => void Browser.open({ url }).catch(() => {}));
+  const callback = (url?: string) => {
+    if (!url?.startsWith('terraboard://auth/')) return;
+    void finishOAuth(url).catch(() => {});
+  };
+  void App.addListener('appUrlOpen', ({ url }) => callback(url));
+  void App.getLaunchUrl()
+    .then((launch) => callback(launch?.url))
+    .catch(() => {});
+}
+
+let installed = false;
 export function startMobile() {
-  if (!touchMenus) {
-    touchMenus = true;
+  if (!installed) {
+    installed = true;
     installTouchMenus();
+    installSignInLinks();
   }
   return startStorage();
 }

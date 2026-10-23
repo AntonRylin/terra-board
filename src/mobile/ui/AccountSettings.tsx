@@ -60,8 +60,12 @@ export function AccountSettings() {
     <>
       <Group>
         <Row
-          title={status.name || 'Your boards'}
-          description={`Terra Cloud · ${status.library ? 'Your whole library' : 'Shared boards only'}`}
+          title={status.account?.email || status.account?.name || status.name || 'Your boards'}
+          description={
+            status.account?.state === 'signedIn'
+              ? `Terra Cloud · Shown to others as ${status.name || status.account.name || 'you'}`
+              : 'Terra Cloud · Connected without an account'
+          }
         />
         <Row
           title="Sync"
@@ -142,10 +146,7 @@ export function AccountSettings() {
       </Group>
 
       <Group title="This phone">
-        <Row
-          title="Switch account"
-          description="Sign out, then connect this phone to another computer or account."
-        >
+        <Row title="Switch account" description="Sign out, then sign in with another account.">
           <button
             type="button"
             className="st-button"
@@ -157,7 +158,7 @@ export function AccountSettings() {
         </Row>
         <Row
           title="Sign out"
-          description="Removes this phone from your cloud and deletes its copy of your boards. They stay in the cloud and on your computer."
+          description="Deletes this phone's copy of your boards and removes it from your account. They stay in the cloud and on your computer."
           below={
             confirm && (
               <div className="mobile-confirm" role="alert">

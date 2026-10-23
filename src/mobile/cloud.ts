@@ -33,14 +33,23 @@ export const cloud: CloudBridge = {
   onPresence: (callback) => onWorker('presence', callback),
   // A phone stays in its workspace until it signs out (signOut below).
   disable: notOnPhone,
-  pairingCode: () => run('pairingCode'),
   devices: () => run('devices'),
   removeDevice: (id) => run('removeDevice', id),
   syncNow: () => run('syncNow'),
+  sendCode: (email) => run('sendEmailCode', email),
+  verifyCode: (email, code) => run('verifyEmailCode', email, code),
+  signInWith: (provider) => run('signInWithProvider', provider),
+  cancelSignIn: () => run('cancelSignIn'),
+  signInMethods: () => run('signInMethods'),
+  // Deleting the account is in the desktop app's Settings → Account.
+  deleteCloudData: notOnPhone,
   serverTest: notOnPhone,
   serverSet: notOnPhone,
   onDeepLink: () => () => {},
   onStatus: (callback) => onWorker('status', callback),
-  // Leaves the workspace and deletes this phone's library; the app reloads.
+  // Signs out and deletes this phone's library; the app reloads.
   signOut: () => run('signOut'),
 };
+
+// The terraboard://auth/callback link back from Google or Microsoft.
+export const finishOAuth = (url: string) => run<boolean>('finishOAuth', url);

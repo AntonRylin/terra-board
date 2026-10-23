@@ -17,9 +17,10 @@ export type ExternalMessage = {
 const listeners = {
   status: new Set<(status: any) => void>(),
   presence: new Set<(event: any) => void>(),
+  'open-url': new Set<(url: string) => void>(),
   external: null as ((message: ExternalMessage) => void) | null,
 };
-export function onWorker(kind: 'status' | 'presence', callback: (value: any) => void) {
+export function onWorker(kind: 'status' | 'presence' | 'open-url', callback: (value: any) => void) {
   listeners[kind].add(callback);
   return () => void listeners[kind].delete(callback);
 }
@@ -34,6 +35,7 @@ export const externalReady = (id: number, error?: string) =>
 function workerEvent(data: any) {
   if (data.type === 'cloud-status') for (const l of listeners.status) l(data.status);
   else if (data.type === 'presence') for (const l of listeners.presence) l(data.event);
+  else if (data.type === 'open-url') for (const l of listeners['open-url']) l(data.url);
   else if (data.type === 'wiped') location.reload();
   else if (data.type === 'external') {
     // Before the board is on screen there is nothing to pause or refresh.

@@ -173,3 +173,67 @@
   border-color: var(--st-danger);
   color: var(--st-danger);
 }
+
+/* Sign-in steps (SignIn.tsx) */
+.mobile-lead {
+  margin: -4px 0 18px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.mobile-lead b {
+  color: var(--ink);
+  font-weight: 600;
+  word-break: break-all;
+}
+.mobile-buttons {
+  display: grid;
+  gap: 10px;
+}
+.mobile-buttons + .mobile-error {
+  margin: 14px 0 0;
+}
+.mobile-button.provider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+.mobile-field input.mobile-text {
+  font: inherit;
+  font-size: 16px;
+  font-weight: 400;
+  color: var(--ink);
+  letter-spacing: 0;
+  text-align: left;
+  text-transform: none;
+}
+.mobile-link {
+  display: block;
+  margin: 12px auto 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: none;
+  color: var(--accent);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.mobile-row {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.mobile-row .mobile-link {
+  margin: 12px 0 0;
+}
+.mobile-footnote {
+  max-width: 360px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  text-align: center;
+  color: var(--muted);
+}

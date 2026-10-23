@@ -83,13 +83,21 @@ The renderer gets the same `cloud` API as the desktop's `window.canvas.cloud`
 info card, the share dialog and the sync status work on Android without Android-specific code. The
 server is always Terra Cloud (`package.json` → `terraCloud`); there is no server choice on the phone.
 
-**Connecting (today).** The sign-in screen (`src/mobile/ui/SignIn.tsx`) takes a pairing code from
-the desktop app (Settings → Cloud sync → Your computers → Create code; the computer must sync its
-whole library). That is `cloud.join(code)`: the phone becomes an anonymous member of the computer's
-workspace, exactly like a second computer, and then learns the workspace's display name
-(`my_profile`) so people on shared boards see the right name. Invite codes for a shared board
-(`S…`) are refused on the first screen and accepted in Settings → Account once connected. Accounts
-with email-code and Google sign-in will replace pairing (see What's next).
+**Signing in.** The sign-in screen (`src/mobile/ui/SignIn.tsx`) uses the accounts code shared
+with the desktop (`electron/cloud-auth.cjs` inside `CloudSync`, which runs in the worker like the
+rest): **Continue with Google** (and Microsoft when the server offers it) and **Continue with
+email** (a code by email, no browser). Only the methods the server enables are shown
+(`/auth/v1/settings`). Google refuses sign-in inside an app's WebView, so the provider page opens in
+a Custom Tab (`@capacitor/browser`): the worker cannot open it, so it posts `open-url` to the page.
+Supabase then redirects to `terraboard://auth/callback?code=…`; the intent filter in
+`android/app/src/main/AndroidManifest.xml` hands that link to the app (`singleTask`), Capacitor's `appUrlOpen` (or `getLaunchUrl` on a cold start) passes it to
+`finishOAuth`, and the PKCE verifier kept in the worker's session file makes the code useless to
+any other app that registers the same scheme. While the browser is open the screen says "Finish in
+your browser" with Cancel. After signing in, the gate attaches the phone to the account's personal
+workspace with the whole library synced (`setLibrary(true)`), and the phone registers as one of the
+account's devices (its model name). Invite codes for someone's shared board are entered in
+Settings → Account. Pairing codes are gone (accounts replace them); the first version of this
+screen used them, see Verified.
 
 **First start.** `src/mobile/ui/MobileGate.tsx` wraps the app: no cloud identity → the sign-in
 screen; connected but nothing on the phone yet → "Getting your boards" until the first sync ends
@@ -102,10 +110,11 @@ is open; it also syncs every 30 s, when the app comes back to the foreground (Ca
 and when the network returns (`online`). Chromium reports a lost network as "Failed to fetch",
 which `cloud-sync.cjs` now counts as offline (it knew only Node's "fetch failed").
 
-**Settings → Account** (`src/mobile/ui/AccountSettings.tsx`; the `cloud` section, relabelled and
-listed first on Android): the workspace name, sync status with Sync now, boards shared with you
-(Leave) and Join with a code for invites, **Switch account** and **Sign out**. Signing out removes
-this phone from the workspace (`cloud.disable()`), then deletes the phone's whole library: every
+**Settings → Account** (`src/mobile/ui/AccountSettings.tsx`, in place of the desktop's Account page
+and listed first on Android): the account's email and the name others see, sync status with Sync
+now, boards shared with you (Leave) and Join with a code for invites, **Switch account** and **Sign
+out**. Signing out signs out of the account (`cloud.signOut()`: this phone leaves the account's
+devices), then deletes the phone's whole library: every
 file of the SQLite pool (boards, pictures, settings, the session), so the next account starts empty
 and nothing of the previous one stays on the phone. A marker file outside the pool
 (`terra-board-wipe`) makes a wipe that was cut short finish at the next start. If changes have not
@@ -113,8 +122,8 @@ uploaded yet, Sign out says how many and offers Sync now or Sign out anyway. Swi
 same step followed by connecting again.
 
 Not on the phone: turning library sync off (the phone always syncs the whole library), server
-choice, editing the profile picture and entrance song, pairing codes for other devices and the
-device list (all in the desktop app).
+choice, editing the profile picture and entrance song, the device list and deleting the account
+(all in the desktop app).
 
 Requirements: Android 8+ (minSdk 26) with an up-to-date Android System WebView (Chromium 109+ for
 OPFS synchronous access handles in workers). Application ID: `terra.board.android` (change it in
@@ -258,12 +267,25 @@ pool files); connecting again downloads the library cleanly. Startup to the boar
 (sign-in gate and cloud add ~50 ms). Seen once on the emulator: after the app came back from the
 background the WebView stayed blank until the first touch, though the page was fully rendered.
 
+**Accounts (stage 2), 2026-10-23**, on the emulator with the accounts branch merged: the sign-in
+screen shows the methods production offers today (email only; Google is off there); with Google
+forced on in a throwaway build, Continue with Google opened the browser through the worker →
+page → Custom Tab path and the screen switched to "Finish in your browser"; a
+`terraboard://auth/callback?error=access_denied` link sent with `adb shell am start` reached the
+app through the intent filter and ended the waiting sign-in ("Signing in was cancelled."); the
+email step rejects a malformed address. **Not tested yet**, because it needs the accounts
+migration (`supabase/migrations/20261023120000_accounts.sql`) on a server and production must not
+be changed: sending and entering a real email code, a real Google sign-in and code exchange, the
+phone in the account's device list, and syncing as an account. There is no Docker on this PC for a
+local Supabase. The first test above (pairing codes) ran on the build before the merge.
+
 ## What's next
 
-- Sign in with an account (email code and Google, from the accounts work in
-  `electron/cloud-auth.cjs`) on the first screen instead of a pairing code: Google through a
-  Custom Tab and the `terraboard://auth/callback` link back into the app (PKCE). See "Accounts"
-  under Verified for what is done and what waits.
+- Test account sign-in end to end once the accounts migration is on a test server (or on
+  Terra Cloud): email code, Google (needs Google enabled and `terraboard://auth/callback` on the
+  redirect allow-list), the phone in the device list, Sign out revoking it. A phone killed while
+  the Custom Tab is open loses the waiting sign-in (the callback is then ignored, and the person
+  taps Continue again).
 - Try it on a physical phone (performance with large boards, older WebViews, tablets).
 - Large libraries: the first download shows no progress (the status has no download count), and
   every picture in the library is downloaded, not only the open board's.
