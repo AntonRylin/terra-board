@@ -53,6 +53,7 @@ const { createAppUpdater, installsUpdates } = require('./app-updater.cjs');
 const { collectLicenses } = require('./licenses.cjs');
 const { createExtensions } = require('./extensions.cjs');
 const { createBackgroundRemoval, removeAssetBackground } = require('./background-removal.cjs');
+const { MiroClient, boardIdFrom, importBoard: importMiroBoard } = require('./miro-import.cjs');
 protocol.registerSchemesAsPrivileged([
   { scheme: 'canvas-app', privileges: { standard: true, secure: true, supportFetchAPI: true } },
   // HTML embeds: their own origin, framed with a sandbox (html-cards.cjs).
@@ -1011,6 +1012,82 @@ app
         filters: [{ name: 'Terra Board board', extensions: ['canvas'] }],
       });
       return r.canceled ? null : call('importFile', { file: r.filePaths[0] });
+    });
+    // Import from Miro (miro-import.cjs). The access token stays in this process;
+    // "Remember" keeps it encrypted with the Windows user's key.
+    const miroFile = path.join(root, 'settings', 'miro.json'),
+      miroSession = session.fromPartition('terra-miro', { cache: false }),
+      miroFetch = (url, options) => miroSession.fetch(url, options);
+    let miroToken = '';
+    const savedMiroToken = () => {
+      try {
+        const saved = JSON.parse(fs.readFileSync(miroFile, 'utf8')).token;
+        return saved && safeStorage.isEncryptionAvailable()
+          ? safeStorage.decryptString(Buffer.from(saved, 'base64'))
+          : '';
+      } catch {
+        return '';
+      }
+    };
+    const miroClient = () => {
+      const token = miroToken || savedMiroToken();
+      if (!token) throw Error('Add a Miro access token first.');
+      return new MiroClient(token, { fetch: miroFetch });
+    };
+    ipcMain.handle('canvas:miro-status', (e) => {
+      trusted(e);
+      return { saved: !!savedMiroToken(), canRemember: safeStorage.isEncryptionAvailable() };
+    });
+    ipcMain.handle('canvas:miro-connect', async (e, { token, remember } = {}) => {
+      trusted(e);
+      const client = new MiroClient(String(token || '').slice(0, 4000), { fetch: miroFetch });
+      if (!client.token) throw Error('Paste the access token from Miro.');
+      const boards = await client.boards();
+      miroToken = client.token;
+      if (remember && safeStorage.isEncryptionAvailable())
+        fs.writeFileSync(
+          miroFile,
+          JSON.stringify({ token: safeStorage.encryptString(client.token).toString('base64') }),
+        );
+      else fs.rmSync(miroFile, { force: true });
+      return boards;
+    });
+    ipcMain.handle('canvas:miro-boards', (e) => {
+      trusted(e);
+      return miroClient().boards();
+    });
+    ipcMain.handle('canvas:miro-forget', (e) => {
+      trusted(e);
+      miroToken = '';
+      fs.rmSync(miroFile, { force: true });
+      return true;
+    });
+    ipcMain.handle('canvas:miro-import', async (e, { ids } = {}) => {
+      trusted(e);
+      if (!Array.isArray(ids) || !ids.length || ids.length > 200) throw Error('Choose boards to import.');
+      await storageReady;
+      const client = miroClient(),
+        results = [];
+      for (const [index, raw] of ids.entries()) {
+        if (externalPhase === 'apply') throw Error('AI edit in progress. Retry after it completes.');
+        try {
+          const r = await importMiroBoard({
+            client,
+            boardId: boardIdFrom(raw),
+            call,
+            onProgress: (p) => {
+              if (win && !win.isDestroyed())
+                win.webContents.send('canvas:miro-progress', { ...p, index, count: ids.length });
+            },
+          });
+          results.push({ id: raw, board: r.board, objects: r.objects, skipped: r.skipped });
+        } catch (error) {
+          // A rejected token fails every board; other errors stay with their board.
+          if (/access token/.test(error.message)) throw error;
+          results.push({ id: raw, error: error.message });
+        }
+      }
+      return results;
     });
     ipcMain.handle('canvas:export-board', async (e, id) => {
       trusted(e);

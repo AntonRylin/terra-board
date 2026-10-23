@@ -19,6 +19,18 @@ contextBridge.exposeInMainWorld('canvas', {
   // Where a dropped file is on disk ('' for pasted or generated files).
   filePath: (file) => webUtils.getPathForFile(file),
   importPortable: () => ipcRenderer.invoke('canvas:import-board'),
+  miro: {
+    status: () => ipcRenderer.invoke('canvas:miro-status'),
+    connect: (token, remember) => ipcRenderer.invoke('canvas:miro-connect', { token, remember }),
+    boards: () => ipcRenderer.invoke('canvas:miro-boards'),
+    forget: () => ipcRenderer.invoke('canvas:miro-forget'),
+    import: (ids) => ipcRenderer.invoke('canvas:miro-import', { ids }),
+    onProgress: (callback) => {
+      const handler = (_event, progress) => callback(progress);
+      ipcRenderer.on('canvas:miro-progress', handler);
+      return () => ipcRenderer.removeListener('canvas:miro-progress', handler);
+    },
+  },
   exportPortable: (id) => ipcRenderer.invoke('canvas:export-board', id),
   exportImage: (args) => ipcRenderer.invoke('canvas:export-image', args),
   downloadAsset: (args) => ipcRenderer.invoke('canvas:download-asset', args),

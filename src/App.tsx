@@ -40,6 +40,7 @@ import {
 } from 'lucide-react';
 import { LiveBadge, LiveRequests, LiveShareDialog, useLiveStatus } from './components/LiveShare';
 import { JoinDialog, ShareDialog, useCloudStatus } from './components/ShareDialog';
+import MiroImportDialog from './components/MiroImportDialog';
 import type { Board, Document, Folder, Library, BackgroundAppearance } from './model';
 import BoardBackgroundSettings, { defaultBackgroundAppearance } from './components/BoardBackground';
 import {
@@ -80,6 +81,7 @@ type ModalState = {
     | 'live'
     | 'share'
     | 'join'
+    | 'miro'
     | 'settings';
   id?: string;
   shareKind?: 'folder' | 'board';
@@ -730,6 +732,9 @@ export default function App() {
         },
         null,
         { label: 'Import board…', icon: <Upload />, action: importBoard },
+        ...(desktop
+          ? [{ label: 'Import from Miro…', icon: <Upload />, action: () => ask({ kind: 'miro' }) }]
+          : []),
       ],
     });
   const libraryMenu = (x: number, y: number, placement: MenuPlacement = 'below') =>
@@ -755,6 +760,9 @@ export default function App() {
           action: openSearch,
         },
         { label: 'Import board…', icon: <Upload />, action: importBoard },
+        ...(desktop
+          ? [{ label: 'Import from Miro…', icon: <Upload />, action: () => ask({ kind: 'miro' }) }]
+          : []),
         ...(desktop
           ? [
               {
@@ -824,6 +832,7 @@ export default function App() {
     live: 'Share over Wi-Fi',
     share: 'Invite over cloud',
     join: 'Join with a code',
+    miro: 'Import from Miro',
     settings: 'Settings',
   };
   return (
@@ -1225,6 +1234,12 @@ export default function App() {
                 />
               ) : modal.kind === 'join' ? (
                 <JoinDialog status={cloudStatus} onClose={() => setModal(null)} />
+              ) : modal.kind === 'miro' ? (
+                <MiroImportDialog
+                  onClose={() => setModal(null)}
+                  onImported={() => void refresh()}
+                  onOpen={(id) => run(() => openBoard(id))}
+                />
               ) : modal.kind === 'live' ? (
                 <LiveShareDialog
                   boardId={modal.id!}

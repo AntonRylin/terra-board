@@ -132,6 +132,30 @@ export interface UpdateStatus {
   error?: string;
 }
 /** An optional part listed in Settings → Extensions (electron/extensions.cjs). */
+// Import from Miro (electron/miro-import.cjs).
+export interface MiroBoard {
+  id: string;
+  name: string;
+  modifiedAt?: string;
+  owner?: string;
+}
+export interface MiroSkipped {
+  drawings: number;
+  arrows: number;
+  images: number;
+  other: number;
+}
+export type MiroResult =
+  | { id: string; board: Board; objects: number; skipped: MiroSkipped; error?: undefined }
+  | { id: string; error: string; board?: undefined };
+export interface MiroProgress {
+  board: string;
+  phase: 'reading' | 'images' | 'saving';
+  done?: number;
+  total?: number;
+  index: number;
+  count: number;
+}
 export interface ExtensionStatus {
   id: string;
   name: string;
@@ -198,6 +222,14 @@ interface DesktopBridge {
   locateAsset(args: { id: string; name: string }): Promise<AssetLink | null>;
   filePath(file: File): string;
   importPortable(): Promise<Board | null>;
+  miro: {
+    status(): Promise<{ saved: boolean; canRemember: boolean }>;
+    connect(token: string, remember: boolean): Promise<MiroBoard[]>;
+    boards(): Promise<MiroBoard[]>;
+    forget(): Promise<boolean>;
+    import(ids: string[]): Promise<MiroResult[]>;
+    onProgress(callback: (progress: MiroProgress) => void): () => void;
+  };
   exportPortable(id: string): Promise<boolean>;
   openExternal(url: string): Promise<void>;
   linkPreview(url: string): Promise<{
