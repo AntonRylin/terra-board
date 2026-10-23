@@ -327,7 +327,7 @@ function createSync(store, helpers) {
       }
       let changed = false;
       withApplying(() => {
-        const local = db().prepare('SELECT kind, id, role FROM sync_foreign').all();
+        const local = db().prepare('SELECT kind, id, role, workspace FROM sync_foreign').all();
         for (const f of local) {
           const wanted = (f.kind === 'board' ? boards : folders).get(f.id);
           if (!wanted) {
@@ -335,10 +335,12 @@ function createSync(store, helpers) {
             else db().prepare('DELETE FROM folders WHERE id=?').run(f.id);
             db().prepare('DELETE FROM sync_foreign WHERE kind=? AND id=?').run(f.kind, f.id);
             changed = true;
-          } else if (wanted.role !== f.role) {
+          } else if (wanted.role !== f.role || wanted.workspace !== f.workspace) {
+            // A new workspace: the owner combined two libraries into their account. The
+            // board keeps its id, so this copy stays and follows it.
             db()
-              .prepare('UPDATE sync_foreign SET role=?, owner=? WHERE kind=? AND id=?')
-              .run(wanted.role, wanted.owner, f.kind, f.id);
+              .prepare('UPDATE sync_foreign SET role=?, owner=?, workspace=? WHERE kind=? AND id=?')
+              .run(wanted.role, wanted.owner, wanted.workspace, f.kind, f.id);
             changed = true;
           }
         }

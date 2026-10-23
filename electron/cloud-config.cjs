@@ -2,8 +2,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { z } = require('zod');
 
-const CLIENT_SCHEMA = 1;
-const MIN_SERVER_SCHEMA = 1;
+// 2: accounts (supabase/migrations/20261023120000_accounts.sql).
+const CLIENT_SCHEMA = 2;
+const MIN_SERVER_SCHEMA = 2;
 
 const NOT_A_SERVER = 'This is not a Terra Board server description.';
 const UNCLEAR_ADDRESS = 'Enter just the server address, like terra.example.com.';
