@@ -216,12 +216,12 @@ body.toolbar-reordering * {
     transition: none;
   }
 }
-/* Last item of the "more tools" menu, below a hairline: hides the whole toolbar. */
+/* First item of the "more tools" menu, above a hairline: hides the whole toolbar. */
 .customizable-toolbar .tool-menu > .toolbar-hide {
   position: relative;
   width: 100%;
   height: 34px;
-  margin-top: 5px;
+  margin-bottom: 5px;
   padding: 0 14px 0 7.5px;
   justify-content: flex-start;
   gap: 10px;
@@ -233,7 +233,7 @@ body.toolbar-reordering * {
   position: absolute;
   left: 8px;
   right: 8px;
-  top: -4px;
+  bottom: -4px;
   height: 1px;
   background: var(--line);
 }

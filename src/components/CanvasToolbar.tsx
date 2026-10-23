@@ -167,10 +167,7 @@ export default function CanvasToolbar({
             aria-label="More tools"
             data-tool-zone="inventory"
           >
-            {layout.inventory.map((id) => renderTool(id, 'inventory'))}
-            {!layout.inventory.length && (
-              <SquareDashed className="inventory-empty" size={24} aria-hidden="true" />
-            )}
+            {/* First, so it shows without scrolling the menu (short in landscape). */}
             {onHide && !dragging && (
               <button
                 type="button"
@@ -183,6 +180,10 @@ export default function CanvasToolbar({
                 <PanelBottomClose size={19} strokeWidth={1.7} />
                 <span className="tool-inventory-name">Hide toolbar</span>
               </button>
+            )}
+            {layout.inventory.map((id) => renderTool(id, 'inventory'))}
+            {!layout.inventory.length && (
+              <SquareDashed className="inventory-empty" size={24} aria-hidden="true" />
             )}
           </div>
         )}

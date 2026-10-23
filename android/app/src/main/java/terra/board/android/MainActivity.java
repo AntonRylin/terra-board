@@ -34,11 +34,13 @@ public class MainActivity extends BridgeActivity {
             int ime = keyboard ? insets.getInsets(WindowInsetsCompat.Type.ime()).bottom : 0;
             if (landscape()) {
                 view.setPadding(0, 0, 0, ime);
-                return insets;
+            } else {
+                Insets bars = insets.getInsets(BARS);
+                view.setPadding(bars.left, bars.top, bars.right, keyboard ? ime : bars.bottom);
             }
-            Insets bars = insets.getInsets(BARS);
-            view.setPadding(bars.left, bars.top, bars.right, keyboard ? ime : bars.bottom);
-            // Padded already: the page must not leave room for the bars a second time.
+            // The page keeps clear of nothing: portrait is padded here, and in landscape the
+            // board uses every edge, camera hole included. Otherwise its safe-area margins
+            // (styles.css, html.android) would leave white strips.
             return new WindowInsetsCompat.Builder(insets).setInsets(BARS, Insets.NONE).build();
         });
         fitBars();
