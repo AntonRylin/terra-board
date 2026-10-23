@@ -412,3 +412,25 @@ test('only owners may remove a workspace media files', async () => {
   await account.query(`delete from storage.objects where name = $1`, [file]);
   assert.equal((await server.admin('select 1 from storage.objects')).length, 0);
 });
+
+test('files the person added to someone else board do not block deleting the sign-in', async () => {
+  const server = await supabaseDb();
+  // Older Supabase storage schemas link a file's owner to the user without cascading.
+  await server.admin(
+    'alter table storage.objects add column owner uuid references auth.users (id)',
+  );
+  const account = await server.user();
+  await account.rpc('ensure_personal_workspace', { p_name: 'A' });
+  const other = await server.user();
+  const { workspace: theirs } = await other.rpc('ensure_personal_workspace', { p_name: 'B' });
+  await server.admin(
+    "insert into storage.objects (bucket_id, name, owner) values ('assets', $1, $2)",
+    [`${theirs}/${'b'.repeat(64)}`, account.id],
+  );
+  assert.deepEqual(await account.rpc('delete_my_cloud_data'), { userDeleted: false });
+  assert.equal((await server.admin('select * from public.deletion_requests')).length, 1);
+  assert.equal(
+    (await server.admin('select * from public.accounts where user_id = $1', [account.id])).length,
+    0,
+  );
+});

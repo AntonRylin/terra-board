@@ -297,7 +297,7 @@ begin
   -- user is left without data for the later cleanup of unused anonymous users.
   begin
     delete from auth.users where id = claim.anon_user;
-  exception when insufficient_privilege then
+  exception when insufficient_privilege or foreign_key_violation then
     null;
   end;
   return outcome;
@@ -407,7 +407,7 @@ begin
   delete from public.share_invites where created_by = uid;
   begin
     delete from auth.users where id = uid;
-  exception when insufficient_privilege then
+  exception when insufficient_privilege or foreign_key_violation then
     insert into public.deletion_requests (user_id) values (uid) on conflict (user_id) do nothing;
     return jsonb_build_object('userDeleted', false);
   end;
