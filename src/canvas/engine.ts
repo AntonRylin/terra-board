@@ -412,6 +412,14 @@ export class Engine {
     this.invalidate();
   };
   private editingPreview: CanvasObject | null = null;
+  // Touch (docs/android.md): fingers on the board, a two-finger pinch, and the
+  // long-press / double-tap timing. Mouse and pen never touch these.
+  private touches = new Map<number, Point>();
+  private pinch: { distance: number; mid: Point; camera: Camera } | null = null;
+  private touchInput = false;
+  private longPress = 0;
+  private longPressOpened = 0;
+  private lastTap: { at: number; point: Point } | null = null;
   private cropPreview: CanvasObject | null = null;
   // Spoilers this viewer has revealed, by object and region start. Local only:
   // never saved, synced or exported.
@@ -463,7 +471,7 @@ export class Engine {
     host.addEventListener('pointerdown', this.down);
     host.addEventListener('pointermove', this.move);
     host.addEventListener('pointerup', this.up);
-    host.addEventListener('pointercancel', this.cancel);
+    host.addEventListener('pointercancel', this.pointerCancel);
     host.addEventListener('pointerleave', this.leave);
     host.addEventListener('wheel', this.wheel, { passive: false });
     host.addEventListener('dblclick', this.doubleClick);
@@ -781,6 +789,17 @@ export class Engine {
     this.invalidate();
   }
   private down = (e: PointerEvent, overlay = false) => {
+    this.touchInput = e.pointerType === 'touch';
+    if (this.touchInput && (overlay || e.target === this.app.canvas)) {
+      this.touches.set(e.pointerId, this.point(e));
+      this.clearLongPress();
+      if (this.touches.size >= 2 || this.pinch) {
+        e.preventDefault();
+        if (!this.pinch) this.startPinch();
+        this.capturePointer(e);
+        return;
+      }
+    }
     if (this.gesture?.clickToPlace) {
       e.preventDefault();
       if (e.button === 0) {
@@ -964,6 +983,16 @@ export class Engine {
             camera: { ...this.camera },
             original: this.moveObjects(),
           };
+        } else if (this.touchInput) {
+          // A finger on empty board pans; a tap there still clears the selection.
+          this.setSelection([]);
+          this.gesture = {
+            mode: 'pan',
+            start: p,
+            world: w,
+            camera: { ...this.camera },
+            original: [],
+          };
         } else {
           if (!additive) this.setSelection([]);
           this.gesture = {
@@ -998,6 +1027,69 @@ export class Engine {
     }
     this.updateCursor();
     this.capturePointer(e);
+    if (this.touchInput && this.gesture && !this.inkTool) {
+      const at = { x: e.clientX, y: e.clientY };
+      this.longPress = window.setTimeout(() => this.touchContext(at), 550);
+    }
+  };
+  private clearLongPress() {
+    if (!this.longPress) return;
+    window.clearTimeout(this.longPress);
+    this.longPress = 0;
+  }
+  // Long-press: the context menu where a right-click would open it.
+  private touchContext(at: { x: number; y: number }) {
+    this.longPress = 0;
+    if (this.touches.size !== 1 || this.pinch) return;
+    this.cancel();
+    this.longPressOpened = performance.now();
+    this.openContext(new MouseEvent('contextmenu', { clientX: at.x, clientY: at.y }));
+  }
+  private startPinch() {
+    this.clearLongPress();
+    const g = this.gesture;
+    // A pan hands its camera to the pinch; anything else the first finger
+    // began (a stroke, a drag, a selection box) is undone.
+    if (g?.mode === 'pan') {
+      this.gesture = null;
+      this.updateCursor();
+    } else if (g) this.cancel();
+    this.stopCameraAnimation();
+    const [a, b] = [...this.touches.values()];
+    this.pinch = {
+      distance: Math.max(1, Math.hypot(b.x - a.x, b.y - a.y)),
+      mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
+      camera: { ...this.camera },
+    };
+  }
+  private movePinch() {
+    const pinch = this.pinch!;
+    const [a, b] = [...this.touches.values()];
+    const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    const ratio = Math.max(1, Math.hypot(b.x - a.x, b.y - a.y)) / pinch.distance;
+    const panned = {
+      ...pinch.camera,
+      x: pinch.camera.x + mid.x - pinch.mid.x,
+      y: pinch.camera.y + mid.y - pinch.mid.y,
+    };
+    this.camera = zoomAt(panned, mid, pinch.camera.zoom * ratio);
+    this.invalidate();
+  }
+  // Lifting a finger: a pinch ends once fewer than two remain; the last finger
+  // does nothing until it lifts too. Returns whether the event is handled.
+  private releaseTouch(e: PointerEvent) {
+    if (e.pointerType !== 'touch' || !this.touches.delete(e.pointerId)) return false;
+    this.clearLongPress();
+    if (!this.pinch) return false;
+    if (this.touches.size < 2) {
+      this.pinch = null;
+      this.callbacks.camera({ ...this.camera });
+    }
+    return true;
+  }
+  private pointerCancel = (e: PointerEvent) => {
+    if (this.releaseTouch(e)) return;
+    this.cancel();
   };
   // Presses relayed from a web page have no live pointer to capture.
   private capturePointer(e: PointerEvent) {
@@ -1006,6 +1098,18 @@ export class Engine {
     } catch {}
   }
   private move = (e: PointerEvent) => {
+    if (e.pointerType === 'touch' && this.touches.has(e.pointerId)) {
+      this.touches.set(e.pointerId, this.point(e));
+      if (this.pinch) {
+        if (this.touches.size >= 2) this.movePinch();
+        return;
+      }
+      if (this.longPress && this.gesture) {
+        const p = this.point(e);
+        if (Math.hypot(p.x - this.gesture.start.x, p.y - this.gesture.start.y) > 8)
+          this.clearLongPress();
+      }
+    } else if (e.pointerType !== 'touch') this.touchInput = false;
     const g = this.gesture;
     if (this.inkTool) {
       this.pointer = e.target === this.app.canvas || g ? this.point(e) : null;
@@ -1182,8 +1286,15 @@ export class Engine {
     }
   };
   private up = (e: PointerEvent) => {
+    if (this.releaseTouch(e)) return;
     const g = this.gesture;
     if (!g || g.clickToPlace) return;
+    if (e.pointerType === 'touch' && !g.dragged && this.doubleTap(e)) {
+      this.gesture = null;
+      for (const o of g.original) this.preview(o);
+      this.invalidate();
+      return;
+    }
     if ((g.mode === 'drawArrow' || g.mode === 'arrowPoint') && g.changed) {
       g.arrowPointer = this.point(e);
       this.updateArrowPreview(e.shiftKey, e.ctrlKey);
@@ -1424,12 +1535,32 @@ export class Engine {
       this.updateCursor();
     }
   };
-  private doubleClick = (e: MouseEvent) => {
+  // Two taps close together act as a double-click. Chromium's own dblclick
+  // from taps is ignored (doubleClick) so this runs once.
+  private doubleTap(e: PointerEvent) {
+    const point = this.point(e),
+      now = performance.now(),
+      last = this.lastTap;
+    this.lastTap = { at: now, point };
+    if (
+      !last ||
+      now - last.at > 350 ||
+      Math.hypot(point.x - last.point.x, point.y - last.point.y) > 24
+    )
+      return false;
+    this.lastTap = null;
+    this.doubleClick(e, true);
+    return true;
+  }
+  private doubleClick = (e: MouseEvent, tap = false) => {
+    const source = (e as MouseEvent & { sourceCapabilities?: { firesTouchEvents?: boolean } })
+      .sourceCapabilities;
+    if (!tap && (source?.firesTouchEvents || this.touchInput)) return;
     if (this.editingId || this.readOnly) return;
     if (performance.now() - this.lastObjectReveal < 600) return;
     // Pointer capture on the surface retargets Chromium's subsequent click /
     // dblclick to that surface, even when both presses began on the canvas.
-    if (e.target !== this.app.canvas && e.target !== this.host) return;
+    if (!tap && e.target !== this.app.canvas && e.target !== this.host) return;
     const handle = this.arrowHandle(this.point(e));
     if (
       handle &&
@@ -1475,6 +1606,8 @@ export class Engine {
   private context = (e: MouseEvent) => {
     if (e.target !== this.app.canvas && e.target !== this.host) return;
     e.preventDefault();
+    // Touch opens its own menu on long-press (touchContext).
+    if (this.touchInput || performance.now() - this.longPressOpened < 1000) return;
     // Windows emits contextmenu after release; other platforms emit it on press.
     // Right-button gestures own the menu decision until the next pointer press.
     if (this.gesture?.secondary || (e.button === 2 && this.secondaryContextHandled)) return;
@@ -1671,7 +1804,7 @@ export class Engine {
           Math.hypot(
             p.x - q.x * this.camera.zoom - this.camera.x,
             p.y - q.y * this.camera.zoom - this.camera.y,
-          ) < 10
+          ) < (this.touchInput ? 20 : 10)
         );
       });
   }
@@ -1683,7 +1816,8 @@ export class Engine {
       return corners.find((corner) => {
         const x = (b.x + (corner.includes('e') ? b.width : 0)) * this.camera.zoom + this.camera.x;
         const y = (b.y + (corner.includes('s') ? b.height : 0)) * this.camera.zoom + this.camera.y;
-        return Math.abs(p.x - x) < 10 && Math.abs(p.y - y) < 10;
+        const r = this.touchInput ? 20 : 10;
+        return Math.abs(p.x - x) < r && Math.abs(p.y - y) < r;
       });
     }
     const o = this.selected[0],
@@ -1699,7 +1833,7 @@ export class Engine {
       );
       const dx = Math.abs(p.x - q.x * c.zoom - c.x);
       const dy = Math.abs(p.y - q.y * c.zoom - c.y);
-      const radius = corner === 'rotate' ? 14 : 10;
+      const radius = (corner === 'rotate' ? 14 : 10) * (this.touchInput ? 2 : 1);
       if (dx < radius && dy < radius && dx * dx + dy * dy < distance) {
         nearest = corner;
         distance = dx * dx + dy * dy;
@@ -3333,6 +3467,7 @@ export class Engine {
   }
   destroy() {
     this.stopCameraAnimation();
+    this.clearLongPress();
     this.disposed = true;
     cancelAnimationFrame(this.frame);
     cancelAnimationFrame(this.dustFrame);

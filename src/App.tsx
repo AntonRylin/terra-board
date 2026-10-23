@@ -3,6 +3,7 @@ import type { SectionId } from './components/settings/settings-index';
 import { UpdatePrompt } from './components/UpdatePrompt';
 import BoardInfoCard from './components/BoardInfoCard';
 import { finishStartup } from './startup';
+import { onAndroidLifecycle } from './mobile/platform';
 import { isCommand } from './shortcuts/active';
 import { bindingsFor, commands, fixedShortcuts } from './shortcuts/commands';
 import { formatBinding } from './shortcuts/keys';
@@ -47,6 +48,7 @@ import {
   chooseFiles,
   importFiles,
   desktop,
+  android,
   exportPortable,
   importPortable,
   invoke,
@@ -358,6 +360,14 @@ export default function App() {
         .catch((error) => report(String(error)));
     });
   }, []);
+  useEffect(
+    () =>
+      onAndroidLifecycle(async () => {
+        await flushInlineNames();
+        await whiteboard.current?.flush();
+      }),
+    [],
+  );
   useEffect(() => {
     const cleanup = window.canvas?.onClose(async () => {
       try {
@@ -777,10 +787,18 @@ export default function App() {
         launcherAlignmentItem,
         launcherModeItem,
         hideLauncherItem,
-        ...(desktop
+        ...(desktop || android
           ? [{ label: 'Settings', icon: <Settings />, action: () => ask({ kind: 'settings' }) }]
           : []),
-        { label: 'Keyboard shortcuts', icon: <Keyboard />, action: () => ask({ kind: 'help' }) },
+        ...(android
+          ? []
+          : [
+              {
+                label: 'Keyboard shortcuts',
+                icon: <Keyboard />,
+                action: () => ask({ kind: 'help' }),
+              },
+            ]),
       ],
     });
   async function submit(e: React.FormEvent) {
@@ -978,7 +996,7 @@ export default function App() {
               </button>
             )}
           </header>
-          {!fullscreen && (desktop || document.fullscreenEnabled) && (
+          {!fullscreen && !android && (desktop || document.fullscreenEnabled) && (
             <button
               className="fullscreen-toggle"
               ref={fullscreenButton}

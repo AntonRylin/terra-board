@@ -997,3 +997,40 @@
     transition: none;
   }
 }
+
+/* Phones (docs/android.md): sections become a strip above the settings. */
+@media (max-width: 600px) {
+  .settings-page {
+    flex-direction: column;
+  }
+  .st-sidebar {
+    width: auto;
+    padding: 10px 12px 8px;
+    border-right: 0;
+    border-bottom: 1px solid var(--st-line);
+    overflow: visible;
+  }
+  .st-sidebar-title,
+  .st-search,
+  .st-discord {
+    display: none;
+  }
+  .st-nav {
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+  }
+  .st-nav-group {
+    display: contents;
+  }
+  .st-nav-heading {
+    display: none;
+  }
+  .st-nav-item {
+    width: auto;
+    flex: none;
+  }
+  .st-content {
+    padding: 20px 16px 48px;
+  }
+}

@@ -14,6 +14,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { commands } from '../../shortcuts/commands';
+import { android } from '../../bridge';
 
 export type SectionId =
   | 'profile'
@@ -125,6 +126,13 @@ export const sections: Section[] = [
 ];
 
 export const sectionById = (id: SectionId) => sections.find((s) => s.id === id)!;
+// Android (docs/android.md) shows only what works on a phone: profiles, cloud,
+// extensions, shortcuts, storage folders, AI tools and updates are desktop parts.
+const androidSections = new Set<SectionId>(['appearance', 'panel', 'canvas']);
+export const visibleSections = android
+  ? sections.filter((s) => androidSections.has(s.id))
+  : sections;
+export const sectionVisible = (id: SectionId) => !android || androidSections.has(id);
 
 type RowInfo = { section: SectionId; title: string; description?: string; keywords?: string };
 
@@ -392,6 +400,7 @@ export function searchSettings(query: string): SearchResult[] {
     })),
   ];
   return all
+    .filter((r) => sectionVisible(r.section))
     .filter((r) => {
       const text = [r.title, r.description, r.keywords, sectionById(r.section).label]
         .join(' ')

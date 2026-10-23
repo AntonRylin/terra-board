@@ -28,8 +28,54 @@ function bundledLicenses(): Plugin {
   };
 }
 
-export default defineConfig({
+// Android (`vite build --mode android`, docs/android.md): the renderer talks
+// to electron/store.cjs running in a worker on SQLite-WASM. These modules stand
+// in for the Node ones the store requires; desktop builds never see them.
+const mobile = (file: string) => fileURLToPath(new URL('./src/mobile/' + file, import.meta.url));
+function androidBuild(): Plugin {
+  return {
+    name: 'terra-android',
+    transformIndexHtml(html) {
+      return html
+        .replace(
+          '<meta name="viewport" content="width=device-width,initial-scale=1" />',
+          '<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />',
+        )
+        .replace(
+          "connect-src 'self' canvas-media: ws://127.0.0.1:5173;",
+          "connect-src 'self' https://*.supabase.co wss://*.supabase.co;",
+        );
+    },
+    generateBundle() {
+      this.emitFile({
+        type: 'asset',
+        fileName: 'terra-sw.js',
+        source: fs.readFileSync(mobile('terra-sw.js'), 'utf8'),
+      });
+    },
+  };
+}
+
+export default defineConfig(({ mode }) => ({
   base: './',
+  resolve: {
+    alias:
+      mode === 'android'
+        ? {
+            // src/mobile/platform.ts (desktop) becomes the Android bridge.
+            './mobile/platform': mobile('index.ts'),
+            'node:sqlite': mobile('shims/sqlite.ts'),
+            'node:fs': mobile('shims/fs.ts'),
+            'node:path': mobile('shims/path.ts'),
+            'node:crypto': mobile('shims/crypto.ts'),
+            'node:os': mobile('shims/node-stubs.ts'),
+            'node:stream': mobile('shims/node-stubs.ts'),
+            sharp: mobile('shims/sharp.cjs'),
+          }
+        : {},
+  },
+  worker: { format: 'es' },
+  optimizeDeps: { exclude: ['@sqlite.org/sqlite-wasm'] },
   server: {
     host: '127.0.0.1',
     port: 5173,
@@ -38,6 +84,7 @@ export default defineConfig({
   },
   plugins: [
     bundledLicenses(),
+    mode === 'android' && androidBuild(),
     {
       name: 'local-development-library',
       configureServer(server) {
@@ -107,4 +154,4 @@ export default defineConfig({
       },
     },
   ],
-});
+}));

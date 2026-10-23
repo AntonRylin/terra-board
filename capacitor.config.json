@@ -1,0 +1,8 @@
+{
+  "appId": "terra.board.android",
+  "appName": "Terra Board",
+  "webDir": "dist-android",
+  "android": {
+    "backgroundColor": "#f7f8fa"
+  }
+}

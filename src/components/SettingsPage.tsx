@@ -5,7 +5,13 @@ import AppearanceSettings from './AppearanceSettings';
 import type { Appearance } from './useAppearance';
 import type { Library } from '../model';
 import { openLink } from '../bridge';
-import { searchSettings, sectionById, sections, type SectionId } from './settings/settings-index';
+import {
+  searchSettings,
+  sectionById,
+  sectionVisible,
+  visibleSections as sections,
+  type SectionId,
+} from './settings/settings-index';
 import { GeneralSettings, PanelSettings, type PanelOptions } from './settings/GeneralSettings';
 import { CanvasSettings, RadialSettings } from './settings/CanvasSettings';
 import { ShortcutSettings } from './settings/ShortcutSettings';
@@ -44,7 +50,10 @@ export default function SettingsPage({
   const page = useRef<HTMLElement>(null);
   const back = useRef<HTMLButtonElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
-  const [section, setSection] = useState<SectionId>(initialSection ?? lastSection);
+  const [section, setSection] = useState<SectionId>(() => {
+    const wanted = initialSection ?? lastSection;
+    return sectionVisible(wanted) ? wanted : sections[0].id;
+  });
   const [query, setQuery] = useState('');
   const [target, setTarget] = useState<string | null>(null);
   useEffect(() => {

@@ -1,0 +1,15 @@
+// node:os and node:stream for code the storage worker bundles but only
+// partly uses on Android.
+export const hostname = () => {
+  const model = /Android [\d.]+; ([^;)]+)/.exec(navigator.userAgent)?.[1]?.trim();
+  return model && model !== 'K' ? model : 'Android';
+};
+export const platform = () => 'android';
+export const homedir = () => '/';
+export const tmpdir = () => '/tmp';
+export class Readable {
+  static from(): never {
+    throw Error('Streams are not available on Android');
+  }
+}
+export default { hostname, platform, homedir, tmpdir, Readable };

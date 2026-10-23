@@ -1,5 +1,6 @@
 import type { Asset, Board, CanvasObject } from './model';
 import type { RecognizedText } from './canvas/recognized-text';
+import * as mobile from './mobile/platform';
 export interface McpStatus {
   enabled: boolean;
   running: boolean;
@@ -338,6 +339,8 @@ declare global {
   }
 }
 export const desktop = !!window.canvas;
+// The Android app (Capacitor): storage runs in a worker, see docs/android.md.
+export const android = mobile.isAndroid;
 function base64(bytes: Uint8Array) {
   let text = '';
   for (let i = 0; i < bytes.length; i += 32768)
@@ -349,6 +352,7 @@ export async function invoke<T = any>(
   args: Record<string, unknown> = {},
 ): Promise<T> {
   if (window.canvas) return window.canvas.invoke(command, args);
+  if (android) return mobile.call<T>(command, args);
   const input = { ...args };
   if (input.bytes) input.bytes = base64(new Uint8Array(input.bytes as ArrayBuffer));
   const response = await fetch('/__local', {
@@ -442,11 +446,23 @@ export async function importPortable() {
 }
 export async function exportPortable(id: string) {
   if (window.canvas) return window.canvas.exportPortable(id);
+  if (android) {
+    const bytes = await invoke<Uint8Array>('exportBoard', { id });
+    const board = (await invoke<{ boards: { id: string; name: string }[] }>('library')).boards.find(
+      (b) => b.id === id,
+    );
+    await mobile.saveFile(new Blob([bytes as BlobPart]), (board?.name || 'Board') + '.canvas');
+    return true;
+  }
   const data = await invoke<string>('exportBoard', { id });
   download(new Blob([Uint8Array.from(atob(data), (c) => c.charCodeAt(0))]), 'Board.canvas');
   return true;
 }
 export function download(blob: Blob, name: string) {
+  if (android) {
+    void mobile.saveFile(blob, name).catch((e) => console.error(e));
+    return;
+  }
   const url = URL.createObjectURL(blob),
     a = document.createElement('a');
   a.href = url;
@@ -458,11 +474,13 @@ export async function downloadAsset(id: string, name: string): Promise<boolean> 
   if (window.canvas) return window.canvas.downloadAsset({ id, name });
   const response = await fetch(mediaUrl(id, 'original'));
   if (!response.ok) throw Error('Could not download this file');
-  download(await response.blob(), name);
+  if (android) await mobile.saveFile(await response.blob(), name);
+  else download(await response.blob(), name);
   return true;
 }
 export async function openLink(url: string) {
   if (!/^https?:\/\//i.test(url)) throw Error('Only web links can be opened');
   if (window.canvas) await window.canvas.openExternal(url);
+  else if (android) await mobile.openExternal(url);
   else window.open(url, '_blank', 'noopener,noreferrer');
 }

@@ -2535,3 +2535,22 @@ kbd {
 .share-badge[data-shared='edit'] {
   background: #2f9e6a;
 }
+
+/* Android (docs/android.md): the app draws edge to edge; keep it clear of the
+   status and navigation bars. Capacitor sets these variables. */
+html.android body {
+  background: var(--paper);
+}
+html.android .app-shell {
+  height: calc(
+    100dvh - var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) -
+      var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))
+  );
+  margin: var(--safe-area-inset-top, env(safe-area-inset-top, 0px))
+    var(--safe-area-inset-right, env(safe-area-inset-right, 0px))
+    var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))
+    var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
+}
+html.android {
+  -webkit-tap-highlight-color: transparent;
+}
