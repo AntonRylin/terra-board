@@ -2110,6 +2110,13 @@ export class Engine {
     this.callbacks.camera({ ...this.camera });
     this.invalidate();
   }
+  // Move the view by screen pixels (keeping text being typed above the phone's keyboard).
+  panBy(dx: number, dy: number) {
+    this.stopCameraAnimation();
+    this.camera = { ...this.camera, x: this.camera.x + dx, y: this.camera.y + dy };
+    this.callbacks.camera({ ...this.camera });
+    this.invalidate();
+  }
   // Show a world point at the centre of the view, at the given zoom.
   lookAt(center: Point, zoom: number) {
     this.stopCameraAnimation();

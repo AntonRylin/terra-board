@@ -911,6 +911,25 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   const activeGallery = selected.length === 1 && selected[0].gallery ? selected[0] : null;
   const [editingListId, setEditingListId] = useState<string | null>(null);
   const [editingPaperId, setEditingPaperId] = useState<string | null>(null);
+  const editingOpen = !!editing || !!editingListId || !!editingPaperId;
+  // Android: the keyboard shrinks the page when text on the board is edited. The text
+  // being typed moves up to stay above it (the toolbars give way: mobile/index.ts).
+  useEffect(() => {
+    if (!android || !editingOpen) return;
+    const keepVisible = () =>
+      requestAnimationFrame(() => {
+        const field = document.activeElement as HTMLElement | null;
+        if (!field?.closest('.whiteboard')) return;
+        const box = field.getBoundingClientRect();
+        const room = window.innerHeight - 16;
+        if (box.bottom <= room) return;
+        // Up far enough for the caret's end of the text, never past the top of the view.
+        engine.current?.panBy(0, -Math.min(box.bottom - room, Math.max(0, box.top - 72)));
+      });
+    keepVisible();
+    window.addEventListener('resize', keepVisible);
+    return () => window.removeEventListener('resize', keepVisible);
+  }, [editingOpen]);
   const [paperView, setPaperView] = useState<PaperView>({ objects: [], camera: doc.camera });
   // The open board's objects for pins to the screen; a new array after each edit.
   const [pinSource, setPinSource] = useState<CanvasObject[] | null>(null);

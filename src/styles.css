@@ -2561,3 +2561,11 @@ html.android {
     display: none;
   }
 }
+/* Android: while text on the board is typed, the keyboard takes the bottom of the screen;
+   the toolbars and the board panel step aside so they don't cover the text
+   (src/mobile/index.ts installTypingMode). */
+html.android.typing-on-board :is(.canvas-toolbar, .canvas-zoom, .launcher, .selection-tools) {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}

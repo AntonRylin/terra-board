@@ -189,12 +189,36 @@ function installSignInLinks() {
     .catch(() => {});
 }
 
+// Typing on the board (a note, text, a list…) opens the keyboard, which shrinks the page:
+// the toolbars and the board panel would land on the text. They step aside meanwhile
+// (styles.css, html.android.typing-on-board).
+function installTypingMode() {
+  const chrome =
+    '.selection-tools, .rich-format-bar, .canvas-toolbar, .canvas-zoom, .launcher, .board-header, [role=dialog], [role=menu], .context-menu, .settings-page';
+  const update = () => {
+    const field = document.activeElement as HTMLElement | null;
+    const typing =
+      !!field &&
+      field.matches(
+        'textarea, input, [contenteditable="true"], [contenteditable="plaintext-only"]',
+      ) &&
+      !!field.closest('.whiteboard') &&
+      !field.closest(chrome);
+    document.documentElement.classList.toggle('typing-on-board', typing);
+  };
+  // focusout comes before the next focusin; look once both have happened.
+  const later = () => setTimeout(update, 0);
+  document.addEventListener('focusin', later);
+  document.addEventListener('focusout', later);
+}
+
 let installed = false;
 export function startMobile() {
   if (!installed) {
     installed = true;
     installTouchMenus();
     installSignInLinks();
+    installTypingMode();
   }
   return startStorage();
 }
