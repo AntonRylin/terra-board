@@ -268,8 +268,13 @@ body.toolbar-reordering * {
   html.android .app-shell .canvas-toolbar.customizable-toolbar {
     flex-wrap: nowrap;
     max-width: calc(100% - 24px);
+    /* The same spacing as between the tools, for + and … too (narrow screens use 1px),
+       and exactly as wide as its buttons. */
+    gap: 4px;
+    width: auto;
   }
   html.android .customizable-toolbar .toolbar-slots {
     flex-wrap: nowrap;
+    flex: none;
   }
 }
