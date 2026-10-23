@@ -618,6 +618,31 @@ h1 {
   color: var(--muted);
   font-weight: 500;
 }
+.app-logo {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+.claude-logo {
+  color: #d97757;
+}
+.codex-logo {
+  color: #0d0d0d;
+}
+:root[data-theme='dark'] .claude-logo {
+  color: #e8906f;
+}
+:root[data-theme='dark'] .codex-logo {
+  color: #f2f2f2;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .claude-logo {
+    color: #e8906f;
+  }
+  :root:not([data-theme='light']) .codex-logo {
+    color: #f2f2f2;
+  }
+}
 
 /* Final call */
 .final {
