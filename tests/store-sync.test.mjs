@@ -77,6 +77,7 @@ test('nothing is queued until sync is on, then the whole library is', () =>
     a.patchBoard({ id: b.id, revision: 0, upserts: [note('n1', 'hi')] });
     assert.equal(a.syncStatus().pending, 0);
     a.syncEnable({ workspace });
+    a.syncRejoined(); // the first pull found nothing on the server
     const { entries } = a.syncTake({ limit: 500 });
     const kinds = entries.map((e) => e.kind);
     assert.ok(kinds.includes('board') && kinds.includes('object') && kinds.includes('folder'));
@@ -90,6 +91,7 @@ test('camera moves and revision bumps are not synced, content edits are', () =>
   withStores((a) => {
     const b = a.createBoard({ name: 'Plans' });
     a.syncEnable({ workspace });
+    a.syncRejoined(); // the first pull found nothing on the server
     a.syncAck({ entries: a.syncTake({ limit: 500 }).entries });
     assert.equal(a.syncStatus().pending, 0);
     a.saveCamera({ id: b.id, camera: { x: 5, y: 5, zoom: 2 } });
@@ -102,6 +104,7 @@ test('an edit made after take survives the acknowledgement', () =>
   withStores((a) => {
     const b = a.createBoard({ name: 'Plans' });
     a.syncEnable({ workspace });
+    a.syncRejoined(); // the first pull found nothing on the server
     const taken = a.syncTake({ limit: 500 });
     a.updateBoard({ id: b.id, patch: { name: 'Changed meanwhile' } });
     a.syncAck({ entries: taken.entries });
@@ -130,7 +133,9 @@ test('two libraries converge on boards, objects, deletions and images', async ()
       ],
     });
     a.syncEnable({ workspace });
+    a.syncRejoined(); // the first pull found nothing on the server
     b.syncEnable({ workspace });
+    b.syncRejoined(); // the first pull found nothing on the server
     server.push(a);
     server.push(b);
     const applied = await server.pull(b);
@@ -169,7 +174,9 @@ test('a local unsent edit wins over an incoming change to the same object', asyn
     const board = a.createBoard({ name: 'Race' });
     a.patchBoard({ id: board.id, revision: 0, upserts: [note('n1', 'base')] });
     a.syncEnable({ workspace });
+    a.syncRejoined(); // the first pull found nothing on the server
     b.syncEnable({ workspace });
+    b.syncRejoined(); // the first pull found nothing on the server
     server.push(a);
     await server.pull(b);
     const rev = b.loadBoard({ id: board.id }).revision;
@@ -189,7 +196,9 @@ test('remote edits bump the revision so stale local saves are detected', async (
     const board = a.createBoard({ name: 'Rev' });
     a.patchBoard({ id: board.id, revision: 0, upserts: [note('n1', 'one')] });
     a.syncEnable({ workspace });
+    a.syncRejoined(); // the first pull found nothing on the server
     b.syncEnable({ workspace });
+    b.syncRejoined(); // the first pull found nothing on the server
     server.push(a);
     await server.pull(b);
     const before = b.loadBoard({ id: board.id }).revision;
@@ -206,6 +215,7 @@ test('remote edits bump the revision so stale local saves are detected', async (
 test('malformed remote rows are skipped without blocking the batch', () =>
   withStores((a) => {
     a.syncEnable({ workspace });
+    a.syncRejoined(); // the first pull found nothing on the server
     const board = a.createBoard({ name: 'Mixed' });
     a.syncAck({ entries: a.syncTake({ limit: 500 }).entries });
     const result = a.syncApply({
@@ -232,6 +242,7 @@ test('malformed remote rows are skipped without blocking the batch', () =>
 test('remote rows this version cannot read are kept and retried', () =>
   withStores((a) => {
     a.syncEnable({ workspace });
+    a.syncRejoined(); // the first pull found nothing on the server
     const board = a.createBoard({ name: 'Newer' });
     a.syncAck({ entries: a.syncTake({ limit: 500 }).entries });
     const bad = { kind: 'object', board_id: board.id, id: 'future', seq: 1 };
@@ -446,7 +457,9 @@ test('a board taken out of the cloud stays local, and another computer keeps its
   withStores(async (a, b) => {
     const server = fakeServer();
     a.syncEnable({ workspace });
+    a.syncRejoined(); // the first pull found nothing on the server
     b.syncEnable({ workspace });
+    b.syncRejoined(); // the first pull found nothing on the server
     const board = a.createBoard({ name: 'Diary' });
     a.patchBoard({ id: board.id, revision: 0, upserts: [note('d1', 'private')] });
     server.push(a);
@@ -488,6 +501,7 @@ test('a board taken out of the cloud stays local, and another computer keeps its
     assert.equal(a.syncTake({ limit: 50 }).entries.length, 0);
     a.syncLibrary({ on: false });
     a.syncLibrary({ on: true });
+    a.syncRejoined();
     assert.equal(a.syncTake({ limit: 50 }).entries.length, 0, 'library sync leaves it out');
 
     // Sharing it again puts it back in the cloud.
@@ -522,4 +536,49 @@ test('a shared board whose owner combined libraries keeps its copy and follows t
       entriesOf(friend).entries.map((e) => [e.id, e.workspace]),
       [['n1', combined]],
     );
+  }));
+
+test('signing in again pulls first: newer edits from elsewhere survive, new local boards upload', async () =>
+  withStores(async (a, b) => {
+    const server = fakeServer();
+    const board = a.createBoard({ name: 'Plans' });
+    a.patchBoard({
+      id: board.id,
+      revision: 0,
+      upserts: [note('n1', 'first'), note('n2', 'to delete')],
+    });
+    a.syncEnable({ workspace });
+    a.syncRejoined();
+    server.push(a);
+    b.syncEnable({ workspace });
+    await server.pull(b);
+    b.syncRejoined();
+    assert.equal(b.syncStatus().pending, 0, 'nothing of a is sent back');
+
+    // a signs out; b keeps working.
+    a.syncDisable();
+    const onB = b.loadBoard({ id: board.id });
+    b.patchBoard({
+      id: board.id,
+      revision: onB.revision,
+      upserts: [note('n1', 'newer on b')],
+      deleted: ['n2'],
+    });
+    server.push(b);
+    // a, signed out, makes a new board.
+    const fresh = a.createBoard({ name: 'Made while signed out' });
+    a.patchBoard({ id: fresh.id, revision: 0, upserts: [note('f1', 'new')] });
+
+    // a signs in again: same workspace.
+    a.syncEnable({ workspace });
+    assert.equal(a.syncStatus().pending, 0, 'nothing is pushed before the pull');
+    await server.pull(a);
+    a.syncRejoined();
+    const objects = Object.fromEntries(
+      a.loadBoard({ id: board.id }).objects.map((o) => [o.id, o.text]),
+    );
+    assert.equal(objects.n1, 'newer on b');
+    assert.ok(!('n2' in objects), 'the deletion made elsewhere stays');
+    const queued = a.syncTake({ limit: 500 }).entries.map((e) => e.id);
+    assert.deepEqual(queued.sort(), [fresh.id, 'f1'].sort());
   }));

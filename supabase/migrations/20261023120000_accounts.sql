@@ -38,6 +38,8 @@ create table public.devices (
 create table public.account_claims (
   secret_hash text primary key,
   anon_user uuid not null references auth.users (id) on delete cascade,
+  -- The workspace the computer syncs with now (it may be a member of older ones too).
+  workspace uuid,
   expires_at timestamptz not null
 );
 
@@ -195,8 +197,9 @@ end;
 $$;
 
 -- Step 1 of the claim, run by the anonymous computer before it signs in. The secret is
--- returned once and kept only as a hash, for 15 minutes.
-create function public.begin_claim()
+-- returned once and kept only as a hash, for 15 minutes. p_workspace: the workspace this
+-- computer syncs with now; it must own it.
+create function public.begin_claim(p_workspace uuid default null)
 returns text
 language plpgsql
 security definer
@@ -209,9 +212,13 @@ begin
   if uid is null or not coalesce((auth.jwt() ->> 'is_anonymous')::boolean, false) then
     raise exception 'Only a computer without an account can be claimed' using errcode = '22023';
   end if;
+  if p_workspace is not null and coalesce(public.workspace_role(p_workspace), '') <> 'owner' then
+    raise exception 'This computer does not sync with that workspace' using errcode = '42501';
+  end if;
   delete from public.account_claims where expires_at < now() or anon_user = uid;
-  insert into public.account_claims (secret_hash, anon_user, expires_at)
-  values (encode(sha256(convert_to(secret, 'UTF8')), 'hex'), uid, now() + interval '15 minutes');
+  insert into public.account_claims (secret_hash, anon_user, workspace, expires_at)
+  values (encode(sha256(convert_to(secret, 'UTF8')), 'hex'), uid, p_workspace,
+    now() + interval '15 minutes');
   return secret;
 end;
 $$;
@@ -252,9 +259,10 @@ begin
     raise exception 'Sign in first' using errcode = '28000';
   end if;
 
+  -- The workspace the computer named, else (an older app) its first one.
   select workspace_id into anon_ws from public.workspace_members
   where user_id = claim.anon_user and role = 'owner'
-  order by joined_at limit 1;
+  order by workspace_id is distinct from claim.workspace, joined_at limit 1;
   insert into public.accounts (user_id) values (uid) on conflict (user_id) do nothing;
   select personal_workspace into personal from public.accounts where user_id = uid for update;
   if personal is not null and not exists (
@@ -268,8 +276,12 @@ begin
   );
 
   if not taken then
+    -- Never into a library that is another account's.
     insert into public.workspace_members (workspace_id, user_id, role)
-    select workspace_id, uid, role from public.workspace_members where user_id = claim.anon_user
+    select m.workspace_id, uid, m.role from public.workspace_members m
+    where m.user_id = claim.anon_user and not exists (
+      select 1 from public.accounts a
+      where a.personal_workspace = m.workspace_id and a.user_id <> uid)
     on conflict (workspace_id, user_id) do nothing;
     update public.workspaces set created_by = uid where created_by = claim.anon_user;
     update public.shares set created_by = uid where created_by = claim.anon_user;
@@ -308,25 +320,36 @@ $$;
 -- account's personal workspace, then the old workspace is deleted with its rows. Its media
 -- files are removed by the app first (Storage API). Boards keep their ids, so people it
 -- was shared with keep the same boards.
+create function public.check_retire(p_old uuid, p_new uuid)
+returns void
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+begin
+  if not public.signed_in_account() then
+    raise exception 'Sign in first' using errcode = '28000';
+  end if;
+  if p_old is null or p_new is null or p_old = p_new
+    or (select personal_workspace from public.accounts where user_id = auth.uid())
+      is distinct from p_new
+    or coalesce(public.workspace_role(p_new), '') <> 'owner'
+    or coalesce(public.workspace_role(p_old), '') <> 'owner'
+    or exists (select 1 from public.accounts where personal_workspace = p_old) then
+    raise exception 'You cannot combine these libraries' using errcode = '42501';
+  end if;
+end;
+$$;
+
 create function public.retire_workspace(p_old uuid, p_new uuid)
 returns void
 language plpgsql
 security definer
 set search_path = ''
 as $$
-declare
-  uid uuid := auth.uid();
 begin
-  if not public.signed_in_account() then
-    raise exception 'Sign in first' using errcode = '28000';
-  end if;
-  if p_old is null or p_new is null or p_old = p_new
-    or (select personal_workspace from public.accounts where user_id = uid) is distinct from p_new
-    or coalesce(public.workspace_role(p_new), '') <> 'owner'
-    or coalesce(public.workspace_role(p_old), '') <> 'owner'
-    or exists (select 1 from public.accounts where personal_workspace = p_old) then
-    raise exception 'You cannot combine these libraries' using errcode = '42501';
-  end if;
+  perform public.check_retire(p_old, p_new);
   perform pg_advisory_xact_lock(hashtextextended(p_old::text, 0));
   perform pg_advisory_xact_lock(hashtextextended(p_new::text, 0));
 
@@ -547,7 +570,8 @@ revoke execute on function public.ensure_personal_workspace(text) from public, a
 revoke execute on function public.my_account() from public, anon;
 revoke execute on function public.register_device(uuid, text, text) from public, anon;
 revoke execute on function public.revoke_device(uuid) from public, anon;
-revoke execute on function public.begin_claim() from public, anon;
+revoke execute on function public.begin_claim(uuid) from public, anon;
+revoke execute on function public.check_retire(uuid, uuid) from public, anon;
 revoke execute on function public.finish_claim(text) from public, anon;
 revoke execute on function public.retire_workspace(uuid, uuid) from public, anon;
 revoke execute on function public.my_deletable_workspaces() from public, anon;
@@ -558,7 +582,8 @@ grant execute on function public.ensure_personal_workspace(text) to authenticate
 grant execute on function public.my_account() to authenticated;
 grant execute on function public.register_device(uuid, text, text) to authenticated;
 grant execute on function public.revoke_device(uuid) to authenticated;
-grant execute on function public.begin_claim() to authenticated;
+grant execute on function public.begin_claim(uuid) to authenticated;
+grant execute on function public.check_retire(uuid, uuid) to authenticated;
 grant execute on function public.finish_claim(text) to authenticated;
 grant execute on function public.retire_workspace(uuid, uuid) to authenticated;
 grant execute on function public.my_deletable_workspaces() to authenticated;
