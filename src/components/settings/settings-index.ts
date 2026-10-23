@@ -136,9 +136,10 @@ export const sections: Section[] = [
 
 export const sectionById = (id: SectionId) => sections.find((s) => s.id === id)!;
 // Android (docs/android.md) shows only what works on a phone: profiles,
-// extensions, shortcuts, storage folders, AI tools and updates are desktop parts.
+// extensions, shortcuts, storage folders, AI tools and updates are desktop parts, and
+// the board panel is replaced by the list of boards (MobileHome.tsx).
 // Its Account page is the phone's own (src/mobile/ui/AccountSettings.tsx), listed first.
-const androidSections = new Set<SectionId>(['account', 'appearance', 'panel', 'canvas']);
+const androidSections = new Set<SectionId>(['account', 'appearance', 'canvas']);
 if (android)
   Object.assign(sectionById('account'), {
     group: 'App',

@@ -79,6 +79,8 @@ export function onAndroidLifecycle(flush: () => Promise<void>) {
       target.dispatchEvent(
         new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }),
       );
+    // An open board goes back to the list of boards (App.tsx); the list leaves the app.
+    else if (!window.dispatchEvent(new Event('terra-board:back', { cancelable: true }))) return;
     else
       void flush()
         .catch(() => {})

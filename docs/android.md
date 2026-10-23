@@ -58,7 +58,7 @@ Account shows how many are waiting. Export / share a copy… still saves a singl
 ## Terra Cloud
 
 A phone without the person's boards is of little use, so the Android app has no local-only mode.
-Its first screen connects it to Terra Cloud; after that the board panel is the cloud library (the
+Its first screen connects it to Terra Cloud; after that the home screen lists the cloud library (the
 person's boards and folders, plus folders and boards other people share with them), cached on the
 phone so it opens offline and syncs when back online.
 
@@ -187,8 +187,8 @@ that remain show "Available in the desktop app."
 `mcpStatus`, `mcpUpdate` (MCP server for AI tools), `extensions.*`,
 `updates.*`, `setOpenAtLogin`, `openFolder`, `dataDirectory`, `appInfo`, `exportLibrary`,
 `fullscreenState` / `toggleFullscreen` / `setFullscreenKeys`, `onClose` / `closeReady`,
-`rendererReady`, `licenses`, `platform`. Settings on Android shows only Account, Appearance,
-Board panel and Canvas; Keyboard shortcuts and the full-screen button are hidden.
+`rendererReady`, `licenses`, `platform`. Settings on Android shows only Account, Appearance
+and Canvas; Keyboard shortcuts and the full-screen button are hidden.
 
 ## Screen and layout
 
@@ -197,8 +197,12 @@ Board panel and Canvas; Keyboard shortcuts and the full-screen button are hidden
   side with the camera hole. Portrait keeps both bars. Capacitor's own inset padding is off
   (`plugins.SystemBars.insetsHandling: "disable"` in `capacitor.config.json`); the activity pads
   for the bars in portrait and for the keyboard in both orientations.
-- The board panel has a place per orientation (`useLauncherDock.ts`): below the board in
-  portrait and on the right in landscape until moved; each orientation remembers its own.
+- There is no board panel: the app opens on a home screen (`MobileHome.tsx`) that lists every
+  board and folder, as phones and tablets expect. Recent boards come first once there are more
+  than four; folders open in place and stay open; "⋯" or a long press on a row opens the same
+  menu as on desktop (rename, icon, move, share, Trash); New offers a board, a folder or Join
+  with a code. A board fills the screen, with a back button beside its name; Android's back
+  gesture also returns to the list, and on the list it leaves the app.
 - The canvas toolbar can be hidden: + → Hide toolbar (also in the canvas "…" menu). A Show
   toolbar button then sits in the zoom bar. This works on desktop too.
 - Toolbar tools are rearranged by touch with a long press (450 ms, a short vibration, then drag
@@ -222,7 +226,7 @@ On Android:
 - Drawing tools draw with one finger; two fingers still pinch.
 - Long-press (550 ms, under 8 px of movement) opens the context menu. Double-tap acts as a
   double-click (edit text, open a frame); Chromium's own tap `dblclick` is ignored so it runs once.
-- Outside the canvas (board icons, folders, the board panel), `src/mobile/index.ts` turns a
+- Outside the canvas (the rows of the home screen), `src/mobile/index.ts` turns a
   long-press into the `contextmenu` a right-click sends, replacing the WebView's own long-press.
 
 ## Build and run
@@ -313,6 +317,5 @@ local Supabase. The first test above (pairing codes) ran on the build before the
 - Try it on a physical phone (performance with large boards, older WebViews, tablets).
 - Large libraries: the first download shows no progress (the status has no download count), and
   every picture in the library is downloaded, not only the open board's.
-- Phone layout: default the board panel to minimal or bottom on narrow screens; a larger toolbar.
 - Link previews through a native HTTP plugin with the guards in `electron/link-preview.cjs`.
 - Android share target (add images and links from other apps), release signing, Play Store listing.

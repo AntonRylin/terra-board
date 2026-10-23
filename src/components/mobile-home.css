@@ -1,0 +1,252 @@
+/* Android home screen (MobileHome.tsx). */
+.mobile-home {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+  color: var(--ink);
+}
+.home-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 14px 10px 6px 20px;
+}
+.home-header h1 {
+  flex: 1;
+  margin: 0;
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.3px;
+}
+.home-icon-button {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  color: var(--muted);
+}
+.home-icon-button:active {
+  background: var(--panel);
+}
+.home-list {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 0 96px;
+}
+.home-list h2 {
+  margin: 14px 20px 4px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.home-list section + section h2 {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.home-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 62px;
+  padding: 8px 6px 8px 20px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.home-row:active {
+  background: var(--panel);
+}
+.home-row.nested {
+  padding-left: 52px;
+}
+.home-row .app-icon {
+  width: 42px;
+  height: 42px;
+}
+.home-folder > .home-row .home-folder-icon {
+  color: var(--muted);
+}
+.home-chevron {
+  flex: none;
+  margin: 0 0 -3px 4px;
+  color: var(--muted);
+  transition: transform 160ms;
+}
+.home-folder[data-open] .home-chevron {
+  transform: rotate(90deg);
+}
+.home-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.home-name {
+  font-size: 16px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.home-meta {
+  font-size: 12.5px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.home-more {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  color: var(--muted);
+}
+.home-more:active {
+  background: var(--line);
+}
+.home-add {
+  min-height: 52px;
+  color: var(--muted);
+}
+.home-add .home-name {
+  font-weight: 400;
+  font-size: 14.5px;
+}
+.home-add-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 42px;
+  height: 42px;
+  border-radius: 11px;
+  border: 1px dashed var(--line);
+  color: var(--muted);
+}
+.home-empty {
+  margin: 40px 20px;
+  text-align: center;
+  color: var(--muted);
+}
+.home-new {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 52px;
+  padding: 0 20px 0 16px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--accent);
+  color: var(--paper);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 600;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.18);
+}
+.home-sheet-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: flex-end;
+  background: rgb(0 0 0 / 0.35);
+  animation: home-fade 140ms ease-out;
+}
+.home-sheet {
+  width: 100%;
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 8px 0 14px;
+  border-radius: 20px 20px 0 0;
+  background: var(--surface);
+  animation: home-rise 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.home-sheet-handle {
+  display: block;
+  width: 38px;
+  height: 4px;
+  margin: 2px auto 10px;
+  border-radius: 2px;
+  background: var(--line);
+}
+.home-sheet > button {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 60px;
+  padding: 8px 20px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 500;
+  text-align: left;
+}
+.home-sheet > button:active {
+  background: var(--panel);
+}
+.home-sheet .home-add-icon {
+  border-style: solid;
+  background: var(--panel);
+  color: var(--ink);
+}
+@keyframes home-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes home-rise {
+  from {
+    transform: translateY(40px);
+    opacity: 0;
+  }
+}
+/* The board's way back to this list (App.tsx). */
+.board-back {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  margin-right: -2px;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: var(--panel);
+  color: var(--ink);
+}
+.board-back:active {
+  background: var(--line);
+}
+/* Landscape and tablets: a readable column, not rows stretched across the screen. */
+.home-header,
+.home-list > section {
+  width: 100%;
+  max-width: 760px;
+  margin-inline: auto;
+}

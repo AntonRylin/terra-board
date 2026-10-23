@@ -10,18 +10,19 @@ export function useZoomControlSpace(key?: unknown) {
   useLayoutEffect(() => {
     const element = zoom.current;
     const shell = element?.closest<HTMLElement>('.app-shell');
+    // Android has no board panel (MobileHome.tsx).
     const panel = shell?.querySelector<HTMLElement>('.launcher');
-    if (!element || !shell || !panel) return;
+    if (!element || !shell) return;
     let frame = 0;
     let settleUntil = 0;
     const margin = { right: 14, bottom: 25 };
     const gap = 8;
     const measure = () => {
-      if (panel.classList.contains('is-dragging')) return;
+      if (panel?.classList.contains('is-dragging')) return;
       const bounds = shell.getBoundingClientRect();
       const toolbar = shell.querySelector<HTMLElement>('.canvas-toolbar');
-      const panelShown = !shell.hasAttribute('data-panel-hidden');
-      const panelBox = panel.getBoundingClientRect();
+      const panelShown = !!panel && !shell.hasAttribute('data-panel-hidden');
+      const panelBox = panel?.getBoundingClientRect() ?? new DOMRect();
       const width = element.offsetWidth,
         height = element.offsetHeight;
       const overlaps = (right: number, bottom: number, box: DOMRect) => {
@@ -65,7 +66,7 @@ export function useZoomControlSpace(key?: unknown) {
       measure();
     };
     const resize = new ResizeObserver(changed);
-    [shell, panel, element].forEach((node) => resize.observe(node));
+    [shell, panel, element].forEach((node) => node && resize.observe(node));
     const toolbar = shell.querySelector<HTMLElement>('.canvas-toolbar');
     if (toolbar) resize.observe(toolbar);
     const changes = new MutationObserver(changed);
@@ -73,10 +74,11 @@ export function useZoomControlSpace(key?: unknown) {
       attributes: true,
       attributeFilter: ['data-dock', 'data-panel-hidden'],
     });
-    changes.observe(panel, {
-      attributes: true,
-      attributeFilter: ['class', 'style', 'data-centered', 'data-minimal'],
-    });
+    if (panel)
+      changes.observe(panel, {
+        attributes: true,
+        attributeFilter: ['class', 'style', 'data-centered', 'data-minimal'],
+      });
     // The board remounts this control on every switch. Place it before the
     // first paint without animating from the dock fallback position.
     element.style.transition = 'none';

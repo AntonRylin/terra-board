@@ -38,6 +38,7 @@ import {
   Radio,
   Users,
   KeyRound,
+  ArrowLeft,
 } from 'lucide-react';
 import { LiveBadge, LiveRequests, LiveShareDialog, useLiveStatus } from './components/LiveShare';
 import { JoinDialog, ShareDialog, useCloudStatus } from './components/ShareDialog';
@@ -58,6 +59,7 @@ import {
 } from './bridge';
 import type { SaveState } from './canvas/save-queue';
 import Launcher, { AppIcon } from './components/Launcher';
+import MobileHome from './components/MobileHome';
 import LibrarySearch from './components/LibrarySearch';
 import InlineName, { flushInlineNames } from './components/InlineName';
 import Whiteboard, { type WhiteboardHandle } from './components/Whiteboard';
@@ -194,7 +196,9 @@ export default function App() {
     [error, setError] = useState(''),
     [notice, setNotice] = useState(''),
     [busy, setBusy] = useState(false),
-    [loading, setLoading] = useState(true);
+    [loading, setLoading] = useState(true),
+    // Android: the list of boards (MobileHome) in place of the desktop's board panel.
+    [home, setHome] = useState(android);
   activeDocument.current = doc;
   useEffect(() => {
     if (error || (!loading && (!doc || canvasReady))) finishStartup();
@@ -320,6 +324,7 @@ export default function App() {
       const d = await invoke<Document>('loadBoard', { id });
       if (n !== request.current) return;
       setDoc(d);
+      setHome(false);
       setSearchTarget(objectId ? { boardId: id, objectId } : null);
       setOpened(null);
       setSaveState('saved');
@@ -328,6 +333,32 @@ export default function App() {
       report(String(e));
     }
   };
+  const goHome = async () => {
+    const n = ++request.current;
+    try {
+      await flushInlineNames();
+      await whiteboard.current?.flush();
+      if (n !== request.current) return;
+      setDoc(null);
+      setHome(true);
+      setSearchTarget(null);
+      setMenu(null);
+      await refresh();
+    } catch (e) {
+      report(String(e));
+    }
+  };
+  // Android's back gesture on a board returns to the list (src/mobile/index.ts).
+  useEffect(() => {
+    if (!android) return;
+    const back = (e: Event) => {
+      if (!activeDocument.current) return;
+      e.preventDefault();
+      void goHome();
+    };
+    window.addEventListener('terra-board:back', back);
+    return () => window.removeEventListener('terra-board:back', back);
+  }, []);
   useEffect(() => {
     run(async () => {
       const l = await refresh();
@@ -335,7 +366,8 @@ export default function App() {
         ? l.boards.find((b) => b.id === l.lastBoard && !b.trashed)
         : undefined;
       const first = remembered || l.boards.find((b) => !b.trashed);
-      if (first) await openBoard(first.id);
+      // Android opens on the list of boards.
+      if (first && !android) await openBoard(first.id);
       if (l.backupError)
         report('The automatic metadata snapshot could not be created: ' + l.backupError);
     }).finally(() => setLoading(false));
@@ -488,6 +520,14 @@ export default function App() {
   };
   const beginRename = (kind: 'board' | 'folder', id: string) => {
     setMenu(null);
+    // Android has no board panel to rename folders in, and the list renames in a dialog.
+    if (android && (kind === 'folder' || !doc || doc.board.id !== id)) {
+      const current =
+        kind === 'folder'
+          ? library.folders.find((f) => f.id === id)?.name
+          : library.boards.find((b) => b.id === id)?.name;
+      return ask({ kind: kind === 'folder' ? 'rename-folder' : 'rename-board', id }, current || '');
+    }
     if (kind === 'folder') {
       setOpened(id);
       setRenameRequest({ kind, id, token: performance.now() });
@@ -514,7 +554,9 @@ export default function App() {
     run(async () => {
       await whiteboard.current?.flush();
       await change(id, { trashed: true });
-      if (doc?.board.id === id) {
+      if (android) {
+        if (doc?.board.id === id) await goHome();
+      } else if (doc?.board.id === id) {
         const l = await refresh(),
           next = l.boards.find((b) => !b.trashed);
         if (next) await openBoard(next.id);
@@ -563,6 +605,10 @@ export default function App() {
         setLauncherHidden(true);
       }),
   };
+  // The board panel's own settings; Android has no board panel.
+  const panelItems: (MenuItem | null)[] = android
+    ? []
+    : [launcherAlignmentItem, launcherModeItem, hideLauncherItem];
   const toggleLauncher = () =>
     void run(async () => {
       await flushInlineNames();
@@ -589,9 +635,7 @@ export default function App() {
           null,
           { label: 'Export / share a copy…', icon: <Download />, action: () => exportBoard(b.id) },
           null,
-          launcherAlignmentItem,
-          launcherModeItem,
-          hideLauncherItem,
+          ...panelItems,
         ],
       });
     setMenu({
@@ -674,9 +718,7 @@ export default function App() {
             ]
           : []),
         null,
-        launcherAlignmentItem,
-        launcherModeItem,
-        hideLauncherItem,
+        ...panelItems,
         null,
         {
           label: 'Move to Trash',
@@ -694,13 +736,7 @@ export default function App() {
       return setMenu({
         x,
         y,
-        items: [
-          shareItem('folder', f.id, true),
-          null,
-          launcherAlignmentItem,
-          launcherModeItem,
-          hideLauncherItem,
-        ],
+        items: [shareItem('folder', f.id, true), null, ...panelItems],
       });
     setMenu({
       x,
@@ -718,9 +754,7 @@ export default function App() {
         },
         ...(desktop ? [shareItem('folder', f.id, false)] : []),
         null,
-        launcherAlignmentItem,
-        launcherModeItem,
-        hideLauncherItem,
+        ...panelItems,
         null,
         {
           label: 'Ungroup folder',
@@ -795,9 +829,7 @@ export default function App() {
           : []),
         null,
         { label: 'Trash', icon: <Trash2 />, action: () => ask({ kind: 'trash' }) },
-        launcherAlignmentItem,
-        launcherModeItem,
-        hideLauncherItem,
+        ...panelItems,
         ...(desktop || android
           ? [{ label: 'Settings', icon: <Settings />, action: () => ask({ kind: 'settings' }) }]
           : []),
@@ -869,200 +901,234 @@ export default function App() {
       <div
         className="app-shell"
         data-dock={dockEdge}
-        data-panel-hidden={launcherHidden || undefined}
+        data-panel-hidden={android || launcherHidden || undefined}
         inert={modal?.kind === 'settings' ? true : undefined}
       >
-        <Launcher
-          hidden={launcherHidden}
-          minimal={launcherMinimal}
-          dockEdge={dockEdge}
-          centered={launcherCentered}
-          onDock={setDockEdge}
-          library={library}
-          active={doc?.board.id || null}
-          opened={opened}
-          onOpen={openBoard}
-          onFolder={setOpened}
-          onCreate={newMenu}
-          onPanelMenu={libraryMenu}
-          onBoardMenu={boardMenu}
-          onIconDrop={(board, file) => {
-            if (busy) return;
-            setGlyph(board.icon);
-            setColor(board.color);
-            setIconShape(board.iconShape || 'rounded');
-            setShowInitial(board.showInitial !== false);
-            ask({ kind: 'icon', id: board.id, iconFile: file });
-          }}
-          onFolderMenu={folderMenu}
-          onRenameBoard={(id, name) => change(id, { name })}
-          onRenameFolder={renameFolder}
-          renameFolderRequest={renameRequest?.kind === 'folder' ? renameRequest : null}
-          onMove={(id, folderId, position) =>
-            run(async () => {
-              await change(id, { folderId, ...(position === undefined ? {} : { position }) });
-            })
-          }
-          onReorderFolder={(id, position) =>
-            run(async () => {
-              await invoke('updateFolder', { id, patch: { position } });
-              await refresh();
-            })
-          }
-          onNewBoard={(folderId) => ask({ kind: 'new-board', folderId }, 'Untitled')}
-        />
-        <main className="workspace">
-          <header ref={boardHeader} className="board-header">
-            {doc && (
-              <>
-                <div
-                  ref={boardIdentity}
-                  className="board-identity"
-                  role="button"
-                  tabIndex={0}
-                  aria-label={launcherHidden ? 'Show board panel' : 'Hide board panel'}
-                  aria-expanded={!launcherHidden}
-                  aria-describedby="board-info-card"
-                  onClick={toggleLauncher}
-                  onKeyDown={(e) => {
-                    if (e.target !== e.currentTarget) return;
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      toggleLauncher();
-                    } else if (e.key === 'F2') {
-                      e.preventDefault();
-                      beginRename('board', doc.board.id);
-                    }
-                  }}
-                  onContextMenu={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    boardMenu(doc.board, e.clientX, e.clientY);
-                  }}
-                >
-                  <AppIcon board={doc.board} />
-                  <InlineName
-                    key={doc.board.id}
-                    className="board-title"
-                    onActivate={toggleLauncher}
-                    activationTitle=""
-                    label="Board name"
-                    value={doc.board.name}
-                    editRequest={
-                      renameRequest?.kind === 'board' && renameRequest.id === doc.board.id
-                        ? renameRequest.token
-                        : 0
-                    }
-                    onCommit={(name) => change(doc.board.id, { name })}
-                  />
-                </div>
-                <BoardInfoCard
-                  anchor={boardIdentity}
-                  board={doc.board}
-                  library={library}
-                  status={cloudStatus}
-                  saving={saveState === 'pending' || saveState === 'saving'}
-                />
-                <button
-                  className={'save-indicator ' + saveState}
-                  title={
-                    saveState === 'saved'
-                      ? 'All changes saved on this computer'
-                      : saveState === 'error'
-                        ? 'Save failed. Click to retry.'
-                        : 'Saving changes…'
-                  }
-                  aria-label={
-                    saveState === 'error'
-                      ? 'Retry saving'
-                      : saveState === 'saved'
-                        ? 'Saved locally'
-                        : 'Saving changes'
-                  }
-                  onClick={() =>
-                    run(async () => {
-                      await whiteboard.current?.flush();
-                      if (saveState === 'error') setError('');
-                    })
-                  }
-                >
-                  {saveState === 'saved' ? (
-                    <Check size={14} />
-                  ) : saveState === 'error' ? (
-                    <AlertCircle size={15} />
-                  ) : (
-                    <LoaderCircle size={14} />
-                  )}
-                </button>
-              </>
-            )}
-            {!doc && launcherHidden && (
-              <button
-                className="board-identity"
-                onClick={toggleLauncher}
-                aria-label="Show board panel"
-              >
-                <FolderIcon size={34} strokeWidth={1.3} />
-                <span className="board-title">Boards</span>
-              </button>
-            )}
-          </header>
-          {!fullscreen && !android && (desktop || document.fullscreenEnabled) && (
-            <button
-              className="fullscreen-toggle"
-              ref={fullscreenButton}
-              aria-label="Full screen"
-              onClick={() => void run(toggleFullscreen)}
-            >
-              <Maximize size={16} />
-            </button>
-          )}
-          {doc ? (
-            <Whiteboard
-              theme={appearance.theme}
-              key={doc.board.id}
-              readOnly={sharingOf(doc.board)?.shared === 'view'}
-              pinning
-              ref={whiteboard}
-              document={doc}
-              backgroundPreview={
-                modal?.kind === 'background' && modal.id === doc.board.id
-                  ? backgroundAppearance
-                  : undefined
-              }
-              onOpenFrame={(boardId, frameId) => {
-                if (boardId === doc.board.id) setSearchTarget({ boardId, objectId: frameId });
-                else void openBoard(boardId, frameId);
-              }}
-              searchTarget={searchTarget?.boardId === doc.board.id ? searchTarget : null}
-              onError={report}
-              onReady={() => setCanvasReady(true)}
-              onSave={(state, message) => {
-                setSaveState(state);
-                if (message) report(message);
-              }}
-            />
-          ) : (
-            <div className="welcome-empty">
-              <span className="welcome-symbol">
-                <FolderIcon size={30} strokeWidth={1.3} />
-              </span>
-              <h1>{loading ? 'Opening your workspace…' : 'A place for your ideas.'}</h1>
-              {!loading && (
+        {!android && (
+          <Launcher
+            hidden={launcherHidden}
+            minimal={launcherMinimal}
+            dockEdge={dockEdge}
+            centered={launcherCentered}
+            onDock={setDockEdge}
+            library={library}
+            active={doc?.board.id || null}
+            opened={opened}
+            onOpen={openBoard}
+            onFolder={setOpened}
+            onCreate={newMenu}
+            onPanelMenu={libraryMenu}
+            onBoardMenu={boardMenu}
+            onIconDrop={(board, file) => {
+              if (busy) return;
+              setGlyph(board.icon);
+              setColor(board.color);
+              setIconShape(board.iconShape || 'rounded');
+              setShowInitial(board.showInitial !== false);
+              ask({ kind: 'icon', id: board.id, iconFile: file });
+            }}
+            onFolderMenu={folderMenu}
+            onRenameBoard={(id, name) => change(id, { name })}
+            onRenameFolder={renameFolder}
+            renameFolderRequest={renameRequest?.kind === 'folder' ? renameRequest : null}
+            onMove={(id, folderId, position) =>
+              run(async () => {
+                await change(id, { folderId, ...(position === undefined ? {} : { position }) });
+              })
+            }
+            onReorderFolder={(id, position) =>
+              run(async () => {
+                await invoke('updateFolder', { id, patch: { position } });
+                await refresh();
+              })
+            }
+            onNewBoard={(folderId) => ask({ kind: 'new-board', folderId }, 'Untitled')}
+          />
+        )}
+        {android && (home || !doc) ? (
+          <MobileHome
+            library={library}
+            opened={opened}
+            onOpen={(id) => void openBoard(id)}
+            onBoardMenu={boardMenu}
+            onFolderMenu={folderMenu}
+            onNewBoard={(folderId) => ask({ kind: 'new-board', folderId }, 'Untitled')}
+            onNewFolder={() => ask({ kind: 'new-folder' }, 'Untitled folder')}
+            onJoin={() => ask({ kind: 'join' })}
+            onSearch={openSearch}
+            onSettings={() => ask({ kind: 'settings' })}
+          />
+        ) : (
+          <main className="workspace">
+            <header ref={boardHeader} className="board-header">
+              {doc && (
                 <>
-                  <p>Your boards and media stay on this computer.</p>
-                  <button
-                    className="button primary"
-                    onClick={() => ask({ kind: 'new-board' }, 'Ideas')}
+                  {android && (
+                    <button
+                      type="button"
+                      className="board-back"
+                      aria-label="All boards"
+                      onClick={() => void goHome()}
+                    >
+                      <ArrowLeft size={21} />
+                    </button>
+                  )}
+                  <div
+                    ref={boardIdentity}
+                    className="board-identity"
+                    role="button"
+                    tabIndex={0}
+                    aria-label={
+                      android
+                        ? 'All boards'
+                        : launcherHidden
+                          ? 'Show board panel'
+                          : 'Hide board panel'
+                    }
+                    aria-expanded={android ? undefined : !launcherHidden}
+                    aria-describedby="board-info-card"
+                    onClick={android ? () => void goHome() : toggleLauncher}
+                    onKeyDown={(e) => {
+                      if (e.target !== e.currentTarget) return;
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        if (android) void goHome();
+                        else toggleLauncher();
+                      } else if (e.key === 'F2') {
+                        e.preventDefault();
+                        beginRename('board', doc.board.id);
+                      }
+                    }}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      boardMenu(doc.board, e.clientX, e.clientY);
+                    }}
                   >
-                    <Plus size={17} />
-                    Create a board
+                    <AppIcon board={doc.board} />
+                    <InlineName
+                      key={doc.board.id}
+                      className="board-title"
+                      onActivate={android ? () => void goHome() : toggleLauncher}
+                      activationTitle=""
+                      label="Board name"
+                      value={doc.board.name}
+                      editRequest={
+                        renameRequest?.kind === 'board' && renameRequest.id === doc.board.id
+                          ? renameRequest.token
+                          : 0
+                      }
+                      onCommit={(name) => change(doc.board.id, { name })}
+                    />
+                  </div>
+                  <BoardInfoCard
+                    anchor={boardIdentity}
+                    board={doc.board}
+                    library={library}
+                    status={cloudStatus}
+                    saving={saveState === 'pending' || saveState === 'saving'}
+                  />
+                  <button
+                    className={'save-indicator ' + saveState}
+                    title={
+                      saveState === 'saved'
+                        ? 'All changes saved on this computer'
+                        : saveState === 'error'
+                          ? 'Save failed. Click to retry.'
+                          : 'Saving changes…'
+                    }
+                    aria-label={
+                      saveState === 'error'
+                        ? 'Retry saving'
+                        : saveState === 'saved'
+                          ? 'Saved locally'
+                          : 'Saving changes'
+                    }
+                    onClick={() =>
+                      run(async () => {
+                        await whiteboard.current?.flush();
+                        if (saveState === 'error') setError('');
+                      })
+                    }
+                  >
+                    {saveState === 'saved' ? (
+                      <Check size={14} />
+                    ) : saveState === 'error' ? (
+                      <AlertCircle size={15} />
+                    ) : (
+                      <LoaderCircle size={14} />
+                    )}
                   </button>
                 </>
               )}
-            </div>
-          )}
-        </main>
+              {!doc && launcherHidden && (
+                <button
+                  className="board-identity"
+                  onClick={toggleLauncher}
+                  aria-label="Show board panel"
+                >
+                  <FolderIcon size={34} strokeWidth={1.3} />
+                  <span className="board-title">Boards</span>
+                </button>
+              )}
+            </header>
+            {!fullscreen && !android && (desktop || document.fullscreenEnabled) && (
+              <button
+                className="fullscreen-toggle"
+                ref={fullscreenButton}
+                aria-label="Full screen"
+                onClick={() => void run(toggleFullscreen)}
+              >
+                <Maximize size={16} />
+              </button>
+            )}
+            {doc ? (
+              <Whiteboard
+                theme={appearance.theme}
+                key={doc.board.id}
+                readOnly={sharingOf(doc.board)?.shared === 'view'}
+                pinning
+                ref={whiteboard}
+                document={doc}
+                backgroundPreview={
+                  modal?.kind === 'background' && modal.id === doc.board.id
+                    ? backgroundAppearance
+                    : undefined
+                }
+                onOpenFrame={(boardId, frameId) => {
+                  if (boardId === doc.board.id) setSearchTarget({ boardId, objectId: frameId });
+                  else void openBoard(boardId, frameId);
+                }}
+                searchTarget={searchTarget?.boardId === doc.board.id ? searchTarget : null}
+                onError={report}
+                onReady={() => setCanvasReady(true)}
+                onSave={(state, message) => {
+                  setSaveState(state);
+                  if (message) report(message);
+                }}
+              />
+            ) : (
+              <div className="welcome-empty">
+                <span className="welcome-symbol">
+                  <FolderIcon size={30} strokeWidth={1.3} />
+                </span>
+                <h1>{loading ? 'Opening your workspace…' : 'A place for your ideas.'}</h1>
+                {!loading && (
+                  <>
+                    <p>Your boards and media stay on this computer.</p>
+                    <button
+                      className="button primary"
+                      onClick={() => ask({ kind: 'new-board' }, 'Ideas')}
+                    >
+                      <Plus size={17} />
+                      Create a board
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+          </main>
+        )}
         <LiveBadge
           status={liveStatus}
           onOpen={() => liveStatus.boardId && ask({ kind: 'live', id: liveStatus.boardId })}
@@ -1215,7 +1281,7 @@ export default function App() {
                         value={destination}
                         onChange={(e) => setDestination(e.target.value)}
                       >
-                        <option value="">Icon strip</option>
+                        <option value="">{android ? 'No folder' : 'Icon strip'}</option>
                         {library.folders.map((f) => (
                           <option key={f.id} value={f.id}>
                             {f.name}
