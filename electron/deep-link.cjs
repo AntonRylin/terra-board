@@ -1,8 +1,9 @@
 const { normalizeAddress } = require('./cloud-config.cjs');
+const { parseAuthCallback } = require('./cloud-auth.cjs');
 
 const SCHEME = 'terraboard';
 const PREFIX = `${SCHEME}://`;
-const MAX_LINK_LENGTH = 2048;
+const MAX_LINK_LENGTH = 4096;
 
 // Links come from outside the app (a browser, an email), so anything unexpected is ignored.
 function parseDeepLink(url) {
@@ -15,6 +16,12 @@ function parseDeepLink(url) {
   }
   if (parsed.protocol !== `${SCHEME}:`) return null;
   if (parsed.username || parsed.password || parsed.port) return null;
+  // The browser's way back after Google or Microsoft. The main process hands it to the
+  // sign-in waiting for it; it never reaches the window.
+  if (parsed.hostname === 'auth') {
+    const callback = parseAuthCallback(url);
+    return callback ? { kind: 'auth', url: url.trim(), ...callback } : null;
+  }
   if (parsed.hostname !== 'connect') return null;
   if (parsed.pathname !== '' && parsed.pathname !== '/') return null;
   const addresses = parsed.searchParams.getAll('address');

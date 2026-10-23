@@ -85,12 +85,13 @@ export function ServerSettings({
       }
     }, `Connected to ${name}.`);
 
-  // With sync on, ask first. With sync off, switch right away.
+  // Signed in or with sync on, ask first. Otherwise switch right away.
+  const involved = status.identity || status.account.state === 'signedIn';
   const choose = (target: Target, name: string) =>
-    status.identity ? setConfirm({ target, name }) : connect(target, name);
+    involved ? setConfirm({ target, name }) : connect(target, name);
 
   const unsent = unsentText(status.pending);
-  const confirming = confirm && status.identity ? confirm : null;
+  const confirming = confirm && involved ? confirm : null;
 
   const panel = open && (
     <div className="server-panel">

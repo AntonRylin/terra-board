@@ -77,7 +77,9 @@ function sync({ boards = [{ id: 'b1', folderId: null }], sharing } = {}) {
   });
   s.client = fakeRealtime();
   s.workspace = 'ws-me';
-  s.userId = 'user-me';
+  s.userId = 'account-me';
+  // Presence is per computer: all computers of an account are one user.
+  s.deviceId = 'user-me';
   s.status.name = 'Me';
   return s;
 }

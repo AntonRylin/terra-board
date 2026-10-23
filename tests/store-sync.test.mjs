@@ -496,3 +496,30 @@ test('a board taken out of the cloud stays local, and another computer keeps its
     const kinds = a.syncTake({ limit: 50 }).entries.map((e) => e.kind + ':' + e.id);
     assert.ok(kinds.includes('board:' + board.id) && kinds.includes('object:d2'));
   }));
+
+test('a shared board whose owner combined libraries keeps its copy and follows the new workspace', () =>
+  withStores((friend) => {
+    receiveSharedBoard(friend);
+    friend.patchBoard({ id: 'b-shared', revision: 1, upserts: [note('n1', 'friend edit')] });
+    const combined = '7a7a7a7a-1111-4222-8333-444444444444';
+    const result = friend.syncReconcile({
+      shares: [
+        {
+          workspace: combined,
+          kind: 'board',
+          targetId: 'b-shared',
+          role: 'edit',
+          boards: ['b-shared'],
+          owner: 'Anton',
+        },
+      ],
+    });
+    assert.ok(result.changed);
+    assert.deepEqual(result.missing, [], 'nothing to download again');
+    assert.equal(friend.library().boards.filter((b) => b.id === 'b-shared').length, 1);
+    // The unsent edit goes to the new workspace.
+    assert.deepEqual(
+      entriesOf(friend).entries.map((e) => [e.id, e.workspace]),
+      [['n1', combined]],
+    );
+  }));

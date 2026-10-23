@@ -974,6 +974,26 @@
   flex-wrap: wrap;
   gap: 8px;
 }
+/* Account */
+.account-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.server-panel input.account-code {
+  width: 140px;
+  font:
+    600 16px/1 Consolas,
+    'Cascadia Mono',
+    monospace;
+  letter-spacing: 3px;
+}
+.st-button.danger {
+  border-color: var(--st-danger);
+  background: var(--st-danger);
+  color: #fff;
+}
 
 @media (max-width: 760px) {
   .st-sidebar {
