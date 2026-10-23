@@ -44,11 +44,31 @@ export function onAndroidLifecycle(flush: () => Promise<void>) {
   document.addEventListener('visibilitychange', hidden);
   const pause = App.addListener('pause', save);
   const back = App.addListener('backButton', () => {
-    const open = document.querySelector(
-      '[role=dialog], [role=menu], .context-menu, textarea:focus, input:focus, [contenteditable="true"]:focus',
-    );
-    if (open)
-      (document.activeElement || document.body).dispatchEvent(
+    // Text being edited on the board is kept, as when tapping elsewhere
+    // (Escape would discard the draft).
+    const editing = document.activeElement as HTMLElement | null;
+    if (
+      editing?.matches('textarea, [contenteditable="true"]') &&
+      !editing.closest('[role=dialog], [role=menu], .settings-page')
+    ) {
+      editing.blur();
+      return;
+    }
+    // The innermost thing first: an editor, a menu, a dialog, then a full page.
+    const open = [
+      'textarea:focus, input:focus, [contenteditable="true"]:focus',
+      '[role=menu], .context-menu',
+      '[role=dialog]',
+      '.settings-page, .image-viewer, .pdf-workspace, .frame-usages',
+    ]
+      .map((selector) => [...document.querySelectorAll(selector)].at(-1))
+      .find(Boolean);
+    // Escape goes to where the page listens: the focused element inside what
+    // is open, or what is open itself (it bubbles to the window from there).
+    const active = document.activeElement;
+    const target = open && active && open.contains(active) ? active : open;
+    if (target)
+      target.dispatchEvent(
         new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }),
       );
     else
@@ -70,7 +90,9 @@ function installTouchMenus() {
   let timer = 0,
     start: { x: number; y: number } | null = null,
     opened = 0,
-    touch = false;
+    touch = false,
+    // Any finger held still (the canvas opens its own menu after 550 ms too).
+    held: { at: number; x: number; y: number; moved: boolean } | null = null;
   const clear = () => {
     clearTimeout(timer);
     timer = 0;
@@ -81,6 +103,7 @@ function installTouchMenus() {
     (e) => {
       touch = e.pointerType === 'touch';
       clear();
+      held = touch ? { at: performance.now(), x: e.clientX, y: e.clientY, moved: false } : null;
       const target = e.target as Element;
       if (!touch || target.closest?.('.canvas-surface')) return;
       start = { x: e.clientX, y: e.clientY };
@@ -104,10 +127,19 @@ function installTouchMenus() {
     'pointermove',
     (e) => {
       if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 10) clear();
+      if (held && Math.hypot(e.clientX - held.x, e.clientY - held.y) > 10) held.moved = true;
     },
     true,
   );
-  window.addEventListener('pointerup', clear, true);
+  window.addEventListener(
+    'pointerup',
+    () => {
+      if (held && !held.moved && performance.now() - held.at >= 550) opened = performance.now();
+      held = null;
+      clear();
+    },
+    true,
+  );
   window.addEventListener('pointercancel', clear, true);
   window.addEventListener(
     'contextmenu',

@@ -72,8 +72,10 @@ Every call the renderer makes through `src/bridge.ts` / `window.canvas`, and wha
 | `openLink`                                                                                                                                 | `@capacitor/browser` (in-app browser tab)                                                                                |
 
 App lifecycle: Android has no window close, so pending edits are saved when the app is hidden or
-paused (`visibilitychange`, Capacitor `pause`). The system back button closes the open dialog,
-menu or editor (as Escape), and otherwise saves and moves the app to the background.
+paused (`visibilitychange`, Capacitor `pause`). The system back button first hides the keyboard
+(Android does that), then finishes text being edited on the board (keeping it, like tapping
+elsewhere; Escape would discard it), then closes the open menu, dialog or full page such as
+Settings (as Escape), and otherwise saves and moves the app to the background.
 
 ### Stubbed or disabled on Android
 
@@ -158,13 +160,22 @@ release, publishes or creates releases.
 create, rename and trash boards; sticky notes with typed text; text; rectangles; pen strokes; image
 import (JPEG through the sharp shim and the service worker); one-finger pan, pinch zoom (100% → 35%);
 long-press menus on the canvas and the board panel; Settings; reload keeps every object, the
-picture and the camera. Debug APK built locally with Gradle (JDK 21). Not yet run on an Android
-device or emulator.
+picture and the camera. Debug APK built locally with Gradle (JDK 21).
+
+2026-10-23, the debug APK on an Android 16 emulator (Pixel 7, `system-images;android-36;google_apis;x86_64`,
+WebView 133), driven with real touches (`adb shell input`) and CDP touch events: startup ~1 s with
+the service worker active; notes, text, rectangles and pen strokes by touch; one-finger pan and
+two-finger pinch; long-press menus on the canvas, board icons and the board panel; create, rename
+and trash boards (keyboard resizes the page, dialogs stay visible); a photo picked through the system
+file picker; export to the Android share sheet (`<board>.canvas`); Settings; the back button;
+everything kept after Home + force-stop + relaunch and after installing a new APK over the old one.
+Fixed along the way: toolbar labels stuck on screen after a tap (now shown only for hover-capable
+pointers), Back from Settings leaving the app, Back while editing discarding the text, and a click
+reaching a menu that opened under the finger after a long-press.
 
 ## What's next
 
-- Run the APK on a device/emulator and fix what differs from Chromium (WebView OPFS, service
-  worker, keyboard resizing, back button).
+- Try it on a physical phone (performance with large boards, older WebViews, tablets).
 - Cloud sync on Android: construct `CloudSync` inside the storage worker (it needs only `fs`, `os`
   and supabase-js, all available there), port main.cjs's cloud transaction / board refresh
   messages, and expose a `cloud` object to the renderer in place of `window.canvas.cloud`.

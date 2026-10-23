@@ -179,9 +179,16 @@ body.toolbar-reordering * {
 .customizable-toolbar [data-tool-label][data-tool-shortcut]::after {
   content: attr(data-tool-label) '\2003' attr(data-tool-shortcut);
 }
-.customizable-toolbar:not([data-reordering]) [data-tool-label]:is(:hover, :focus-visible)::after {
+.customizable-toolbar:not([data-reordering]) [data-tool-label]:focus-visible::after {
   opacity: 1;
   transform: translateX(-50%);
+}
+/* A tapped button keeps :hover on touch screens; only a real pointer shows the label. */
+@media (hover: hover) {
+  .customizable-toolbar:not([data-reordering]) [data-tool-label]:hover::after {
+    opacity: 1;
+    transform: translateX(-50%);
+  }
 }
 @keyframes inventory-appear {
   from {
