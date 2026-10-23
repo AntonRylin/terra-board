@@ -54,7 +54,7 @@
     }
     select(o);
     board();
-    o.style.zIndex = String(++top);
+    o.style.zIndex = String(Math.min(++top, 900));
     const start = { x: e.clientX, y: e.clientY, ox: num(o, '--x'), oy: num(o, '--y') };
     let moved = false;
     const move = (ev) => {

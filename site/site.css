@@ -14,7 +14,7 @@ body {
 .skip:focus {
   left: 12px;
   top: 12px;
-  z-index: 50;
+  z-index: 1002;
   background: var(--bg);
   padding: 8px 12px;
   border-radius: 8px;
@@ -122,7 +122,7 @@ body.boarding::after {
 .top {
   position: sticky;
   top: env(safe-area-inset-top, 0px);
-  z-index: 20;
+  z-index: 1000;
   background: color-mix(in srgb, var(--bg) 88%, transparent);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--line);
@@ -132,7 +132,7 @@ body::before {
   position: fixed;
   inset: 0 0 auto;
   height: env(safe-area-inset-top, 0px);
-  z-index: 21;
+  z-index: 1001;
   background: var(--bg);
 }
 .top .wrap {
@@ -260,7 +260,7 @@ body::before {
 /* The app's selection box, drawn over the selected object */
 .selection {
   position: absolute;
-  z-index: 30;
+  z-index: 999;
   border: 1.5px solid var(--select);
   pointer-events: none;
   display: none;
