@@ -52,6 +52,25 @@ export interface CloudStatus {
   shared: OwnShare[];
   sharedWithMe: ReceivedShare[];
   profile?: CloudProfile;
+  account: CloudAccount;
+  /** The sign-in methods this server offers; null until known. */
+  methods: SignInMethods | null;
+  /** A browser sign-in waiting for its callback. */
+  waiting: SignInProvider | null;
+}
+export type SignInProvider = 'google' | 'microsoft';
+export interface SignInMethods {
+  email: boolean;
+  google: boolean;
+  microsoft: boolean;
+}
+/** 'anonymous': a computer set up by Terra Board 0.1.28, before accounts. */
+export interface CloudAccount {
+  state: 'signedOut' | 'anonymous' | 'signedIn';
+  userId?: string;
+  email?: string | null;
+  name?: string | null;
+  provider?: string | null;
 }
 export interface CloudProfile {
   avatar: string | null;
@@ -101,7 +120,8 @@ export interface LiveStatus {
 export interface CloudDevice {
   id: string;
   name: string;
-  joined: string;
+  version: string | null;
+  lastSeen: string;
   current: boolean;
 }
 export interface AppInfo {
@@ -317,10 +337,17 @@ interface DesktopBridge {
     sendCursor(data: { x: number; y: number; view: ViewRect }): void;
     onPresence(callback: (event: PresenceEvent) => void): () => void;
     disable(): Promise<CloudStatus>;
-    pairingCode(): Promise<string>;
     devices(): Promise<CloudDevice[]>;
     removeDevice(id: string): Promise<void>;
     syncNow(): Promise<CloudStatus>;
+    sendCode(email: string): Promise<{ email: string }>;
+    verifyCode(email: string, code: string): Promise<CloudStatus>;
+    signInWith(provider: SignInProvider): Promise<CloudStatus>;
+    cancelSignIn(): Promise<CloudStatus>;
+    signOut(): Promise<CloudStatus>;
+    /** Removes the cloud library, its files and shares, and the sign-in. */
+    deleteCloudData(): Promise<{ userDeleted: boolean }>;
+    signInMethods(): Promise<CloudStatus>;
     serverTest(input: ServerInput): Promise<ServerPreview>;
     serverSet(
       input: ServerInput | { terra: true },

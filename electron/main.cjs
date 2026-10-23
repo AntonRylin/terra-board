@@ -238,7 +238,9 @@ const extensionSource =
     : { remote: true };
 function extensionCatalog() {
   try {
-    return JSON.parse(fs.readFileSync(path.join(__dirname, 'generated', 'extensions.json'), 'utf8'));
+    return JSON.parse(
+      fs.readFileSync(path.join(__dirname, 'generated', 'extensions.json'), 'utf8'),
+    );
   } catch {
     return { extensions: [] };
   }
@@ -260,9 +262,14 @@ const rendererReady = new Promise((resolve) => (readyResolve = resolve));
 const serverStatus = (config, locked) =>
   config && { name: config.name, kind: config.kind, locked, address: config.address ?? null };
 // A terraboard:// link only reaches the window; Settings asks the person before anything changes.
+// The sign-in callback goes to the sign-in waiting for it instead, and is ignored otherwise.
 async function sendDeepLink(argv) {
   const link = parseDeepLink(findDeepLink(argv));
   if (!link) return;
+  if (link.kind === 'auth') {
+    await cloud?.finishOAuth(link.url).catch(() => false);
+    return;
+  }
   await rendererReady;
   if (win && !win.isDestroyed()) win.webContents.send('canvas:deep-link', link);
 }
@@ -442,8 +449,11 @@ app
         console.error('Desktop entry:', e.message);
       }
     // Only the installed app claims terraboard:// links; a dev build would take them from it.
+    // TERRA_DEV_PROTOCOL=1 lets a dev build take them, for testing Google sign-in.
     if (app.isPackaged && !smoke && !app.isDefaultProtocolClient(SCHEME))
       app.setAsDefaultProtocolClient(SCHEME);
+    else if (!app.isPackaged && process.env.TERRA_DEV_PROTOCOL === '1')
+      app.setAsDefaultProtocolClient(SCHEME, process.execPath, [path.resolve(process.argv[1])]);
     startWorker();
     const storageReady = seed();
     const officeProgress = (message) => {
@@ -761,6 +771,17 @@ app
           : packageJson.terraCloud?.url,
       safeStorage,
       transaction: cloudTransaction,
+      appVersion: app.getVersion(),
+      // Google and Microsoft refuse sign-in inside an app window, so it happens in the
+      // system browser, which comes back through terraboard://auth/callback.
+      openUrl: (url) => {
+        if (
+          new URL(url).protocol !== 'https:' &&
+          !/^http:\/\/(127\.0\.0\.1|localhost)[:/]/.test(url)
+        )
+          throw Error('Only secure sign-in pages can be opened');
+        return shell.openExternal(url);
+      },
       onStatus: (status) => {
         if (win && !win.isDestroyed()) win.webContents.send('canvas:cloud-status', status);
       },
@@ -853,10 +874,24 @@ app
       cloud.sendCursor(data);
     });
     cloudAction('disable', () => cloud.disable());
-    cloudAction('pairing-code', () => cloud.pairingCode());
     cloudAction('devices', () => cloud.devices());
-    cloudAction('remove-device', (id) => cloud.removeDevice(id));
-    cloudAction('sync-now', () => cloud.run().then(() => cloud.status));
+    cloudAction('remove-device', (id) => cloud.removeDevice(String(id)));
+    // A claim that did not finish (offline after signing in) is retried by a fresh start.
+    cloudAction('sync-now', () =>
+      (cloud.claimWaiting() ? cloud.start() : cloud.run()).then(() => cloud.status),
+    );
+    const text = (value, max) => (typeof value === 'string' ? value.slice(0, max) : '');
+    cloudAction('send-code', (email) => cloud.sendEmailCode(text(email, 254)));
+    cloudAction('verify-code', (email, code) =>
+      cloud.verifyEmailCode(text(email, 254), text(code, 20)),
+    );
+    cloudAction('sign-in-with', (provider) =>
+      cloud.signInWithProvider(provider === 'microsoft' ? 'microsoft' : 'google'),
+    );
+    cloudAction('cancel-sign-in', () => cloud.cancelSignIn());
+    cloudAction('sign-out', () => cloud.signOut());
+    cloudAction('delete-cloud-data', () => cloud.deleteCloudData());
+    cloudAction('sign-in-methods', () => cloud.loadMethods().then(() => cloud.status));
     // Server requests go through their own session: the window's session blocks outside requests.
     const serverFetch = (url, options) =>
       session.fromPartition('terra-cloud', { cache: false }).fetch(url, options);
@@ -888,7 +923,11 @@ app
       const { config, terra } = await serverFromInput(input);
       // The built-in server ships with this app, so it is not checked.
       if (!terra) await checkServer(config, { fetch: serverFetch });
-      if (options?.turnOffSync === true && (await cloud.local()).identity) await cloud.disable();
+      // Accounts belong to one server: switching signs out (which also turns sync off).
+      if (options?.turnOffSync === true) {
+        if ((await cloud.checkAccount()).state === 'signedIn') await cloud.signOut();
+        else if ((await cloud.local()).identity) await cloud.disable();
+      }
       // Reconfigure before saving: it refuses while sync is on, and then nothing has been saved.
       await cloud.reconfigure(config, serverStatus(config, false));
       saveServerChoice(root, terra ? 'terra' : config);
@@ -1009,12 +1048,18 @@ app
         if (r.canceled) return [];
         files = r.filePaths;
       }
-      if (!Array.isArray(files) || files.length > 2000 || !files.every((f) => typeof f === 'string'))
+      if (
+        !Array.isArray(files) ||
+        files.length > 2000 ||
+        !files.every((f) => typeof f === 'string')
+      )
         throw Error('Invalid files');
       const result = [];
       for (const file of files) {
         if (!albumImageExtensions.includes(path.extname(file).slice(1).toLowerCase()))
-          throw Error(`${path.basename(file)} is not an image. Albums hold PNG, JPEG, WebP, GIF, AVIF and TIFF.`);
+          throw Error(
+            `${path.basename(file)} is not an image. Albums hold PNG, JPEG, WebP, GIF, AVIF and TIFF.`,
+          );
         result.push(await call('importFile', { file, attachment: true, link: link === true }));
       }
       return result;
@@ -1061,7 +1106,8 @@ app
         return '';
       }
     };
-    const knownMiroTeams = () => (miroTeams ??= Array.isArray(readMiro().teams) ? readMiro().teams : []);
+    const knownMiroTeams = () =>
+      (miroTeams ??= Array.isArray(readMiro().teams) ? readMiro().teams : []);
     const saveMiro = (patch) => {
       const next = { ...readMiro(), ...patch };
       if (!next.token) delete next.token;
@@ -1122,12 +1168,14 @@ app
     });
     ipcMain.handle('canvas:miro-import', async (e, { ids } = {}) => {
       trusted(e);
-      if (!Array.isArray(ids) || !ids.length || ids.length > 200) throw Error('Choose boards to import.');
+      if (!Array.isArray(ids) || !ids.length || ids.length > 200)
+        throw Error('Choose boards to import.');
       await storageReady;
       const client = miroClient(),
         results = [];
       for (const [index, raw] of ids.entries()) {
-        if (externalPhase === 'apply') throw Error('AI edit in progress. Retry after it completes.');
+        if (externalPhase === 'apply')
+          throw Error('AI edit in progress. Retry after it completes.');
         try {
           const r = await importMiroBoard({
             client,

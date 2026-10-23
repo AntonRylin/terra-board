@@ -34,7 +34,7 @@ test('unsentText names the count and stays empty when nothing is waiting', () =>
   assert.equal(unsentText(0), '');
   assert.equal(unsentText(1), "1 change hasn't uploaded yet.");
   assert.equal(unsentText(12), "12 changes haven't uploaded yet.");
-  assert.match(switchWarning, /^Switching servers turns off sync on this computer\./);
+  assert.match(switchWarning, /^Switching servers signs you out and turns off sync on this computer\./);
 });
 
 test('unsentLoss says plainly what is lost and what stays', () => {

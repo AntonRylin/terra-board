@@ -11,7 +11,7 @@ export function serverDescription(server: CloudServer | null): string {
 }
 
 export const switchWarning =
-  'Switching servers turns off sync on this computer. Boards other people shared with you will be removed from it; your own boards stay.';
+  'Switching servers signs you out and turns off sync on this computer. Boards other people shared with you will be removed from it; your own boards stay.';
 
 // "3 changes haven't uploaded yet." Empty when everything has uploaded.
 export function unsentText(pending: number): string {

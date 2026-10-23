@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Copy, RefreshCw } from 'lucide-react';
-import type { CloudDevice, CloudStatus } from '../../bridge';
+import { useEffect, useState } from 'react';
+import { RefreshCw } from 'lucide-react';
+import type { CloudStatus } from '../../bridge';
 import type { Library } from '../../model';
-import { Group, Notice, Row, Switch, useNotice } from './controls';
-import { ServerSettings } from './ServerSettings';
+import { Group, Notice, Row, Switch, errorText, useNotice } from './controls';
 
 const since = (time: number | null) => {
   if (!time) return '';
@@ -25,22 +24,17 @@ function describe(status: CloudStatus) {
   return `Up to date${status.lastSync ? ' · ' + since(status.lastSync) : ''}`;
 }
 
-const clean = (e: unknown) =>
-  String(e).replace(/^Error: (Error invoking remote method '[^']+': )?(Error: )?/, '');
-
 export function CloudSettings({
   library,
   onManageShare,
-  connectAddress,
+  onSignIn,
 }: {
   library?: Library;
   onManageShare?: (kind: 'folder' | 'board', id: string) => void;
-  connectAddress?: string;
+  onSignIn?: () => void;
 }) {
   const cloud = window.canvas?.cloud;
   const [status, setStatus] = useState<CloudStatus | null>(null);
-  const [devices, setDevices] = useState<CloudDevice[]>([]);
-  const [code, setCode] = useState('');
   const [joinCode, setJoinCode] = useState('');
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
@@ -60,16 +54,10 @@ export function CloudSettings({
       clearInterval(timer);
     };
   }, [cloud]);
-
-  const identity = !!status?.identity;
-  const loadDevices = useCallback(() => {
-    if (cloud && identity)
-      void cloud
-        .devices()
-        .then(setDevices)
-        .catch(() => {});
-  }, [cloud, identity]);
-  useEffect(loadDevices, [loadDevices]);
+  // Signed in on a new computer: the name comes from the account.
+  useEffect(() => {
+    if (status?.name) setName((n) => n || status.name);
+  }, [status?.name]);
 
   const act = async (job: () => Promise<unknown>, done?: string) => {
     setBusy(true);
@@ -77,7 +65,7 @@ export function CloudSettings({
       await job();
       if (done) setNotice({ text: done });
     } catch (error) {
-      setNotice({ text: clean(error), error: true });
+      setNotice({ text: errorText(error), error: true });
     } finally {
       setBusy(false);
     }
@@ -89,14 +77,29 @@ export function CloudSettings({
         <Row title="Cloud sync" description="Available in the desktop app." />
       </Group>
     );
-  const server = (
-    <ServerSettings status={status} connectAddress={connectAddress} busy={busy} act={act} />
-  );
-  if (!status.configured)
+  const identity = status.identity;
+  const signedOut = status.account.state === 'signedOut';
+
+  // Sync needs a sign-in; a 0.1.28 computer (anonymous) keeps syncing without one.
+  if (!status.configured || (signedOut && !identity))
     return (
       <>
-        {server}
-        <p className="st-hint cloud-hint">Choose a server to use cloud sync.</p>
+        <Group>
+          <Row
+            id="cloudSignIn"
+            title="Sign in to sync"
+            description={
+              status.configured
+                ? 'Sign in to keep your boards on every computer you use and to share them.'
+                : 'Choose a server in Account to use cloud sync.'
+            }
+          >
+            <button type="button" className="st-button primary" onClick={onSignIn}>
+              {status.configured ? 'Sign in…' : 'Account…'}
+            </button>
+          </Row>
+        </Group>
+        {status.error && <p className="st-hint cloud-hint">{status.error}</p>}
         <Notice notice={notice} />
       </>
     );
@@ -110,7 +113,7 @@ export function CloudSettings({
       <span className="cloud-join">
         <input
           aria-label="Code you were given"
-          placeholder="XXXXX-XXXXX"
+          placeholder="SXXXX-XXXXX"
           value={joinCode}
           maxLength={14}
           onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
@@ -118,11 +121,7 @@ export function CloudSettings({
         <button
           type="button"
           className="st-button"
-          disabled={
-            busy ||
-            joinCode.replace(/[^0-9A-Z]/g, '').length < 10 ||
-            (!identity && joinCode.startsWith('S') && !name.trim())
-          }
+          disabled={busy || joinCode.replace(/[^0-9A-Z]/g, '').length < 10}
           onClick={() =>
             act(async () => {
               await cloud.join(joinCode, name.trim() || undefined);
@@ -163,15 +162,14 @@ export function CloudSettings({
   if (!identity)
     return (
       <>
-        {server}
         <Group>
           {nameRow}
           <Row id="cloudEnable">
             <button
               type="button"
               className="st-button primary"
-              disabled={busy || !name.trim()}
-              onClick={() => act(() => cloud.enable(name.trim()), 'Sync is on.')}
+              disabled={busy}
+              onClick={() => act(() => cloud.enable(name.trim() || undefined), 'Sync is on.')}
             >
               {busy ? 'Turning on…' : 'Turn on'}
             </button>
@@ -179,8 +177,8 @@ export function CloudSettings({
           {join}
         </Group>
         <p className="st-hint cloud-hint">
-          No account needed. To share just one folder or board, choose Share… in its menu; the rest
-          of your library stays on this computer.
+          To share just one folder or board, choose Share… in its menu; the rest of your library
+          stays on this computer.
         </p>
         <Notice notice={notice} />
       </>
@@ -188,7 +186,15 @@ export function CloudSettings({
 
   return (
     <>
-      {server}
+      {status.account.state === 'anonymous' && (
+        <Group>
+          <Row id="accountClaim">
+            <button type="button" className="st-button primary" onClick={onSignIn}>
+              Sign in…
+            </button>
+          </Row>
+        </Group>
+      )}
       <Group>
         {nameRow}
         <Row
@@ -275,77 +281,6 @@ export function CloudSettings({
         {join}
       </Group>
 
-      <Group title="Your computers">
-        <Row
-          id="cloudAddDevice"
-          below={
-            code && (
-              <div className="cloud-code">
-                <code>{code.slice(0, 5) + '-' + code.slice(5)}</code>
-                <button
-                  type="button"
-                  className="st-button"
-                  onClick={() =>
-                    void window.canvas
-                      ?.copyText(code)
-                      .then(() => setNotice({ text: 'Code copied.' }))
-                  }
-                >
-                  <Copy size={14} />
-                  Copy
-                </button>
-                <span>
-                  Enter it on your other computer in Settings → Cloud sync. Works once, for 15
-                  minutes.
-                </span>
-              </div>
-            )
-          }
-        >
-          <button
-            type="button"
-            className="st-button"
-            disabled={busy}
-            onClick={() =>
-              act(async () => {
-                setCode(await cloud.pairingCode());
-                setTimeout(loadDevices, 20000);
-              })
-            }
-          >
-            {code ? 'New code' : 'Create code'}
-          </button>
-        </Row>
-        {devices.map((d) => (
-          <Row
-            key={d.id}
-            title={
-              <>
-                {d.name}
-                {d.current && <span className="cloud-tag">This computer</span>}
-              </>
-            }
-            description={'Added ' + new Date(d.joined).toLocaleDateString()}
-          >
-            {!d.current && (
-              <button
-                type="button"
-                className="st-button"
-                disabled={busy}
-                onClick={() =>
-                  act(async () => {
-                    await cloud.removeDevice(d.id);
-                    loadDevices();
-                  }, `${d.name} no longer syncs.`)
-                }
-              >
-                Remove
-              </button>
-            )}
-          </Row>
-        ))}
-      </Group>
-
       <Group>
         <Row id="cloudDisable">
           <button
@@ -358,10 +293,12 @@ export function CloudSettings({
           </button>
         </Row>
       </Group>
-      <p className="st-hint cloud-hint">
-        Your cloud identity is tied to these computers, not to an email address. Keep at least one
-        of them, or what is stored in the cloud cannot be recovered.
-      </p>
+      {status.account.state === 'anonymous' && (
+        <p className="st-hint cloud-hint">
+          This computer syncs without an account. Keep at least one of your computers, or sign in,
+          or what is stored in the cloud cannot be recovered.
+        </p>
+      )}
       <Notice notice={notice} />
     </>
   );

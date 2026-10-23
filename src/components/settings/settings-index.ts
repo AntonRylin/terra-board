@@ -1,6 +1,7 @@
 import {
   Cable,
   Cloud,
+  KeyRound,
   CircleDot,
   CircleUserRound,
   HardDrive,
@@ -25,6 +26,7 @@ export type SectionId =
   | 'canvas'
   | 'radial'
   | 'shortcuts'
+  | 'account'
   | 'cloud'
   | 'storage'
   | 'ai'
@@ -94,6 +96,13 @@ export const sections: Section[] = [
     group: 'Board',
     icon: Keyboard,
     subtitle: 'Click a shortcut, then press the keys you want.',
+  },
+  {
+    id: 'account',
+    label: 'Account',
+    group: 'Data',
+    icon: KeyRound,
+    subtitle: 'Sign in to reach your cloud boards from any computer.',
   },
   {
     id: 'cloud',
@@ -258,11 +267,54 @@ export const rows = {
     description: 'Choose the tool for each direction.',
     keywords: 'quick tools tab',
   },
+  accountSignIn: {
+    section: 'account',
+    title: 'Sign in',
+    description: 'Sign in to sync your boards and share them.',
+    keywords: 'account login log in email code google microsoft',
+  },
+  accountClaim: {
+    section: 'account',
+    title: "Add a sign-in so you can't lose your cloud boards",
+    description:
+      'This computer syncs without an account. Sign in once and your cloud boards, shares and profile move to your account.',
+    keywords: 'account login email google claim anonymous',
+  },
+  accountSignedIn: {
+    section: 'account',
+    title: 'Signed in',
+    keywords: 'account email sign out log out logout',
+  },
+  accountDevices: {
+    section: 'account',
+    title: 'Your computers',
+    description: 'Computers you sign in on appear here.',
+    keywords: 'devices computers remove sign out',
+  },
+  accountDelete: {
+    section: 'account',
+    title: 'Delete account',
+    description:
+      'Delete your cloud library, its files and shares, and your sign-in. Boards on this computer stay.',
+    keywords: 'delete remove erase gdpr privacy data account',
+  },
+  accountDeleteAnonymous: {
+    section: 'account',
+    title: 'Delete my cloud data',
+    description:
+      'Delete what this computer stored in the cloud, with its files and shares. Boards on this computer stay.',
+    keywords: 'delete remove erase gdpr privacy data',
+  },
   cloudServer: {
-    section: 'cloud',
+    section: 'account',
     title: 'Server',
     description: "Where your cloud boards are kept: Terra Cloud or your organization's server.",
     keywords: 'server address self-hosted company organization supabase connect',
+  },
+  cloudSignIn: {
+    section: 'cloud',
+    title: 'Sign in to sync',
+    keywords: 'account login cloud sync',
   },
   cloudName: {
     section: 'cloud',
@@ -273,14 +325,14 @@ export const rows = {
   cloudEnable: {
     section: 'cloud',
     title: 'Sync my whole library',
-    description: 'Upload your boards and keep them in sync on every computer you add.',
+    description: 'Upload your boards and keep them in sync on every computer you sign in on.',
     keywords: 'cloud backup supabase devices',
   },
   cloudJoin: {
     section: 'cloud',
     title: 'Join with a code',
-    description: 'An invite someone sent you, or a code from another of your computers.',
-    keywords: 'cloud pair code device invite share',
+    description: 'An invite someone sent you.',
+    keywords: 'cloud code invite share',
   },
   cloudLibrary: {
     section: 'cloud',
@@ -298,16 +350,10 @@ export const rows = {
     keywords: 'share invite friends',
   },
   cloudStatus: { section: 'cloud', title: 'Status', keywords: 'cloud sync' },
-  cloudAddDevice: {
-    section: 'cloud',
-    title: 'Add a computer',
-    description: 'Create a one-time code to enter on your other computer.',
-    keywords: 'cloud pair code device',
-  },
   cloudDisable: {
     section: 'cloud',
     title: 'Turn off sync on this computer',
-    description: 'Boards stay here. Your other computers keep syncing.',
+    description: 'Boards stay here and you stay signed in. Your other computers keep syncing.',
     keywords: 'cloud stop leave',
   },
   libraryFolder: {
