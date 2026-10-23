@@ -11,6 +11,11 @@ import {
 } from './arrows';
 import { drawArrow } from './arrow-rendering';
 import {
+  arrowEnd,
+  arrowHeldBy,
+  copyArrowEnds,
+  followArrow,
+  keepArrowEnds,
   canConnect,
   connectionPoint,
   connectorDot,
@@ -201,6 +206,10 @@ type Gesture = {
   // An arrow dragged out of a selected object's side dot, and the object it will point at.
   connectFrom?: { id: string; side: ConnectorSide };
   connectTarget?: string;
+  // A held arrow end being dragged ('from' or 'to'): it lets go, or holds what it lands on.
+  connectEnd?: 'from' | 'to';
+  // Arrows held by what this gesture moves, as they were before it.
+  held?: Map<string, CanvasObject>;
   arrowIndex?: number;
   arrowPoints?: Point[];
   start: Point;
@@ -714,7 +723,7 @@ export class Engine {
       arrowPointer: p,
     };
   }
-  private updateArrowPreview(shift: boolean, ctrl: boolean) {
+  private updateArrowPreview(shift: boolean, ctrl: boolean, alt = false) {
     const g = this.gesture;
     if (!g?.arrowPointer || (g.mode !== 'drawArrow' && g.mode !== 'arrowPoint')) return;
     const end = this.screenPoint(g.arrowPointer);
@@ -722,26 +731,51 @@ export class Engine {
     const anchor = g.mode === 'drawArrow' ? g.world : g.arrowPoints![index === 0 ? 1 : index - 1];
     if (ctrl) end.x = anchor.x;
     else if (shift) end.y = anchor.y;
-    if (g.connectFrom) {
+    let target: CanvasObject | undefined;
+    if (g.connectFrom || (g.connectEnd && !alt)) {
       // Over another object, the arrow lands on the middle of its facing side.
-      const pointer = this.screenPoint(g.arrowPointer),
-        target = this.connectTargetAt(pointer, g);
-      g.connectTarget = target?.id;
+      const pointer = this.screenPoint(g.arrowPointer);
+      target = this.connectTargetAt(pointer, g);
       if (target)
         Object.assign(
           end,
           connectionPoint(target, facingSide(target, anchor), pointer, 48 / this.camera.zoom),
         );
     }
-    if (g.mode === 'drawArrow') this.preview(arrowFromPoints(g.arrowDraft!, [anchor, end]));
-    else {
+    g.connectTarget = target?.id;
+    if (g.mode === 'drawArrow') {
+      const draft = arrowFromPoints(g.arrowDraft!, [anchor, end]),
+        source = g.connectFrom && this.objects.get(g.connectFrom.id);
+      // An arrow from a side dot holds that spot, and the object it lands on.
+      if (source) {
+        const { from: _from, to: _to, ...style } = draft.arrow!;
+        draft.arrow = {
+          ...style,
+          from: arrowEnd(source, anchor),
+          ...(target ? { to: arrowEnd(target, end) } : {}),
+        };
+      }
+      this.preview(draft);
+    } else {
       const points = g.arrowPoints!.map((p) => ({ ...p }));
       points[index] = end;
-      const original = arrowPoints(g.original[0]).map((p) => localToWorld(g.original[0], p));
+      const before = g.original[0],
+        original = arrowPoints(before).map((p) => localToWorld(before, p));
+      let next = arrowFromPoints(before, points);
+      if (g.connectEnd) {
+        const { [g.connectEnd]: _end, ...style } = next.arrow!;
+        next = {
+          ...next,
+          arrow: { ...style, ...(target ? { [g.connectEnd]: arrowEnd(target, end) } : {}) },
+        };
+      }
+      const was = before.arrow?.[g.connectEnd ?? 'from'],
+        now = next.arrow?.[g.connectEnd ?? 'from'];
       g.changed =
         points.length !== original.length ||
-        points.some((p, i) => Math.hypot(p.x - original[i].x, p.y - original[i].y) > 1e-8);
-      this.preview(arrowFromPoints(g.original[0], points));
+        points.some((p, i) => Math.hypot(p.x - original[i].x, p.y - original[i].y) > 1e-8) ||
+        was?.id !== now?.id;
+      this.preview(next);
     }
     this.invalidate();
   }
@@ -781,6 +815,10 @@ export class Engine {
       .search({ x: w.x - pad, y: w.y - pad, width: pad * 2, height: pad * 2 })
       .filter((o) => {
         if (o.id === g.connectFrom?.id || o.id === g.arrowDraft?.id) return false;
+        if (g.connectEnd) {
+          const other = g.original[0]?.arrow?.[g.connectEnd === 'from' ? 'to' : 'from'];
+          if (o.id === other?.id) return false;
+        }
         if (!canConnect(o) || o.type === 'frame') return false;
         if (this.coveringFrames.length && concealedBy(o, this.coveringFrames)) return false;
         const q = worldToLocal(o, w);
@@ -927,8 +965,17 @@ export class Engine {
           arrowIndex: arrowHandle.index,
           arrowPoints: points,
           arrowPointer: p,
+          // An end of an arrow that holds an object can move to another one.
+          connectEnd:
+            arrowHandle.insert || !(o.arrow?.from || o.arrow?.to)
+              ? undefined
+              : arrowHandle.index === 0
+                ? 'from'
+                : arrowHandle.index === points.length - 1
+                  ? 'to'
+                  : undefined,
         };
-        if (e.shiftKey || e.ctrlKey) this.updateArrowPreview(e.shiftKey, e.ctrlKey);
+        if (e.shiftKey || e.ctrlKey) this.updateArrowPreview(e.shiftKey, e.ctrlKey, e.altKey);
       } else if (resize)
         this.gesture = {
           mode: resize === 'rotate' ? 'rotate' : 'resize',
@@ -1194,7 +1241,7 @@ export class Engine {
       this.invalidate();
     } else if (g.mode === 'drawArrow' || g.mode === 'arrowPoint') {
       g.arrowPointer = p;
-      this.updateArrowPreview(e.shiftKey, e.ctrlKey);
+      this.updateArrowPreview(e.shiftKey, e.ctrlKey, e.altKey);
     } else if (g.mode === 'pan') {
       if (g.secondary && !g.changed) return;
       this.camera = { ...g.camera, x: g.camera.x + dx, y: g.camera.y + dy };
@@ -1214,7 +1261,12 @@ export class Engine {
         g.snap.state = result.state;
         this.snapGuides = result.guides;
       }
-      for (const o of g.original) this.preview({ ...o, x: o.x + delta.x, y: o.y + delta.y });
+      const moving = new Set(g.original.map((o) => o.id));
+      for (const o of g.original)
+        this.preview(
+          keepArrowEnds({ ...o, x: o.x + delta.x, y: o.y + delta.y }, (id) => moving.has(id)),
+        );
+      this.followHeld(g);
       this.callbacks.objectDrag?.(g.original, moved ? this.screenPoint(p) : null);
       this.invalidate();
     } else if (g.mode === 'rotate') {
@@ -1223,6 +1275,7 @@ export class Engine {
         ...o,
         rotation: rotationFromDrag(o, g.world, this.screenPoint(p), e.shiftKey),
       });
+      this.followHeld(g);
       this.invalidate();
     } else if (g.mode === 'resize') {
       let delta = { x: dx / g.camera.zoom, y: dy / g.camera.zoom };
@@ -1282,6 +1335,7 @@ export class Engine {
             this.preview(o);
         } else this.preview(resized);
       }
+      this.followHeld(g);
       this.invalidate();
     } else {
       const w = this.screenPoint(p);
@@ -1306,7 +1360,7 @@ export class Engine {
     }
     if ((g.mode === 'drawArrow' || g.mode === 'arrowPoint') && g.changed) {
       g.arrowPointer = this.point(e);
-      this.updateArrowPreview(e.shiftKey, e.ctrlKey);
+      this.updateArrowPreview(e.shiftKey, e.ctrlKey, e.altKey);
     }
     this.snapGuides = [];
     this.gesture = null;
@@ -1318,6 +1372,7 @@ export class Engine {
       this.callbacks.objectDrop?.(g.original, this.screenPoint(this.point(e)))
     ) {
       for (const o of g.original) this.preview(o);
+      this.restoreHeld(g);
       this.callbacks.selection(this.selected);
       this.invalidate();
       return;
@@ -1372,12 +1427,18 @@ export class Engine {
       g.changed &&
       (g.mode === 'move' || g.mode === 'resize' || g.mode === 'rotate' || g.mode === 'arrowPoint')
     ) {
-      const after = g.original.map((o) => this.objects.get(o.id)!);
+      const held = [...(g.held?.values() ?? [])],
+        after = g.original.map((o) => this.objects.get(o.id)!);
       if (g.original.some((o) => o.gallery || o.galleryId)) {
         for (const o of g.original) this.preview(o);
+        this.restoreHeld(g);
         this.apply({ upserts: after, deleted: [] });
       } else {
-        this.history.push({ upserts: after, deleted: [] }, { upserts: g.original, deleted: [] });
+        after.push(...held.map((o) => this.objects.get(o.id)!));
+        this.history.push(
+          { upserts: after, deleted: [] },
+          { upserts: [...g.original, ...held], deleted: [] },
+        );
         this.callbacks.edit({ upserts: after, deleted: [] });
         this.callbacks.selection(this.selected);
       }
@@ -1388,6 +1449,7 @@ export class Engine {
       g.mode === 'arrowPoint'
     ) {
       for (const o of g.original) this.preview(o);
+      this.restoreHeld(g);
       if (g.editOnClick && !g.dragged) {
         const object = this.objects.get(g.editOnClick);
         if (object) this.callbacks.activate(object, object.type === 'image' ? 'title' : undefined);
@@ -1414,6 +1476,7 @@ export class Engine {
       if (g.mode === 'highlightSize' && g.highlightSize !== this.inkStyle.size)
         this.setInkSize(g.highlightSize!);
       for (const o of g.original) this.preview(o);
+      this.restoreHeld(g);
       if (g.mode === 'pan') this.camera = g.camera;
       if (g.clickToPlace) {
         this.setTool('select');
@@ -1498,8 +1561,8 @@ export class Engine {
       )
     )
       return;
-    if (this.gesture?.arrowPointer && ['Shift', 'Control'].includes(e.key)) {
-      this.updateArrowPreview(e.shiftKey, e.ctrlKey);
+    if (this.gesture?.arrowPointer && ['Shift', 'Control', 'Alt'].includes(e.key)) {
+      this.updateArrowPreview(e.shiftKey, e.ctrlKey, e.altKey);
       return;
     }
     if (e.key === 'Escape' && this.gesture) {
@@ -1538,7 +1601,8 @@ export class Engine {
     }
   };
   private keyUp = (e: KeyboardEvent) => {
-    if (['Shift', 'Control'].includes(e.key)) this.updateArrowPreview(e.shiftKey, e.ctrlKey);
+    if (['Shift', 'Control', 'Alt'].includes(e.key))
+      this.updateArrowPreview(e.shiftKey, e.ctrlKey, e.altKey);
     if (e.code === 'Space') {
       this.space = false;
       this.updateCursor();
@@ -1889,6 +1953,34 @@ export class Engine {
     this.objects.set(o.id, o);
     this.index.upsert(o);
   }
+  /** Arrows held by what a gesture moves follow it on every frame. */
+  private followHeld(g: Gesture) {
+    if (!g.held) {
+      const moving = new Set(g.original.map((o) => o.id));
+      g.held = new Map();
+      for (const o of this.objects.values())
+        if (!moving.has(o.id) && arrowHeldBy(o, moving)) g.held.set(o.id, o);
+    }
+    for (const o of g.held.values()) this.preview(followArrow(o, (id) => this.objects.get(id)));
+  }
+  /** Puts arrows a gesture moved back where they were. */
+  private restoreHeld(g: Gesture) {
+    for (const o of g.held?.values() ?? []) this.preview(o);
+  }
+  /** The edit plus the arrows its objects hold, moved to follow them. */
+  private withHeldArrows(edit: Edit): Edit {
+    const changed = new Set(edit.upserts.filter((o) => o.type !== 'arrow').map((o) => o.id));
+    if (!changed.size) return edit;
+    const upserted = new Map(edit.upserts.map((o) => [o.id, o])),
+      deleted = new Set(edit.deleted),
+      followers: CanvasObject[] = [];
+    for (const o of this.objects.values()) {
+      if (upserted.has(o.id) || deleted.has(o.id) || !arrowHeldBy(o, changed) || o.locked) continue;
+      const next = followArrow(o, (id) => upserted.get(id) ?? this.objects.get(id));
+      if (next !== o) followers.push(next);
+    }
+    return followers.length ? { ...edit, upserts: [...edit.upserts, ...followers] } : edit;
+  }
   private moveObjects(): CanvasObject[] {
     // Capture membership before the drag, so crossing other objects cannot
     // collect them mid-gesture. Geometry also releases items moved out of a frame.
@@ -1908,7 +2000,7 @@ export class Engine {
     }
     // This snapshot has already been validated and persisted externally.
     // Preserve its lock state instead of treating it as a local content edit.
-    this.applyEdit(edit, true);
+    this.applyEdit(this.withHeldArrows(edit), true);
   }
   apply(edit: Edit, record = true) {
     if (this.readOnly || editTouchesLocked(this.objects, edit)) return;
@@ -1921,7 +2013,7 @@ export class Engine {
         return current.locked === undefined ? content : { ...content, locked: current.locked };
       }),
     };
-    if (record) edit = galleryEdit(this.objects, edit, visualBounds);
+    if (record) edit = this.withHeldArrows(galleryEdit(this.objects, edit, visualBounds));
     if (editTouchesLocked(this.objects, edit)) return;
     if (!edit.upserts.length && !edit.deleted.length) return;
     this.applyEdit(edit, record);
@@ -1966,22 +2058,25 @@ export class Engine {
   duplicate() {
     const ids = new Map<string, string>();
     const objects = this.copySelection;
-    const objectIds = new Map(objects.map((o) => [o.id, uid()]));
+    const objectIds = new Map<string, string>(objects.map((o) => [o.id, uid()]));
     const top = this.topZ();
     const copies = objects.map((o, i) => {
       if (o.groupId && !ids.has(o.groupId)) ids.set(o.groupId, uid());
-      return {
-        ...o,
-        id: objectIds.get(o.id)!,
-        x: o.x + 28,
-        y: o.y + 28,
-        z: top + i + 1,
-        groupId: o.groupId ? ids.get(o.groupId) : undefined,
-        galleryId: o.galleryId ? objectIds.get(o.galleryId) : undefined,
-        galleryIndex: o.galleryId && objectIds.has(o.galleryId) ? o.galleryIndex : undefined,
-        galleryRow: o.galleryId && objectIds.has(o.galleryId) ? o.galleryRow : undefined,
-        galleryColumn: o.galleryId && objectIds.has(o.galleryId) ? o.galleryColumn : undefined,
-      };
+      return copyArrowEnds(
+        {
+          ...o,
+          id: objectIds.get(o.id)!,
+          x: o.x + 28,
+          y: o.y + 28,
+          z: top + i + 1,
+          groupId: o.groupId ? ids.get(o.groupId) : undefined,
+          galleryId: o.galleryId ? objectIds.get(o.galleryId) : undefined,
+          galleryIndex: o.galleryId && objectIds.has(o.galleryId) ? o.galleryIndex : undefined,
+          galleryRow: o.galleryId && objectIds.has(o.galleryId) ? o.galleryRow : undefined,
+          galleryColumn: o.galleryId && objectIds.has(o.galleryId) ? o.galleryColumn : undefined,
+        },
+        objectIds,
+      );
     });
     if (copies.length) {
       this.apply({

@@ -12,6 +12,7 @@ import {
   setScreenPins,
   unionBounds,
 } from '../canvas/pins';
+import { copyArrowEnds } from '../canvas/connectors';
 import { pictureBounds } from '../canvas/frame-label';
 import { paperHeight, paperWidth } from '../canvas/paper-layout';
 import {
@@ -2670,18 +2671,21 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         : { x: 30, y: 30 };
     const placed = objects.map((o, i) => {
       if (o.groupId && !groups.has(o.groupId)) groups.set(o.groupId, uid());
-      return {
-        ...o,
-        id: objectIds.get(o.id)!,
-        groupId: o.groupId ? groups.get(o.groupId) : undefined,
-        galleryId: o.galleryId ? objectIds.get(o.galleryId) : undefined,
-        galleryIndex: o.galleryId && objectIds.has(o.galleryId) ? o.galleryIndex : undefined,
-        galleryRow: o.galleryId && objectIds.has(o.galleryId) ? o.galleryRow : undefined,
-        galleryColumn: o.galleryId && objectIds.has(o.galleryId) ? o.galleryColumn : undefined,
-        x: o.x + offset.x,
-        y: o.y + offset.y,
-        z: top + i + 1,
-      };
+      return copyArrowEnds(
+        {
+          ...o,
+          id: objectIds.get(o.id)!,
+          groupId: o.groupId ? groups.get(o.groupId) : undefined,
+          galleryId: o.galleryId ? objectIds.get(o.galleryId) : undefined,
+          galleryIndex: o.galleryId && objectIds.has(o.galleryId) ? o.galleryIndex : undefined,
+          galleryRow: o.galleryId && objectIds.has(o.galleryId) ? o.galleryRow : undefined,
+          galleryColumn: o.galleryId && objectIds.has(o.galleryId) ? o.galleryColumn : undefined,
+          x: o.x + offset.x,
+          y: o.y + offset.y,
+          z: top + i + 1,
+        },
+        objectIds,
+      );
     });
     // A pasted copy is a new image on this board, added now.
     const copies = stampAdded(placed, newImageAdded());

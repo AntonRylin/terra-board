@@ -1,4 +1,5 @@
-import type { CanvasObject } from '../model';
+import type { ArrowEnd, CanvasObject } from '../model';
+import { arrowFromPoints, arrowPoints } from './arrows.ts';
 import { localToWorld, worldToLocal, type Point } from './transform.ts';
 
 export type ConnectorSide = 'n' | 'e' | 's' | 'w';
@@ -59,4 +60,73 @@ export function connectionPoint(
     x: vertical ? (side === 'w' ? 0 : target.width) : at,
     y: vertical ? at : side === 'n' ? 0 : target.height,
   });
+}
+
+/** Holds an arrow end at world point `w` on `target`, so it follows the object. */
+export function arrowEnd(target: CanvasObject, w: Point): ArrowEnd {
+  const q = worldToLocal(target, w),
+    fraction = (v: number, size: number) => Math.max(0, Math.min(1, v / Math.max(size, 1e-9)));
+  return { id: target.id, x: fraction(q.x, target.width), y: fraction(q.y, target.height) };
+}
+
+/** Where a held arrow end sits on its object now, in world coordinates. */
+export const arrowEndPoint = (target: CanvasObject, end: ArrowEnd): Point =>
+  localToWorld(target, { x: end.x * target.width, y: end.y * target.height });
+
+/** Whether `arrow` has an end held by one of `ids`. */
+export const arrowHeldBy = (arrow: CanvasObject, ids: Set<string>) =>
+  arrow.type === 'arrow' &&
+  (ids.has(arrow.arrow?.from?.id ?? '') || ids.has(arrow.arrow?.to?.id ?? ''));
+
+/**
+ * The arrow redrawn with its held ends on their objects (`find` looks them up).
+ * Bends shift by the ends' average move, so an arrow whose two objects move
+ * together keeps its shape. Returns `arrow` itself when nothing moved.
+ */
+export function followArrow(
+  arrow: CanvasObject,
+  find: (id: string) => CanvasObject | undefined,
+): CanvasObject {
+  const style = arrow.arrow;
+  if (arrow.type !== 'arrow' || !style || (!style.from && !style.to)) return arrow;
+  const points = arrowPoints(arrow).map((p) => localToWorld(arrow, p)),
+    last = points.length - 1,
+    from = style.from && find(style.from.id),
+    to = style.to && find(style.to.id),
+    a = from ? arrowEndPoint(from, style.from!) : points[0],
+    b = to ? arrowEndPoint(to, style.to!) : points[last],
+    da = { x: a.x - points[0].x, y: a.y - points[0].y },
+    db = { x: b.x - points[last].x, y: b.y - points[last].y };
+  if (Math.hypot(da.x, da.y) < 1e-6 && Math.hypot(db.x, db.y) < 1e-6) return arrow;
+  const shift = { x: (da.x + db.x) / 2, y: (da.y + db.y) / 2 };
+  return arrowFromPoints(
+    arrow,
+    points.map((p, i) => (i === 0 ? a : i === last ? b : { x: p.x + shift.x, y: p.y + shift.y })),
+  );
+}
+
+/** The arrow with only the held ends whose objects are in `keep`. */
+export function keepArrowEnds(arrow: CanvasObject, keep: (id: string) => boolean): CanvasObject {
+  const style = arrow.arrow;
+  if (!style || (!style.from && !style.to)) return arrow;
+  const from = style.from && keep(style.from.id) ? style.from : undefined,
+    to = style.to && keep(style.to.id) ? style.to : undefined;
+  if (from === style.from && to === style.to) return arrow;
+  const { from: _from, to: _to, ...rest } = style;
+  return { ...arrow, arrow: { ...rest, ...(from ? { from } : {}), ...(to ? { to } : {}) } };
+}
+
+/** A copied arrow holds the copies of its objects, or lets go of ones not copied. */
+export function copyArrowEnds(arrow: CanvasObject, ids: ReadonlyMap<string, string>): CanvasObject {
+  const kept = keepArrowEnds(arrow, (id) => ids.has(id)),
+    style = kept.arrow;
+  if (!style || (!style.from && !style.to)) return kept;
+  return {
+    ...kept,
+    arrow: {
+      ...style,
+      ...(style.from ? { from: { ...style.from, id: ids.get(style.from.id)! } } : {}),
+      ...(style.to ? { to: { ...style.to, id: ids.get(style.to.id)! } } : {}),
+    },
+  };
 }

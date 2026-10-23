@@ -109,8 +109,17 @@ export interface PdfComposer {
   columns: PdfComposerColumn[];
 }
 export type ArrowHead = 'none' | 'arrow' | 'triangle' | 'open' | 'diamond' | 'circle';
+// An arrow end held to an object: the spot as fractions of its width and height.
+export interface ArrowEnd {
+  id: string;
+  x: number;
+  y: number;
+}
 export interface ArrowStyle {
   points: { x: number; y: number }[];
+  // Ends that follow an object when it moves, resizes or turns.
+  from?: ArrowEnd;
+  to?: ArrowEnd;
   line: 'straight' | 'curve' | 'elbow';
   start: ArrowHead;
   end: ArrowHead;

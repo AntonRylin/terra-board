@@ -46,6 +46,18 @@ const types = new Set([
   'html',
   'browser',
 ]);
+// An arrow end held to an object: its id and the spot as fractions of its size.
+const arrowEndValid = (end) =>
+  end === undefined ||
+  (!!end &&
+    typeof end.id === 'string' &&
+    /^[\w-]{1,100}$/.test(end.id) &&
+    Number.isFinite(end.x) &&
+    Number.isFinite(end.y) &&
+    end.x >= 0 &&
+    end.x <= 1 &&
+    end.y >= 0 &&
+    end.y <= 1);
 const idValue = (value) => {
   if (typeof value !== 'string' || !value || value.length > 100 || !/^[\w-]+$/.test(value))
     throw Error('Invalid identifier');
@@ -503,7 +515,9 @@ function objectValue(o) {
       !['solid', 'dashed', 'dotted'].includes(a.dash) ||
       !Number.isFinite(a.thickness) ||
       a.thickness < 0.5 ||
-      a.thickness > 40
+      a.thickness > 40 ||
+      !arrowEndValid(a.from) ||
+      !arrowEndValid(a.to)
     )
       throw Error('Invalid arrow');
     result.arrow = {
@@ -513,6 +527,8 @@ function objectValue(o) {
       end: a.end,
       dash: a.dash,
       thickness: a.thickness,
+      ...(a.from ? { from: { id: a.from.id, x: a.from.x, y: a.from.y } } : {}),
+      ...(a.to ? { to: { id: a.to.id, x: a.to.x, y: a.to.y } } : {}),
     };
   }
   if (o.type === 'highlight') {

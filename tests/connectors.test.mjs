@@ -32,3 +32,63 @@ test('arrow ends land level with the drop, snapping to the side middle nearby', 
   assert.deepEqual(connectionPoint(tall, 'w', { x: 330, y: 570 }, 48), { x: 300, y: 600 });
   assert.deepEqual(connectionPoint(tall, 'n', { x: 900, y: 10 }, 48), { x: 420, y: 0 });
 });
+
+test('held arrow ends follow their objects as they move, resize and turn', async () => {
+  const { arrowEnd, followArrow, keepArrowEnds, copyArrowEnds } =
+    await import('../src/canvas/connectors.ts');
+  const { arrowFromPoints, arrowPoints } = await import('../src/canvas/arrows.ts');
+  const { localToWorld } = await import('../src/canvas/transform.ts');
+  const a = { ...box, id: 'a' },
+    b = { ...box, id: 'b', x: 600 };
+  const start = sidePoint(a, 'e'),
+    end = sidePoint(b, 'w');
+  const arrow = arrowFromPoints({ id: 'r', type: 'arrow', x: 0, y: 0, width: 1, height: 1, z: 2 }, [
+    start,
+    { x: 450, y: 60 },
+    end,
+  ]);
+  arrow.arrow = { ...arrow.arrow, from: arrowEnd(a, start), to: arrowEnd(b, end) };
+  assert.deepEqual(arrow.arrow.from, { id: 'a', x: 1, y: 0.5 });
+  const world = (o) => arrowPoints(o).map((p) => localToWorld(o, p));
+  const near = (p, q) => assert.ok(Math.hypot(p.x - q.x, p.y - q.y) < 1e-6, JSON.stringify([p, q]));
+
+  // Nothing moved: the same object comes back.
+  const objects = new Map([
+    ['a', a],
+    ['b', b],
+  ]);
+  assert.equal(
+    followArrow(arrow, (id) => objects.get(id)),
+    arrow,
+  );
+
+  // Only b moves: the end follows, the start stays, the bend shifts by half.
+  objects.set('b', { ...b, x: 800, y: 250 });
+  let moved = world(followArrow(arrow, (id) => objects.get(id)));
+  near(moved[0], start);
+  near(moved[2], { x: 800, y: 300 });
+  near(moved[1], { x: 550, y: 160 });
+
+  // Both move together: the arrow keeps its shape.
+  objects.set('a', { ...a, x: a.x + 40, y: a.y + 10 });
+  objects.set('b', { ...b, x: b.x + 40, y: b.y + 10 });
+  moved = world(followArrow(arrow, (id) => objects.get(id)));
+  near(moved[1], { x: 490, y: 70 });
+
+  // Resized and turned, the end keeps its spot on the side.
+  objects.set('b', { ...b, width: 400, height: 300, rotation: 90 });
+  near(world(followArrow(arrow, (id) => objects.get(id)))[2], sidePoint(objects.get('b'), 'w'));
+
+  // A deleted object leaves its end where it was.
+  near(world(followArrow(arrow, (id) => (id === 'a' ? a : undefined)))[2], end);
+
+  // Moving the arrow alone lets go of objects that did not move with it.
+  const loose = keepArrowEnds(arrow, (id) => id === 'a');
+  assert.deepEqual(loose.arrow.from, arrow.arrow.from);
+  assert.equal(loose.arrow.to, undefined);
+
+  // Copies hold the copied objects and let go of the rest.
+  const copy = copyArrowEnds(arrow, new Map([['a', 'a2']]));
+  assert.deepEqual(copy.arrow.from, { id: 'a2', x: 1, y: 0.5 });
+  assert.equal(copy.arrow.to, undefined);
+});

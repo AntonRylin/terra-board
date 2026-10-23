@@ -252,6 +252,10 @@ const object = z
         end: head,
         dash: z.enum(['solid', 'dashed', 'dotted']),
         thickness: z.number().min(0.5).max(40),
+        // Ends held to objects follow them when they move: the object's id and
+        // the spot as fractions of its width and height (0.5, 0 is its top middle).
+        from: point.extend({ id }).optional(),
+        to: point.extend({ id }).optional(),
       })
       .optional(),
     highlight: z

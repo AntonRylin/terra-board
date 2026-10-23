@@ -5,6 +5,19 @@ import { htmlSourceLimit } from './html-card.ts';
 import { albumValue } from './album.ts';
 import { addedValue } from './image-added.ts';
 import { tableValue } from './table.ts';
+// An arrow end held to an object: its id and the spot as fractions of its size.
+const arrowEndValid = (end: any) =>
+  end === undefined ||
+  (!!end &&
+    typeof end.id === 'string' &&
+    end.id.length > 0 &&
+    end.id.length <= 100 &&
+    Number.isFinite(end.x) &&
+    Number.isFinite(end.y) &&
+    end.x >= 0 &&
+    end.x <= 1 &&
+    end.y >= 0 &&
+    end.y <= 1);
 export function pastedUrl(text: string): string | null {
   const value = text.trim();
   if (value.length > 8192 || !/^https?:\/\/\S+$/i.test(value)) return null;
@@ -283,7 +296,9 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
         !['solid', 'dashed', 'dotted'].includes(a.dash) ||
         !Number.isFinite(a.thickness) ||
         a.thickness < 0.5 ||
-        a.thickness > 40
+        a.thickness > 40 ||
+        !arrowEndValid(a.from) ||
+        !arrowEndValid(a.to)
       )
         throw Error('Invalid arrow');
     }
