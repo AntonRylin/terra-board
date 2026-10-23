@@ -613,7 +613,17 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     const el = toolsRef.current,
       view = selectionView.current;
     if (!el || !view?.bounds) return;
-    const { left, top } = selectionToolsPosition(view.bounds, view.viewport, toolsSize.current);
+    // The canvas toolbar at the bottom is off limits: the selection's tools stay above it.
+    const toolbar = el.closest('.whiteboard')?.querySelector<HTMLElement>('.canvas-toolbar');
+    // The tools are placed in their offset parent's coordinates.
+    const host = (el.offsetParent as HTMLElement | null)?.getBoundingClientRect();
+    const toolbarTop =
+      toolbar && host ? toolbar.getBoundingClientRect().top - host.top - 6 : Infinity;
+    const { left, top } = selectionToolsPosition(
+      view.bounds,
+      { ...view.viewport, height: Math.min(view.viewport.height, toolbarTop) },
+      toolsSize.current,
+    );
     el.style.left = `${left}px`;
     el.style.top = `${top}px`;
     el.style.visibility = 'visible';
@@ -4709,7 +4719,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       {!readOnly && !toolbarHidden && (
         <CanvasToolbar
           onHide={() => updatePreferences({ toolbarHidden: true })}
-          onMore={(r) => setMenu({ x: r.right, y: r.top })}
+          onMore={(r) => setMenu({ x: r.left, y: r.top - 6 })}
           tools={[
             ...tools.map(({ id, label, icon, command }) => ({
               id,
@@ -4832,7 +4842,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           aria-label="Canvas options"
           onClick={(e) => {
             const r = e.currentTarget.getBoundingClientRect();
-            setMenu({ x: r.right, y: r.top });
+            setMenu({ x: r.right, y: r.top - 6 });
           }}
         >
           <MoreHorizontal size={17} />

@@ -178,7 +178,11 @@ export default function CanvasToolbar({
           <button
             className="icon-button toolbar-more"
             aria-label="Canvas options"
-            onClick={(e) => onMore(e.currentTarget.getBoundingClientRect())}
+            onClick={(e) => {
+              // One menu at a time: the + menu closes.
+              setOpen(false);
+              onMore(e.currentTarget.getBoundingClientRect());
+            }}
           >
             <MoreHorizontal size={19} strokeWidth={1.7} />
           </button>
