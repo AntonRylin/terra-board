@@ -281,7 +281,9 @@ test(
               .map((item) => item.str)
               .join(' '),
           );
-        assert.match(text[0], /Terra café Україна\s+日本語/);
+        // Noto CJK (Linux) maps 日 to the look-alike Kangxi radical ⽇ and
+        // splits it into its own text run; NFKC folds it back.
+        assert.match(text[0].normalize('NFKC'), /Terra café Україна\s+日\s*本語/);
         assert.match(text[1], /Second page exact words/);
         assert.doesNotMatch(text.join(' '), /EXECUTED SCRIPT|Unexpected network/);
       } finally {
