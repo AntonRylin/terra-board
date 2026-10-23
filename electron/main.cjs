@@ -754,7 +754,7 @@ app
       root,
       call,
       transaction: mcpTransaction,
-      services: { captureHtml: (args) => htmlCards.snapshot(args) },
+      services: { captureHtml: (args) => htmlCards.snapshot(args), cloud: () => cloud },
     });
     const packageJson = require('../package.json');
     const chosenServer = () => resolveServer({ env: process.env, root, packageJson });

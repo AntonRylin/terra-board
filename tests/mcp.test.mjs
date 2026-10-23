@@ -63,8 +63,9 @@ test('MCP interoperates with SDK: board/folder CRUD, complete object edits, stal
     const call = async (name, args = {}) =>
       data(await f.client.callTool({ name, arguments: args }));
     const names = (await f.client.listTools()).tools.map((t) => t.name);
-    assert.equal(names.length, 14);
+    assert.equal(names.length, 15);
     assert.ok(names.includes('read_board_history'));
+    assert.ok(names.includes('share_board'));
     assert.ok(names.includes('edit_board'));
     const folder = await call('create_folder', { name: 'Research' });
     const board = await call('create_board', { name: 'AI board', folderId: folder.id });
@@ -397,7 +398,7 @@ test('Claude stdio connector discovers tools while disabled and works after enab
       stderr: 'pipe',
     });
     await client.connect(transport);
-    assert.equal((await client.listTools()).tools.length, 14);
+    assert.equal((await client.listTools()).tools.length, 15);
     assert.ok(
       data(await client.callTool({ name: 'create_board', arguments: { name: 'From Claude' } })).id,
     );

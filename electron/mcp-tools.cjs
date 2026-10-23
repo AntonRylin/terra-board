@@ -290,6 +290,7 @@ function searchable(o) {
 }
 // services.captureHtml({ html, width, height }) returns a picture's asset ID,
 // when the app can render pages (not in the stdio proxy, which only lists tools).
+// services.cloud() returns the app's cloud sync (electron/cloud-sync.cjs), when there is one.
 function tools(call, services = {}) {
   const definitions = [];
   // prepare runs before the board is locked for the edit, for slow work such as
@@ -708,6 +709,37 @@ function tools(call, services = {}) {
           { type: 'image', data: bytes.toString('base64'), mimeType: asset.contentType },
         ],
       };
+    },
+  );
+  // Runs outside the board pause (change 'cloud'): sharing syncs, and sync pauses the
+  // board itself.
+  add(
+    'share_board',
+    'Share a board or folder through Terra Cloud and get a one-time invite code (it starts with S). Use only when the user asks to share: whoever has the code gets access. role "edit" lets them change it, "view" only look. The person enters the code in Terra Board: on Android Settings → Account → Join with a code, on desktop Settings → Cloud sync → Join with a code. Sharing the same board again creates another code for the same share.',
+    {
+      id,
+      kind: z.enum(['board', 'folder']).default('board'),
+      role: z.enum(['view', 'edit']).default('edit'),
+    },
+    'cloud',
+    async ({ id: targetId, kind, role }) => {
+      const cloud = services.cloud?.();
+      if (!cloud) throw Error('Sharing is not available here.');
+      const l = await call('library');
+      const target =
+        kind === 'folder'
+          ? l.folders.find((f) => f.id === targetId)
+          : l.boards.find((b) => b.id === targetId && !b.trashed);
+      if (!target) throw Error(`No ${kind} with this ID. Use list_boards.`);
+      const code = await cloud.invite(kind, targetId, role);
+      return text({
+        code,
+        kind,
+        id: targetId,
+        name: target.name,
+        role,
+        join: 'Terra Board → Settings → Account (Android) or Cloud sync (desktop) → Join with a code. Works once.',
+      });
     },
   );
   return definitions;

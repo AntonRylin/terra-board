@@ -190,6 +190,8 @@ class McpService {
               const job = this.jobs.then(async () => {
                 if (!this.config.enabled || generation !== this.generation)
                   throw Error('MCP is disabled.');
+                // Sharing changes no board here, and cloud sync pauses the board itself.
+                if (tool.change === 'cloud') return tool.run(args);
                 // Slow preparation (rendering a page) happens before the open
                 // board pauses for the edit.
                 const prepared = tool.prepare ? await tool.prepare(args) : undefined;
