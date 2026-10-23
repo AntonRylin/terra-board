@@ -59,7 +59,11 @@ function fakeClient(overrides = {}) {
       setSession: record('setSession', overrides.setSession ?? { data: {}, error: null }),
       stopAutoRefresh: () => {},
     },
-    rpc: record('rpc', overrides.rpc ?? { data: null, error: null }),
+    // Like supabase-js, rpc() returns a builder that can be awaited but has no .catch().
+    rpc: (...args) => {
+      const answer = record('rpc', overrides.rpc ?? { data: null, error: null })(...args);
+      return { then: (resolve, reject) => answer.then(resolve, reject) };
+    },
     storage: overrides.storage,
     from: overrides.from,
     setSession: (s) => (current = s),

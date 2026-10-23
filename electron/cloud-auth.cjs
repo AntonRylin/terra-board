@@ -317,7 +317,10 @@ function createCloudAuth({
       settle(new AuthError(CANCELLED, 'cancelled'));
       const current = userInfo(await session());
       if (device && current.state === 'signedIn')
-        await client.rpc('revoke_device', { p_id: device }).catch(() => {});
+        try {
+          // A supabase-js builder: awaitable, but it has no .catch().
+          await client.rpc('revoke_device', { p_id: device });
+        } catch {}
       try {
         await client.auth.signOut({ scope: 'local' });
       } catch {}
