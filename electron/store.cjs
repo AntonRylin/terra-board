@@ -928,6 +928,18 @@ class Store {
   syncMissingAssets(args) {
     return this.sync.missingAssets(args);
   }
+  syncFetchFailed(args) {
+    return this.sync.fetchFailed(args);
+  }
+  syncFetchDue(args) {
+    return this.sync.fetchDue(args);
+  }
+  syncFetchDone(args) {
+    return this.sync.fetchDone(args);
+  }
+  syncScanMissing() {
+    return this.sync.scanMissing();
+  }
   syncApply(args) {
     return this.sync.apply(args);
   }

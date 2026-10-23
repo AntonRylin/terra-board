@@ -56,6 +56,11 @@ CREATE TABLE IF NOT EXISTS sync_seen(kind TEXT NOT NULL, boardId TEXT NOT NULL D
 CREATE TABLE IF NOT EXISTS sync_held(workspace TEXT NOT NULL, kind TEXT NOT NULL,
   boardId TEXT NOT NULL DEFAULT '', id TEXT NOT NULL, row TEXT NOT NULL,
   PRIMARY KEY(workspace, kind, boardId, id));
+-- Files a synced board uses that could not be downloaded (refused, damaged, gone), and
+-- files found missing at start: tried again with growing pauses. boardId: who shows it.
+CREATE TABLE IF NOT EXISTS sync_fetch(workspace TEXT NOT NULL, id TEXT NOT NULL,
+  boardId TEXT NOT NULL DEFAULT '', tries INTEGER NOT NULL DEFAULT 0,
+  due INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(workspace, id, boardId));
 DELETE FROM sync_state WHERE key='applying';
 ${triggerNames.map((name) => `DROP TRIGGER IF EXISTS ${name};`).join('\n')}
 DROP VIEW IF EXISTS sync_tracked;
@@ -301,7 +306,7 @@ function createSync(store, helpers) {
         // Boards other people shared here belong to them; remove the copies.
         db().exec(`${dropForeignCopies}
           DELETE FROM sync_outbox; DELETE FROM sync_uploaded; DELETE FROM sync_owned;
-          DELETE FROM sync_foreign; DELETE FROM sync_local; DELETE FROM sync_seen;
+          DELETE FROM sync_foreign; DELETE FROM sync_local; DELETE FROM sync_seen; DELETE FROM sync_fetch;
           DELETE FROM sync_state WHERE key <> 'applying';`);
       });
       return sync.status();
@@ -503,6 +508,70 @@ function createSync(store, helpers) {
     missingAssets({ ids }) {
       const has = db().prepare('SELECT 1 FROM assets WHERE id=?');
       return ids.filter((id) => /^[a-f0-9]{64}$/.test(id) && !has.get(id));
+    },
+    // Downloads that failed: tried again 30 s later, then twice as long each time, at most
+    // every 6 hours. items: [{ id, boardId }] (boardId: the board that shows the file).
+    fetchFailed({ workspace, items, now = Date.now() }) {
+      helpers.idValue(workspace);
+      const add = db().prepare(
+        `INSERT INTO sync_fetch VALUES(?,?,?,1,?) ON CONFLICT(workspace, id, boardId) DO UPDATE
+           SET tries = tries + 1, due = ? + min(30000 * (1 << min(tries, 10)), 21600000)`,
+      );
+      store.transaction(() => {
+        for (const item of items)
+          if (/^[a-f0-9]{64}$/.test(item?.id))
+            add.run(workspace, item.id, String(item.boardId || ''), now + 30000, now);
+      });
+    },
+    // Files due for another try, oldest first. Ones that arrived meanwhile, or that no
+    // board shows any more, are forgotten.
+    fetchDue({ limit = 50, now = Date.now() } = {}) {
+      db().exec(`DELETE FROM sync_fetch WHERE id IN (SELECT id FROM assets)
+        OR (boardId <> '' AND boardId NOT IN (SELECT id FROM sync_tracked))`);
+      return db()
+        .prepare(
+          'SELECT workspace, id, boardId FROM sync_fetch WHERE due <= ? ORDER BY due LIMIT ?',
+        )
+        .all(now, Math.max(1, Math.min(500, limit)));
+    },
+    // Downloaded at last. Returns the boards that show these files, to be reloaded.
+    fetchDone({ ids }) {
+      const boards = new Set();
+      store.transaction(() => {
+        for (const id of ids) {
+          for (const r of db().prepare('SELECT boardId FROM sync_fetch WHERE id=?').all(id))
+            if (r.boardId) boards.add(r.boardId);
+          db().prepare('DELETE FROM sync_fetch WHERE id=?').run(id);
+        }
+      });
+      return [...boards];
+    },
+    // Every file a synced board uses that this library lacks (a download that failed
+    // before failures were remembered, say), queued to download. Runs when sync starts.
+    scanMissing() {
+      const personal = state('workspace');
+      if (!personal) return { queued: 0 };
+      const has = db().prepare('SELECT 1 FROM assets WHERE id=?');
+      const add = db().prepare('INSERT OR IGNORE INTO sync_fetch VALUES(?,?,?,0,0)');
+      // Only objects that can name a file (their JSON has an ...Id field).
+      const objects = db().prepare(
+        `SELECT json FROM objects WHERE boardId=? AND json LIKE '%Id":"%'`,
+      );
+      let queued = 0;
+      store.transaction(() => {
+        for (const t of db()
+          .prepare(
+            'SELECT t.id, t.foreign_ws, b.icon, b.backgroundAssetId FROM sync_tracked t JOIN boards b ON b.id=t.id',
+          )
+          .all()) {
+          const ids = new Set(referencedAssets('board', t, helpers.iconAssetId));
+          for (const o of objects.all(t.id))
+            for (const id of referencedAssets('object', JSON.parse(o.json))) ids.add(id);
+          for (const id of ids)
+            if (!has.get(id)) queued += add.run(t.foreign_ws || personal, id, t.id).changes;
+        }
+      });
+      return { queued };
     },
     // Apply rows pulled from a workspace. Rows with a local unsent change are
     // skipped: that change is pushed next and becomes the newest version.

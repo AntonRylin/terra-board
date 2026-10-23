@@ -357,6 +357,8 @@ class CloudSync {
     this.listen(this.workspace);
     void this.rejoin().catch(() => {});
     void this.loadProfile().catch(() => {});
+    // Files synced boards use but this library lacks are fetched again (retryFetches).
+    await this.call('syncScanMissing').catch(() => {});
     clearInterval(this.poll);
     this.poll = setInterval(() => this.schedule(0), 30000);
     this.schedule(0);
@@ -1307,6 +1309,7 @@ class CloudSync {
           for (const ws of this.foreign) await this.pull(ws);
           for (const ws of pushed) this.ping(ws);
         } while (this.again && this.workspace);
+        await this.retryFetches();
         await this.retireWhenUploaded().catch(() => {});
         // Access to the open board may have changed: a new role, or none at all.
         void this.rejoin().catch(() => {});
@@ -1496,21 +1499,41 @@ class CloudSync {
     }
   }
 
+  // Downloads the files these rows use that this library lacks. A file the server refuses
+  // or that cannot be read is remembered and tried again later (retryFetches); the board
+  // still opens. Losing the connection stops the round, so the whole pull is retried.
   async fetchAssets(rows, workspace) {
-    const needed = new Set();
+    const needed = new Map(); // file → boards that show it
     for (const r of rows)
       if (!r.deleted)
         for (const id of r.kind === 'asset'
           ? [r.id]
-          : referencedAssets(r.kind, r.data, iconAssetId))
-          needed.add(id);
+          : referencedAssets(r.kind, r.data, iconAssetId)) {
+          if (!needed.has(id)) needed.set(id, new Set());
+          const board = r.kind === 'object' ? r.board_id : r.kind === 'board' ? r.id : '';
+          if (board) needed.get(id).add(board);
+        }
     if (!needed.size) return;
-    const missing = await this.call('syncMissingAssets', { ids: [...needed] });
+    const missing = await this.call('syncMissingAssets', { ids: [...needed.keys()] });
     if (!missing.length) return;
     const names = new Map(
       rows.filter((r) => r.kind === 'asset').map((r) => [r.id, r.data?.name || 'file']),
     );
-    const unknown = missing.filter((id) => !names.has(id));
+    const failed = await this.downloadAssets(workspace, missing, names);
+    if (failed.length)
+      await this.call('syncFetchFailed', {
+        workspace,
+        items: failed.flatMap((id) => {
+          const boards = [...needed.get(id)];
+          return boards.length ? boards.map((boardId) => ({ id, boardId })) : [{ id }];
+        }),
+      });
+  }
+
+  // Downloads and imports files of one workspace; returns the IDs that failed.
+  // names: what is known of their file names (the rest are looked up).
+  async downloadAssets(workspace, ids, names = new Map(), done = () => {}) {
+    const unknown = ids.filter((id) => !names.has(id));
     for (const part of chunks(unknown, 100)) {
       const { data, error } = await this.client
         .from('entities')
@@ -1521,14 +1544,52 @@ class CloudSync {
       fail(error, 'Could not look up files');
       for (const a of data) names.set(a.id, a.data?.name || 'file');
     }
-    for (const id of missing) {
-      const { data, error } = await this.client.storage
-        .from('assets')
-        .download(`${workspace}/${id}`);
-      // A file the server does not let this person read is skipped; the board still opens.
-      if (error) continue;
-      const bytes = new Uint8Array(await data.arrayBuffer());
-      await this.call('syncImportAsset', { bytes, name: names.get(id) || 'file', workspace });
+    const failed = [];
+    for (const id of ids) {
+      try {
+        const { data, error } = await this.client.storage
+          .from('assets')
+          .download(`${workspace}/${id}`);
+        if (error) throw error;
+        const bytes = new Uint8Array(await data.arrayBuffer());
+        await this.call('syncImportAsset', { bytes, name: names.get(id) || 'file', workspace });
+        done(id);
+      } catch (e) {
+        if (offline(e)) throw e;
+        failed.push(id);
+      }
+    }
+    return failed;
+  }
+
+  // Files that failed to download before, when their pause is over. Boards that show the
+  // ones that arrive are reloaded, so their pictures appear.
+  async retryFetches() {
+    const due = await this.call('syncFetchDue', { limit: 50 });
+    if (!due.length) return;
+    const byWorkspace = new Map();
+    for (const f of due) {
+      if (!byWorkspace.has(f.workspace)) byWorkspace.set(f.workspace, []);
+      byWorkspace.get(f.workspace).push(f);
+    }
+    const arrived = [];
+    try {
+      for (const [workspace, items] of byWorkspace) {
+        const ids = [...new Set(items.map((f) => f.id))];
+        const failed = await this.downloadAssets(workspace, ids, new Map(), (id) =>
+          arrived.push(id),
+        );
+        if (failed.length)
+          await this.call('syncFetchFailed', {
+            workspace,
+            items: items.filter((f) => failed.includes(f.id)),
+          });
+      }
+    } finally {
+      if (arrived.length) {
+        const boards = await this.call('syncFetchDone', { ids: arrived });
+        if (boards.length) await this.transaction(async () => ({ library: false, boards }));
+      }
     }
   }
 }
