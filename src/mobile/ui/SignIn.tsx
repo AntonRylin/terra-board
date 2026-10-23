@@ -4,7 +4,7 @@
 import { useEffect, useState } from 'react';
 import { Mail } from 'lucide-react';
 import type { CloudStatus, SignInProvider } from '../../bridge';
-import { cloud } from '../cloud.ts';
+import { cloud, signInWithPassword } from '../cloud.ts';
 import icon from '../../../assets/icon.png';
 
 // Supabase sends a new code to an address at most once a minute.
@@ -49,7 +49,8 @@ export function SignIn({ status }: { status: CloudStatus }) {
   const methods = status.methods ?? { email: true, google: true, microsoft: false };
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [step, setStep] = useState<'choose' | 'email' | 'code'>('choose');
+  const [step, setStep] = useState<'choose' | 'email' | 'code' | 'password'>('choose');
+  const [password, setPassword] = useState('');
   const [email, setEmail] = useState('');
   const [sentTo, setSentTo] = useState('');
   const [code, setCode] = useState('');
@@ -139,16 +140,98 @@ export function SignIn({ status }: { status: CloudStatus }) {
         <button type="submit" className="mobile-button primary" disabled={busy || !email.trim()}>
           {busy ? 'Sending…' : 'Send code'}
         </button>
+        <div className="mobile-row">
+          <button
+            type="button"
+            className="mobile-link"
+            disabled={busy}
+            onClick={() => {
+              setStep('choose');
+              setError('');
+            }}
+          >
+            Other ways to sign in
+          </button>
+          <button
+            type="button"
+            className="mobile-link"
+            disabled={busy}
+            onClick={() => {
+              setStep('password');
+              setError('');
+            }}
+          >
+            Use a password
+          </button>
+        </div>
+      </form>
+    );
+  // Only accounts given a password in the Supabase dashboard have one (the app-store
+  // review account); everyone else signs in with a code or Google.
+  else if (step === 'password')
+    body = (
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (email.trim() && password && !busy)
+            void act(() => signInWithPassword(email, password));
+        }}
+      >
+        <h2>Sign in with a password</h2>
+        <p className="mobile-lead">For accounts that have a password.</p>
+        <label className="mobile-field">
+          <span>Email</span>
+          <input
+            type="email"
+            className="mobile-text"
+            value={email}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              setError('');
+            }}
+            autoComplete="username"
+            autoCapitalize="none"
+            spellCheck={false}
+            disabled={busy}
+          />
+        </label>
+        <label className="mobile-field">
+          <span>Password</span>
+          <input
+            type="password"
+            className="mobile-text"
+            value={password}
+            onChange={(e) => {
+              setPassword(e.target.value);
+              setError('');
+            }}
+            autoComplete="current-password"
+            disabled={busy}
+          />
+        </label>
+        {error && (
+          <p className="mobile-error" role="alert">
+            {error}
+          </p>
+        )}
+        <button
+          type="submit"
+          className="mobile-button primary"
+          disabled={busy || !email.trim() || !password}
+        >
+          {busy ? 'Signing in…' : 'Sign in'}
+        </button>
         <button
           type="button"
           className="mobile-link"
           disabled={busy}
           onClick={() => {
-            setStep('choose');
+            setStep('email');
+            setPassword('');
             setError('');
           }}
         >
-          Other ways to sign in
+          Get a code by email instead
         </button>
       </form>
     );

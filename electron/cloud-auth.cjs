@@ -22,6 +22,7 @@ const NO_CONNECTION = 'Could not reach the server. Check your internet connectio
 const BAD_EMAIL = 'Enter a valid email address.';
 const BAD_CODE = 'Enter the code from the email.';
 const CODE_EXPIRED = 'This code is wrong or has expired. Send a new one.';
+const WRONG_PASSWORD = 'Wrong email or password.';
 const TOO_MANY = 'Too many tries. Wait a minute, then try again.';
 const NO_SIGNUPS = 'This server does not accept new accounts.';
 const PROVIDER_OFF = 'This sign-in method is not available on this server.';
@@ -231,6 +232,30 @@ function createCloudAuth({
         throw friendly(e);
       }
       if (result.error || !result.data?.session) throw friendly(result.error, CODE_EXPIRED);
+      return userInfo(result.data.session);
+    },
+
+    // A password, for accounts that have one: the app-store review account, set up in the
+    // Supabase dashboard (store reviewers need a login without an emailed code). People
+    // sign in with a code or Google, so their accounts have no password.
+    async signInWithPassword(email, password) {
+      const address = cleanEmail(email);
+      if (typeof password !== 'string' || !password || password.length > 200)
+        throw new AuthError(WRONG_PASSWORD, 'bad_password');
+      await onBeforeSignIn();
+      let result;
+      try {
+        result = await client.auth.signInWithPassword({ email: address, password });
+      } catch (e) {
+        throw friendly(e);
+      }
+      if (result.error) {
+        const code = String(result.error.code || '');
+        if (code === 'invalid_credentials' || /invalid login/i.test(result.error.message || ''))
+          throw new AuthError(WRONG_PASSWORD, 'invalid_credentials');
+        throw friendly(result.error);
+      }
+      if (!result.data?.session) throw new AuthError(SIGN_IN_FAILED, 'unknown');
       return userInfo(result.data.session);
     },
 

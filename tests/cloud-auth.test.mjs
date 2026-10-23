@@ -37,6 +37,19 @@ function fakeClient(overrides = {}) {
             return { data: { session: current }, error: null };
           }),
       ),
+      signInWithPassword: record(
+        'signInWithPassword',
+        overrides.signInWithPassword ??
+          (({ password }) => {
+            if (password !== 'review-pass')
+              return {
+                data: {},
+                error: { code: 'invalid_credentials', message: 'Invalid login credentials' },
+              };
+            current = sessionOf(user({ app_metadata: { provider: 'email' } }));
+            return { data: { session: current }, error: null };
+          }),
+      ),
       signInWithOAuth: record(
         'signInWithOAuth',
         overrides.signInWithOAuth ?? {
@@ -350,4 +363,21 @@ test('combining checks with the server before removing any file', async () => {
   });
   await assert.rejects(createCloudAuth({ client }).retireWorkspace('old', 'new'), /combine/);
   assert.deepEqual(removed, []);
+});
+
+test('a password signs in accounts that have one (the store review account)', async () => {
+  const client = fakeClient();
+  const auth = createCloudAuth({ client, openUrl: async () => {} });
+  await assert.rejects(auth.signInWithPassword('anton@example.com', 'nope'), {
+    message: 'Wrong email or password.',
+  });
+  await assert.rejects(auth.signInWithPassword('not an email', 'x'), {
+    message: 'Enter a valid email address.',
+  });
+  const account = await auth.signInWithPassword(' Anton@Example.com ', 'review-pass');
+  assert.equal(account.state, 'signedIn');
+  assert.deepEqual(client.calls.at(-1), [
+    'signInWithPassword',
+    { email: 'anton@example.com', password: 'review-pass' },
+  ]);
 });

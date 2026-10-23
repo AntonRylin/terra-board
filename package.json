@@ -23,6 +23,7 @@
     "installer:linux": "npm run build && node scripts/build-extensions.mjs && electron-builder --config electron-builder.linux.cjs --linux --x64 --publish never",
     "build:android": "node scripts/prepare-documents.mjs && tsc --noEmit && vite build --mode android --outDir dist-android && cap sync android",
     "android:apk": "npm run build:android && node scripts/android-gradle.mjs assembleDebug",
+    "android:bundle": "npm run build:android && node scripts/android-gradle.mjs bundleRelease",
     "android:open": "cap open android",
     "prerelease": "node scripts/check-release.mjs",
     "release": "npm run build && node scripts/prepare-vc-runtime.mjs && node scripts/build-extensions.mjs && electron-builder --config electron-builder.installer.cjs --win nsis --x64 --publish always",

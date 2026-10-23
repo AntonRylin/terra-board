@@ -134,9 +134,10 @@ choice, editing the profile picture and entrance song, the device list and delet
 (all in the desktop app).
 
 Requirements: Android 8+ (minSdk 26) with an up-to-date Android System WebView (Chromium 109+ for
-OPFS synchronous access handles in workers). Application ID: `terra.board.android` (change it in
-`capacitor.config.json` and `android/app/build.gradle` before any store release, since it can't
-change afterwards).
+OPFS synchronous access handles in workers). Application ID: `com.socialartworks.terraboard`
+(fixed for Google Play; the Java namespace stays `terra.board.android`). Builds with the earlier ID
+`terra.board.android` install as a separate app. Releasing to Google Play (signing, `.aab`,
+versions, listing): [play-store.md](play-store.md).
 
 ## Bridge mapping
 

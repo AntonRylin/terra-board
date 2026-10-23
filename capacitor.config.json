@@ -1,5 +1,5 @@
 {
-  "appId": "terra.board.android",
+  "appId": "com.socialartworks.terraboard",
   "appName": "Terra Board",
   "webDir": "dist-android",
   "android": {

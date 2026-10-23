@@ -26,7 +26,7 @@ function describe(status: CloudStatus) {
 export function AccountSettings() {
   const status = useCloudStatus();
   const [busy, setBusy] = useState(false);
-  const [confirm, setConfirm] = useState<'sign-out' | 'switch' | null>(null);
+  const [confirm, setConfirm] = useState<'sign-out' | 'switch' | 'delete' | null>(null);
   const [code, setCode] = useState('');
   const [notice, setNotice] = useNotice();
   const [library, setLibrary] = useState<Library | null>(null);
@@ -160,7 +160,8 @@ export function AccountSettings() {
           title="Sign out"
           description="Deletes this phone's copy of your boards and removes it from your account. They stay in the cloud and on your computer."
           below={
-            confirm && (
+            confirm &&
+            confirm !== 'delete' && (
               <div className="mobile-confirm" role="alert">
                 <p>
                   {pending
@@ -205,6 +206,50 @@ export function AccountSettings() {
           </button>
         </Row>
       </Group>
+
+      {status.account?.state !== 'signedOut' && (
+        <Group title="Your account">
+          <Row
+            title="Delete account"
+            description="Deletes your Terra Cloud account: your cloud boards and their files, your shares and your sign-in. Boards on your computers stay there."
+            below={
+              confirm === 'delete' && (
+                <div className="mobile-confirm" role="alert">
+                  <p>
+                    Delete your account and everything in your Terra Cloud? People you shared boards
+                    with lose them, and this phone's copy is deleted too. This cannot be undone.
+                  </p>
+                  <div>
+                    <button type="button" className="st-button" onClick={() => setConfirm(null)}>
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      className="st-button danger"
+                      disabled={busy}
+                      onClick={() =>
+                        // The storage worker clears the phone and the app reloads into sign-in.
+                        act(() => cloud.deleteCloudData())
+                      }
+                    >
+                      Delete account
+                    </button>
+                  </div>
+                </div>
+              )
+            }
+          >
+            <button
+              type="button"
+              className="st-button danger"
+              disabled={busy}
+              onClick={() => setConfirm('delete')}
+            >
+              Delete
+            </button>
+          </Row>
+        </Group>
+      )}
       <Notice notice={notice} />
     </>
   );

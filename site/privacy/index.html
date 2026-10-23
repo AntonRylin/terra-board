@@ -30,7 +30,7 @@
 <main id="main">
   <div class="wrap article">
     <h1>Privacy policy</h1>
-    <p class="lead" style="margin-left:0">Terra Board keeps your boards on your own computer. Nothing leaves it unless you use a feature that needs the internet, such as Terra Cloud. This page explains each of those cases.</p>
+    <p class="lead" style="margin-left:0">The Terra Board desktop app keeps your boards on your own computer. Nothing leaves it unless you use a feature that needs the internet, such as Terra Cloud. The Android app shows your Terra Cloud boards. This page explains each of those cases.</p>
     <p class="checked">Last updated: 23 October 2026</p>
 
     <h2>Who is responsible</h2>
@@ -42,6 +42,9 @@
 
     <h2>The app on your computer</h2>
     <p>Your boards, images and settings are stored on your computer (Windows: <code>%LOCALAPPDATA%\Terra Board\Library</code>; Linux: <code>~/.local/share/Terra Board/Library</code>). We have no access to them. The app contains no analytics, telemetry or crash reporting.</p>
+
+    <h2>The Android app</h2>
+    <p>The Android app works with Terra Cloud: you sign in, and it shows and edits the boards in your account (see Terra Cloud below). It keeps a copy of them in the app's private storage on your phone, so they open without internet; other apps can't read it, and it is not included in Android backups. Signing out or deleting your account deletes that copy, and so does uninstalling the app. The app contains no analytics, telemetry, ads or crash reporting. It asks for internet access and, for a short vibration when you move a toolbar tool, the vibration permission; nothing else.</p>
 
     <h2>When the app goes online</h2>
     <div class="table-wrap">
@@ -62,17 +65,28 @@
     </div>
 
     <h2>Terra Cloud (sync and sharing)</h2>
-    <p>Terra Cloud is off until you turn it on in Settings → Cloud sync. When you turn it on, your computer gets an anonymous sign-in; there is no email or password. While sync is on, the following is stored on our server:</p>
+    <p>Terra Cloud is off on your computer until you sign in in Settings → Account; the Android app asks you to sign in first. There are no passwords: you sign in with a code we email you, or with your Google or Microsoft account (only test accounts we create ourselves, for example for app-store review, have a password). While you use it, the following is stored on our server:</p>
     <ul class="plain-list">
-      <li>The boards, folders and objects you sync, with their images and files.</li>
+      <li>Your account: your email address, how you signed in (email code, Google or Microsoft) and when. With Google or Microsoft, we receive your email address and the name on that account; we never see your Google or Microsoft password.</li>
+      <li>The boards, folders and objects you sync or share, with their images and files.</li>
       <li>Your display name and, if you add them, a profile picture and an entrance song.</li>
-      <li>Your computer's name (so you can tell your devices apart), your role and when the device joined.</li>
+      <li>The computers and phones you are signed in on: each device's name (on a phone, its model), the Terra Board version and when it was last used, so you can see and remove them.</li>
       <li>While others are on a shared board with you: your cursor position and current view, sent live to them and not stored.</li>
     </ul>
-    <p>People you share a board with can see that board, your display name, profile picture and cursor. Basis: Art. 6(1)(b) GDPR, because sync is the service you asked for.</p>
-    <p>The server runs on Supabase (Supabase, Inc., USA) in the EU (Ireland). Supabase processes the data on our behalf under a data processing agreement with Standard Contractual Clauses. Data is sent encrypted (HTTPS).</p>
-    <p><strong>How long it is kept:</strong> until you delete it. Turning sync off removes your device from the workspace; "Remove from cloud" deletes a board's content. To have all your cloud data deleted, including files and the anonymous sign-in, email <a href="mailto:montiesprache@gmail.com">montiesprache@gmail.com</a> and we delete it within 30 days. Expired pairing and invite codes are deleted automatically after one day.</p>
+    <p>People you share a board with can see that board, your display name, profile picture and cursor. They don't see your email address. Basis: Art. 6(1)(b) GDPR, because sync and sharing are the service you asked for.</p>
+    <p>The server runs on Supabase (Supabase, Inc., USA) in the EU (Ireland). Sign-in codes are sent by email through Brevo (Sendinblue SAS, France). Both process data on our behalf under data processing agreements; for Supabase these include Standard Contractual Clauses. If you sign in with Google or Microsoft, their own privacy policies apply to that sign-in. Data is sent encrypted (HTTPS).</p>
+    <p><strong>How long it is kept:</strong> until you delete it. "Remove from cloud" deletes a board's content. <strong>Delete account</strong> in Settings → Account deletes everything at once: your cloud boards with their files, your shares, your list of computers and your sign-in. People you shared with lose those boards; the boards on your computers stay. Signing out or turning sync off keeps your cloud data. Expired invite codes are deleted automatically after one day.</p>
+    <p>If you set up sync before accounts existed (Terra Board 0.1.28 to 0.1.38), your computer has an anonymous sign-in without an email address. Signing in moves its cloud data to your account and deletes the anonymous sign-in. "Delete my cloud data" in Settings → Account deletes it without signing in. You can also email <a href="mailto:montiesprache@gmail.com">montiesprache@gmail.com</a> and we delete it within 30 days.</p>
     <p>If your company runs its own server and the app is set to use it, your company is responsible for that data, not us.</p>
+
+    <h2 id="delete-account">Deleting your account</h2>
+    <p>You can delete your Terra Cloud account and its data yourself:</p>
+    <ul class="plain-list">
+      <li><strong>Android app:</strong> Settings → Account → Delete account.</li>
+      <li><strong>Desktop app:</strong> Settings → Account → Delete account.</li>
+    </ul>
+    <p>This deletes your account (your email address and sign-in), your cloud boards with their images and files, your shares, your profile picture and song, and your list of devices, at once. People you shared boards with lose access to them. Boards stored on your computers are not touched. Nothing is kept afterwards, except what the law requires us to keep.</p>
+    <p>If you no longer have the app, email <a href="mailto:montiesprache@gmail.com?subject=Delete%20my%20Terra%20Cloud%20account">montiesprache@gmail.com</a> from the address you sign in with, with the subject "Delete my Terra Cloud account". We delete the account and all its data within 30 days and confirm by email.</p>
 
     <h2>When you contact us</h2>
     <p>We use your messages and contact details only to answer you, and delete them once the matter is closed unless the law requires us to keep them (Art. 6(1)(b) and (f) GDPR).</p>

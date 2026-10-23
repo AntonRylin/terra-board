@@ -41,8 +41,8 @@ export const cloud: CloudBridge = {
   signInWith: (provider) => run('signInWithProvider', provider),
   cancelSignIn: () => run('cancelSignIn'),
   signInMethods: () => run('signInMethods'),
-  // Deleting the account is in the desktop app's Settings → Account.
-  deleteCloudData: notOnPhone,
+  // Deletes the account and its cloud data, then this phone's library; the app reloads.
+  deleteCloudData: () => run('deleteCloudData'),
   serverTest: notOnPhone,
   serverSet: notOnPhone,
   onDeepLink: () => () => {},
@@ -50,6 +50,10 @@ export const cloud: CloudBridge = {
   // Signs out and deletes this phone's library; the app reloads.
   signOut: () => run('signOut'),
 };
+
+// For accounts with a password: the app-store review account (cloud-auth.cjs).
+export const signInWithPassword = (email: string, password: string) =>
+  run('signInWithPassword', email, password);
 
 // The terraboard://auth/callback link back from Google or Microsoft.
 export const finishOAuth = (url: string) => run<boolean>('finishOAuth', url);

@@ -1,14 +1,30 @@
 apply plugin: 'com.android.application'
 
+import groovy.json.JsonSlurper
+
+// Version from package.json (docs/android.md). TERRA_ANDROID_BUILD (0-99) counts extra
+// uploads of one app version: Google Play needs a higher versionCode for every upload.
+def packageJson = new JsonSlurper().parse(file('../../package.json'))
+def versionParts = packageJson.version.tokenize('.').collect { (it =~ /^\d+/)[0] as int }
+def uploadNumber = (System.getenv('TERRA_ANDROID_BUILD') ?: '0') as int
+if (uploadNumber < 0 || uploadNumber > 99) throw new GradleException('TERRA_ANDROID_BUILD must be 0-99')
+
+// Release signing (the upload key): keystore.properties outside the repository, never committed.
+def signingFile = file(System.getenv('TERRA_ANDROID_SIGNING') ?:
+    "${System.getProperty('user.home')}/.terra-board-signing/keystore.properties")
+def signing = new Properties()
+if (signingFile.exists()) signingFile.withInputStream { signing.load(it) }
+
 android {
     namespace = "terra.board.android"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "terra.board.android"
+        // The Play Store identity: it can never change once the app is published.
+        applicationId "com.socialartworks.terraboard"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode versionParts[0] * 1000000 + versionParts[1] * 10000 + versionParts[2] * 100 + uploadNumber
+        versionName packageJson.version
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,8 +32,19 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            if (signing.storeFile) {
+                storeFile file(signing.storeFile)
+                storePassword signing.storePassword
+                keyAlias signing.keyAlias
+                keyPassword signing.keyPassword
+            }
+        }
+    }
     buildTypes {
         release {
+            if (signing.storeFile) signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
@@ -44,3 +71,10 @@ dependencies {
 
 apply from: 'capacitor.build.gradle'
 
+
+// An unsigned release cannot be uploaded to Google Play; say why instead of building one.
+gradle.taskGraph.whenReady { graph ->
+    def release = graph.allTasks.any { it.name in ['bundleRelease', 'assembleRelease'] }
+    if (release && !signing.storeFile)
+        throw new GradleException("No upload key: ${signingFile} is missing (docs/android.md, Releasing).")
+}

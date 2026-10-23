@@ -39,11 +39,13 @@ const methods = new Set([
   'syncNow',
   'sendEmailCode',
   'verifyEmailCode',
+  'signInWithPassword',
   'signInWithProvider',
   'cancelSignIn',
   'signInMethods',
   'finishOAuth',
   'signOut',
+  'deleteCloudData',
 ]);
 
 export function startCloud({
@@ -153,6 +155,13 @@ export function startCloud({
       cloud.stop();
       await wipe();
       return status;
+    },
+    // Deleting the account (Google Play requires it in the app) also clears the phone.
+    async deleteCloudData() {
+      const result = await cloud.deleteCloudData();
+      cloud.stop();
+      await wipe();
+      return result;
     },
   };
 

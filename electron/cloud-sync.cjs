@@ -427,6 +427,18 @@ class CloudSync {
     return this.afterSignIn();
   }
 
+  // For accounts with a password (the app-store review account; cloud-auth.cjs).
+  async signInWithPassword(email, password) {
+    await this.requireSignedOut();
+    try {
+      await this.auth.signInWithPassword(email, password);
+    } catch (e) {
+      await this.resumeAfterFailedSignIn();
+      throw e;
+    }
+    return this.afterSignIn();
+  }
+
   // Google or Microsoft in the system browser; finishes when the terraboard://auth/callback
   // link arrives (finishOAuth), or fails on cancelSignIn().
   async signInWithProvider(provider) {
