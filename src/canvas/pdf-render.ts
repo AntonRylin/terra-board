@@ -257,7 +257,7 @@ export async function convertPdfPages(
       );
       signal?.throwIfAborted();
       let text = textFromPage(content);
-      // Scanned pages have no text of their own; read them with Windows text recognition.
+      // Scanned pages have no text of their own; read them with text recognition.
       if (!text.trim() && typeof window !== 'undefined' && window.canvas?.recognizeImage) {
         const [{ pdfPageText }, { recognizedString }] = await Promise.all([
           import('./page-text'),

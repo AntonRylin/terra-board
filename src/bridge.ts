@@ -193,7 +193,7 @@ interface DesktopBridge {
   copyText(text: string): Promise<void>;
   // The audio of a song link (YouTube and other sites), for an entrance song.
   songFromLink(url: string): Promise<{ bytes: Uint8Array; name: string }>;
-  /** Windows only (the Windows OCR engine); absent on other systems. */
+  /** Windows (its OCR engine) and Linux with Tesseract installed; absent elsewhere. */
   recognizeAsset?(id: string): Promise<RecognizedText>;
   recognizeImage?(bytes: Uint8Array): Promise<RecognizedText>;
   /** The desktop's operating system, as Node's process.platform ('win32', 'linux'). */

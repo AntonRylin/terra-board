@@ -1,4 +1,6 @@
 const { spawn } = require('node:child_process');
+const fs = require('node:fs');
+const path = require('node:path');
 const sharp = require('sharp');
 
 // Windows' built-in recognizer (Windows.Media.Ocr) is fast, private and uses the
@@ -202,13 +204,175 @@ async function prepareImage(input, maxDimension = 10000) {
   return { bytes, width: outWidth, height: outHeight };
 }
 
-function createOcr({ loadAsset, spawnHost, idleMs = 120000, timeoutMs = 90000 }) {
+// Linux reads text with the system's Tesseract (tesseract-ocr) when it is
+// installed: each request runs `tesseract stdin stdout -l <langs> tsv`.
+const TESSERACT_MISSING =
+  'Text recognition needs Tesseract. Install it with "sudo apt install tesseract-ocr", then restart Terra Board.';
+
+// Tesseract's traineddata names for BCP 47 primary language subtags.
+// prettier-ignore
+const TESSERACT_CODES = {
+  af: 'afr', am: 'amh', ar: 'ara', az: 'aze', be: 'bel', bg: 'bul', bn: 'ben', bs: 'bos',
+  ca: 'cat', cs: 'ces', cy: 'cym', da: 'dan', de: 'deu', el: 'ell', en: 'eng', eo: 'epo',
+  es: 'spa', et: 'est', eu: 'eus', fa: 'fas', fi: 'fin', fr: 'fra', ga: 'gle', gl: 'glg',
+  gu: 'guj', he: 'heb', hi: 'hin', hr: 'hrv', hu: 'hun', hy: 'hye', id: 'ind', is: 'isl',
+  it: 'ita', ja: 'jpn', ka: 'kat', kk: 'kaz', km: 'khm', ko: 'kor', ky: 'kir', lo: 'lao',
+  lt: 'lit', lv: 'lav', mk: 'mkd', ml: 'mal', mn: 'mon', mr: 'mar', ms: 'msa', mt: 'mlt',
+  my: 'mya', nb: 'nor', ne: 'nep', nl: 'nld', nn: 'nor', no: 'nor', pa: 'pan', pl: 'pol',
+  pt: 'por', ro: 'ron', ru: 'rus', si: 'sin', sk: 'slk', sl: 'slv', sq: 'sqi', sr: 'srp',
+  sv: 'swe', sw: 'swa', ta: 'tam', te: 'tel', tg: 'tgk', th: 'tha', tl: 'tgl', tr: 'tur',
+  uk: 'ukr', ur: 'urd', uz: 'uzb', vi: 'vie',
+};
+
+function tesseractCode(tag) {
+  const lower = String(tag).toLowerCase().replace(/_/g, '-');
+  if (primary(lower) === 'zh') return /-(hant|tw|hk|mo)(-|$)/.test(lower) ? 'chi_tra' : 'chi_sim';
+  return TESSERACT_CODES[primary(lower)] || null;
+}
+
+// Installed traineddata for the user's languages, in their order; English
+// (or the first installed one) when none of them is installed.
+function tesseractLanguages(preferred, installed) {
+  const usable = installed.filter((code) => code !== 'osd' && code !== 'equ');
+  const ordered = usable.includes('eng') ? ['eng', ...usable.filter((c) => c !== 'eng')] : usable;
+  return matchLanguages((preferred || []).map(tesseractCode).filter(Boolean), ordered);
+}
+
+// `tesseract --list-langs`: a heading line, then one traineddata name per line.
+function parseLanguageList(output) {
+  const lines = String(output).split(/\r?\n/);
+  const start = lines.findIndex((line) => /available languages/i.test(line));
+  return lines
+    .slice(start + 1)
+    .map((line) => line.trim())
+    .filter((line) => /^[\w/+.-]+$/.test(line));
+}
+
+// Word rows (level 5) of Tesseract's TSV, grouped into its lines in reading order.
+function parseTesseractTsv(tsv) {
+  const lines = new Map();
+  for (const row of String(tsv).split(/\r?\n/)) {
+    const cells = row.split('\t');
+    if (cells.length < 12 || cells[0] !== '5') continue;
+    const text = cells.slice(11).join(' ').trim(),
+      confidence = Number(cells[10]);
+    // Stray rules and specks come back as low-confidence punctuation.
+    if (!text || confidence < 0 || (confidence < 50 && !/[\p{L}\p{N}]/u.test(text))) continue;
+    const [x, y, w, h] = cells.slice(6, 10).map(Number);
+    if (![x, y, w, h].every(Number.isFinite) || w <= 0 || h <= 0) continue;
+    const key = cells.slice(1, 5).join(':');
+    if (!lines.has(key)) lines.set(key, []);
+    lines.get(key).push({ t: text, x, y, w, h });
+  }
+  return [...lines.values()];
+}
+
+// The tesseract program on PATH (or in the usual folders), if installed.
+function findTesseract(env = process.env) {
+  const dirs = [...String(env.PATH || '').split(':'), '/usr/bin', '/usr/local/bin'];
+  for (const dir of dirs) {
+    if (!dir.startsWith('/')) continue;
+    const file = path.posix.join(dir, 'tesseract');
+    try {
+      if (!fs.statSync(file).isFile()) continue;
+      fs.accessSync(file, fs.constants.X_OK);
+      return file;
+    } catch {}
+  }
+  return null;
+}
+
+// Whether this system can read text in images: Windows' own engine, or
+// Tesseract on Linux.
+function textRecognitionAvailable(platform = process.platform, env = process.env) {
+  if (platform === 'win32') return true;
+  return platform === 'linux' && !!findTesseract(env);
+}
+
+function runProcess(file, args, { env, input, timeoutMs = 90000 } = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(file, args, { env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+    let stdout = '',
+      stderr = '',
+      timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill('SIGKILL');
+    }, timeoutMs);
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (chunk) => (stdout += chunk));
+    child.stderr.on('data', (chunk) => (stderr += chunk));
+    child.stdin.on('error', () => {});
+    child.on('error', (error) => {
+      clearTimeout(timer);
+      reject(Error('Text recognition could not start: ' + error.message));
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (timedOut) return reject(Error('Text recognition took too long.'));
+      if (code === 0) return resolve({ stdout, stderr });
+      const reason = stderr.trim().split(/\r?\n/).filter(Boolean).at(-1) || `exit code ${code}`;
+      reject(Error('Text recognition failed: ' + reason));
+    });
+    child.stdin.end(input);
+  });
+}
+
+// `find` and `run` stand in for the real program in tests.
+function tesseractEngine({
+  env = process.env,
+  find = findTesseract,
+  run = runProcess,
+  preferredLanguages = () => [],
+  timeoutMs,
+}) {
+  let installed = null;
+  const languages = (file) => {
+    if (!installed) {
+      // Tesseract 3 listed them on stderr.
+      installed = run(file, ['--list-langs'], { env, timeoutMs }).then(({ stdout, stderr }) =>
+        parseLanguageList(stdout.trim() ? stdout : stderr),
+      );
+      installed.catch(() => (installed = null));
+    }
+    return installed;
+  };
+  return async (input) => {
+    const file = find(env);
+    if (!file) throw Error(TESSERACT_MISSING);
+    const chosen = tesseractLanguages(preferredLanguages(), await languages(file));
+    if (!chosen.length)
+      throw Error(
+        'Tesseract has no languages installed. Install English with "sudo apt install tesseract-ocr-eng".',
+      );
+    const image = await prepareImage(input, 10000);
+    const { stdout } = await run(
+      file,
+      ['stdin', 'stdout', '--dpi', '300', '-l', chosen.join('+'), 'tsv'],
+      { env, input: image.bytes, timeoutMs },
+    );
+    return { lines: normalizeLines(parseTesseractTsv(stdout), image.width, image.height) };
+  };
+}
+
+// Windows: a long-lived PowerShell host (spawnHost replaces it in tests).
+// Linux: Tesseract, one run per image (options in `tesseract`).
+function createOcr({
+  loadAsset,
+  spawnHost,
+  idleMs = 120000,
+  timeoutMs = 90000,
+  platform = process.platform,
+  tesseract = {},
+}) {
   let host = null,
     nextId = 1;
   const cache = new Map();
+  const linux = platform === 'linux' ? tesseractEngine({ timeoutMs, ...tesseract }) : null;
 
   function start() {
-    if (process.platform !== 'win32') throw Error('Text recognition needs Windows 10 or later.');
+    if (platform !== 'win32') throw Error('Text recognition is available on Windows and Linux.');
     const child = spawnHost
       ? spawnHost()
       : spawn(
@@ -289,6 +453,7 @@ function createOcr({ loadAsset, spawnHost, idleMs = 120000, timeoutMs = 90000 })
   }
 
   async function recognize(input) {
+    if (linux) return linux(input);
     if (!host) host = start();
     const state = host;
     clearTimeout(state.idle);
@@ -347,9 +512,15 @@ function createOcr({ loadAsset, spawnHost, idleMs = 120000, timeoutMs = 90000 })
 
 module.exports = {
   createOcr,
+  findTesseract,
   mergeRecognitions,
   matchLanguages,
   normalizeLines,
+  parseLanguageList,
+  parseTesseractTsv,
   prepareImage,
+  runProcess,
   scriptOf,
+  tesseractLanguages,
+  textRecognitionAvailable,
 };

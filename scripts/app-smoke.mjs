@@ -12,6 +12,8 @@
 // TERRA_SMOKE_EXTENSIONS: a folder of built extensions (release/extensions);
 //   the second start installs Background removal and Song links from it,
 //   cuts out the image and runs yt-dlp.
+// TERRA_SMOKE_OCR=1: text recognition must be offered and read text the page
+//   draws (Tesseract on Linux, run without the AppImage's libraries).
 // TERRA_SMOKE_DESKTOP_ENTRY: a menu entry the app must have written that starts
 //   <executable> (an AppImage integrates itself).
 //
@@ -195,6 +197,20 @@ await run('second start', async ({ evaluate, send }) => {
   assert.ok(result.objects.includes('note:' + noteText), 'note missing');
   assert.ok(result.objects.includes('image:smoke-image'), 'image missing');
   assert.equal(result.size?.width, 64, 'image size');
+  if (process.env.TERRA_SMOKE_OCR === '1') {
+    const read = await evaluate(`(async () => {
+      if (!window.canvas.recognizeImage) return { offered: false };
+      const c = new OffscreenCanvas(900, 160), g = c.getContext('2d');
+      g.fillStyle = '#fff'; g.fillRect(0, 0, 900, 160);
+      g.fillStyle = '#111'; g.font = '56px sans-serif'; g.fillText('Terra Board reads text', 30, 100);
+      const bytes = new Uint8Array(await (await c.convertToBlob({ type: 'image/png' })).arrayBuffer());
+      const text = await window.canvas.recognizeImage(bytes);
+      return { offered: true, lines: text.lines.map((l) => l.words.map((w) => w.text).join(' ')) };
+    })()`);
+    step(`text recognition: ${JSON.stringify(read)}`);
+    assert.ok(read.offered, 'text recognition is not offered');
+    assert.match(read.lines.join(' '), /Terra Board reads text/);
+  }
   if (extensionSource) {
     for (const id of ['background-removal', 'song-links']) {
       await evaluate(`window.canvas.extensions.install(${JSON.stringify(id)})`);

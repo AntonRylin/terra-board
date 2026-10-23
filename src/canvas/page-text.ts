@@ -17,14 +17,17 @@ function remember(key: string, load: () => Promise<RecognizedText>) {
   return task;
 }
 
-// Text recognition uses the Windows OCR engine; other systems' desktop bridge
-// leaves it out (electron/preload.cjs).
+// Text recognition uses the Windows OCR engine, or Tesseract on Linux; the
+// desktop bridge leaves it out where neither is there (electron/preload.cjs).
 export const canRecognizeText = () => !!window.canvas?.recognizeImage;
-export const textRecognitionUnavailable = 'Text recognition is available on Windows.';
+export const textRecognitionUnavailable = () =>
+  window.canvas?.platform === 'linux'
+    ? 'Text recognition needs Tesseract. Install it with "sudo apt install tesseract-ocr", then restart Terra Board.'
+    : 'Text recognition is available on Windows and Linux.';
 
 export function imageAssetText(assetId: string): Promise<RecognizedText> {
   if (!window.canvas) return Promise.reject(Error('Text recognition needs the desktop app.'));
-  if (!window.canvas.recognizeAsset) return Promise.reject(Error(textRecognitionUnavailable));
+  if (!window.canvas.recognizeAsset) return Promise.reject(Error(textRecognitionUnavailable()));
   return remember('asset:' + assetId, () =>
     window.canvas!.recognizeAsset!(assetId).then((text) => ({ ...text, source: 'ocr' as const })),
   );
@@ -56,7 +59,7 @@ async function recognizePage(pdf: PDFDocumentProxy, pageIndex: number, rotation:
 
 /**
  * Selectable text for one PDF page: the PDF's own text when it has any, otherwise
- * Windows text recognition on the rendered page (scans and photographed pages).
+ * text recognition on the rendered page (scans and photographed pages).
  */
 export function pdfPageText(
   pdf: PDFDocumentProxy,

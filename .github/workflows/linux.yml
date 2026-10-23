@@ -37,15 +37,16 @@ jobs:
           cache: npm
 
       # A display for the tests and the start-up checks that open Electron
-      # windows, fonts for the scripts the PDF tests print, and FUSE 2, which
-      # AppImages need to mount themselves.
+      # windows, fonts for the scripts the PDF tests print, FUSE 2, which
+      # AppImages need to mount themselves, and Tesseract, which Linux text
+      # recognition uses when it is installed.
       - name: Install system packages
         timeout-minutes: 15
         run: |
           # Skips rebuilding the man-page index after each install, which can take minutes.
           sudo rm -f /var/lib/man-db/auto-update
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends xvfb xauth fonts-noto-core fonts-noto-cjk libfuse2t64
+          sudo apt-get install -y --no-install-recommends xvfb xauth fonts-noto-core fonts-noto-cjk libfuse2t64 tesseract-ocr
 
       # Ubuntu 24.04 blocks the unprivileged user namespaces Chromium's sandbox
       # uses; without this Electron exits before opening a window. Only this
@@ -94,12 +95,13 @@ jobs:
       # app again and checks they came back, installs Background removal and
       # Song links from the build and runs them, then connects over MCP the way
       # Claude Desktop does. The AppImage also has to add itself to the
-      # applications menu.
+      # applications menu, and read text in an image with the system's Tesseract.
       - name: Use the AppImage end to end
         run: |
           mkdir -p "$RUNNER_TEMP/screens"
           export XDG_DATA_HOME="$RUNNER_TEMP/xdg-appimage"
           export TERRA_SMOKE_EXTENSIONS="$PWD/release/extensions"
+          export TERRA_SMOKE_OCR=1
           export TERRA_SMOKE_DESKTOP_ENTRY="$XDG_DATA_HOME/applications/terra-board.desktop"
           export TERRA_SMOKE_LIBRARY="$XDG_DATA_HOME/Terra Board/Library"
           export TERRA_SMOKE_SCREENSHOT="$RUNNER_TEMP/screens/appimage.png"
@@ -109,6 +111,7 @@ jobs:
         run: |
           sudo apt-get install -y "$(realpath release/linux/*.deb)"
           export XDG_DATA_HOME="$RUNNER_TEMP/xdg-deb"
+          export TERRA_SMOKE_OCR=1
           export TERRA_SMOKE_EXTENSIONS="$PWD/release/extensions"
           export TERRA_SMOKE_LIBRARY="$XDG_DATA_HOME/Terra Board/Library"
           export TERRA_SMOKE_SCREENSHOT="$RUNNER_TEMP/screens/deb.png"

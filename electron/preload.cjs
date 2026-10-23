@@ -43,9 +43,10 @@ contextBridge.exposeInMainWorld('canvas', {
     return () => ipcRenderer.removeListener('canvas:office-progress', handler);
   },
   assetDimensions: (id) => ipcRenderer.invoke('canvas:asset-dimensions', id),
-  // Text recognition uses the Windows OCR engine. Elsewhere these are absent,
-  // so the board hides Copy text for images and reads PDFs by their own text.
-  ...(process.platform === 'win32' && {
+  // Text recognition: the Windows OCR engine, or Tesseract on Linux when it is
+  // installed (main passes --terra-text-recognition). Elsewhere these are absent,
+  // so the board disables Copy text for images and reads PDFs by their own text.
+  ...((process.platform === 'win32' || process.argv.includes('--terra-text-recognition')) && {
     recognizeAsset: (id) => ipcRenderer.invoke('canvas:recognize-asset', id),
     recognizeImage: (bytes) => ipcRenderer.invoke('canvas:recognize-image', bytes),
   }),

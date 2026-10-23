@@ -2722,7 +2722,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     });
     return task;
   };
-  // Text in an image (Windows text recognition) or a PDF (its own text, or
+  // Text in an image (text recognition) or a PDF (its own text, or
   // recognition for scanned pages), copied as plain text.
   const copyObjectText = (o: CanvasObject) => {
     const task = (async () => {
@@ -3358,9 +3358,9 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
                   label: 'Copy text',
                   icon: <ScanText />,
                   action: () => copyObjectText(selected[0]),
-                  // Reading text in images uses Windows' text recognition.
+                  // Reading text in images: Windows' OCR, or Tesseract on Linux.
                   disabled: copying || !canRecognizeText(),
-                  hint: canRecognizeText() ? undefined : textRecognitionUnavailable,
+                  hint: canRecognizeText() ? undefined : textRecognitionUnavailable(),
                 },
               ]
             : []),

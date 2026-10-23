@@ -39,7 +39,7 @@ const {
 const { attachWindowShadow } = require('./window-shadow.cjs');
 const { fetchPreview } = require('./link-preview.cjs');
 const { downloadSongLink, YT_DLP } = require('./song-link.cjs');
-const { createOcr } = require('./ocr.cjs');
+const { createOcr, textRecognitionAvailable } = require('./ocr.cjs');
 const { createHtmlCards, embedRequest, fromEmbed } = require('./html-cards.cjs');
 const { browserSession, hardenWebviews, guestOf } = require('./browser-frames.cjs');
 const { acceptLanguages, spellcheckLanguages } = require('./system-languages.cjs');
@@ -49,7 +49,12 @@ const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
 const { createHash, randomUUID } = require('node:crypto');
 const { libraryRoot, userDataBase } = require('./storage-paths.cjs');
-const { integrateAppImage, autostartEnabled, setAutostart } = require('./linux-desktop.cjs');
+const {
+  integrateAppImage,
+  autostartEnabled,
+  setAutostart,
+  systemEnv,
+} = require('./linux-desktop.cjs');
 const { createAppUpdater, installsUpdates } = require('./app-updater.cjs');
 const { collectLicenses } = require('./licenses.cjs');
 const { createExtensions } = require('./extensions.cjs');
@@ -549,6 +554,11 @@ app
       autoHideMenuBar: true,
       webPreferences: {
         preload: path.join(__dirname, 'preload.cjs'),
+        // The preload offers text recognition only where it works (Tesseract
+        // installed on Linux); it reads this flag from process.argv.
+        additionalArguments: textRecognitionAvailable(process.platform, systemEnv())
+          ? ['--terra-text-recognition']
+          : [],
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,
@@ -1195,7 +1205,14 @@ app
       trusted(e);
       return assetDownload.save(args);
     });
-    ocr = createOcr({ loadAsset: (id) => call('asset', { id, variant: 'original' }) });
+    ocr = createOcr({
+      loadAsset: (id) => call('asset', { id, variant: 'original' }),
+      // Linux: the system's Tesseract, without the AppImage's libraries.
+      tesseract: {
+        env: systemEnv(),
+        preferredLanguages: () => app.getPreferredSystemLanguages(),
+      },
+    });
     ipcMain.handle('canvas:recognize-asset', (e, id) => {
       trusted(e);
       if (typeof id !== 'string' || !/^[a-f0-9]{64}$/.test(id)) throw Error('Invalid asset');
