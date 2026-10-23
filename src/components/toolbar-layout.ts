@@ -40,6 +40,13 @@ export const defaultToolbarLayout = (): ToolbarLayout => ({
   inventory: ['gallery', 'list', 'table', 'paper', 'html', 'browser'],
 });
 
+// The Android app's first layout: six tools fit a phone; the rest wait under +. Moving a
+// finger on empty board already pans, so the hand tool is among the rest.
+export const phoneToolbarLayout = (): ToolbarLayout => {
+  const bar: ToolbarId[] = ['select', 'pen', 'note', 'text', 'rect', 'media'];
+  return { bar, inventory: toolbarIds.filter((id) => !bar.includes(id)) };
+};
+
 // Repair old or malformed preferences without losing access to any tool.
 export function readToolbarLayout(value: unknown): ToolbarLayout {
   if (!value || typeof value !== 'object') return defaultToolbarLayout();

@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   defaultToolbarLayout,
+  phoneToolbarLayout,
   readToolbarLayout,
   moveToolbarTool,
   toolbarIds,
@@ -39,4 +40,18 @@ test('preferences recover missing tools, ignore unknown tools and allow an empty
   assert.deepEqual([...layout.inventory].sort(), [...toolbarIds].sort());
   assert.deepEqual(readToolbarLayout(null), defaultToolbarLayout());
   assert.deepEqual(readToolbarLayout({ bar: 'broken' }), defaultToolbarLayout());
+});
+
+test('the phone layout shows six tools and keeps every other tool under +', () => {
+  const phone = phoneToolbarLayout();
+  assert.equal(phone.bar.length, 6);
+  assert.deepEqual(readToolbarLayout(phone), phone, 'a saved phone layout reads back unchanged');
+  assert.equal(
+    new Set([...phone.bar, ...phone.inventory]).size,
+    phone.bar.length + phone.inventory.length,
+  );
+  assert.equal(
+    phone.bar.length + phone.inventory.length,
+    defaultToolbarLayout().bar.length + defaultToolbarLayout().inventory.length,
+  );
 });

@@ -2554,3 +2554,10 @@ html.android .app-shell {
 html.android {
   -webkit-tap-highlight-color: transparent;
 }
+/* Android, portrait: fingers pinch to zoom, so the zoom buttons give way; the canvas
+   menu (…) and, while the toolbar is hidden, Show toolbar stay. */
+@media (orientation: portrait) {
+  html.android .canvas-zoom .zoom-step {
+    display: none;
+  }
+}

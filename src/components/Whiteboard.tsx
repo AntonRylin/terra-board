@@ -492,7 +492,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     imports = useRef(new Set<Promise<void>>());
   const cropSession = useRef<{ object: CanvasObject; crop: CropBounds } | null>(null);
   const toolsRef = useRef<HTMLDivElement>(null);
-  const zoomControls = useZoomControlSpace();
+  const { toolbarHidden } = usePreferences();
+  const zoomControls = useZoomControlSpace(toolbarHidden);
   const galleryHintRef = useRef<HTMLDivElement>(null);
   const galleryTargetsRef = useRef<HTMLDivElement>(null);
   const galleryTarget = useRef<GalleryTarget | null>(null);
@@ -954,7 +955,6 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   // New images record when they were added and the profile name of who added
   // them, unless that is turned off in Settings → Canvas.
   const cloudStatus = useCloudStatus();
-  const { toolbarHidden } = usePreferences();
   const profileName = useRef('');
   profileName.current = cloudStatus?.name?.trim() || '';
   const newImageAdded = () =>
@@ -4782,14 +4782,14 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           </button>
         )}
         <button
-          className="icon-button"
+          className="icon-button zoom-step"
           aria-label="Zoom out"
           onClick={() => engine.current?.zoom(1 / 1.2)}
         >
           <Minus size={17} />
         </button>
         <button
-          className="zoom-value"
+          className="zoom-value zoom-step"
           title="Fit board · 0"
           aria-label="Fit board"
           onClick={() => engine.current?.fit()}
@@ -4797,7 +4797,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           {Math.round(camera.zoom * 100)}%
         </button>
         <button
-          className="icon-button"
+          className="icon-button zoom-step"
           aria-label="Zoom in"
           onClick={() => engine.current?.zoom(1.2)}
         >

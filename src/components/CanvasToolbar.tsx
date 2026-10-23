@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { PanelBottomClose, Plus, SquareDashed, type LucideIcon } from 'lucide-react';
 import {
   defaultToolbarLayout,
+  phoneToolbarLayout,
   readToolbarLayout,
   moveToolbarTool,
   toolbarStorageKey,
@@ -10,6 +11,7 @@ import {
   type ToolbarZone,
 } from './toolbar-layout';
 import { useToolbarReorder } from './useToolbarReorder';
+import { android } from '../bridge';
 import './canvas-toolbar.css';
 export type ToolbarAction = {
   id: ToolbarId;
@@ -47,11 +49,15 @@ export default function CanvasToolbar({
     save,
     start,
   } = useToolbarReorder({
+    // A layout the person arranged is kept (localStorage); until then the default for
+    // this kind of device.
     initialLayout: () => {
+      const fallback = android ? phoneToolbarLayout() : defaultToolbarLayout();
       try {
-        return readToolbarLayout(JSON.parse(localStorage.getItem(toolbarStorageKey) || 'null'));
+        const saved = JSON.parse(localStorage.getItem(toolbarStorageKey) || 'null');
+        return saved ? readToolbarLayout(saved) : fallback;
       } catch {
-        return defaultToolbarLayout();
+        return fallback;
       }
     },
     available: tools.map((tool) => tool.id),
