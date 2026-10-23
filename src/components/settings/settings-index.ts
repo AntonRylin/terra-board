@@ -295,7 +295,7 @@ export const rows = {
   },
   accountDevices: {
     section: 'account',
-    title: 'Your computers',
+    title: 'No computers listed yet',
     description: 'Computers you sign in on appear here.',
     keywords: 'devices computers remove sign out',
   },

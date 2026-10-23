@@ -1,6 +1,6 @@
 # Terra Board
 
-A free, open-source whiteboard for Windows. Drop in images, videos, PDFs, notes and links, and arrange them on an infinite canvas. Your boards stay on your computer unless you turn on sync. No account is needed, and there are no analytics or tracking of our own. The app goes online only for link previews and YouTube videos, sync when you turn it on, and update checks, which you can turn off in Settings → About.
+A free, open-source whiteboard for Windows. Drop in images, videos, PDFs, notes and links, and arrange them on an infinite canvas. Your boards stay on your computer unless you turn on sync. No account is needed to use it; sync and sharing need a sign-in (an email code, Google or Microsoft). There are no analytics or tracking of our own. The app goes online only for link previews and YouTube videos, sync when you turn it on, and update checks, which you can turn off in Settings → About.
 
 ## Install
 

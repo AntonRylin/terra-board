@@ -95,6 +95,8 @@ class CloudSync {
     onPresence,
     openUrl,
     appVersion,
+    redirectTo,
+    createSupabaseClient,
   }) {
     this.call = call;
     this.root = root;
@@ -104,6 +106,9 @@ class CloudSync {
     this.onStatus = onStatus;
     this.onPresence = onPresence;
     this.openUrl = openUrl || (async () => {});
+    // The Android app passes its own redirect and client factory; the desktop uses the defaults.
+    this.redirectTo = redirectTo;
+    this.createSupabaseClient = createSupabaseClient || createClient;
     this.appVersion = appVersion || null;
     this.knownDevice = null;
     this.media = new Map();
@@ -162,7 +167,7 @@ class CloudSync {
       this.safeStorage,
     );
     this.client = config
-      ? createClient(config.url, config.key, {
+      ? this.createSupabaseClient(config.url, config.key, {
           auth: {
             storage: this.vault,
             storageKey: 'terra-cloud',
@@ -179,6 +184,7 @@ class CloudSync {
       ? createCloudAuth({
           client: this.client,
           openUrl: (url) => this.openUrl(url),
+          ...(this.redirectTo ? { redirectTo: this.redirectTo } : {}),
           onBeforeSignIn: () => this.keepAnonymousSession(),
         })
       : null;
@@ -194,7 +200,7 @@ class CloudSync {
   // A client that keeps its session in memory only, for the claim.
   tempClient() {
     const memory = new Map();
-    return createClient(this.config.url, this.config.key, {
+    return this.createSupabaseClient(this.config.url, this.config.key, {
       auth: {
         storage: {
           getItem: (k) => memory.get(k) ?? null,
