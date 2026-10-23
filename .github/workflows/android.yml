@@ -5,6 +5,9 @@ name: Android build
 
 on:
   workflow_dispatch:
+  # TEMPORARY: proves the workflow on the port branch; removed before merge.
+  push:
+    branches: ['claude/android-port-78ba1c']
 
 permissions:
   contents: read
