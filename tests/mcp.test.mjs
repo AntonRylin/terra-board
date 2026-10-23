@@ -654,10 +654,16 @@ test('MCP clients start the AppImage file itself, and the executable elsewhere',
     platform: 'linux',
     script,
   });
-  assert.equal(appImage.command, '/home/me/Apps/Terra-Board-x86_64.AppImage');
-  assert.equal(appImage.args[0], '-e');
-  assert.match(appImage.args[1], /"resources\/app\.asar\/electron\/mcp-stdio\.cjs"/);
-  assert.doesNotMatch(appImage.args[1], /\.mount_/);
+  assert.equal(appImage.command, '/bin/sh');
+  assert.equal(appImage.args[0], '-c');
+  assert.match(appImage.args[1], /--appimage-mount/);
+  assert.deepEqual(appImage.args.slice(2), [
+    'terra-board-mcp',
+    '/home/me/Apps/Terra-Board-x86_64.AppImage',
+    'terra-board',
+    'resources/app.asar/electron/mcp-stdio.cjs',
+  ]);
+  assert.doesNotMatch(appImage.args.join(' '), /\.mount_/);
   const deb = stdioLauncher({
     executable: '/opt/Terra Board/terra-board',
     env: {},

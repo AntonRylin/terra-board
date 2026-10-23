@@ -14,7 +14,7 @@ Use the command, args and env exactly as given. Do not change the paths, do not 
 
 1. Claude Desktop: find claude_desktop_config.json. On Windows it is normally %APPDATA%\\Claude\\claude_desktop_config.json; Microsoft Store installs keep it under %LOCALAPPDATA%\\Packages\\Claude_*\\LocalCache\\Roaming\\Claude. On macOS it is ~/Library/Application Support/Claude/claude_desktop_config.json. On Linux it is ~/.config/Claude/claude_desktop_config.json. Make a backup copy next to it, then add terra_board to the existing mcpServers object. Keep every other server and setting unchanged and keep the file valid JSON.
 2. Claude Code, if the claude command is installed: register the same entry for all projects with claude mcp add-json --scope user terra_board '<the terra_board object as one JSON string>', then confirm with claude mcp get terra_board.
-3. Check that the command and the mcp-stdio.cjs file exist at the given paths. If they do not, stop and tell me instead of guessing other paths.
+3. Check that the command and the mcp-stdio.cjs file exist at the given paths (for a Linux AppImage the command is /bin/sh: check that the .AppImage file in the args exists instead). If they do not, stop and tell me instead of guessing other paths.
 
 When done, tell me to fully quit and reopen Claude, and that Terra Board must stay open with Settings → AI access via MCP switched on. After the restart, call list_boards to confirm the connection.`;
 export default function McpSettings() {

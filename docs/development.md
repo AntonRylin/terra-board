@@ -79,7 +79,7 @@ The workflow (`.github/workflows/linux.yml`) runs `npx tsc --noEmit`, `npm test`
 - Office files uses the LibreOffice installed in the system (`/usr/bin/soffice` and the usual other places, see `officeLocation`). There is no LibreOffice download; without one, Settings → Extensions says to install it with the package manager.
 - Background removal and Song links work: the build packs onnxruntime's Linux library and the Linux yt-dlp (`scripts/payloads.mjs`).
 - Launch at login writes an XDG autostart entry, `~/.config/autostart/terra-board.desktop` (the AppImage's entry starts the AppImage file). Turning it off in the desktop's own startup settings (`Hidden=true`) shows as off in Terra Board.
-- AI access via MCP: the stdio entry for Claude Desktop starts the AppImage file itself with `-e`, because an AppImage runs from a new `/tmp/.mount_*` folder every launch (`stdioLauncher` in `electron/mcp-server.cjs`); the .deb's entry is `/opt/Terra Board/terra-board`. Claude Desktop's config on Linux is `~/.config/Claude/claude_desktop_config.json`.
+- AI access via MCP: an AppImage runs from a new `/tmp/.mount_*` folder every launch, so its stdio entry for Claude Desktop is a `/bin/sh -c` script that mounts the AppImage file (`--appimage-mount`) and runs `mcp-stdio.cjs` from it as Node, skipping the AppImage's launcher, whose `--no-sandbox` Node would reject (`stdioLauncher` in `electron/mcp-server.cjs`); the .deb's entry is `/opt/Terra Board/terra-board`. Claude Desktop's config on Linux is `~/.config/Claude/claude_desktop_config.json`.
 - The window keeps the desktop's own title bar; the extra Windows shadow window is Windows only.
 - IT can lock the server with `/etc/terra-board/server.json` (Windows: `%ProgramData%\Terra Board\server.json`).
 

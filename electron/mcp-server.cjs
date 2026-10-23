@@ -8,9 +8,29 @@ const {
 } = require('@modelcontextprotocol/sdk/server/streamableHttp.js');
 const { tools } = require('./mcp-tools.cjs');
 const settingsFile = (root) => path.join(root, 'settings', 'mcp.json');
+// Run by /bin/sh for an AppImage: $1 the AppImage, $2 its executable and $3
+// mcp-stdio.cjs, both relative to the mounted image. It mounts the image
+// (--appimage-mount prints the folder and waits), runs the script there as
+// Node and unmounts when it ends. Starting the AppImage normally would go
+// through its launcher, which adds --no-sandbox on Ubuntu 24.04, and Node
+// rejects that flag.
+const APPIMAGE_STDIO = `out="$(mktemp)"
+"$1" --appimage-mount >"$out" &
+mount=$!
+trap 'kill "$mount" 2>/dev/null; rm -f "$out"' EXIT
+trap 'exit 1' HUP INT TERM
+dir=
+i=0
+while [ -z "$dir" ]; do
+  kill -0 "$mount" 2>/dev/null || { echo "Terra Board: could not mount $1" >&2; exit 1; }
+  i=$((i + 1)); [ "$i" -le 300 ] || { echo "Terra Board: mounting $1 timed out" >&2; exit 1; }
+  sleep 0.1
+  dir="$(head -n 1 "$out")"
+done
+LD_LIBRARY_PATH="$dir/usr/lib\${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" ELECTRON_RUN_AS_NODE=1 "$dir/$2" "$dir/$3"`;
+
 // How MCP clients start mcp-stdio.cjs. An AppImage runs from a new temporary
-// mount on every launch, so clients start the AppImage file itself, which finds
-// the script next to its own executable.
+// mount on every launch, so clients get the AppImage file itself (above).
 function stdioLauncher({
   executable = process.execPath,
   env = process.env,
@@ -18,16 +38,18 @@ function stdioLauncher({
   script = path.join(__dirname, 'mcp-stdio.cjs'),
 } = {}) {
   const folder = path.posix.dirname(executable);
-  if (platform === 'linux' && env.APPIMAGE && script.startsWith(folder + '/')) {
-    const relative = path.posix.relative(folder, script);
+  if (platform === 'linux' && env.APPIMAGE && script.startsWith(folder + '/'))
     return {
-      command: env.APPIMAGE,
+      command: '/bin/sh',
       args: [
-        '-e',
-        `const p=require('path');require(p.join(p.dirname(process.execPath),${JSON.stringify(relative)})).run(process.env.CANVAS_DATA_DIR).catch(e=>{console.error(e.message);process.exit(1)})`,
+        '-c',
+        APPIMAGE_STDIO,
+        'terra-board-mcp',
+        env.APPIMAGE,
+        path.posix.basename(executable),
+        path.posix.relative(folder, script),
       ],
     };
-  }
   return { command: executable, args: [script] };
 }
 class McpService {
