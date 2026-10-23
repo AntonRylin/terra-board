@@ -111,6 +111,9 @@ export function startCloud({
     safeStorage: null,
     transaction,
     appVersion: version,
+    redirectTo: 'terraboard://auth/callback',
+    // supabase-js's own createClient (PKCE, the fs session file) works in the worker as it is.
+    createSupabaseClient: undefined,
     // Google and Microsoft sign-in, in the system browser; it comes back through the
     // terraboard://auth/callback link (finishOAuth).
     openUrl: (url: string) => {
