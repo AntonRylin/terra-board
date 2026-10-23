@@ -1,6 +1,12 @@
 import { type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { PanelBottomClose, Plus, SquareDashed, type LucideIcon } from 'lucide-react';
+import {
+  MoreHorizontal,
+  PanelBottomClose,
+  Plus,
+  SquareDashed,
+  type LucideIcon,
+} from 'lucide-react';
 import {
   defaultToolbarLayout,
   phoneToolbarLayout,
@@ -25,8 +31,12 @@ export default function CanvasToolbar({
   tools,
   options,
   onHide,
+  onMore,
 }: {
   tools: ToolbarAction[];
+  // The canvas menu (…), shown at the end of the bar where the zoom bar gives way
+  // (Android, portrait: canvas-toolbar.css).
+  onMore?: (anchor: DOMRect) => void;
   // Hides the whole toolbar (the last item of the "more tools" menu).
   onHide?: () => void;
   // Settings of the active tool, shown above the bar while the tool menu is closed.
@@ -164,6 +174,15 @@ export default function CanvasToolbar({
         >
           <Plus size={19} strokeWidth={1.7} />
         </button>
+        {onMore && (
+          <button
+            className="icon-button toolbar-more"
+            aria-label="Canvas options"
+            onClick={(e) => onMore(e.currentTarget.getBoundingClientRect())}
+          >
+            <MoreHorizontal size={19} strokeWidth={1.7} />
+          </button>
+        )}
         {open && (
           <div
             ref={inventory}

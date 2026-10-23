@@ -4709,6 +4709,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       {!readOnly && !toolbarHidden && (
         <CanvasToolbar
           onHide={() => updatePreferences({ toolbarHidden: true })}
+          onMore={(r) => setMenu({ x: r.right, y: r.top })}
           tools={[
             ...tools.map(({ id, label, icon, command }) => ({
               id,
@@ -4789,7 +4790,11 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           })()}
         />
       )}
-      <div ref={zoomControls} className="canvas-zoom">
+      <div
+        ref={zoomControls}
+        className="canvas-zoom"
+        data-toolbar-hidden={readOnly || toolbarHidden || undefined}
+      >
         {!readOnly && toolbarHidden && (
           <button
             className="icon-button"

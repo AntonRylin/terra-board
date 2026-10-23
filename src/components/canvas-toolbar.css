@@ -1,6 +1,7 @@
 .canvas-toolbar.customizable-toolbar {
   --tool-size: 34px;
-  width: calc((var(--tool-count) + 1) * (var(--tool-size) + 4px) + 16px);
+  /* The tools plus the + button (and … on Android in portrait). */
+  width: calc((var(--tool-count) + var(--toolbar-extra, 1)) * (var(--tool-size) + 4px) + 16px);
   flex-wrap: nowrap;
   align-items: flex-end;
   z-index: 25;
@@ -240,4 +241,24 @@ body.toolbar-reordering * {
 .customizable-toolbar .tool-menu > .toolbar-hide:not(:hover, :focus-visible) {
   background: none;
   box-shadow: none;
+}
+/* The canvas menu (…) joins the bar on Android in portrait, where the zoom bar is
+   hidden (styles.css); elsewhere it stays in the zoom bar. */
+.customizable-toolbar .toolbar-more {
+  display: none;
+  width: var(--tool-size);
+  height: 34px;
+  margin: 0;
+  padding: 0;
+  flex-shrink: 0;
+}
+@media (orientation: portrait) {
+  html.android .canvas-toolbar.customizable-toolbar {
+    --toolbar-extra: 2;
+  }
+  html.android .customizable-toolbar .toolbar-more {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
 }
