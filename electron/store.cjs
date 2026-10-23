@@ -815,6 +815,10 @@ class Store {
     this.db
       .exec(`CREATE TABLE IF NOT EXISTS board_views(seq INTEGER PRIMARY KEY AUTOINCREMENT,boardId TEXT NOT NULL REFERENCES boards(id) ON DELETE CASCADE,at INTEGER NOT NULL,x REAL NOT NULL,y REAL NOT NULL,width REAL NOT NULL,height REAL NOT NULL);
    CREATE INDEX IF NOT EXISTS board_views_board ON board_views(boardId,seq);`);
+    // operations (recent edit IDs) points at boards without ON DELETE CASCADE, so removing a
+    // board that was edited (a shared copy dropped by sync) failed on the foreign key.
+    this.db.exec(`CREATE TRIGGER IF NOT EXISTS board_operations_delete BEFORE DELETE ON boards
+      BEGIN DELETE FROM operations WHERE boardId=OLD.id; END;`);
     this.db.prepare('DELETE FROM board_views WHERE at<?').run(Date.now() - viewDays * 86400000);
     this.historyWrites = 0;
     this.pruneHistory();

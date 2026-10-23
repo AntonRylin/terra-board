@@ -582,3 +582,22 @@ test('signing in again pulls first: newer edits from elsewhere survive, new loca
     const queued = a.syncTake({ limit: 500 }).entries.map((e) => e.id);
     assert.deepEqual(queued.sort(), [fresh.id, 'f1'].sort());
   }));
+
+test('a shared copy edited here is removed when sync turns off (no foreign-key error)', async () =>
+  withStores(async (a) => {
+    a.syncEnable({ workspace });
+    const owner = '0b2b9c1e-6a43-4a49-9e0e-4ad0c1e7d111';
+    a.syncReconcile({
+      shares: [{ workspace: owner, kind: 'board', targetId: 'shared', role: 'edit', boards: [] }],
+    });
+    a.syncApply({
+      workspace: owner,
+      cursor: 1,
+      roles: { boards: { shared: { role: 'edit', owner: 'Anton' } }, folders: {} },
+      rows: [{ kind: 'board', board_id: '', id: 'shared', data: { name: 'Law' }, seq: 1 }],
+    });
+    assert.ok(a.library().boards.some((b) => b.id === 'shared'));
+    a.patchBoard({ id: 'shared', revision: 0, upserts: [note('n', 'mine')], operationId: 'op-1' });
+    a.syncDisable();
+    assert.ok(!a.library().boards.some((b) => b.id === 'shared'));
+  }));
