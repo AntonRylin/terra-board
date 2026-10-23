@@ -644,3 +644,35 @@ test('MCP reads what the user looks at, places they looked at recently and recen
     await f.close();
   }
 });
+test('MCP clients start the AppImage file itself, and the executable elsewhere', async () => {
+  const { stdioLauncher } = require('../electron/mcp-server.cjs');
+  const mount = '/tmp/.mount_terraXY';
+  const script = `${mount}/resources/app.asar/electron/mcp-stdio.cjs`;
+  const appImage = stdioLauncher({
+    executable: `${mount}/terra-board`,
+    env: { APPIMAGE: '/home/me/Apps/Terra-Board-x86_64.AppImage' },
+    platform: 'linux',
+    script,
+  });
+  assert.equal(appImage.command, '/home/me/Apps/Terra-Board-x86_64.AppImage');
+  assert.equal(appImage.args[0], '-e');
+  assert.match(appImage.args[1], /"resources\/app\.asar\/electron\/mcp-stdio\.cjs"/);
+  assert.doesNotMatch(appImage.args[1], /\.mount_/);
+  const deb = stdioLauncher({
+    executable: '/opt/Terra Board/terra-board',
+    env: {},
+    platform: 'linux',
+    script: '/opt/Terra Board/resources/app.asar/electron/mcp-stdio.cjs',
+  });
+  assert.deepEqual(deb, {
+    command: '/opt/Terra Board/terra-board',
+    args: ['/opt/Terra Board/resources/app.asar/electron/mcp-stdio.cjs'],
+  });
+  const windows = stdioLauncher({
+    executable: 'C:\Terra\Terra Board.exe',
+    env: { APPIMAGE: 'ignored' },
+    platform: 'win32',
+    script: 'C:\Terra\resources\app.asar\electron\mcp-stdio.cjs',
+  });
+  assert.equal(windows.command, 'C:\Terra\Terra Board.exe');
+});

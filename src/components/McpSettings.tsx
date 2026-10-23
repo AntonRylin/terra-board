@@ -12,7 +12,7 @@ ${config}
 
 Use the command, args and env exactly as given. Do not change the paths, do not add a URL or token, and do not install Node or any proxy: the connector is bundled with the app.
 
-1. Claude Desktop: find claude_desktop_config.json. On Windows it is normally %APPDATA%\\Claude\\claude_desktop_config.json; Microsoft Store installs keep it under %LOCALAPPDATA%\\Packages\\Claude_*\\LocalCache\\Roaming\\Claude. On macOS it is ~/Library/Application Support/Claude/claude_desktop_config.json. Make a backup copy next to it, then add terra_board to the existing mcpServers object. Keep every other server and setting unchanged and keep the file valid JSON.
+1. Claude Desktop: find claude_desktop_config.json. On Windows it is normally %APPDATA%\\Claude\\claude_desktop_config.json; Microsoft Store installs keep it under %LOCALAPPDATA%\\Packages\\Claude_*\\LocalCache\\Roaming\\Claude. On macOS it is ~/Library/Application Support/Claude/claude_desktop_config.json. On Linux it is ~/.config/Claude/claude_desktop_config.json. Make a backup copy next to it, then add terra_board to the existing mcpServers object. Keep every other server and setting unchanged and keep the file valid JSON.
 2. Claude Code, if the claude command is installed: register the same entry for all projects with claude mcp add-json --scope user terra_board '<the terra_board object as one JSON string>', then confirm with claude mcp get terra_board.
 3. Check that the command and the mcp-stdio.cjs file exist at the given paths. If they do not, stop and tell me instead of guessing other paths.
 

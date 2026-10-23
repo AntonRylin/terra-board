@@ -1,7 +1,8 @@
 # Builds Terra Board for Linux x64 (AppImage and .deb) on ubuntu-latest, runs
-# the unit tests and starts the built app once, then uploads the files as a
-# workflow artifact. It never publishes a release: attaching these files to a
-# GitHub release is a separate, manual step (docs/development.md).
+# the unit tests, uses both built packages end to end (scripts/app-smoke.mjs),
+# then uploads the files as a workflow artifact. It never publishes a release:
+# attaching these files to a GitHub release is a separate, manual step
+# (docs/development.md).
 #
 # It builds on Linux because sharp and onnxruntime need their Linux binaries,
 # which npm installs only on Linux.
@@ -35,12 +36,13 @@ jobs:
           node-version: '24.13'
           cache: npm
 
-      # A display for the tests and the start-up check that open Electron
-      # windows, and fonts for the scripts the PDF tests print.
+      # A display for the tests and the start-up checks that open Electron
+      # windows, fonts for the scripts the PDF tests print, and FUSE 2, which
+      # AppImages need to mount themselves.
       - name: Install system packages
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends xvfb xauth fonts-noto-core fonts-noto-cjk
+          sudo apt-get install -y --no-install-recommends xvfb xauth fonts-noto-core fonts-noto-cjk libfuse2t64
 
       # Ubuntu 24.04 blocks the unprivileged user namespaces Chromium's sandbox
       # uses; without this Electron exits before opening a window. Only this
@@ -67,17 +69,51 @@ jobs:
       - name: Build AppImage and .deb
         run: npm run installer:linux
 
+      # From here on the machine is a stock Ubuntu 24.04 again, which blocks the
+      # user namespaces Chromium's sandbox uses, as on people's desktops. The
+      # AppImage's launcher then adds --no-sandbox; the .deb brings an AppArmor
+      # profile instead.
+      - name: Restore Ubuntu's sandbox restriction
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=1 || true
+
       # Starts the built app with an empty library and checks it reached the
       # board: its own storage, SQLite and the renderer. XDG_DATA_HOME points the
       # installed copy at a throwaway folder instead of ~/.local/share.
       - name: Start the AppImage once
         run: |
-          appimage=$(ls release/linux/*.AppImage)
-          chmod +x "$appimage"
+          appimage=$(realpath release/linux/*.AppImage)
           export XDG_DATA_HOME="$RUNNER_TEMP/xdg-data"
-          timeout 180 xvfb-run -a "$appimage" --appimage-extract-and-run --smoke-test 2>&1 | tee "$RUNNER_TEMP/smoke.log"
+          timeout 180 xvfb-run -a "$appimage" --smoke-test 2>&1 | tee "$RUNNER_TEMP/smoke.log"
           grep -F 'DESKTOP_SMOKE' "$RUNNER_TEMP/smoke.log"
           grep -F "\"dataDirectory\":\"$XDG_DATA_HOME/Terra Board/Library\"" "$RUNNER_TEMP/smoke.log"
+
+      # Adds a board with a note and an image, closes the window, starts the
+      # app again and checks they came back, then connects over MCP the way
+      # Claude Desktop does.
+      - name: Use the AppImage end to end
+        run: |
+          mkdir -p "$RUNNER_TEMP/screens"
+          export XDG_DATA_HOME="$RUNNER_TEMP/xdg-appimage"
+          export TERRA_SMOKE_LIBRARY="$XDG_DATA_HOME/Terra Board/Library"
+          export TERRA_SMOKE_SCREENSHOT="$RUNNER_TEMP/screens/appimage.png"
+          timeout 300 xvfb-run -a node scripts/app-smoke.mjs "$(realpath release/linux/*.AppImage)"
+
+      - name: Install the .deb and use it end to end
+        run: |
+          sudo apt-get install -y "$(realpath release/linux/*.deb)"
+          export XDG_DATA_HOME="$RUNNER_TEMP/xdg-deb"
+          export TERRA_SMOKE_LIBRARY="$XDG_DATA_HOME/Terra Board/Library"
+          export TERRA_SMOKE_SCREENSHOT="$RUNNER_TEMP/screens/deb.png"
+          timeout 300 xvfb-run -a node scripts/app-smoke.mjs /usr/bin/terra-board
+
+      - name: Upload the screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: terra-board-linux-screenshots
+          if-no-files-found: ignore
+          retention-days: 14
+          path: ${{ runner.temp }}/screens/*.png
 
       - name: Upload the Linux build
         uses: actions/upload-artifact@v4

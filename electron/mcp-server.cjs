@@ -8,19 +8,42 @@ const {
 } = require('@modelcontextprotocol/sdk/server/streamableHttp.js');
 const { tools } = require('./mcp-tools.cjs');
 const settingsFile = (root) => path.join(root, 'settings', 'mcp.json');
+// How MCP clients start mcp-stdio.cjs. An AppImage runs from a new temporary
+// mount on every launch, so clients start the AppImage file itself, which finds
+// the script next to its own executable.
+function stdioLauncher({
+  executable = process.execPath,
+  env = process.env,
+  platform = process.platform,
+  script = path.join(__dirname, 'mcp-stdio.cjs'),
+} = {}) {
+  const folder = path.posix.dirname(executable);
+  if (platform === 'linux' && env.APPIMAGE && script.startsWith(folder + '/')) {
+    const relative = path.posix.relative(folder, script);
+    return {
+      command: env.APPIMAGE,
+      args: [
+        '-e',
+        `const p=require('path');require(p.join(p.dirname(process.execPath),${JSON.stringify(relative)})).run(process.env.CANVAS_DATA_DIR).catch(e=>{console.error(e.message);process.exit(1)})`,
+      ],
+    };
+  }
+  return { command: executable, args: [script] };
+}
 class McpService {
   constructor({
     root,
     call,
     transaction = async (fn) => fn(),
     executable = process.execPath,
+    launcher = stdioLauncher({ executable }),
     services = {},
   }) {
     this.root = root;
     this.call = call;
     this.services = services;
     this.transaction = transaction;
-    this.executable = executable;
+    this.launcher = launcher;
     this.server = null;
     this.error = null;
     this.generation = 0;
@@ -62,8 +85,8 @@ class McpService {
         {
           mcpServers: {
             terra_board: {
-              command: this.executable,
-              args: [path.join(__dirname, 'mcp-stdio.cjs')],
+              command: this.launcher.command,
+              args: this.launcher.args,
               env: { CANVAS_DATA_DIR: this.root, ELECTRON_RUN_AS_NODE: '1' },
             },
           },
@@ -227,4 +250,4 @@ class McpService {
     return job;
   }
 }
-module.exports = { McpService, settingsFile };
+module.exports = { McpService, settingsFile, stdioLauncher };
