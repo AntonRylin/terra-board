@@ -38,6 +38,13 @@ desktop/browser version (everything off). `vite.config.ts` replaces it with `src
 and installs the shims only for `--mode android`, so the desktop bundle contains no Android code
 and the Electron path (`window.canvas`) is untouched.
 
+Opening the library safely: if SQLite-WASM's `installOpfsSAHPoolVfs()` cannot open one of the
+pool's files (still held by the previous worker during a reload, or by another tab), it deletes
+the pool's whole directory, which is every board. The storage worker therefore first takes the
+`terra-board-library` Web Lock (released when its worker ends) and then waits until every pool
+file can be opened (`src/mobile/pool-guard.ts`); if either stays busy for 15 s it stops with an
+error and leaves the files alone.
+
 Not kept from desktop on Android: SQLite WAL (the pool VFS has no shared memory, so SQLite keeps a
 rollback journal) and the daily `VACUUM INTO` backup in `backups/` (it would double the library on
 the phone every day; Android's own app backup applies instead).

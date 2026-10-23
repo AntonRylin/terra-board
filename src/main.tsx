@@ -19,6 +19,6 @@ Promise.all([loadBundledFonts(), storage]).then(
   () => createRoot(document.getElementById('root')!).render(guest ? <GuestApp /> : <App />),
   (e) => {
     const message = document.querySelector('#startup-screen p');
-    if (message) message.textContent = 'Terra Board could not start: ' + String(e?.message || e);
+    if (message) message.textContent = String(e?.message || e);
   },
 );

@@ -6,6 +6,7 @@ import { Buffer } from 'buffer';
 import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
 import { setDatabaseOpener } from './shims/sqlite.ts';
 import { setFileDatabase, readFileSync } from './shims/fs.ts';
+import { waitForFreePool } from './pool-guard.ts';
 
 (globalThis as any).Buffer ??= Buffer;
 const scope = self as unknown as DedicatedWorkerGlobalScope;
@@ -42,8 +43,30 @@ const reply = (id: number, result: unknown, transfer: Transferable[] = []) =>
 const fail = (id: number, e: unknown) =>
   scope.postMessage({ id, error: e instanceof Error ? e.message : String(e) });
 
+// One storage worker at a time owns the library. The lock is released when
+// this worker ends, so a reloaded page's worker waits for the old one.
+function holdLibrary(timeout = 15000) {
+  return new Promise<void>((resolve, reject) => {
+    navigator.locks
+      .request('terra-board-library', { signal: AbortSignal.timeout(timeout) }, () => {
+        resolve();
+        return new Promise(() => {});
+      })
+      .catch(() =>
+        reject(
+          Error(
+            'the library is still open somewhere else (another tab or window of Terra Board). Close it and reload this page.',
+          ),
+        ),
+      );
+  });
+}
+
 const ready = (async () => {
   const sqlite3 = await sqlite3InitModule();
+  await holdLibrary();
+  // installOpfsSAHPoolVfs deletes the whole pool if it cannot open a file.
+  await waitForFreePool('/terra-board');
   const pool = await sqlite3.installOpfsSAHPoolVfs({
     name: 'terra-pool',
     directory: '/terra-board',
