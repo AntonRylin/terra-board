@@ -41,6 +41,7 @@ import {
 } from 'lucide-react';
 import { LiveBadge, LiveRequests, LiveShareDialog, useLiveStatus } from './components/LiveShare';
 import { JoinDialog, ShareDialog, useCloudStatus } from './components/ShareDialog';
+import { ClaimPrompt } from './components/ClaimPrompt';
 import MiroImportDialog from './components/MiroImportDialog';
 import type { Board, Document, Folder, Library, BackgroundAppearance } from './model';
 import BoardBackgroundSettings, { defaultBackgroundAppearance } from './components/BoardBackground';
@@ -52,6 +53,8 @@ import {
   exportPortable,
   importPortable,
   invoke,
+  onExternalSync,
+  externalReady,
 } from './bridge';
 import type { SaveState } from './canvas/save-queue';
 import Launcher, { AppIcon } from './components/Launcher';
@@ -356,7 +359,7 @@ export default function App() {
       if (link.kind !== 'connect') return;
       void flushInlineNames()
         .then(() => whiteboard.current?.flush())
-        .then(() => ask({ kind: 'settings', section: 'cloud', address: link.address }))
+        .then(() => ask({ kind: 'settings', section: 'account', address: link.address }))
         .catch((error) => report(String(error)));
     });
   }, []);
@@ -395,7 +398,7 @@ export default function App() {
       for (const event of events) window.removeEventListener(event, block, true);
       setAiBusy(false);
     };
-    const cleanup = window.canvas?.onMcpSync(async (message) => {
+    const cleanup = onExternalSync(async (message) => {
       try {
         if (message.phase === 'prepare') {
           ++request.current;
@@ -438,12 +441,12 @@ export default function App() {
             unlock();
           }
         }
-        window.canvas!.mcpReady(message.id);
+        externalReady(message.id);
       } catch (e) {
         whiteboard.current?.finishExternal();
         unlock();
         report(String(e));
-        window.canvas!.mcpReady(message.id, String(e));
+        externalReady(message.id, String(e));
       }
     });
     return () => {
@@ -1058,6 +1061,10 @@ export default function App() {
         />
         <LiveRequests status={liveStatus} />
         <UpdatePrompt />
+        <ClaimPrompt
+          status={cloudStatus}
+          onSignIn={() => ask({ kind: 'settings', section: 'account' })}
+        />
         {aiBusy && aiBusy !== 'guest' && (
           <div className="toast" role="status">
             <LoaderCircle size={15} />
@@ -1249,9 +1256,14 @@ export default function App() {
                   library={library}
                   status={cloudStatus}
                   onClose={() => setModal(null)}
+                  onSignIn={() => ask({ kind: 'settings', section: 'account' })}
                 />
               ) : modal.kind === 'join' ? (
-                <JoinDialog status={cloudStatus} onClose={() => setModal(null)} />
+                <JoinDialog
+                  status={cloudStatus}
+                  onClose={() => setModal(null)}
+                  onSignIn={() => ask({ kind: 'settings', section: 'account' })}
+                />
               ) : modal.kind === 'miro' ? (
                 <MiroImportDialog
                   onClose={() => setModal(null)}

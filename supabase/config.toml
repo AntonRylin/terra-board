@@ -161,7 +161,8 @@ site_url = "http://127.0.0.1:3000"
 # The public URL that Auth serves on. Defaults to the API external URL with `/auth/v1` appended.
 # external_url = ""
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
-additional_redirect_urls = ["https://127.0.0.1:3000"]
+# terraboard://auth/callback: the desktop and Android apps after Google or Microsoft sign-in.
+additional_redirect_urls = ["https://127.0.0.1:3000", "terraboard://auth/callback"]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 jwt_expiry = 3600
 # JWT issuer URL. If not set, defaults to auth.external_url.
@@ -244,10 +245,15 @@ otp_expiry = 3600
 # admin_email = "admin@email.com"
 # sender_name = "Admin"
 
-# Uncomment to customize email template
-# [auth.email.template.invite]
-# subject = "You have been invited"
-# content_path = "./supabase/templates/invite.html"
+# Terra Board signs in with a 6-digit code typed into the app, never a link. New addresses
+# get the confirmation email, known ones the magic-link email; both show the code.
+[auth.email.template.magic_link]
+subject = "Your Terra Board sign-in code"
+content_path = "./supabase/templates/email-code.html"
+
+[auth.email.template.confirmation]
+subject = "Your Terra Board sign-in code"
+content_path = "./supabase/templates/email-code.html"
 
 # Uncomment to customize notification email template
 # [auth.email.notification.password_changed]
@@ -333,6 +339,29 @@ url = ""
 # If enabled, the nonce check will be skipped. Required for local sign in with Google auth.
 skip_nonce_check = false
 # If enabled, it will allow the user to successfully authenticate when the provider does not return an email address.
+email_optional = false
+
+# Google sign-in (OAuth with PKCE in the system browser). Create the client in Google Cloud
+# → APIs & Services → Credentials (type "Web application"), with the redirect URI
+# https://<project>.supabase.co/auth/v1/callback (locally http://127.0.0.1:54321/auth/v1/callback).
+[auth.external.google]
+enabled = false
+client_id = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID)"
+secret = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET)"
+redirect_uri = ""
+url = ""
+skip_nonce_check = false
+email_optional = false
+
+# Microsoft sign-in, personal and work accounts (tenant "common"). In the Azure app
+# registration add the optional claims email and xms_edov.
+[auth.external.azure]
+enabled = false
+client_id = "env(SUPABASE_AUTH_EXTERNAL_AZURE_CLIENT_ID)"
+secret = "env(SUPABASE_AUTH_EXTERNAL_AZURE_SECRET)"
+redirect_uri = ""
+url = "https://login.microsoftonline.com/common/v2.0"
+skip_nonce_check = false
 email_optional = false
 
 # Allow Solana wallet holders to sign in to your project via the Sign in with Solana (SIWS, EIP-4361) standard.

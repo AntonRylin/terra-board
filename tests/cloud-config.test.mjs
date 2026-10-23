@@ -267,7 +267,7 @@ const stubFetch = (respond) => {
   };
   return { fetch, calls };
 };
-const aServer = { schema: 1, minClientSchema: 1, name: 'Acme', billing: false };
+const aServer = { schema: 2, minClientSchema: 1, name: 'Acme', billing: false };
 const serverConfig = parseServerFile(description('Acme boards'), 'https://terra.acme.eu');
 
 test('discover reads the well-known file', async () => {
@@ -321,7 +321,7 @@ test('checkServer accepts a matching server', async () => {
   assert.deepEqual(await checkServer(serverConfig, { fetch }), {
     name: 'Acme',
     billing: false,
-    schema: 1,
+    schema: 2,
   });
   assert.equal(calls[0].url, 'https://api.acme.eu/rest/v1/rpc/server_info');
   assert.equal(calls[0].options.method, 'POST');
@@ -342,7 +342,9 @@ test('checkServer explains version mismatches', async () => {
   await assert.rejects(check(json(null)), /needs an update/);
   await assert.rejects(check(json({ name: 'x' })), /needs an update/);
   await assert.rejects(check(json({ schema: 'one', minClientSchema: 1 })), /needs an update/);
-  await assert.rejects(check(json({ schema: 2, minClientSchema: 2 })), /Update Terra Board/);
+  // Schema 1 is a server from before accounts.
+  await assert.rejects(check(json({ schema: 1, minClientSchema: 1 })), /needs an update/);
+  await assert.rejects(check(json({ schema: 3, minClientSchema: 3 })), /Update Terra Board/);
 });
 
 test('checkServer reports unreachable and wrong servers', async () => {

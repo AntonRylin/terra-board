@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <body
+    style="
+      margin: 0;
+      padding: 32px 16px;
+      background: #f4f5f7;
+      font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      color: #1d2433;
+    "
+  >
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+      <tr>
+        <td align="center">
+          <table
+            role="presentation"
+            width="100%"
+            style="max-width: 440px; background: #ffffff; border-radius: 12px; padding: 32px"
+            cellspacing="0"
+            cellpadding="0"
+          >
+            <tr>
+              <td>
+                <p style="margin: 0 0 8px; font-size: 15px; font-weight: 600">Terra Board</p>
+                <p style="margin: 0 0 24px; font-size: 14px; line-height: 1.5; color: #4a5263">
+                  Enter this code in Terra Board to sign in:
+                </p>
+                <p
+                  style="
+                    margin: 0 0 24px;
+                    font-size: 32px;
+                    font-weight: 700;
+                    letter-spacing: 6px;
+                    font-family: Consolas, 'Courier New', monospace;
+                  "
+                >
+                  {{ .Token }}
+                </p>
+                <p style="margin: 0; font-size: 13px; line-height: 1.5; color: #6b7383">
+                  The code works for one hour. If you didn't ask for it, ignore this email; nobody
+                  can sign in without the code.
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

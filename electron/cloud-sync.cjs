@@ -1,13 +1,21 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { randomUUID } = require('node:crypto');
 const { createClient } = require('@supabase/supabase-js');
 const { referencedAssets } = require('./store-sync.cjs');
+const { createCloudAuth, userInfo } = require('./cloud-auth.cjs');
+
+// Where a 0.1.28 computer's anonymous session waits for the claim after signing in.
+const ANONYMOUS_KEY = 'terra-cloud-anonymous';
+const SIGNED_OUT = { state: 'signedOut' };
+const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const iconAssetId = (icon) =>
   typeof icon === 'string' && icon.startsWith('asset-') ? icon.slice(6) : null;
+// Node says "fetch failed"; Chromium (the Android app's storage worker) "Failed to fetch".
 const offline = (e) =>
-  /fetch failed|network|ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN/i.test(
+  /fetch failed|failed to fetch|network|ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN/i.test(
     String(e?.message || e),
   );
 const fail = (error, fallback) => {
@@ -66,12 +74,15 @@ function sessionStorage(file, safeStorage) {
   };
 }
 
-// Cloud sync for one library. A person has one personal workspace (all their
-// computers are members); it holds their whole library when library sync is
-// on, and otherwise only what they share. Folders and boards other people
-// share are pulled from those people's workspaces with view or edit rights.
+// Cloud sync for one library. A person signs in to an account, which has one
+// personal workspace; it holds their whole library when library sync is on, and
+// otherwise only what they share. Folders and boards other people share are
+// pulled from those people's workspaces with view or edit rights. Computers set up
+// by 0.1.28 are anonymous users instead; they keep syncing until they sign in,
+// and then the claim moves their workspace onto the account (cloud-auth.cjs).
 class CloudSync {
   // legacyServerUrl: the server a session saved without a marker (by 0.1.28 and earlier) is for.
+  // openUrl opens a web page in the system browser (Google and Microsoft sign-in).
   constructor({
     call,
     root,
@@ -82,6 +93,10 @@ class CloudSync {
     transaction,
     onStatus,
     onPresence,
+    openUrl,
+    appVersion,
+    redirectTo,
+    createSupabaseClient,
   }) {
     this.call = call;
     this.root = root;
@@ -90,6 +105,12 @@ class CloudSync {
     this.transaction = transaction;
     this.onStatus = onStatus;
     this.onPresence = onPresence;
+    this.openUrl = openUrl || (async () => {});
+    // The Android app passes its own redirect and client factory; the desktop uses the defaults.
+    this.redirectTo = redirectTo;
+    this.createSupabaseClient = createSupabaseClient || createClient;
+    this.appVersion = appVersion || null;
+    this.knownDevice = null;
     this.media = new Map();
     this.board = null;
     this.status = {
@@ -104,6 +125,9 @@ class CloudSync {
       error: null,
       shared: [],
       sharedWithMe: [],
+      account: SIGNED_OUT,
+      methods: null,
+      waiting: null,
     };
     this.timer = null;
     this.poll = null;
@@ -138,20 +162,84 @@ class CloudSync {
   // and belongs to that server only. No config means no client (local use only).
   makeClient(config) {
     this.config = config || null;
+    this.vault = sessionStorage(
+      path.join(this.root, 'settings', 'cloud-session'),
+      this.safeStorage,
+    );
     this.client = config
-      ? createClient(config.url, config.key, {
+      ? this.createSupabaseClient(config.url, config.key, {
           auth: {
-            storage: sessionStorage(
-              path.join(this.root, 'settings', 'cloud-session'),
-              this.safeStorage,
-            ),
+            storage: this.vault,
             storageKey: 'terra-cloud',
             persistSession: true,
             autoRefreshToken: true,
             detectSessionInUrl: false,
+            // Google and Microsoft sign in through the system browser; PKCE keeps the code
+            // useless to any other program that receives the terraboard:// link.
+            flowType: 'pkce',
           },
         })
       : null;
+    this.auth = this.client
+      ? createCloudAuth({
+          client: this.client,
+          openUrl: (url) => this.openUrl(url),
+          ...(this.redirectTo ? { redirectTo: this.redirectTo } : {}),
+          onBeforeSignIn: () => this.keepAnonymousSession(),
+        })
+      : null;
+    // The session can end on its own (this computer removed from the account, a refresh
+    // that fails); the account shown follows it. No awaiting Supabase inside this callback.
+    const client = this.client;
+    client?.auth.onAuthStateChange((event, session) => {
+      if (event === 'INITIAL_SESSION' || this.client !== client) return;
+      this.emit({ account: userInfo(session) });
+    });
+  }
+
+  // A client that keeps its session in memory only, for the claim.
+  tempClient() {
+    const memory = new Map();
+    return this.createSupabaseClient(this.config.url, this.config.key, {
+      auth: {
+        storage: {
+          getItem: (k) => memory.get(k) ?? null,
+          setItem: (k, v) => memory.set(k, v),
+          removeItem: (k) => memory.delete(k),
+        },
+        storageKey: 'terra-claim',
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+      },
+    });
+  }
+
+  // This installation's id, made once and kept with the library's settings.
+  get deviceId() {
+    this.knownDevice ??= this.loadDeviceId();
+    return this.knownDevice;
+  }
+
+  set deviceId(id) {
+    this.knownDevice = id;
+  }
+
+  // The id belongs to this computer: a library copied or restored onto another computer
+  // gets a new one there, or both would skip each other's changes.
+  loadDeviceId() {
+    const file = path.join(this.root, 'settings', 'device.json');
+    const host = os.hostname();
+    try {
+      const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+      if (uuid.test(saved.id) && saved.host === host) return saved.id;
+    } catch {}
+    const id = randomUUID();
+    try {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, JSON.stringify({ id, host }));
+    } catch {}
+    return id;
   }
 
   // Points the engine at another server. Only while sync is off, so nothing is
@@ -212,15 +300,15 @@ class CloudSync {
       name: l.name,
       pending: l.pending,
       workspace: l.workspace,
+      rejoin: !!l.rejoin,
     };
   }
 
   async start() {
     if (!this.client && !this.recordedServer()) return this.status;
     const local = await this.local();
-    if (!local.identity) return this.emit({ state: 'off', ...local, shared: [], sharedWithMe: [] });
     const recorded = this.recordedServer();
-    if (recorded && recorded !== this.config?.url) {
+    if (local.identity && recorded && recorded !== this.config?.url) {
       // Another server than the one this sync was set up with: nothing to say to either.
       this.stop();
       await this.turnOffLocally();
@@ -239,20 +327,33 @@ class CloudSync {
         error: 'The server for this computer changed, so sync was turned off.',
       });
     }
+    const account = await this.checkAccount();
+    if (!local.identity) return this.emit({ state: 'off', ...local, shared: [], sharedWithMe: [] });
     if (!recorded) this.recordSessionServer();
     this.workspace = local.workspace;
     this.emit({ state: 'syncing', ...local });
-    const { data } = await this.client.auth.getSession();
-    if (!data.session) {
+    if (account.state === 'signedOut') {
       // Signed out, the server can no longer say what is still shared here: copies of
       // other people's boards go, as when sync is turned off.
       await this.transaction(async () => {
         const dropped = await this.call('syncDropForeign');
         return { library: dropped.changed, boards: [] };
       });
-      return this.emit({ state: 'error', error: 'Signed out. Turn sync on again.' });
+      return this.emit({ state: 'error', error: 'Signed out. Sign in to sync again.' });
     }
-    this.userId = data.session.user.id;
+    if (account.state === 'signedIn' && this.claimWaiting()) {
+      try {
+        await this.runClaim();
+      } catch (e) {
+        return this.emit({
+          state: 'error',
+          error: `Signed in, but your cloud boards were not moved to your account yet. ${e.message}`,
+        });
+      }
+      // The claim may have moved this library to another workspace.
+      this.workspace = (await this.local()).workspace;
+    }
+    this.userId = account.userId;
     this.listen(this.workspace);
     void this.rejoin().catch(() => {});
     void this.loadProfile().catch(() => {});
@@ -262,37 +363,249 @@ class CloudSync {
     return this.status;
   }
 
-  async signIn() {
-    const { data } = await this.client.auth.getSession();
-    if (data.session) {
-      this.recordSessionServer();
-      return data.session.user;
+  // --- Account ---------------------------------------------------------------
+
+  // Who is signed in, the sign-in methods this server offers, and this computer's place on
+  // the account. Returns the account (see cloud-auth userInfo).
+  async checkAccount() {
+    if (!this.auth) return this.emit({ account: SIGNED_OUT }).account;
+    const account = await this.auth.account();
+    this.emit({ account, waiting: this.auth.waiting() });
+    if (!this.status.methods) void this.loadMethods().catch(() => {});
+    if (account.state !== 'signedIn') return account;
+    this.userId = account.userId;
+    let revoked = false;
+    try {
+      revoked = (
+        await this.auth.registerDevice({
+          id: this.deviceId,
+          name: os.hostname(),
+          version: this.appVersion,
+        })
+      )?.revoked;
+    } catch {
+      // Offline or an older server: asked again on the next start.
     }
-    const result = await this.client.auth.signInAnonymously();
-    fail(result.error, 'Could not reach the sync service');
-    this.recordSessionServer();
-    return result.data.user;
+    if (!revoked) return account;
+    await this.signOut();
+    this.emit({ error: 'This computer was removed from your account. Sign in to sync again.' });
+    return SIGNED_OUT;
   }
 
-  // A cloud identity for this person: needed to sync, share or accept a share.
+  async loadMethods() {
+    if (!this.auth || !this.config) return this.emit({ methods: null });
+    const config = this.config;
+    const methods = await this.auth.methods({
+      url: config.url,
+      key: config.key,
+      allowed: config.signIn,
+    });
+    if (this.config === config) this.emit({ methods });
+    return methods;
+  }
+
+  async requireSignedOut() {
+    this.requireClient();
+    if ((await this.auth.account()).state === 'signedIn') throw Error('You are already signed in.');
+  }
+
+  async sendEmailCode(email) {
+    await this.requireSignedOut();
+    return this.auth.sendEmailCode(email);
+  }
+
+  async verifyEmailCode(email, code) {
+    await this.requireSignedOut();
+    try {
+      await this.auth.verifyEmailCode(email, code);
+    } catch (e) {
+      await this.resumeAfterFailedSignIn();
+      throw e;
+    }
+    return this.afterSignIn();
+  }
+
+  // Google or Microsoft in the system browser; finishes when the terraboard://auth/callback
+  // link arrives (finishOAuth), or fails on cancelSignIn().
+  async signInWithProvider(provider) {
+    await this.requireSignedOut();
+    this.emit({ waiting: provider });
+    try {
+      await this.auth.signInWithProvider(provider);
+    } catch (e) {
+      this.emit({ waiting: null });
+      await this.resumeAfterFailedSignIn();
+      throw e;
+    }
+    this.emit({ waiting: null });
+    return this.afterSignIn();
+  }
+
+  finishOAuth(url) {
+    return this.auth ? this.auth.finishOAuth(url) : Promise.resolve(false);
+  }
+
+  cancelSignIn() {
+    this.auth?.cancel();
+    return this.emit({ waiting: null });
+  }
+
+  // Right before a sign-in replaces an anonymous 0.1.28 session: keep that session for the
+  // claim, and pause sync so nothing is sent as the account before the claim is done.
+  async keepAnonymousSession() {
+    const tokens = await this.auth.anonymousTokens();
+    if (!tokens || !(await this.local()).identity) return;
+    this.vault.setItem(ANONYMOUS_KEY, JSON.stringify(tokens));
+    this.stop();
+    await this.idle();
+  }
+
+  // The sign-in failed: an anonymous computer keeps syncing as before.
+  async resumeAfterFailedSignIn() {
+    if ((await this.auth.account()).state === 'anonymous' && (await this.local()).identity)
+      await this.start().catch(() => {});
+  }
+
+  async afterSignIn() {
+    this.recordSessionServer();
+    this.emit({ error: null });
+    return this.start();
+  }
+
+  // --- The claim (0.1.28 computers) ---------------------------------------------
+
+  retireFile() {
+    return path.join(this.root, 'settings', 'cloud-retire.json');
+  }
+
+  readRetire() {
+    try {
+      const pending = JSON.parse(fs.readFileSync(this.retireFile(), 'utf8'));
+      return uuid.test(pending.old) && uuid.test(pending.next) ? pending : null;
+    } catch {
+      return null;
+    }
+  }
+
+  claimWaiting() {
+    return !!this.vault?.getItem(ANONYMOUS_KEY) || !!this.readRetire();
+  }
+
+  // One at a time: a second claim would replace the first one's secret.
+  runClaim() {
+    this.claiming ??= this.claimOnce().finally(() => {
+      this.claiming = null;
+    });
+    return this.claiming;
+  }
+
+  async claimOnce() {
+    const raw = this.vault.getItem(ANONYMOUS_KEY);
+    if (raw) {
+      const local = await this.local();
+      let outcome = null;
+      if (local.identity) {
+        try {
+          outcome = await this.auth.claim(
+            JSON.parse(raw),
+            () => this.tempClient(),
+            local.workspace,
+          );
+        } catch (e) {
+          if (e.tokens) this.vault.setItem(ANONYMOUS_KEY, JSON.stringify(e.tokens));
+          throw e;
+        }
+      }
+      this.vault.removeItem(ANONYMOUS_KEY);
+      if (outcome) await this.adoptClaim(outcome, local);
+    }
+    await this.retireWhenUploaded();
+  }
+
+  // The library stays on its workspace when the claim kept it; otherwise it moves to the
+  // account's personal workspace and uploads there.
+  async adoptClaim(outcome, local) {
+    if (['moved', 'joined'].includes(outcome.result) && outcome.workspace === local.workspace)
+      return;
+    const target =
+      outcome.result === 'combine' || (outcome.result === 'joined' && outcome.workspace)
+        ? outcome.workspace
+        : (await this.auth.personalWorkspace(local.name)).workspace;
+    await this.moveLibrary(target, local);
+    if (outcome.result === 'combine' && outcome.retire) {
+      fs.mkdirSync(path.dirname(this.retireFile()), { recursive: true });
+      fs.writeFileSync(this.retireFile(), JSON.stringify({ old: outcome.retire, next: target }));
+    }
+  }
+
+  // Points this library at another of the person's workspaces and queues what belongs
+  // there: everything when the whole library syncs, otherwise what this person shares.
+  async moveLibrary(workspace, local) {
+    const lib = await this.call('library');
+    const owned = [
+      ...Object.entries(lib.sharing?.folders || {}).map(([id, m]) => ['folder', id, m]),
+      ...Object.entries(lib.sharing?.boards || {}).map(([id, m]) => ['board', id, m]),
+    ]
+      .filter(([, , mark]) => mark.shared === 'owner')
+      .map(([kind, targetId]) => ({ kind, targetId, shareId: 'moved' }));
+    await this.transaction(async () => {
+      if (local.library) await this.call('syncEnable', { workspace });
+      else {
+        await this.call('syncIdentity', { workspace });
+        await this.call('syncOwned', { shares: owned, upload: true });
+      }
+      return { library: true, boards: [] };
+    });
+    this.workspace = workspace;
+  }
+
+  // After a combine: once this computer's library is in the account's workspace, the old
+  // workspace goes, and its shares move over.
+  async retireWhenUploaded() {
+    const pending = this.readRetire();
+    if (!pending) return;
+    const local = await this.local();
+    if (local.workspace !== pending.next) {
+      fs.rmSync(this.retireFile(), { force: true });
+      return;
+    }
+    // Not before this library has been pulled and everything it adds is uploaded.
+    if (local.rejoin || local.pending > 0) return;
+    try {
+      await this.auth.retireWorkspace(pending.old, pending.next);
+    } catch (e) {
+      // Offline: next round. Refused: nothing will change that, so stop trying.
+      if (e.code === 'offline') throw e;
+    }
+    fs.rmSync(this.retireFile(), { force: true });
+  }
+
+  // --- Library identity --------------------------------------------------------
+
+  // A cloud identity for this library: the account's personal workspace. Needed to sync,
+  // share or accept a share. The name is what people it shares with see.
   async identify(name) {
     this.requireClient();
     const local = await this.local();
+    const wanted = typeof name === 'string' ? name.trim().slice(0, 60) : '';
     if (local.identity) {
-      if (name && name.trim() && name.trim() !== local.name) await this.rename(name);
+      if (wanted && wanted !== local.name) await this.rename(wanted);
       return this.status;
     }
-    if (typeof name !== 'string' || !name.trim())
-      throw Error('Enter your name so people know who shared with them.');
-    await this.signIn();
-    const { data, error } = await this.client.rpc('create_workspace', {
-      p_name: 'My boards',
-      p_device: os.hostname(),
-    });
-    fail(error, 'Could not create your sync space');
-    const named = await this.client.rpc('set_display_name', { p_workspace: data, p_name: name });
-    fail(named.error, 'Could not save your name');
-    await this.call('syncIdentity', { workspace: data, name });
+    if ((await this.auth.account()).state !== 'signedIn')
+      throw Error('Sign in first, in Settings → Account.');
+    const space = await this.auth.personalWorkspace(wanted || local.name);
+    // Another computer of this account chose the name already; a new one only fills a gap.
+    let shown = space.name || '';
+    if (!shown && wanted) {
+      const named = await this.client.rpc('set_display_name', {
+        p_workspace: space.workspace,
+        p_name: wanted,
+      });
+      fail(named.error, 'Could not save your name');
+      shown = wanted;
+    }
+    await this.call('syncIdentity', { workspace: space.workspace, name: shown });
     return this.start();
   }
 
@@ -318,10 +631,11 @@ class CloudSync {
   }
 
   async enable(name) {
-    return this.setLibrary(true, name || this.status.name || 'Me');
+    return this.setLibrary(true, name || this.status.name);
   }
 
-  // A code from another computer of this person, or an invite to someone's share.
+  // An invite to someone's share. Pairing codes from 0.1.28 are gone: another computer
+  // signs in to the same account instead.
   async join(code, name) {
     this.requireClient();
     if (typeof code !== 'string' || code.length > 40) throw Error('Enter the code you were given');
@@ -336,14 +650,7 @@ class CloudSync {
       await this.run();
       return this.status;
     }
-    await this.signIn();
-    const { data, error } = await this.client.rpc('redeem_pairing_code', {
-      p_code: clean,
-      p_device: os.hostname(),
-    });
-    fail(error, 'This code is wrong or has expired');
-    await this.call('syncEnable', { workspace: data, name: name || this.status.name });
-    return this.start();
+    throw Error('To add a computer, sign in on it with the same account.');
   }
 
   // The part of turning sync off that only touches this computer.
@@ -355,9 +662,25 @@ class CloudSync {
     this.workspace = null;
   }
 
+  // Turns sync off on this computer. Signed in to an account, the person stays signed in and
+  // their other computers keep syncing; a 0.1.28 computer also leaves its workspace.
   async disable() {
     this.stop();
     await this.idle();
+    fs.rmSync(this.retireFile(), { force: true });
+    if ((await this.auth?.account())?.state === 'signedIn') {
+      await this.turnOffLocally();
+      return this.emit({
+        state: 'off',
+        identity: false,
+        library: false,
+        pending: 0,
+        error: null,
+        lastSync: null,
+        shared: [],
+        sharedWithMe: [],
+      });
+    }
     if (this.client && this.workspace && this.userId) {
       try {
         await this.client.rpc('remove_member', {
@@ -382,42 +705,73 @@ class CloudSync {
       lastSync: null,
       shared: [],
       sharedWithMe: [],
+      account: SIGNED_OUT,
     });
   }
 
-  async pairingCode() {
-    this.requireWorkspace();
-    const { data, error } = await this.client.rpc('create_pairing_code', {
-      p_workspace: this.workspace,
-    });
-    fail(error, 'Could not create a code');
-    return data;
+  // Signs out on this computer: sync stops, copies of other people's boards go, this
+  // computer leaves the account's list. The person's own boards stay here.
+  async signOut() {
+    if ((await this.auth?.account())?.state !== 'signedIn') return this.disable();
+    this.stop();
+    await this.idle();
+    fs.rmSync(this.retireFile(), { force: true });
+    await this.turnOffLocally();
+    await this.auth.signOut({ device: this.deviceId });
+    return this.forgetAccount();
   }
 
+  // After signing out or deleting the account: a fresh client with no session.
+  forgetAccount() {
+    this.client?.auth.stopAutoRefresh();
+    this.forgetSession();
+    this.makeClient(this.config);
+    this.workspace = null;
+    this.userId = null;
+    return this.emit({
+      state: 'off',
+      identity: false,
+      library: false,
+      pending: 0,
+      error: null,
+      lastSync: null,
+      shared: [],
+      sharedWithMe: [],
+      account: SIGNED_OUT,
+      waiting: null,
+    });
+  }
+
+  // Deletes this person's cloud library, its files and shares, and their sign-in.
+  // Boards on this computer stay. Returns { userDeleted }.
+  async deleteCloudData() {
+    this.requireClient();
+    this.stop();
+    await this.idle();
+    let result;
+    try {
+      result = await this.auth.deleteCloudData();
+    } catch (e) {
+      void this.start().catch(() => {});
+      throw e;
+    }
+    fs.rmSync(this.retireFile(), { force: true });
+    await this.turnOffLocally();
+    this.forgetAccount();
+    return result;
+  }
+
+  // The computers signed in to this account.
   async devices() {
-    this.requireWorkspace();
-    const { data, error } = await this.client
-      .from('workspace_members')
-      .select('user_id, device_name, joined_at, role')
-      .eq('workspace_id', this.workspace)
-      .order('joined_at');
-    fail(error, 'Could not load devices');
-    return data.map((d) => ({
-      id: d.user_id,
-      name: d.device_name || 'Device',
-      joined: d.joined_at,
-      current: d.user_id === this.userId,
-    }));
+    this.requireClient();
+    if ((await this.auth.account()).state !== 'signedIn') return [];
+    return this.auth.devices(this.deviceId);
   }
 
-  async removeDevice(userId) {
-    this.requireWorkspace();
-    if (userId === this.userId) return this.disable();
-    const { error } = await this.client.rpc('remove_member', {
-      p_workspace: this.workspace,
-      p_user: userId,
-    });
-    fail(error, 'Could not remove the device');
+  async removeDevice(id) {
+    this.requireClient();
+    if (id === this.deviceId) return this.signOut();
+    await this.auth.removeDevice(id);
   }
 
   // --- Profile -------------------------------------------------------------
@@ -610,7 +964,7 @@ class CloudSync {
     await this.exitBoard();
     await this.authRealtime();
     const channel = this.client.channel('board:' + boardId, {
-      config: { private: true, presence: { key: this.userId }, broadcast: { self: false } },
+      config: { private: true, presence: { key: this.deviceId }, broadcast: { self: false } },
     });
     const next = {
       boardId,
@@ -629,7 +983,7 @@ class CloudSync {
         this.onPresence?.({
           type: 'people',
           boardId,
-          self: this.userId,
+          self: this.deviceId,
           owner: next.owner,
           people: people(),
         }),
@@ -655,19 +1009,24 @@ class CloudSync {
     try {
       await this.client.removeChannel(current.channel);
     } catch {}
-    this.onPresence?.({ type: 'people', boardId: current.boardId, self: this.userId, people: [] });
+    this.onPresence?.({
+      type: 'people',
+      boardId: current.boardId,
+      self: this.deviceId,
+      people: [],
+    });
   }
 
   sendCursor(data) {
     const current = this.board;
     if (!current?.subscribed || !data || typeof data !== 'object') return;
     // Realtime bills every message: send only when someone else can see it.
-    const others = Object.keys(current.channel.presenceState()).some((k) => k !== this.userId);
+    const others = Object.keys(current.channel.presenceState()).some((k) => k !== this.deviceId);
     if (!others) return;
     void current.channel.send({
       type: 'broadcast',
       event: 'cursor',
-      payload: { key: this.userId, x: data.x, y: data.y, view: data.view },
+      payload: { key: this.deviceId, x: data.x, y: data.y, view: data.view },
     });
   }
 
@@ -817,6 +1176,7 @@ class CloudSync {
         const { error } = await this.client.rpc('push_entities', {
           p_workspace: this.workspace,
           p_rows: rows,
+          p_device: this.deviceId,
         });
         fail(error, 'Could not remove the board from the cloud');
       };
@@ -938,11 +1298,16 @@ class CloudSync {
           // dropped with their unsent edits, which the server would refuse and so
           // stop every round from reaching this step.
           await this.reconcile();
+          if ((await this.call('syncStatus')).rejoin) {
+            await this.pull(this.workspace);
+            await this.call('syncRejoined');
+          }
           const pushed = await this.push();
           await this.pull(this.workspace);
           for (const ws of this.foreign) await this.pull(ws);
           for (const ws of pushed) this.ping(ws);
         } while (this.again && this.workspace);
+        await this.retireWhenUploaded().catch(() => {});
         // Access to the open board may have changed: a new role, or none at all.
         void this.rejoin().catch(() => {});
         this.emit({ state: 'synced', ...(await this.local()), lastSync: Date.now(), error: null });
@@ -987,6 +1352,7 @@ class CloudSync {
           const { error } = await this.client.rpc('push_entities', {
             p_workspace: workspace,
             p_rows: part,
+            p_device: this.deviceId,
           });
           fail(error, 'Could not upload changes');
         }
@@ -1106,7 +1472,7 @@ class CloudSync {
       const cursor = await this.call('syncCursor', { workspace });
       const { data: rows, error } = await this.client
         .from('entities')
-        .select('kind, board_id, id, data, deleted, seq, updated_by')
+        .select('kind, board_id, id, data, deleted, seq, updated_by, updated_device')
         .eq('workspace_id', workspace)
         .gt('seq', cursor)
         .order('seq')
@@ -1114,11 +1480,17 @@ class CloudSync {
       fail(error, 'Could not download changes');
       if (!rows.length) return;
       const next = rows.at(-1).seq;
-      // This person's own pushes come back too; only newer changes from others matter.
-      const remote = rows.filter((r) => r.updated_by !== this.userId);
+      // This computer's own pushes come back too; only changes from elsewhere matter. All
+      // computers of an account are one user, so pushes name their device; rows from
+      // 0.1.28 computers name only the user.
+      const own = (r) =>
+        r.updated_by === this.userId && (!r.updated_device || r.updated_device === this.deviceId);
+      const remote = rows.filter((r) => !own(r));
+      // Rows this computer pushed itself still tell a rejoining library what the server has.
+      const seen = rows.filter(own).map((r) => ({ kind: r.kind, board_id: r.board_id, id: r.id }));
       await this.fetchAssets(remote, workspace);
       const content = remote.filter((r) => r.kind !== 'asset');
-      const args = { workspace, rows: content, cursor: next, roles: this.roles };
+      const args = { workspace, rows: content, cursor: next, roles: this.roles, seen };
       if (content.length) await this.transaction(() => this.call('syncApply', args));
       else await this.call('syncApply', { ...args, rows: [] });
     }

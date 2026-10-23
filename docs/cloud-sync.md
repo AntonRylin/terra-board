@@ -2,7 +2,38 @@
 
 Design: [superpowers/specs/2026-10-14-cloud-sync-design.md](superpowers/specs/2026-10-14-cloud-sync-design.md).
 
-Cloud sync keeps a library identical on several computers through Supabase. It is off by default and hidden behind "This build is not connected to a sync service" until a Supabase project is configured.
+Cloud sync keeps a library identical on several computers through Supabase. It is off by default and needs a sign-in (Settings → Account). Boards on a computer never need an account.
+
+## Accounts
+
+People sign in with an **email code** (6 digits, no passwords), **Google** or **Microsoft**. Supabase links the methods by verified email, so they all reach the same account. Settings → Account shows only the methods the server has turned on.
+
+- **Email code:** `signInWithOtp` sends the code, `verifyOtp` signs in. The email templates (`supabase/templates/email-code.html`) show `{{ .Token }}`, never a link.
+- **Google and Microsoft:** OAuth with PKCE in the **system browser** (Google refuses embedded sign-in windows). The provider sends the browser to `terraboard://auth/callback?code=…`; Windows and Linux hand that link to the running app (single-instance lock), which exchanges the code. A callback after Cancel, or with nothing waiting, is ignored. A development build only takes `terraboard://` links with `TERRA_DEV_PROTOCOL=1`.
+- **One account, one personal workspace.** The first computer that syncs or shares creates it (`ensure_personal_workspace`); every other computer that signs in uses the same one. Its name is what people you share with see.
+- **Your computers** (Settings → Account) lists `devices`. Each installation has an id in `<Library>/settings/device.json` and registers it on every start (`register_device`). Pushes carry that id, so an account's computers see each other's changes. **Remove** calls `revoke_device`, which ends that computer's session; it signs out on its next start and keeps its boards.
+- **Signing out** turns sync off, removes copies of boards other people shared, and keeps your own boards. With changes not yet uploaded, Settings offers **Sync now** first. **Turn off** in Cloud sync stops syncing on this computer but keeps you signed in.
+- **Turning sync on against a library that may already be in the cloud** (signing in again, a second computer, a claim) pulls first and then uploads only what the server doesn't have (`rejoin` in `sync_state`, `sync_seen`). Edits made while signed out to boards and objects that are in the cloud are replaced by the cloud's version; board history (Ctrl+H) keeps them. Boards, folders and objects made while signed out upload.
+- **Delete account** (Settings → Account; "Delete my cloud data" on a computer from before accounts) removes your cloud library with its files, your shares, your computers and the sign-in: `my_deletable_workspaces`, then the Storage API for the files, then `delete_my_cloud_data`. People you shared with lose those boards; boards on your computers stay. If the database refuses to delete the sign-in itself, the data is still deleted and the request is recorded in `deletion_requests` for an admin.
+
+The code lives in `electron/cloud-auth.cjs`, which uses no Node or Electron API so the Android app shares it, and `electron/cloud-sync.cjs`, which connects it to the library.
+
+### Computers set up before accounts (0.1.28 to 0.1.38)
+
+Those computers are anonymous Supabase users. They keep syncing until the person signs in; Settings → Account and a one-time prompt say "Add a sign-in so you can't lose your cloud boards". The new app never creates anonymous users.
+
+Signing in runs the **claim**:
+
+1. Right before the sign-in replaces the anonymous session, the app keeps that session aside (encrypted, next to the normal one) and pauses sync.
+2. After the sign-in, a throwaway client restores the anonymous session and calls `begin_claim()` (a one-time secret, stored hashed for 15 minutes); the account calls `finish_claim(secret)`.
+3. The server moves the anonymous computer's workspace onto the account, then deletes the anonymous user:
+   - **moved**: the account had no library yet, so this workspace becomes it. Shares, the people in them, the name, picture and song stay.
+   - **joined**: this computer was paired with one that claimed first; nothing changes.
+   - **combine**: sync was turned on separately on two computers. This computer moves its library to the account's workspace and uploads it, then `retire_workspace` moves the old workspace's shares over and deletes it. People it shared with keep the same boards; their app follows each board to the new workspace.
+   - **none**: the anonymous workspace belongs to another account (a family computer paired long ago), so this account gets its own.
+4. If the claim fails (offline), it is retried on the next start or **Sync now**.
+
+Pairing codes are gone from the app; you sign in on the other computer instead. The server keeps the pairing functions for apps from before accounts.
 
 ## Run it locally
 
@@ -18,14 +49,23 @@ Applies `supabase/migrations` to a local stack. Check the stack with:
 node scripts/cloud-sync-check.mjs
 ```
 
-Two temporary libraries sync through it: pairing, images, live updates, a stranger being refused, and a removed device being cut off.
+Two temporary libraries sync through it: pairing, images, live updates, a stranger being refused, and a removed device being cut off. (That check still uses anonymous users from before accounts, which a local stack allows.)
 
-To try it in the app, start Terra Board with `TERRA_CLOUD_URL` and `TERRA_CLOUD_KEY` set to the `API_URL` and `ANON_KEY` from `npx supabase status`. Use a separate `CANVAS_DATA_DIR` per window to act as two computers.
+Without Docker, `npm test` runs the migrations in PGlite: `tests/supabase-db.mjs` stands in for Supabase's `auth`, `storage` and `realtime` schemas, and `tests/accounts-migration.test.mjs` covers the claim, combining, devices and deleting cloud data.
+
+To try it in the app, start Terra Board with `TERRA_CLOUD_URL` and `TERRA_CLOUD_KEY` set to the `API_URL` and `ANON_KEY` from `npx supabase status`. Use a separate `CANVAS_DATA_DIR` per window to act as two computers. Sign-in codes land in the local mail catcher (Mailpit, http://127.0.0.1:54324).
 
 ## Connect a real Supabase project
 
 1. Create a project at supabase.com (the free tier works for testing).
-2. Authentication → Sign In / Providers: enable **Anonymous sign-ins**. Anonymous sign-up is open to anyone who has the server address, so keep its limit low: Authentication → Rate Limits → anonymous sign-ins, for example 30 an hour per IP address. Don't turn on CAPTCHA yet: the app doesn't send a CAPTCHA token, so every sign-in would fail.
+2. Authentication:
+   - **Sign In / Providers → Email**: on, with the email OTP length set to 6. Leave **Anonymous sign-ins** off on a new project (Terra Cloud keeps it on for a while for apps from before accounts).
+   - **Emails → SMTP Settings**: a real mail service; the built-in sender allows only a few emails an hour. **Emails → Templates**: "Magic Link" and "Confirm signup" show the code, as in `supabase/templates/email-code.html`.
+   - **Rate Limits**: emails sent per hour about 100.
+   - **URL Configuration → Redirect URLs**: add `terraboard://auth/callback`.
+   - **Google** (optional): a Google Cloud OAuth client of type "Web application" with the redirect URI `https://<ref>.supabase.co/auth/v1/callback`. Its consent screen needs a homepage and a privacy policy URL.
+   - **Microsoft** (optional): the Azure provider with tenant `common`; in the Azure app registration add the optional claims `email` and `xms_edov`.
+   - Don't turn on CAPTCHA: the app doesn't send a CAPTCHA token, so every sign-in would fail.
 3. Link and push the schema:
 
    ```bash
@@ -48,7 +88,7 @@ For a company server, leave `package.json` alone and follow [self-hosting.md](se
 
 ## Which server the app uses
 
-Settings → Cloud sync → Server shows the current server and **Change**. The app picks one in this order:
+Settings → Account → Server shows the current server and **Change**. The app picks one in this order:
 
 1. `TERRA_CLOUD_URL` and `TERRA_CLOUD_KEY` environment variables.
 2. `%ProgramData%\Terra Board\server.json` with `"locked": true`.
@@ -58,13 +98,17 @@ Settings → Cloud sync → Server shows the current server and **Change**. The 
 
 On Linux the managed file is `/etc/terra-board/server.json`.
 
-When someone connects to a server from Settings, the app first calls its `server_info()` function, so a server connected this way needs the latest migrations. Servers from the environment, a managed file, a saved choice or the built-in Terra Cloud are not checked at start-up. A server can only be changed while sync is off; the app turns it off first. Boards other people shared are removed from the computer, your own boards stay.
+When someone connects to a server from Settings, the app first calls its `server_info()` function. The app needs a server with the accounts migration (`schema` 2 or later) and says "This server needs an update" otherwise. Servers from the environment, a managed file, a saved choice or the built-in Terra Cloud are not checked at start-up, so a server must get the migration before people update the app. An account belongs to one server, so changing the server signs out first (after asking). Boards other people shared are removed from the computer, your own boards stay.
 
 ## Limits to know
 
 - Free plan: 500 MB database, 1 GB file storage, 50 MB per uploaded file. Files above the plan limit fail to upload and sync reports an error.
-- Each computer is its own anonymous user. If every paired computer is lost, the cloud copy cannot be reached until email sign-in is added (next milestone).
-- When a computer joins, its existing boards are merged into the synced library, including the starter boards of a fresh install.
+- A computer from before accounts that never signs in is still its own anonymous user: if every such computer is lost, its cloud copy can't be reached.
+- When a computer turns on sync for an account, its existing boards are merged into the synced library, including the starter boards of a fresh install.
+- After a combine, a computer from before accounts that was paired with the retired workspace stops syncing until someone signs in on it. Changes it pushed after the combining computer's last pull are only on that computer; when it signs in, the account's version wins for things both have (board history keeps the rest).
+- Signing out while a claim is still waiting (it failed offline) drops the claim: the old workspace stays on the server without an owner who can reach it. Sign in again first, or use "Delete my cloud data" before signing in.
+- Removing a computer ends its session only if the database allows deleting from `auth.sessions`; otherwise it is signed out on its next start.
+- Each of an account's computers announces itself on a shared board, so the same person can appear twice.
 
 ## What syncs
 

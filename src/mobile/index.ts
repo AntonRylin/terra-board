@@ -4,8 +4,12 @@ import { App } from '@capacitor/app';
 import { Browser } from '@capacitor/browser';
 import { Directory, Filesystem } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
-import { startMobile as startStorage } from './host.ts';
-export { call } from './host.ts';
+import { onWorker, startMobile as startStorage } from './host.ts';
+export { call, onExternal, externalReady } from './host.ts';
+export { cloud } from './cloud.ts';
+import { cloud, finishOAuth } from './cloud.ts';
+export { MobileGate } from './ui/MobileGate';
+export { AccountSettings as MobileAccountSettings } from './ui/AccountSettings';
 
 export const isAndroid = true;
 
@@ -43,6 +47,10 @@ export function onAndroidLifecycle(flush: () => Promise<void>) {
   const hidden = () => document.hidden && save();
   document.addEventListener('visibilitychange', hidden);
   const pause = App.addListener('pause', save);
+  // Back on screen or back online: fetch what changed on the computer meanwhile.
+  const fresh = () => void cloud.syncNow().catch(() => {});
+  const resume = App.addListener('resume', fresh);
+  window.addEventListener('online', fresh);
   const back = App.addListener('backButton', () => {
     // Text being edited on the board is kept, as when tapping elsewhere
     // (Escape would discard the draft).
@@ -79,6 +87,8 @@ export function onAndroidLifecycle(flush: () => Promise<void>) {
   return () => {
     document.removeEventListener('visibilitychange', hidden);
     void pause.then((l) => l.remove());
+    void resume.then((l) => l.remove());
+    window.removeEventListener('online', fresh);
     void back.then((l) => l.remove());
   };
 }
@@ -163,11 +173,27 @@ function installTouchMenus() {
   );
 }
 
-let touchMenus = false;
+// Google and Microsoft sign-in: the page opens in a Custom Tab (Google refuses sign-in
+// inside an app's WebView) and comes back as terraboard://auth/callback, which Android
+// hands to this app (the intent filter in AndroidManifest.xml).
+function installSignInLinks() {
+  onWorker('open-url', (url: string) => void Browser.open({ url }).catch(() => {}));
+  const callback = (url?: string) => {
+    if (!url?.startsWith('terraboard://auth/')) return;
+    void finishOAuth(url).catch(() => {});
+  };
+  void App.addListener('appUrlOpen', ({ url }) => callback(url));
+  void App.getLaunchUrl()
+    .then((launch) => callback(launch?.url))
+    .catch(() => {});
+}
+
+let installed = false;
 export function startMobile() {
-  if (!touchMenus) {
-    touchMenus = true;
+  if (!installed) {
+    installed = true;
     installTouchMenus();
+    installSignInLinks();
   }
   return startStorage();
 }

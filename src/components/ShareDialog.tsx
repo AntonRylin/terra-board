@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Check, Copy, X } from 'lucide-react';
 import type { CloudStatus, SharePerson, ShareRole } from '../bridge';
+import { cloudApi } from '../bridge';
 import type { Library } from '../model';
 import './live-share.css';
 
 export function useCloudStatus() {
   const [status, setStatus] = useState<CloudStatus | null>(null);
   useEffect(() => {
-    const cloud = window.canvas?.cloud;
+    const cloud = cloudApi;
     if (!cloud) return;
     void cloud.status().then(setStatus);
     return cloud.onStatus(setStatus);
@@ -88,14 +89,16 @@ export function ShareDialog({
   library,
   status,
   onClose,
+  onSignIn,
 }: {
   kind: 'folder' | 'board';
   id: string;
   library: Library;
   status: CloudStatus | null;
   onClose: () => void;
+  onSignIn?: () => void;
 }) {
-  const cloud = window.canvas?.cloud;
+  const cloud = cloudApi;
   const [people, setPeople] = useState<SharePerson[]>([]);
   const [shareId, setShareId] = useState<string | null>(null);
   // A board in a shared folder: the people who reach it through the folder.
@@ -163,6 +166,8 @@ export function ShareDialog({
   if (!cloud) return <p className="quiet">Sharing works in the desktop app.</p>;
   if (!status?.configured)
     return <p className="quiet">This build of Terra Board is not connected to a sync service.</p>;
+  if (!status.identity && status.account.state === 'signedOut')
+    return <SignInFirst onSignIn={onSignIn} onClose={onClose} what="share" />;
 
   if (received) {
     const share = status.sharedWithMe.find(
@@ -243,7 +248,8 @@ export function ShareDialog({
       </>
     );
 
-  const needsName = !status.identity;
+  // The name defaults to the account's; people may set another.
+  const needsName = !status.identity && !status.account.name;
   return (
     <>
       <p className="quiet">
@@ -382,23 +388,64 @@ export function ShareDialog({
   );
 }
 
+// Sharing needs an account; the person's own boards never do.
+function SignInFirst({
+  what,
+  onSignIn,
+  onClose,
+}: {
+  what: 'share' | 'join';
+  onSignIn?: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <>
+      <p className="quiet">
+        {what === 'share'
+          ? 'Sign in to share. Only what you share is uploaded; your other boards stay on this computer.'
+          : 'Sign in to open boards people share with you.'}
+      </p>
+      <div className="dialog-actions">
+        <button type="button" className="button" onClick={onClose}>
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="button primary"
+          autoFocus
+          onClick={() => {
+            onClose();
+            onSignIn?.();
+          }}
+        >
+          Sign in…
+        </button>
+      </div>
+    </>
+  );
+}
+
 export function JoinDialog({
   status,
   onClose,
+  onSignIn,
 }: {
   status: CloudStatus | null;
   onClose: () => void;
+  onSignIn?: () => void;
 }) {
-  const cloud = window.canvas?.cloud;
+  const cloud = cloudApi;
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const clean = code.replace(/[^0-9A-Za-z]/g, '').toUpperCase();
   const invite = clean.startsWith('S');
-  const needsName = invite && !status?.identity;
+  const needsName = invite && !status?.identity && !status?.account.name;
   if (!cloud || !status?.configured)
     return <p className="quiet">Joining works in the desktop app with sync available.</p>;
+  if (!status.identity && status.account.state === 'signedOut')
+    return <SignInFirst onSignIn={onSignIn} onClose={onClose} what="join" />;
   return (
     <form
       onSubmit={(e) => {
@@ -412,9 +459,7 @@ export function JoinDialog({
           .finally(() => setBusy(false));
       }}
     >
-      <p className="quiet">
-        Enter an invite code someone sent you, or a code from another of your computers.
-      </p>
+      <p className="quiet">Enter an invite code someone sent you.</p>
       <label>
         Code
         <input

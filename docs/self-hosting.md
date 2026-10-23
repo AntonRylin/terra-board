@@ -2,12 +2,18 @@
 
 Terra Board syncs through Terra Cloud by default. A company can run its own Supabase and point the app at it instead. Local boards never need a server.
 
-Accounts arrive in the next release. Until then a company server uses the same anonymous device sync as Terra Cloud, so enable **Anonymous sign-ins** and keep their rate limit low, as described in [cloud-sync.md](cloud-sync.md). Anyone who can reach the server can create a device and upload files, so keep a company server behind your VPN until accounts arrive.
+People sign in with an email code, Google or Microsoft ([cloud-sync.md](cloud-sync.md#accounts)). Anyone who can sign in can create an account and upload files, so if only your staff should use the server, turn off sign-ups for new email addresses in Supabase (Authentication → Sign In / Providers → "Allow new users to sign up") and create the accounts yourself (Authentication → Users → Invite), or keep the server behind your VPN.
 
 ## Set up the server
 
 1. Run Supabase: self-hosted, or a project at supabase.com.
-2. Apply the schema from this repository:
+2. Set up sign-in (Supabase dashboard → Authentication, or `supabase/config.toml` for a self-hosted stack):
+   - **Email** provider on, email OTP length 6. **Anonymous sign-ins** off: apps since accounts never use them.
+   - **SMTP**: your mail server. The built-in sender allows only a few emails an hour.
+   - **Email templates** "Magic Link" and "Confirm signup": show the code (`{{ .Token }}`), not a link. `supabase/templates/email-code.html` is ready to paste.
+   - **Redirect URLs**: add `terraboard://auth/callback`.
+   - **Google** or **Microsoft** (Azure, tenant `common`) if you want them, and set `signIn` in the description file below to match.
+3. Apply the schema from this repository:
 
    ```bash
    npx supabase link --project-ref <ref>
@@ -17,15 +23,17 @@ Accounts arrive in the next release. Until then a company server uses the same a
    npx supabase db push
    ```
 
-   This includes `server_info()`. When someone connects from Settings, the app calls it first to check the server speaks a protocol it understands. A server without it shows "This server needs an update", and an app too old for the server shows "Update Terra Board to use this server".
+   This includes `server_info()`. When someone connects from Settings, the app calls it first to check the server speaks a protocol it understands. A server without it, or without the accounts migration, shows "This server needs an update", and an app too old for the server shows "Update Terra Board to use this server".
 
-3. Optionally set the server's own label (the app does not show it yet; people see the `name` from the description file below):
+   `delete_my_cloud_data()` and `finish_claim()` delete users from `auth.users`. If your database refuses that, the claim still works (the old anonymous user is left behind) and a deletion is recorded in `public.deletion_requests`; remove those users in Authentication → Users.
+
+4. Optionally set the server's own label (the app does not show it yet; people see the `name` from the description file below):
 
    ```sql
    update public.server_settings set name = 'Acme boards';
    ```
 
-4. Serve a description at `https://<your address>/.well-known/terra-board.json`:
+5. Serve a description at `https://<your address>/.well-known/terra-board.json`:
 
    ```json
    {
@@ -36,17 +44,17 @@ Accounts arrive in the next release. Until then a company server uses the same a
    }
    ```
 
-   - `signIn` is optional. Email is on by default, Google and Microsoft are off.
+   - `signIn` is optional. Email is on by default, Google and Microsoft are off. The app also asks the server which providers are on and shows only buttons that work.
    - The address must be `https://`. Only `localhost`, `127.0.0.1` and `[::1]` may use plain http. The same goes for `supabaseUrl`, which must be just the origin: no path, no trailing details.
    - The app does not follow redirects and ignores replies over 64 KB.
    - **Never put the service role or secret key here.** A key starting with `sb_secret_`, or a service_role JWT, is refused.
 
 ## Connect people
 
-- Each person opens Settings → Cloud sync → Server → **Change**, types the address (`terra.example.com`), chooses **Check** (the app shows "Found <name> at <host>."), then **Connect**. **Advanced** takes a Supabase URL and public key directly, with no description file.
-- Or send them a link: `terraboard://connect?address=<your address>`. It opens Settings → Cloud sync with the address filled in. The person still checks and confirms; a link never switches servers by itself. On a computer whose server is locked, it still opens Settings → Cloud sync but fills nothing in. Only the installed app registers `terraboard://` (a development build does not).
+- Each person opens Settings → Account → Server → **Change**, types the address (`terra.example.com`), chooses **Check** (the app shows "Found <name> at <host>."), then **Connect**, and signs in. **Advanced** takes a Supabase URL and public key directly, with no description file.
+- Or send them a link: `terraboard://connect?address=<your address>`. It opens Settings → Account with the address filled in. The person still checks and confirms; a link never switches servers by itself. On a computer whose server is locked, it still opens Settings → Account but fills nothing in. Only the installed app registers `terraboard://` (a development build does not).
 
-If sync is on, the app warns first (with the number of changes not yet sent, if any) and then turns sync off. Boards other people shared with you are removed from that computer; your own boards stay. **Use Terra Cloud** switches back.
+If the person is signed in or sync is on, the app warns first (with the number of changes not yet sent, if any), then signs out and turns sync off. Boards other people shared with you are removed from that computer; your own boards stay. **Use Terra Cloud** switches back.
 
 ## Managed computers
 

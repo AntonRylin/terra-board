@@ -226,7 +226,7 @@ import {
   textRecognitionUnavailable,
 } from '../canvas/page-text';
 import { cropRecognizedText, recognizedString } from '../canvas/recognized-text';
-import { android, downloadAsset } from '../bridge';
+import { android, cloudApi, downloadAsset } from '../bridge';
 import { useExtensionInstalled } from '../extensions';
 import { cropImage, uncroppedImage, fullCrop } from '../canvas/crop';
 import { selectionToolsPosition } from '../canvas/selection-tools';
@@ -4627,7 +4627,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           onCancel={() => finishCrop(true)}
         />
       )}
-      {!!window.canvas && (
+      {!!cloudApi && (
         <CollabLayer engine={engine} host={host} camera={camera} boardId={doc.board.id} />
       )}
       {!readOnly && (

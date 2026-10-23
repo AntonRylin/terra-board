@@ -34,6 +34,7 @@ const allowed = new Set([
   'syncEnable',
   'syncDisable',
   'syncDropForeign',
+  'syncRejoined',
   'syncIdentity',
   'syncLibrary',
   'syncOwned',

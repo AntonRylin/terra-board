@@ -52,6 +52,25 @@ export interface CloudStatus {
   shared: OwnShare[];
   sharedWithMe: ReceivedShare[];
   profile?: CloudProfile;
+  account: CloudAccount;
+  /** The sign-in methods this server offers; null until known. */
+  methods: SignInMethods | null;
+  /** A browser sign-in waiting for its callback. */
+  waiting: SignInProvider | null;
+}
+export type SignInProvider = 'google' | 'microsoft';
+export interface SignInMethods {
+  email: boolean;
+  google: boolean;
+  microsoft: boolean;
+}
+/** 'anonymous': a computer set up by Terra Board 0.1.28, before accounts. */
+export interface CloudAccount {
+  state: 'signedOut' | 'anonymous' | 'signedIn';
+  userId?: string;
+  email?: string | null;
+  name?: string | null;
+  provider?: string | null;
 }
 export interface CloudProfile {
   avatar: string | null;
@@ -101,7 +120,8 @@ export interface LiveStatus {
 export interface CloudDevice {
   id: string;
   name: string;
-  joined: string;
+  version: string | null;
+  lastSeen: string;
   current: boolean;
 }
 export interface AppInfo {
@@ -317,10 +337,17 @@ interface DesktopBridge {
     sendCursor(data: { x: number; y: number; view: ViewRect }): void;
     onPresence(callback: (event: PresenceEvent) => void): () => void;
     disable(): Promise<CloudStatus>;
-    pairingCode(): Promise<string>;
     devices(): Promise<CloudDevice[]>;
     removeDevice(id: string): Promise<void>;
     syncNow(): Promise<CloudStatus>;
+    sendCode(email: string): Promise<{ email: string }>;
+    verifyCode(email: string, code: string): Promise<CloudStatus>;
+    signInWith(provider: SignInProvider): Promise<CloudStatus>;
+    cancelSignIn(): Promise<CloudStatus>;
+    signOut(): Promise<CloudStatus>;
+    /** Removes the cloud library, its files and shares, and the sign-in. */
+    deleteCloudData(): Promise<{ userDeleted: boolean }>;
+    signInMethods(): Promise<CloudStatus>;
     serverTest(input: ServerInput): Promise<ServerPreview>;
     serverSet(
       input: ServerInput | { terra: true },
@@ -341,6 +368,17 @@ declare global {
 export const desktop = !!window.canvas;
 // The Android app (Capacitor): storage runs in a worker, see docs/android.md.
 export const android = mobile.isAndroid;
+// Terra Cloud: Electron's main process on desktop, the storage worker on Android.
+// On Android, signOut also deletes the phone's copy of the library (docs/android.md).
+export type CloudBridge = DesktopBridge['cloud'];
+export type ExternalSyncMessage = Parameters<Parameters<DesktopBridge['onMcpSync']>[0]>[0];
+export const cloudApi: CloudBridge | undefined = window.canvas?.cloud ?? mobile.cloud;
+// Outside changes (AI edits and cloud sync on desktop, cloud sync on Android):
+// the page pauses the board, the change is applied, the page refreshes.
+export const onExternalSync = (callback: (message: ExternalSyncMessage) => void) =>
+  window.canvas ? window.canvas.onMcpSync(callback) : mobile.onExternal(callback);
+export const externalReady = (id: number, error?: string) =>
+  window.canvas ? window.canvas.mcpReady(id, error) : mobile.externalReady(id, error);
 function base64(bytes: Uint8Array) {
   let text = '';
   for (let i = 0; i < bytes.length; i += 32768)

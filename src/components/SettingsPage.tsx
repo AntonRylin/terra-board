@@ -4,7 +4,8 @@ import McpSettings from './McpSettings';
 import AppearanceSettings from './AppearanceSettings';
 import type { Appearance } from './useAppearance';
 import type { Library } from '../model';
-import { openLink } from '../bridge';
+import { android, openLink } from '../bridge';
+import { MobileAccountSettings } from '../mobile/platform';
 import {
   searchSettings,
   sectionById,
@@ -17,6 +18,7 @@ import { CanvasSettings, RadialSettings } from './settings/CanvasSettings';
 import { ShortcutSettings } from './settings/ShortcutSettings';
 import { AboutSettings, StorageSettings } from './settings/StorageSettings';
 import { CloudSettings } from './settings/CloudSettings';
+import { AccountSettings } from './settings/AccountSettings';
 import { ProfileSettings } from './settings/ProfileSettings';
 import { ExtensionsSettings } from './settings/ExtensionsSettings';
 import './settings/settings.css';
@@ -243,11 +245,17 @@ export default function SettingsPage({
               {section === 'canvas' && <CanvasSettings />}
               {section === 'radial' && <RadialSettings />}
               {section === 'shortcuts' && <ShortcutSettings />}
+              {section === 'account' &&
+                (android ? (
+                  <MobileAccountSettings />
+                ) : (
+                  <AccountSettings connectAddress={connectAddress} />
+                ))}
               {section === 'cloud' && (
                 <CloudSettings
                   library={library}
                   onManageShare={onManageShare}
-                  connectAddress={connectAddress}
+                  onSignIn={() => open('account')}
                 />
               )}
               {section === 'storage' && <StorageSettings />}

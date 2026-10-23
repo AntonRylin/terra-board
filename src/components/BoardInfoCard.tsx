@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 're
 import {
   boardInfo,
   boardSyncs,
+  cloudApi,
   type BoardInfo,
   type CloudStatus,
   type SharePerson,
@@ -161,7 +162,7 @@ export default function BoardInfoCard({
     };
   }, [open, board.id, board.updated, saving]);
 
-  const cloud = window.canvas?.cloud;
+  const cloud = cloudApi;
   const place = boardPlace({
     boardId: board.id,
     folderId: board.folderId,

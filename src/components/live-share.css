@@ -288,3 +288,8 @@
   width: 26px;
   height: 26px;
 }
+
+/* Above the update prompt when both show. */
+.claim-prompt {
+  bottom: 132px;
+}

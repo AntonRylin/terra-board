@@ -1,0 +1,239 @@
+/* Android sign-in and first-sync screens (MobileGate.tsx, SignIn.tsx). */
+.mobile-screen {
+  position: fixed;
+  inset: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+  padding: max(32px, env(safe-area-inset-top)) 20px max(28px, env(safe-area-inset-bottom));
+  background: var(--paper);
+  color: var(--ink);
+}
+.mobile-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  max-width: 340px;
+}
+.mobile-mark {
+  display: block;
+  margin-bottom: 18px;
+}
+.mobile-hero h1 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.4px;
+}
+.mobile-hero p {
+  margin: 8px 0 20px;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.mobile-card {
+  width: 100%;
+  max-width: 400px;
+  padding: 22px 20px 18px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: 0 10px 30px rgb(23 32 46 / 0.08);
+}
+.mobile-card h2 {
+  margin: 0 0 12px;
+  font-size: 16px;
+  font-weight: 600;
+}
+.mobile-steps {
+  margin: 0 0 18px;
+  padding-left: 20px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.mobile-steps li + li {
+  margin-top: 6px;
+}
+.mobile-steps b {
+  font-weight: 600;
+  color: var(--ink);
+}
+.mobile-field {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.mobile-field input {
+  height: 52px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper);
+  color: var(--ink);
+  font:
+    600 22px/1 Consolas,
+    'Cascadia Mono',
+    ui-monospace,
+    monospace;
+  letter-spacing: 2px;
+  text-align: center;
+  text-transform: uppercase;
+}
+.mobile-field input::placeholder {
+  color: var(--muted);
+  opacity: 0.45;
+}
+.mobile-field input[aria-invalid='true'] {
+  border-color: #c45252;
+}
+.mobile-error {
+  margin: -4px 0 14px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #b74242;
+}
+:root[data-theme='dark'] .mobile-error {
+  color: #f08c8c;
+}
+.mobile-button {
+  width: 100%;
+  height: 48px;
+  border-radius: 12px;
+  background: var(--surface-raised);
+  font-size: 15px;
+  font-weight: 600;
+}
+.mobile-button.primary {
+  background: var(--accent);
+  color: #fff;
+}
+:root[data-theme='dark'] .mobile-button.primary {
+  color: #0d1726;
+}
+.mobile-hero .mobile-button {
+  width: auto;
+  padding: 0 28px;
+}
+.mobile-hint {
+  margin: 12px 2px 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.mobile-track {
+  width: 120px;
+  height: 3px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--line);
+}
+.mobile-track span {
+  display: block;
+  width: 42%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  animation: startup-progress 1.5s ease-in-out infinite;
+}
+
+/* Settings → Account (AccountSettings.tsx) */
+.mobile-inline-form {
+  margin-top: 10px;
+}
+.mobile-inline-form .mobile-code-input {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+}
+.mobile-confirm {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--st-hover);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.mobile-confirm p {
+  margin: 0 0 10px;
+}
+.mobile-confirm div {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.st-button.danger {
+  border-color: var(--st-danger);
+  color: var(--st-danger);
+}
+
+/* Sign-in steps (SignIn.tsx) */
+.mobile-lead {
+  margin: -4px 0 18px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.mobile-lead b {
+  color: var(--ink);
+  font-weight: 600;
+  word-break: break-all;
+}
+.mobile-buttons {
+  display: grid;
+  gap: 10px;
+}
+.mobile-buttons + .mobile-error {
+  margin: 14px 0 0;
+}
+.mobile-button.provider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+.mobile-field input.mobile-text {
+  font: inherit;
+  font-size: 16px;
+  font-weight: 400;
+  color: var(--ink);
+  letter-spacing: 0;
+  text-align: left;
+  text-transform: none;
+}
+.mobile-link {
+  display: block;
+  margin: 12px auto 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: none;
+  color: var(--accent);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.mobile-row {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.mobile-row .mobile-link {
+  margin: 12px 0 0;
+}
+.mobile-footnote {
+  max-width: 360px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  text-align: center;
+  color: var(--muted);
+}

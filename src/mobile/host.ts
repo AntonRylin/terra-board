@@ -5,10 +5,50 @@ let worker: Worker | null = null;
 let next = 1;
 const pending = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void }>();
 
+// Messages the worker sends on its own: cloud sync status and presence, and the
+// pause/refresh around changes from the cloud (see cloud-worker.ts).
+export type ExternalMessage = {
+  id: number;
+  phase: 'prepare' | 'finish';
+  change?: string;
+  boards?: string[];
+  source?: 'cloud';
+};
+const listeners = {
+  status: new Set<(status: any) => void>(),
+  presence: new Set<(event: any) => void>(),
+  'open-url': new Set<(url: string) => void>(),
+  external: null as ((message: ExternalMessage) => void) | null,
+};
+export function onWorker(kind: 'status' | 'presence' | 'open-url', callback: (value: any) => void) {
+  listeners[kind].add(callback);
+  return () => void listeners[kind].delete(callback);
+}
+export function onExternal(callback: (message: ExternalMessage) => void) {
+  listeners.external = callback;
+  return () => {
+    if (listeners.external === callback) listeners.external = null;
+  };
+}
+export const externalReady = (id: number, error?: string) =>
+  void call('externalReady', { id, error }).catch(() => {});
+function workerEvent(data: any) {
+  if (data.type === 'cloud-status') for (const l of listeners.status) l(data.status);
+  else if (data.type === 'presence') for (const l of listeners.presence) l(data.event);
+  else if (data.type === 'open-url') for (const l of listeners['open-url']) l(data.url);
+  else if (data.type === 'wiped') location.reload();
+  else if (data.type === 'external') {
+    // Before the board is on screen there is nothing to pause or refresh.
+    if (listeners.external) listeners.external(data);
+    else externalReady(data.id);
+  }
+}
+
 function storage() {
   if (worker) return worker;
   worker = new Worker(new URL('./store-worker.ts', import.meta.url), { type: 'module' });
   worker.onmessage = ({ data }) => {
+    if (data.type) return workerEvent(data);
     const call = pending.get(data.id);
     if (!call) return;
     pending.delete(data.id);

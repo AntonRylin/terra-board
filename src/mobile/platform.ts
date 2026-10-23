@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 // Desktop and browser builds. Android builds replace this module with
 // ./index.ts (vite.config.ts), so the Android bridge never reaches them.
 const missing = () => Promise.reject(Error('Not available in this build'));
@@ -8,3 +9,9 @@ export const startMobile = (): Promise<void> => missing();
 export const saveFile = (_blob: Blob, _name: string): Promise<void> => missing();
 export const openExternal = (_url: string): Promise<void> => missing();
 export const onAndroidLifecycle = (_flush: () => Promise<void>) => () => {};
+export const cloud = undefined;
+export const onExternal = (_callback: (message: any) => void): (() => void) | undefined =>
+  undefined;
+export const externalReady = (_id: number, _error?: string) => {};
+export const MobileGate = ({ children }: { children: ReactNode }) => children;
+export const MobileAccountSettings = (): ReactNode => null;

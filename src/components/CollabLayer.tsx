@@ -3,7 +3,7 @@ import { Crosshair, Eye, LocateFixed, Pencil, UserMinus, X } from 'lucide-react'
 import type { Engine } from '../canvas/engine';
 import type { Camera } from '../model';
 import type { PresencePerson, ViewRect } from '../bridge';
-import { mediaUrl } from '../bridge';
+import { cloudApi, mediaUrl } from '../bridge';
 import { getPreferences } from '../settings/preferences';
 import { useCloudStatus } from './ShareDialog';
 import { JoinToasts, useJoinToasts } from './JoinToasts';
@@ -42,7 +42,7 @@ export default function CollabLayer({
   camera: Camera;
   boardId: string;
 }) {
-  const cloud = window.canvas?.cloud;
+  const cloud = cloudApi;
   const status = useCloudStatus();
   const [people, setPeople] = useState<Person[]>([]);
   const [cursors, setCursors] = useState<Record<string, Cursor>>({});

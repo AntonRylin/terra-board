@@ -47,6 +47,10 @@ CREATE TABLE IF NOT EXISTS sync_foreign(kind TEXT NOT NULL, id TEXT NOT NULL,
   workspace TEXT NOT NULL, role TEXT NOT NULL, owner TEXT NOT NULL DEFAULT '',
   PRIMARY KEY(kind, id));
 CREATE TABLE IF NOT EXISTS sync_local(id TEXT PRIMARY KEY);
+-- While a library first syncs with a workspace that may already hold its boards (signing in
+-- again, a second computer, a claim): what the server has, so only the rest is uploaded.
+CREATE TABLE IF NOT EXISTS sync_seen(kind TEXT NOT NULL, boardId TEXT NOT NULL DEFAULT '',
+  id TEXT NOT NULL, PRIMARY KEY(kind, boardId, id));
 -- Remote rows this version could not apply (from a newer app, say). The sync
 -- cursor moves past them, so they are kept here and retried on every pull.
 CREATE TABLE IF NOT EXISTS sync_held(workspace TEXT NOT NULL, kind TEXT NOT NULL,
@@ -207,6 +211,7 @@ function createSync(store, helpers) {
         cursor: Number(state('cursor') || 0),
         pending: db().prepare('SELECT count(*) AS n FROM sync_outbox').get().n,
         held: db().prepare('SELECT count(*) AS n FROM sync_held').get().n,
+        rejoin: !!state('rejoin'),
       };
     },
     // This library gets a personal workspace; nothing uploads until something is shared.
@@ -216,7 +221,7 @@ function createSync(store, helpers) {
         if (typeof name === 'string' && name.trim()) setState('name', name.trim().slice(0, 60));
         if (state('workspace') !== workspace) {
           db().exec(
-            'DELETE FROM sync_outbox; DELETE FROM sync_uploaded; DELETE FROM sync_owned; DELETE FROM sync_local; DELETE FROM sync_held;',
+            "DELETE FROM sync_outbox; DELETE FROM sync_uploaded; DELETE FROM sync_owned; DELETE FROM sync_local; DELETE FROM sync_held; DELETE FROM sync_seen; DELETE FROM sync_state WHERE key='rejoin';",
           );
           setState('workspace', workspace);
           setState('cursor', 0);
@@ -227,7 +232,15 @@ function createSync(store, helpers) {
     library({ on }) {
       if (!state('workspace')) throw Error('Turn on sync first');
       return store.transaction(() => {
-        if (on) {
+        if (on && !Number(state('cursor') || 0)) {
+          // Nothing pulled from this workspace yet, and it may already hold this library
+          // (from before signing out, or another computer). Uploading everything first would
+          // overwrite newer edits made elsewhere: the next round pulls first, then queues only
+          // what the server doesn't have (rejoined).
+          setState('library', 1);
+          setState('rejoin', 1);
+          db().exec('DELETE FROM sync_seen');
+        } else if (on) {
           setState('library', 1);
           db().exec(`
             INSERT OR IGNORE INTO sync_outbox SELECT 'folder', '', id, 0 FROM folders
@@ -252,6 +265,27 @@ function createSync(store, helpers) {
       sync.identity({ workspace });
       return sync.library({ on: true });
     },
+    // After the first full pull of a rejoined workspace: queue what the server doesn't have.
+    // Edits made here to things the server has were replaced by the server's version (they
+    // remain in board history); everything that exists only here uploads.
+    rejoined() {
+      if (!state('rejoin')) return sync.status();
+      return store.transaction(() => {
+        db().exec(`
+          INSERT OR IGNORE INTO sync_outbox SELECT 'folder', '', id, 0 FROM folders
+            WHERE id NOT IN (SELECT id FROM sync_foreign WHERE kind='folder')
+              AND id NOT IN (SELECT id FROM sync_seen WHERE kind='folder');
+          INSERT OR IGNORE INTO sync_outbox SELECT 'board', '', id, 0 FROM sync_tracked
+            WHERE foreign_ws IS NULL AND id NOT IN (SELECT id FROM sync_seen WHERE kind='board');
+          INSERT OR IGNORE INTO sync_outbox SELECT 'object', o.boardId, o.id, 0 FROM objects o
+            JOIN sync_tracked t ON t.id=o.boardId WHERE t.foreign_ws IS NULL
+              AND NOT EXISTS (SELECT 1 FROM sync_seen s
+                WHERE s.kind='object' AND s.boardId=o.boardId AND s.id=o.id);
+          DELETE FROM sync_seen;
+          DELETE FROM sync_state WHERE key='rejoin';`);
+        return sync.status();
+      });
+    },
     // Remove every copy of other people's boards and folders, with their unsent edits.
     dropForeign() {
       let changed = false;
@@ -267,7 +301,7 @@ function createSync(store, helpers) {
         // Boards other people shared here belong to them; remove the copies.
         db().exec(`${dropForeignCopies}
           DELETE FROM sync_outbox; DELETE FROM sync_uploaded; DELETE FROM sync_owned;
-          DELETE FROM sync_foreign; DELETE FROM sync_local;
+          DELETE FROM sync_foreign; DELETE FROM sync_local; DELETE FROM sync_seen;
           DELETE FROM sync_state WHERE key <> 'applying';`);
       });
       return sync.status();
@@ -327,7 +361,7 @@ function createSync(store, helpers) {
       }
       let changed = false;
       withApplying(() => {
-        const local = db().prepare('SELECT kind, id, role FROM sync_foreign').all();
+        const local = db().prepare('SELECT kind, id, role, workspace FROM sync_foreign').all();
         for (const f of local) {
           const wanted = (f.kind === 'board' ? boards : folders).get(f.id);
           if (!wanted) {
@@ -335,10 +369,12 @@ function createSync(store, helpers) {
             else db().prepare('DELETE FROM folders WHERE id=?').run(f.id);
             db().prepare('DELETE FROM sync_foreign WHERE kind=? AND id=?').run(f.kind, f.id);
             changed = true;
-          } else if (wanted.role !== f.role) {
+          } else if (wanted.role !== f.role || wanted.workspace !== f.workspace) {
+            // A new workspace: the owner combined two libraries into their account. The
+            // board keeps its id, so this copy stays and follows it.
             db()
-              .prepare('UPDATE sync_foreign SET role=?, owner=? WHERE kind=? AND id=?')
-              .run(wanted.role, wanted.owner, f.kind, f.id);
+              .prepare('UPDATE sync_foreign SET role=?, owner=?, workspace=? WHERE kind=? AND id=?')
+              .run(wanted.role, wanted.owner, wanted.workspace, f.kind, f.id);
             changed = true;
           }
         }
@@ -471,11 +507,17 @@ function createSync(store, helpers) {
     // Apply rows pulled from a workspace. Rows with a local unsent change are
     // skipped: that change is pushed next and becomes the newest version.
     // Rows from someone else's workspace become foreign boards with their rights.
-    apply({ rows, cursor, workspace, roles }) {
+    // seen: rows this computer pushed itself, not applied again but known to the server.
+    apply({ rows, cursor, workspace, roles, seen = [] }) {
       const personal = state('workspace');
       if (!personal) throw Error('Sync is off');
       workspace = workspace || personal;
       const foreign = workspace !== personal;
+      if (!foreign && state('rejoin')) {
+        const see = db().prepare('INSERT OR IGNORE INTO sync_seen VALUES(?,?,?)');
+        for (const r of [...rows, ...seen])
+          if (r && typeof r.id === 'string') see.run(r.kind, r.board_id || '', r.id);
+      }
       if (cursor !== null && cursor !== undefined && (!Number.isSafeInteger(cursor) || cursor < 0))
         throw Error('Invalid sync cursor');
       const pending = db().prepare('SELECT 1 FROM sync_outbox WHERE kind=? AND boardId=? AND id=?');

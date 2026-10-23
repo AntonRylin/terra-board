@@ -146,10 +146,16 @@ contextBridge.exposeInMainWorld('canvas', {
       return () => ipcRenderer.removeListener('canvas:presence', handler);
     },
     disable: () => ipcRenderer.invoke('canvas:cloud-disable'),
-    pairingCode: () => ipcRenderer.invoke('canvas:cloud-pairing-code'),
     devices: () => ipcRenderer.invoke('canvas:cloud-devices'),
     removeDevice: (id) => ipcRenderer.invoke('canvas:cloud-remove-device', id),
     syncNow: () => ipcRenderer.invoke('canvas:cloud-sync-now'),
+    sendCode: (email) => ipcRenderer.invoke('canvas:cloud-send-code', email),
+    verifyCode: (email, code) => ipcRenderer.invoke('canvas:cloud-verify-code', email, code),
+    signInWith: (provider) => ipcRenderer.invoke('canvas:cloud-sign-in-with', provider),
+    cancelSignIn: () => ipcRenderer.invoke('canvas:cloud-cancel-sign-in'),
+    signOut: () => ipcRenderer.invoke('canvas:cloud-sign-out'),
+    deleteCloudData: () => ipcRenderer.invoke('canvas:cloud-delete-cloud-data'),
+    signInMethods: () => ipcRenderer.invoke('canvas:cloud-sign-in-methods'),
     serverTest: (input) => ipcRenderer.invoke('canvas:cloud-server-test', input),
     serverSet: (input, options) => ipcRenderer.invoke('canvas:cloud-server-set', input, options),
     onDeepLink: (callback) => {
