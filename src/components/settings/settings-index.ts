@@ -180,7 +180,7 @@ export const rows = {
   openAtLogin: {
     section: 'general',
     title: 'Launch at login',
-    description: 'Open Terra Board when you sign in to Windows.',
+    description: 'Open Terra Board when you sign in to your computer.',
     keywords: 'startup autostart',
   },
   theme: {

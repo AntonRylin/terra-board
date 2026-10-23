@@ -9,11 +9,17 @@
 //
 // TERRA_SMOKE_LIBRARY: the library folder the app must use (checked).
 // TERRA_SMOKE_SCREENSHOT: where to save a PNG of the reopened board.
+// TERRA_SMOKE_EXTENSIONS: a folder of built extensions (release/extensions);
+//   the second start installs Background removal and Song links from it,
+//   cuts out the image and runs yt-dlp.
+// TERRA_SMOKE_DESKTOP_ENTRY: a menu entry the app must have written that starts
+//   <executable> (an AppImage integrates itself).
 //
 // The second start also switches on AI access and connects the way Claude
 // Desktop does, with the stdio command Settings shows.
-import { spawn } from 'node:child_process';
-import { existsSync, writeFileSync } from 'node:fs';
+import { execFileSync, spawn } from 'node:child_process';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
 import assert from 'node:assert/strict';
@@ -24,6 +30,8 @@ const [executable, ...extraArgs] = process.argv.slice(2);
 if (!executable) throw Error('Usage: node scripts/app-smoke.mjs <executable> [args...]');
 const expectedLibrary = process.env.TERRA_SMOKE_LIBRARY;
 const screenshot = process.env.TERRA_SMOKE_SCREENSHOT;
+const extensionSource = process.env.TERRA_SMOKE_EXTENSIONS;
+const extensionsDir = extensionSource && mkdtempSync(join(tmpdir(), 'terra-smoke-extensions-'));
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const step = (text) => console.log(`[smoke] ${text}`);
 
@@ -42,6 +50,10 @@ async function run(label, body) {
   const env = { ...process.env };
   delete env.ELECTRON_RUN_AS_NODE;
   delete env.CANVAS_DEV_URL;
+  if (extensionSource) {
+    env.TERRA_EXTENSIONS_SOURCE = extensionSource;
+    env.TERRA_EXTENSIONS_DIR = extensionsDir;
+  }
   step(`${label}: starting`);
   const child = spawn(executable, [...extraArgs, `--remote-debugging-port=${port}`], {
     env,
@@ -132,6 +144,13 @@ await run('first start', async ({ evaluate }) => {
   const folder = typeof library === 'string' ? library : library?.path || library?.directory;
   if (expectedLibrary) assert.equal(folder, expectedLibrary);
   if (folder) assert.ok(existsSync(join(folder, 'library.sqlite')), 'library.sqlite missing');
+  const desktopEntry = process.env.TERRA_SMOKE_DESKTOP_ENTRY;
+  if (desktopEntry) {
+    const entry = readFileSync(desktopEntry, 'utf8');
+    assert.ok(entry.includes(`Exec="${executable}" %U`), entry);
+    assert.match(entry, /x-scheme-handler\/terraboard/);
+    step(`desktop entry: ${desktopEntry}`);
+  }
   const platform = await evaluate('window.canvas.platform');
   step(`platform: ${platform}`);
   // A 64x48 PNG drawn in the page, imported like a pasted image, then a board
@@ -165,13 +184,34 @@ await run('second start', async ({ evaluate, send }) => {
     const { objects } = await window.canvas.invoke('loadBoard', { id: board.id });
     const image = objects.find((o) => o.id === 'smoke-image');
     const size = image && await window.canvas.assetDimensions(image.assetId);
-    return { objects: objects.map((o) => o.type + ':' + (o.text || o.id)), size };
+    return {
+      objects: objects.map((o) => o.type + ':' + (o.text || o.id)),
+      size,
+      assetId: image?.assetId,
+    };
   })()`);
   step(`reopened: ${JSON.stringify(result)}`);
   assert.ok(result.objects, `board missing; library has ${JSON.stringify(result.boards)}`);
   assert.ok(result.objects.includes('note:' + noteText), 'note missing');
   assert.ok(result.objects.includes('image:smoke-image'), 'image missing');
   assert.equal(result.size?.width, 64, 'image size');
+  if (extensionSource) {
+    for (const id of ['background-removal', 'song-links']) {
+      await evaluate(`window.canvas.extensions.install(${JSON.stringify(id)})`);
+      step(`extension installed: ${id}`);
+    }
+    // onnxruntime and the model run in the app's utility process.
+    const cutout = await evaluate(
+      `window.canvas.invoke('removeBackground', { id: ${JSON.stringify(result.assetId)} }).then((a) => a.id)`,
+    );
+    step(`background removal ran: ${cutout === result.assetId ? 'nothing to cut' : cutout}`);
+    const ytDlp = join(
+      extensionsDir,
+      'song-links',
+      process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp',
+    );
+    step(`yt-dlp ${execFileSync(ytDlp, ['--version'], { encoding: 'utf8' }).trim()}`);
+  }
   // AI access: the stdio entry from Settings must reach this running app.
   const mcpPort = await freePort();
   const status = await evaluate(

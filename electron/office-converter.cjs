@@ -3,6 +3,7 @@ const path = require('node:path');
 const { createHash } = require('node:crypto');
 const { spawn } = require('node:child_process');
 const { pathToFileURL } = require('node:url');
+const { systemEnv } = require('./linux-desktop.cjs');
 
 const VERSION = '26.2.6';
 const SHA256 = 'f9877032fd908beb9c0ddf06df4af5c2e85f419c42e14876c4cce5aae5fb2660';
@@ -39,6 +40,7 @@ function run(executable, args, { signal, timeout = 120000 } = {}) {
     // so it runs in its own process group and stopping ends the whole group.
     const group = process.platform !== 'win32';
     const child = spawn(executable, args, {
+      env: systemEnv(),
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe'],
       ...(group && { detached: true }),

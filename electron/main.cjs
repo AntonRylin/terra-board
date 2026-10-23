@@ -49,6 +49,7 @@ const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
 const { createHash, randomUUID } = require('node:crypto');
 const { libraryRoot, userDataBase } = require('./storage-paths.cjs');
+const { integrateAppImage, autostartEnabled, setAutostart } = require('./linux-desktop.cjs');
 const { createAppUpdater, installsUpdates } = require('./app-updater.cjs');
 const { collectLicenses } = require('./licenses.cjs');
 const { createExtensions } = require('./extensions.cjs');
@@ -423,6 +424,18 @@ app
       }
       void sendDeepLink(argv);
     });
+    // An AppImage first gives itself an applications-menu entry, which Linux
+    // desktops need before they can hand it terraboard:// links.
+    if (app.isPackaged && !smoke && process.platform === 'linux' && process.env.APPIMAGE)
+      try {
+        integrateAppImage({
+          appImage: process.env.APPIMAGE,
+          dataHome: userDataBase({ home: app.getPath('home'), appData: app.getPath('appData') }),
+          icon: path.join(__dirname, '../assets/icon.png'),
+        });
+      } catch (e) {
+        console.error('Desktop entry:', e.message);
+      }
     // Only the installed app claims terraboard:// links; a dev build would take them from it.
     if (app.isPackaged && !smoke && !app.isDefaultProtocolClient(SCHEME))
       app.setAsDefaultProtocolClient(SCHEME);
@@ -1226,17 +1239,25 @@ app
         version: app.getVersion(),
         libraryPath: root,
         backupsPath: path.join(root, 'backups'),
-        // Electron's login items exist on Windows and macOS, not on Linux.
-        loginItemSupported: app.isPackaged && process.platform !== 'linux',
+        loginItemSupported: app.isPackaged,
         openAtLogin:
-          app.isPackaged && process.platform !== 'linux' && app.getLoginItemSettings().openAtLogin,
+          app.isPackaged &&
+          (process.platform === 'linux'
+            ? autostartEnabled({ configHome: app.getPath('appData') })
+            : app.getLoginItemSettings().openAtLogin),
       };
     });
     ipcMain.handle('canvas:set-open-at-login', (e, enabled) => {
       trusted(e);
       if (!app.isPackaged) throw Error('Launch at login is available in the installed app.');
+      // Electron's login items exist on Windows and macOS; Linux desktops start
+      // the entries in ~/.config/autostart. An AppImage starts as its own file.
       if (process.platform === 'linux')
-        throw Error("Add Terra Board to your desktop's startup applications instead.");
+        return setAutostart({
+          configHome: app.getPath('appData'),
+          executable: process.env.APPIMAGE || app.getPath('exe'),
+          enabled: enabled === true,
+        });
       app.setLoginItemSettings({ openAtLogin: enabled === true });
       return app.getLoginItemSettings().openAtLogin;
     });

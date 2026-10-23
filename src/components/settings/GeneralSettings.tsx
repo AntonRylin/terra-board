@@ -31,13 +31,7 @@ export function GeneralSettings() {
         </Row>
         <Row
           id="openAtLogin"
-          description={
-            login?.supported
-              ? undefined
-              : window.canvas?.platform === 'linux'
-                ? "On Linux, add Terra Board to your desktop's startup applications."
-                : 'Available in the installed app.'
-          }
+          description={login?.supported ? undefined : 'Available in the installed app.'}
         >
           <Switch
             label="Launch at login"
