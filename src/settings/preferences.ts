@@ -21,6 +21,8 @@ export type Preferences = {
   hearOwnSong: boolean;
   // New images remember when they were added and the profile name of who added them.
   recordImageDetails: boolean;
+  // The canvas toolbar is hidden (+ → Hide toolbar); the zoom bar offers it back.
+  toolbarHidden: boolean;
   radial: ToolbarId[];
   shortcuts: ShortcutOverrides;
 };
@@ -36,6 +38,7 @@ export const defaultPreferences = (): Preferences => ({
   playJoinSongs: true,
   hearOwnSong: true,
   recordImageDetails: true,
+  toolbarHidden: false,
   radial: defaultRadialLayout(),
   shortcuts: {},
 });
@@ -60,6 +63,7 @@ export function readPreferences(value: unknown, legacyRadial?: unknown): Prefere
     playJoinSongs: pick(raw.playJoinSongs, [true, false], d.playJoinSongs),
     hearOwnSong: pick(raw.hearOwnSong, [true, false], d.hearOwnSong),
     recordImageDetails: pick(raw.recordImageDetails, [true, false], d.recordImageDetails),
+    toolbarHidden: pick(raw.toolbarHidden, [true, false], d.toolbarHidden),
     radial: readRadialLayout(raw.radial !== undefined ? raw.radial : legacyRadial),
     shortcuts: cleanOverrides(raw.shortcuts),
   };

@@ -22,7 +22,11 @@ type Gesture<Id extends string> = {
   active: boolean;
   released: boolean;
   valid: boolean;
+  // Fingers pick a tool up by holding it still (HOLD_MS); moving first is a tap or a swipe.
+  touch: boolean;
+  hold: number;
 };
+const HOLD_MS = 450;
 const inside = (x: number, y: number, r: DOMRect, slack = 0) =>
   x >= r.left - slack && x <= r.right + slack && y >= r.top - slack && y <= r.bottom + slack;
 const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -130,6 +134,7 @@ export function useToolbarReorder<Id extends string>({
   };
   useLayoutEffect(positionAvatar, [dragging]);
   const clear = () => {
+    clearTimeout(gesture.current?.hold);
     const pointer = gesture.current?.pointer;
     gesture.current = null;
     if (pointer !== undefined && root.current?.hasPointerCapture(pointer))
@@ -171,18 +176,31 @@ export function useToolbarReorder<Id extends string>({
       settle.current.onfinish = clear;
     });
   };
+  const activate = (g: Gesture<Id>) => {
+    g.active = true;
+    if (root.current && !root.current.hasPointerCapture(g.pointer))
+      root.current.setPointerCapture(g.pointer);
+    setDragging(g.id);
+    setOpen(true);
+    document.body.classList.add('toolbar-reordering');
+  };
   const move = (event: PointerEvent) => {
     const g = gesture.current;
     if (!g || g.released || event.pointerId !== g.pointer) return;
     g.x = event.clientX;
     g.y = event.clientY;
     if (!g.active) {
-      if (Math.hypot(g.x - g.startX, g.y - g.startY) < 6) return;
-      g.active = true;
-      root.current?.setPointerCapture(g.pointer);
-      setDragging(g.id);
-      setOpen(true);
-      document.body.classList.add('toolbar-reordering');
+      const moved = Math.hypot(g.x - g.startX, g.y - g.startY);
+      if (g.touch) {
+        // Moved before the hold finished: not a pick-up.
+        if (moved > 10) {
+          clearTimeout(g.hold);
+          gesture.current = null;
+        }
+        return;
+      }
+      if (moved < 6) return;
+      activate(g);
     }
     event.preventDefault();
     positionAvatar();
@@ -233,6 +251,11 @@ export function useToolbarReorder<Id extends string>({
       if (gesture.current?.pointer === e.pointerId) handlers.current.finish();
     };
     const cancel = () => handlers.current.finish(true);
+    // Only the toolbar losing its capture ends a drag. A finger's button holds the
+    // pointer until the drag takes it over, and its lostpointercapture bubbles here too.
+    const lost = (e: PointerEvent) => {
+      if (e.target === root.current) cancel();
+    };
     const key = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       if (gesture.current) {
@@ -261,7 +284,7 @@ export function useToolbarReorder<Id extends string>({
     window.addEventListener('pointermove', onMove, { passive: false });
     window.addEventListener('pointerup', onUp);
     window.addEventListener('pointercancel', cancel);
-    window.addEventListener('lostpointercapture', cancel);
+    window.addEventListener('lostpointercapture', lost);
     window.addEventListener('blur', cancel);
     window.addEventListener('resize', cancel);
     window.addEventListener('keydown', key, true);
@@ -271,7 +294,7 @@ export function useToolbarReorder<Id extends string>({
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', cancel);
-      window.removeEventListener('lostpointercapture', cancel);
+      window.removeEventListener('lostpointercapture', lost);
       window.removeEventListener('blur', cancel);
       window.removeEventListener('resize', cancel);
       window.removeEventListener('keydown', key, true);
@@ -302,7 +325,18 @@ export function useToolbarReorder<Id extends string>({
       active: false,
       released: false,
       valid: false,
+      touch: event.pointerType === 'touch',
+      hold: 0,
     };
+    const g = gesture.current;
+    if (g.touch)
+      g.hold = window.setTimeout(() => {
+        if (gesture.current !== g || g.released) return;
+        // A short buzz says the tool is picked up (Android: the VIBRATE permission).
+        navigator.vibrate?.(25);
+        activate(g);
+        positionAvatar();
+      }, HOLD_MS);
   };
 
   useLayoutEffect(() => {

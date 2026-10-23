@@ -1,15 +1,24 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent, RefObject } from 'react';
+import { android } from '../bridge';
 
 export type DockEdge = 'left' | 'right' | 'top' | 'bottom';
 const storageKey = 'terra-board.launcher-edge',
   legacyStorageKey = 'local-canvas.launcher-edge';
+// Android keeps one place per orientation: below the board in portrait and on the
+// right in landscape, until the person moves the panel.
+export const portrait = () => matchMedia('(orientation: portrait)').matches;
+const edgeKey = () =>
+  android ? `${storageKey}.${portrait() ? 'portrait' : 'landscape'}` : storageKey;
 export function readDockEdge(): DockEdge {
   try {
-    const value = localStorage.getItem(storageKey) ?? localStorage.getItem(legacyStorageKey);
-    if (value === 'right' || value === 'top' || value === 'bottom') return value;
+    const value = android
+      ? localStorage.getItem(edgeKey())
+      : (localStorage.getItem(storageKey) ?? localStorage.getItem(legacyStorageKey));
+    if (value === 'left' || value === 'right' || value === 'top' || value === 'bottom')
+      return value;
   } catch {}
-  return 'left';
+  return android ? (portrait() ? 'bottom' : 'right') : 'left';
 }
 
 function targetEdge(x: number, y: number, bounds: DOMRect): DockEdge | null {
@@ -84,7 +93,7 @@ export function useLauncherDock(
       if (!cancel && g.target) {
         onDock(g.target);
         try {
-          localStorage.setItem(storageKey, g.target);
+          localStorage.setItem(edgeKey(), g.target);
         } catch {}
       }
     }

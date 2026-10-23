@@ -115,7 +115,8 @@ function installTouchMenus() {
       clear();
       held = touch ? { at: performance.now(), x: e.clientX, y: e.clientY, moved: false } : null;
       const target = e.target as Element;
-      if (!touch || target.closest?.('.canvas-surface')) return;
+      // The canvas has its own long-press; toolbar tools are picked up to rearrange them.
+      if (!touch || target.closest?.('.canvas-surface, [data-tool-id]')) return;
       start = { x: e.clientX, y: e.clientY };
       timer = window.setTimeout(() => {
         timer = 0;

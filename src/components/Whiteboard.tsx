@@ -60,7 +60,12 @@ import RadialMenu from './RadialMenu';
 import CollabLayer from './CollabLayer';
 import { activeCommand, isCommand, useShortcutLabels } from '../shortcuts/active';
 import type { CommandId } from '../shortcuts/commands';
-import { getPreferences, subscribePreferences } from '../settings/preferences';
+import {
+  getPreferences,
+  subscribePreferences,
+  updatePreferences,
+  usePreferences,
+} from '../settings/preferences';
 import { useCloudStatus } from './ShareDialog';
 import { addedNow, stampAdded } from '../canvas/image-added';
 import ImageDetails from './ImageDetails';
@@ -123,6 +128,8 @@ import {
   Minus,
   Plus,
   Maximize2,
+  PanelBottomClose,
+  PanelBottomOpen,
   Pencil,
   Files,
   FileStack,
@@ -947,6 +954,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   // New images record when they were added and the profile name of who added
   // them, unless that is turned off in Settings → Canvas.
   const cloudStatus = useCloudStatus();
+  const { toolbarHidden } = usePreferences();
   const profileName = useRef('');
   profileName.current = cloudStatus?.name?.trim() || '';
   const newImageAdded = () =>
@@ -3452,6 +3460,15 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     },
     null,
     { label: 'Fit board', icon: <Maximize2 />, action: () => engine.current?.fit() },
+    ...(readOnly
+      ? []
+      : [
+          {
+            label: toolbarHidden ? 'Show toolbar' : 'Hide toolbar',
+            icon: toolbarHidden ? <PanelBottomOpen /> : <PanelBottomClose />,
+            action: () => updatePreferences({ toolbarHidden: !toolbarHidden }),
+          },
+        ]),
     {
       label: 'Board history…',
       icon: <HistoryIcon />,
@@ -4670,8 +4687,9 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           }}
         />
       )}
-      {!readOnly && (
+      {!readOnly && !toolbarHidden && (
         <CanvasToolbar
+          onHide={() => updatePreferences({ toolbarHidden: true })}
           tools={[
             ...tools.map(({ id, label, icon, command }) => ({
               id,
@@ -4753,6 +4771,16 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         />
       )}
       <div ref={zoomControls} className="canvas-zoom">
+        {!readOnly && toolbarHidden && (
+          <button
+            className="icon-button"
+            aria-label="Show toolbar"
+            title="Show toolbar"
+            onClick={() => updatePreferences({ toolbarHidden: false })}
+          >
+            <PanelBottomOpen size={17} />
+          </button>
+        )}
         <button
           className="icon-button"
           aria-label="Zoom out"
@@ -4801,6 +4829,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
                       'Redo',
                       'Duplicate',
                       'Fit board',
+                      'Show toolbar',
+                      'Hide toolbar',
                       'Export selected…',
                       'Export visible area…',
                       'Download',

@@ -105,6 +105,14 @@ screen; connected but nothing on the phone yet → "Getting your boards" until t
 empty cloud library gets one "Ideas" board, which syncs like any other. Android no longer creates
 a starter board on its own.
 
+**Files that fail to download.** A picture or file a synced board uses that the server refuses,
+that is gone or that cannot be read is remembered (`sync_fetch` in `store-sync.cjs`) and tried
+again on later syncs, 30 s after the failure and then twice as long each time, at most every
+6 hours; the open board reloads when it arrives. Losing the connection mid-download stops the
+round instead, so the whole pull is redone. Each start also scans the synced boards for files
+the library lacks (from before failures were remembered) and queues them. This is shared with
+the desktop app.
+
 **Keeping up.** Realtime pings from the workspace make the phone pull within a second while the app
 is open; it also syncs every 30 s, when the app comes back to the foreground (Capacitor `resume`),
 and when the network returns (`online`). Chromium reports a lost network as "Failed to fetch",
@@ -180,6 +188,21 @@ that remain show "Available in the desktop app."
 `fullscreenState` / `toggleFullscreen` / `setFullscreenKeys`, `onClose` / `closeReady`,
 `rendererReady`, `licenses`, `platform`. Settings on Android shows only Account, Appearance,
 Board panel and Canvas; Keyboard shortcuts and the full-screen button are hidden.
+
+## Screen and layout
+
+- Landscape gives the board the whole screen: `MainActivity.java` hides the status bar and the
+  navigation buttons (a swipe from an edge shows them for a moment) and lets the page use the
+  side with the camera hole. Portrait keeps both bars. Capacitor's own inset padding is off
+  (`plugins.SystemBars.insetsHandling: "disable"` in `capacitor.config.json`); the activity pads
+  for the bars in portrait and for the keyboard in both orientations.
+- The board panel has a place per orientation (`useLauncherDock.ts`): below the board in
+  portrait and on the right in landscape until moved; each orientation remembers its own.
+- The canvas toolbar can be hidden: + → Hide toolbar (also in the canvas "…" menu). A Show
+  toolbar button then sits in the zoom bar. This works on desktop too.
+- Toolbar tools are rearranged by touch with a long press (450 ms, a short vibration, then drag
+  into the + menu or along the bar). A touch drag used to be cancelled at once: the button's
+  own pointer capture ending was taken for the drag's.
 
 ## Touch input
 

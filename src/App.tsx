@@ -120,6 +120,14 @@ export default function App() {
   const [canvasReady, setCanvasReady] = useState(false);
   const activeDocument = useRef<Document | null>(null);
   const [dockEdge, setDockEdge] = useState(readDockEdge);
+  // Android: turning the phone moves the panel to where it lives in that orientation.
+  useEffect(() => {
+    if (!android) return;
+    const query = matchMedia('(orientation: portrait)');
+    const turned = () => setDockEdge(readDockEdge());
+    query.addEventListener('change', turned);
+    return () => query.removeEventListener('change', turned);
+  }, []);
   const [searchTarget, setSearchTarget] = useState<{ boardId: string; objectId: string } | null>(
     null,
   );

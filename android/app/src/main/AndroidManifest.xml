@@ -47,4 +47,6 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- A short buzz when a toolbar tool is picked up to move it. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
 </manifest>

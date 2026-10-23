@@ -1,6 +1,6 @@
 import { type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, SquareDashed, type LucideIcon } from 'lucide-react';
+import { PanelBottomClose, Plus, SquareDashed, type LucideIcon } from 'lucide-react';
 import {
   defaultToolbarLayout,
   readToolbarLayout,
@@ -22,8 +22,11 @@ export type ToolbarAction = {
 export default function CanvasToolbar({
   tools,
   options,
+  onHide,
 }: {
   tools: ToolbarAction[];
+  // Hides the whole toolbar (the last item of the "more tools" menu).
+  onHide?: () => void;
   // Settings of the active tool, shown above the bar while the tool menu is closed.
   options?: ReactNode;
 }) {
@@ -167,6 +170,19 @@ export default function CanvasToolbar({
             {layout.inventory.map((id) => renderTool(id, 'inventory'))}
             {!layout.inventory.length && (
               <SquareDashed className="inventory-empty" size={24} aria-hidden="true" />
+            )}
+            {onHide && !dragging && (
+              <button
+                type="button"
+                className="icon-button toolbar-hide"
+                onClick={() => {
+                  setOpen(false);
+                  onHide();
+                }}
+              >
+                <PanelBottomClose size={19} strokeWidth={1.7} />
+                <span className="tool-inventory-name">Hide toolbar</span>
+              </button>
             )}
           </div>
         )}
