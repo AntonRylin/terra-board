@@ -5,7 +5,7 @@ Thanks for wanting to help. Terra Board is open source under the [MIT license](L
 ## Before you start
 
 - **Bugs:** open an [issue](https://github.com/AntonRylin/terra-board/issues) with the steps to reproduce it, what you expected and what happened.
-- **Features or larger changes:** open an issue or ask on [Discord](https://discord.gg/GNJX5y9tux) first, so you don't spend time on something that won't be merged.
+- **Features or larger changes:** open an issue or ask on [Discord](https://discord.com/invite/kfTbsN7eF7) first, so you don't spend time on something that won't be merged.
 
 ## Making a change
 

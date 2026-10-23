@@ -21,7 +21,7 @@ import { ProfileSettings } from './settings/ProfileSettings';
 import { ExtensionsSettings } from './settings/ExtensionsSettings';
 import './settings/settings.css';
 
-const discordUrl = 'https://discord.gg/GNJX5y9tux';
+const discordUrl = 'https://discord.com/invite/kfTbsN7eF7';
 
 // Reopening Settings returns to the section used last in this session.
 let lastSection: SectionId = 'general';

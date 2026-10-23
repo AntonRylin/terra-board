@@ -56,7 +56,7 @@ To build your own installer, run `npm run installer`. Tests, packaging and relea
 
 ## Community
 
-Questions, ideas or bugs? Open an [issue](https://github.com/AntonRylin/terra-board/issues) or join the [Discord](https://discord.gg/GNJX5y9tux). Pull requests are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md).
+Questions, ideas or bugs? Open an [issue](https://github.com/AntonRylin/terra-board/issues) or join the [Discord](https://discord.com/invite/kfTbsN7eF7). Pull requests are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
