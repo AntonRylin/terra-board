@@ -32,12 +32,13 @@ jobs:
           node-version: '24.13'
           cache: npm
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '21'
 
-      - uses: android-actions/setup-android@v3
+      # The runner image ships the Android SDK (ANDROID_HOME); Gradle fetches
+      # the platform and build tools the project asks for.
 
       - name: Install dependencies
         run: npm ci
