@@ -150,3 +150,41 @@
   new ResizeObserver(fit).observe(scene);
   fit();
 })();
+// Buttons answer a click: a ripple from the click point, and a short message while
+// the download starts or Discord opens.
+(() => {
+  const buttons = '.button, .nav .get, .nav .social, .nav .mcp-link';
+  const still = matchMedia('(prefers-reduced-motion: reduce)');
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest(buttons);
+    if (!b || e.defaultPrevented) return;
+    if (!still.matches) {
+      const r = b.getBoundingClientRect();
+      const dot = document.createElement('i');
+      dot.className = 'ripple';
+      dot.style.left = (e.clientX || r.left + r.width / 2) - r.left + 'px';
+      dot.style.top = (e.clientY || r.top + r.height / 2) - r.top + 'px';
+      dot.style.setProperty('--grow', String(Math.ceil((Math.hypot(r.width, r.height) * 2) / 12)));
+      b.append(dot);
+      dot.addEventListener('animationend', () => dot.remove());
+    }
+    const label = b.matches('.button') && b.querySelector('span');
+    if (!label || b.classList.contains('working')) return;
+    const download = /\.exe$/.test(b.getAttribute('href') || '');
+    const text = download ? 'Starting download…' : /discord/.test(b.href) ? 'Opening Discord…' : '';
+    if (!text) return;
+    const before = label.textContent;
+    const show = (t) => {
+      label.textContent = t;
+      label.classList.remove('label-swap');
+      void label.offsetWidth;
+      label.classList.add('label-swap');
+    };
+    b.classList.add('working');
+    show(text);
+    setTimeout(() => {
+      b.classList.remove('working');
+      show(before);
+    }, 3200);
+  });
+})();
