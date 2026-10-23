@@ -262,3 +262,14 @@ body.toolbar-reordering * {
     justify-content: center;
   }
 }
+/* Android, portrait: always one row, as wide as the screen allows (narrow windows
+   elsewhere cap the bar at 310px and wrap it). Five tools fit with room to spare. */
+@media (orientation: portrait) {
+  html.android .app-shell .canvas-toolbar.customizable-toolbar {
+    flex-wrap: nowrap;
+    max-width: calc(100% - 24px);
+  }
+  html.android .customizable-toolbar .toolbar-slots {
+    flex-wrap: nowrap;
+  }
+}

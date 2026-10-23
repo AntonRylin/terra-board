@@ -42,9 +42,9 @@ test('preferences recover missing tools, ignore unknown tools and allow an empty
   assert.deepEqual(readToolbarLayout({ bar: 'broken' }), defaultToolbarLayout());
 });
 
-test('the phone layout shows six tools and keeps every other tool under +', () => {
+test('the phone layout shows five tools and keeps every other tool under +', () => {
   const phone = phoneToolbarLayout();
-  assert.equal(phone.bar.length, 6);
+  assert.equal(phone.bar.length, 5);
   assert.deepEqual(readToolbarLayout(phone), phone, 'a saved phone layout reads back unchanged');
   assert.equal(
     new Set([...phone.bar, ...phone.inventory]).size,
