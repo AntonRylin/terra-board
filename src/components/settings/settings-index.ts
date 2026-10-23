@@ -126,11 +126,21 @@ export const sections: Section[] = [
 ];
 
 export const sectionById = (id: SectionId) => sections.find((s) => s.id === id)!;
-// Android (docs/android.md) shows only what works on a phone: profiles, cloud,
+// Android (docs/android.md) shows only what works on a phone: profiles,
 // extensions, shortcuts, storage folders, AI tools and updates are desktop parts.
-const androidSections = new Set<SectionId>(['appearance', 'panel', 'canvas']);
+// Its cloud section is the phone's account (src/mobile/ui/AccountSettings.tsx).
+const androidSections = new Set<SectionId>(['cloud', 'appearance', 'panel', 'canvas']);
+if (android)
+  Object.assign(sectionById('cloud'), {
+    label: 'Account',
+    group: 'App',
+    subtitle: 'Your Terra Cloud boards on this phone.',
+  });
+// Account comes first on the phone.
 export const visibleSections = android
-  ? sections.filter((s) => androidSections.has(s.id))
+  ? sections
+      .filter((s) => androidSections.has(s.id))
+      .sort((a, b) => Number(b.id === 'cloud') - Number(a.id === 'cloud'))
   : sections;
 export const sectionVisible = (id: SectionId) => !android || androidSections.has(id);
 
@@ -399,13 +409,17 @@ export function searchSettings(query: string): SearchResult[] {
       keywords: 'key shortcut',
     })),
   ];
-  return all
-    .filter((r) => sectionVisible(r.section))
-    .filter((r) => {
-      const text = [r.title, r.description, r.keywords, sectionById(r.section).label]
-        .join(' ')
-        .toLowerCase();
-      return words.every((w) => text.includes(w));
-    })
-    .map(({ keywords: _, ...r }) => r);
+  return (
+    all
+      .filter((r) => sectionVisible(r.section))
+      // The desktop's cloud rows are not on the phone's Account page.
+      .filter((r) => !android || r.section !== 'cloud')
+      .filter((r) => {
+        const text = [r.title, r.description, r.keywords, sectionById(r.section).label]
+          .join(' ')
+          .toLowerCase();
+        return words.every((w) => text.includes(w));
+      })
+      .map(({ keywords: _, ...r }) => r)
+  );
 }

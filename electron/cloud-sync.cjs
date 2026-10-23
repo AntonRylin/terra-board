@@ -6,8 +6,9 @@ const { referencedAssets } = require('./store-sync.cjs');
 
 const iconAssetId = (icon) =>
   typeof icon === 'string' && icon.startsWith('asset-') ? icon.slice(6) : null;
+// Node says "fetch failed"; Chromium (the Android app's storage worker) "Failed to fetch".
 const offline = (e) =>
-  /fetch failed|network|ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN/i.test(
+  /fetch failed|failed to fetch|network|ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN/i.test(
     String(e?.message || e),
   );
 const fail = (error, fallback) => {

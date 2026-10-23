@@ -341,6 +341,17 @@ declare global {
 export const desktop = !!window.canvas;
 // The Android app (Capacitor): storage runs in a worker, see docs/android.md.
 export const android = mobile.isAndroid;
+// Terra Cloud: Electron's main process on desktop, the storage worker on Android.
+// `signOut` exists only on Android, where signing out also clears the phone.
+export type CloudBridge = DesktopBridge['cloud'] & { signOut?(): Promise<boolean> };
+export type ExternalSyncMessage = Parameters<Parameters<DesktopBridge['onMcpSync']>[0]>[0];
+export const cloudApi: CloudBridge | undefined = window.canvas?.cloud ?? mobile.cloud;
+// Outside changes (AI edits and cloud sync on desktop, cloud sync on Android):
+// the page pauses the board, the change is applied, the page refreshes.
+export const onExternalSync = (callback: (message: ExternalSyncMessage) => void) =>
+  window.canvas ? window.canvas.onMcpSync(callback) : mobile.onExternal(callback);
+export const externalReady = (id: number, error?: string) =>
+  window.canvas ? window.canvas.mcpReady(id, error) : mobile.externalReady(id, error);
 function base64(bytes: Uint8Array) {
   let text = '';
   for (let i = 0; i < bytes.length; i += 32768)

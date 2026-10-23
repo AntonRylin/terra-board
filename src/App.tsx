@@ -52,6 +52,8 @@ import {
   exportPortable,
   importPortable,
   invoke,
+  onExternalSync,
+  externalReady,
 } from './bridge';
 import type { SaveState } from './canvas/save-queue';
 import Launcher, { AppIcon } from './components/Launcher';
@@ -395,7 +397,7 @@ export default function App() {
       for (const event of events) window.removeEventListener(event, block, true);
       setAiBusy(false);
     };
-    const cleanup = window.canvas?.onMcpSync(async (message) => {
+    const cleanup = onExternalSync(async (message) => {
       try {
         if (message.phase === 'prepare') {
           ++request.current;
@@ -438,12 +440,12 @@ export default function App() {
             unlock();
           }
         }
-        window.canvas!.mcpReady(message.id);
+        externalReady(message.id);
       } catch (e) {
         whiteboard.current?.finishExternal();
         unlock();
         report(String(e));
-        window.canvas!.mcpReady(message.id, String(e));
+        externalReady(message.id, String(e));
       }
     });
     return () => {

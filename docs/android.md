@@ -1,7 +1,8 @@
 # Terra Board for Android
 
-Status: first working version (debug APK). Desktop builds are unchanged: the Android code is
-compiled only into `vite build --mode android`.
+Status: debug APK. The app is a **Terra Cloud client**: it connects to the person's cloud library
+first and keeps a copy on the phone (see Terra Cloud below). Desktop builds are unchanged: the
+Android code is compiled only into `vite build --mode android`.
 
 ## Approach
 
@@ -49,11 +50,71 @@ Not kept from desktop on Android: SQLite WAL (the pool VFS has no shared memory,
 rollback journal) and the daily `VACUUM INTO` backup in `backups/` (it would double the library on
 the phone every day).
 
-Backups: there is no automatic backup of the library on Android yet. Android's Auto Backup stops at
-25 MB of app data, so a library with pictures is usually not backed up, and uninstalling the app or
-clearing its storage deletes every board. Today the way to keep a copy is Export / share a copy… on
-each board (a portable `.canvas` file through the share sheet, to Drive, Files or another app),
-which imports on desktop and Android alike. A one-step library export is listed under What's next.
+Backups: the library on the phone is a copy of the cloud library, so the cloud and the person's
+computers hold every board. Edits made offline live only on the phone until they upload; Settings →
+Account shows how many are waiting. Export / share a copy… still saves a single board as a portable
+`.canvas` file through the share sheet.
+
+## Terra Cloud
+
+A phone without the person's boards is of little use, so the Android app has no local-only mode.
+Its first screen connects it to Terra Cloud; after that the board panel is the cloud library (the
+person's boards and folders, plus folders and boards other people share with them), cached on the
+phone so it opens offline and syncs when back online.
+
+**One sync engine.** `electron/cloud-sync.cjs` runs unchanged inside the storage worker
+(`src/mobile/cloud-worker.ts`), like `store.cjs`. It needs `fs` (its session file and asset
+uploads, from the files shim), `os.hostname()` (the device name: the phone model) and supabase-js,
+which runs in a worker as it is (fetch, and WebSocket for Realtime). The worker plays the part of
+`electron/main.cjs`:
+
+- sync's store calls go through the same queue as the page's commands, so the two never interleave;
+- the page's writes that change synced content (`createBoard`, `patchBoard`, …) call
+  `localChanged()`, which uploads them 1.5 s later, as on desktop;
+- changes from the cloud run as an _external transaction_: the worker asks the page to pause the
+  board (`prepare`: save pending edits, make the board inert), applies them, then asks it to reload
+  what changed (`finish`). The page answers with `externalReady`, the desktop's `mcpReady`. Before
+  the board is on screen the page answers at once;
+- status and presence events are posted to the page.
+
+The renderer gets the same `cloud` API as the desktop's `window.canvas.cloud`
+(`src/mobile/cloud.ts`), exported from `bridge.ts` as `cloudApi` together with `onExternalSync` /
+`externalReady`. So the presence layer (other people's pictures and cursors on a board), the board
+info card, the share dialog and the sync status work on Android without Android-specific code. The
+server is always Terra Cloud (`package.json` → `terraCloud`); there is no server choice on the phone.
+
+**Connecting (today).** The sign-in screen (`src/mobile/ui/SignIn.tsx`) takes a pairing code from
+the desktop app (Settings → Cloud sync → Your computers → Create code; the computer must sync its
+whole library). That is `cloud.join(code)`: the phone becomes an anonymous member of the computer's
+workspace, exactly like a second computer, and then learns the workspace's display name
+(`my_profile`) so people on shared boards see the right name. Invite codes for a shared board
+(`S…`) are refused on the first screen and accepted in Settings → Account once connected. Accounts
+with email-code and Google sign-in will replace pairing (see What's next).
+
+**First start.** `src/mobile/ui/MobileGate.tsx` wraps the app: no cloud identity → the sign-in
+screen; connected but nothing on the phone yet → "Getting your boards" until the first sync ends
+(offline or an error offers Try again); boards on the phone → the app, at once, online or not. An
+empty cloud library gets one "Ideas" board, which syncs like any other. Android no longer creates
+a starter board on its own.
+
+**Keeping up.** Realtime pings from the workspace make the phone pull within a second while the app
+is open; it also syncs every 30 s, when the app comes back to the foreground (Capacitor `resume`),
+and when the network returns (`online`). Chromium reports a lost network as "Failed to fetch",
+which `cloud-sync.cjs` now counts as offline (it knew only Node's "fetch failed").
+
+**Settings → Account** (`src/mobile/ui/AccountSettings.tsx`; the `cloud` section, relabelled and
+listed first on Android): the workspace name, sync status with Sync now, boards shared with you
+(Leave) and Join with a code for invites, **Switch account** and **Sign out**. Signing out removes
+this phone from the workspace (`cloud.disable()`), then deletes the phone's whole library: every
+file of the SQLite pool (boards, pictures, settings, the session), so the next account starts empty
+and nothing of the previous one stays on the phone. A marker file outside the pool
+(`terra-board-wipe`) makes a wipe that was cut short finish at the next start. If changes have not
+uploaded yet, Sign out says how many and offers Sync now or Sign out anyway. Switch account is the
+same step followed by connecting again.
+
+Not on the phone: turning library sync off (the phone always syncs the whole library), server
+choice, editing the profile picture and entrance song, pairing codes for other devices and the
+device list (all in the desktop app).
 
 Requirements: Android 8+ (minSdk 26) with an up-to-date Android System WebView (Chromium 109+ for
 OPFS synchronous access handles in workers). Application ID: `terra.board.android` (change it in
@@ -76,6 +137,7 @@ Every call the renderer makes through `src/bridge.ts` / `window.canvas`, and wha
 | `invoke('exportBoard' / 'importBoard')`, `exportPortable`, `importPortable`                                                                | worker; exports go to the Android share sheet (`@capacitor/share`), imports through the file picker                      |
 | `downloadAsset`, `download` (image/PDF exports)                                                                                            | the share sheet (the WebView has no downloads)                                                                           |
 | `openLink`                                                                                                                                 | `@capacitor/browser` (in-app browser tab)                                                                                |
+| `cloudApi` (desktop: `window.canvas.cloud`), `onExternalSync`, `externalReady`                                                             | `electron/cloud-sync.cjs` in the storage worker (see Terra Cloud)                                                        |
 
 App lifecycle: Android has no window close, so pending edits are saved when the app is hidden or
 paused (`visibilitychange`, Capacitor `pause`). The system back button first hides the keyboard
@@ -88,28 +150,27 @@ Settings (as Escape), and otherwise saves and moves the app to the background.
 The renderer already hid these when `window.canvas` is absent; Android keeps that, and the places
 that remain show "Available in the desktop app."
 
-| Call                                                                                     | Why                                                                                                                                                                     |
-| ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `window.canvas.cloud.*` (sign-in, sync, sharing, presence, profile), `Join with a code…` | Cloud sync runs in Electron's main process (`electron/cloud-sync.cjs` with a transaction protocol in `main.cjs`); not wired to the storage worker yet. See What's next. |
-| `invoke('removeBackground')`                                                             | ONNX runtime extension, desktop only                                                                                                                                    |
-| `recognizeAsset`, `recognizeImage`                                                       | Windows OCR engine                                                                                                                                                      |
-| `convertOffice`, `onOfficeProgress`, `printDocument`                                     | LibreOffice / Microsoft Office conversion                                                                                                                               |
-| `linkPreview`                                                                            | Fetched by the main process with network guards; Android shows plain link cards                                                                                         |
-| `htmlPage`, `htmlSnapshot`, `browserSnapshot`, `browserCapture`                          | Offscreen BrowserWindows and `<webview>` (web cards)                                                                                                                    |
-| `songFromLink`                                                                           | yt-dlp extension                                                                                                                                                        |
-| `live.*`                                                                                 | Local web server for live sharing                                                                                                                                       |
-| `miro.*`                                                                                 | Miro import runs in the main process                                                                                                                                    |
-| `copyObjects`, `clipboardObjects`, `cancelCopy`                                          | Native multi-format clipboard; the renderer's web clipboard path is used                                                                                                |
-| `exportImage`, `openExport`, `copyExport`                                                | Native save dialogs; the share sheet is used                                                                                                                            |
-| `locateAsset`, `importAlbumFiles` (linking), `filePath`                                  | Linking to files elsewhere on disk                                                                                                                                      |
+| Call                                                            | Why                                                                             |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `invoke('removeBackground')`                                    | ONNX runtime extension, desktop only                                            |
+| `recognizeAsset`, `recognizeImage`                              | Windows OCR engine                                                              |
+| `convertOffice`, `onOfficeProgress`, `printDocument`            | LibreOffice / Microsoft Office conversion                                       |
+| `linkPreview`                                                   | Fetched by the main process with network guards; Android shows plain link cards |
+| `htmlPage`, `htmlSnapshot`, `browserSnapshot`, `browserCapture` | Offscreen BrowserWindows and `<webview>` (web cards)                            |
+| `songFromLink`                                                  | yt-dlp extension                                                                |
+| `live.*`                                                        | Local web server for live sharing                                               |
+| `miro.*`                                                        | Miro import runs in the main process                                            |
+| `copyObjects`, `clipboardObjects`, `cancelCopy`                 | Native multi-format clipboard; the renderer's web clipboard path is used        |
+| `exportImage`, `openExport`, `copyExport`                       | Native save dialogs; the share sheet is used                                    |
+| `locateAsset`, `importAlbumFiles` (linking), `filePath`         | Linking to files elsewhere on disk                                              |
 
 ### Desktop only (hidden on Android)
 
-`mcpStatus`, `mcpUpdate`, `onMcpSync`, `mcpReady` (MCP server for AI tools), `extensions.*`,
+`mcpStatus`, `mcpUpdate` (MCP server for AI tools), `extensions.*`,
 `updates.*`, `setOpenAtLogin`, `openFolder`, `dataDirectory`, `appInfo`, `exportLibrary`,
 `fullscreenState` / `toggleFullscreen` / `setFullscreenKeys`, `onClose` / `closeReady`,
-`rendererReady`, `licenses`, `platform`. Settings on Android shows only Appearance, Board panel
-and Canvas; Keyboard shortcuts and the full-screen button are hidden.
+`rendererReady`, `licenses`, `platform`. Settings on Android shows only Account, Appearance,
+Board panel and Canvas; Keyboard shortcuts and the full-screen button are hidden.
 
 ## Touch input
 
@@ -182,15 +243,30 @@ Fixed along the way: toolbar labels stuck on screen after a tap (now shown only 
 pointers), Back from Settings leaving the app, Back while editing discarding the text, and a click
 reaching a menu that opened under the finger after a long-press.
 
+2026-10-23, Terra Cloud on the emulator (same device), against the real Terra Cloud with a
+throwaway workspace ("Test PC") made by a script that runs the desktop's `store.cjs` and
+`cloud-sync.cjs` in Node on a scratch library, and a second throwaway person ("Friend") sharing one
+board: first start shows the sign-in screen; a pairing code typed by touch connects the phone and
+downloads the folder and boards; a note added by touch reaches the computer; notes added on the
+computer appear on the open board within seconds; presence both ways (the computer's picture and
+moving cursor on the phone, the phone listed with its model name on the computer); an invite code in
+Settings → Account brings the friend's board with its shared badge; offline: an edit, force-stop,
+relaunch offline opens the cached library with the edit, and it uploads once back online; Sign out
+with an unsent change warns and offers Sync now; Sign out removes the phone from the workspace's
+devices and leaves no board text or session token in the phone's storage (checked by reading the
+pool files); connecting again downloads the library cleanly. Startup to the board: ~1.8–2.4 s
+(sign-in gate and cloud add ~50 ms). Seen once on the emulator: after the app came back from the
+background the WebView stayed blank until the first touch, though the page was fully rendered.
+
 ## What's next
 
-- Back up the whole library in one step: an "Export library…" item that zips every board's
-  `.canvas` export and hands it to the share sheet (and an import for it), and a reminder when
-  boards have never been exported. Cloud sync (below) would also cover this.
+- Sign in with an account (email code and Google, from the accounts work in
+  `electron/cloud-auth.cjs`) on the first screen instead of a pairing code: Google through a
+  Custom Tab and the `terraboard://auth/callback` link back into the app (PKCE). See "Accounts"
+  under Verified for what is done and what waits.
 - Try it on a physical phone (performance with large boards, older WebViews, tablets).
-- Cloud sync on Android: construct `CloudSync` inside the storage worker (it needs only `fs`, `os`
-  and supabase-js, all available there), port main.cjs's cloud transaction / board refresh
-  messages, and expose a `cloud` object to the renderer in place of `window.canvas.cloud`.
+- Large libraries: the first download shows no progress (the status has no download count), and
+  every picture in the library is downloaded, not only the open board's.
 - Phone layout: default the board panel to minimal or bottom on narrow screens; a larger toolbar.
 - Link previews through a native HTTP plugin with the guards in `electron/link-preview.cjs`.
 - Android share target (add images and links from other apps), release signing, Play Store listing.

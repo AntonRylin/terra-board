@@ -5,7 +5,11 @@ import { Browser } from '@capacitor/browser';
 import { Directory, Filesystem } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
 import { startMobile as startStorage } from './host.ts';
-export { call } from './host.ts';
+export { call, onExternal, externalReady } from './host.ts';
+export { cloud } from './cloud.ts';
+import { cloud } from './cloud.ts';
+export { MobileGate } from './ui/MobileGate';
+export { AccountSettings as MobileAccountSettings } from './ui/AccountSettings';
 
 export const isAndroid = true;
 
@@ -43,6 +47,10 @@ export function onAndroidLifecycle(flush: () => Promise<void>) {
   const hidden = () => document.hidden && save();
   document.addEventListener('visibilitychange', hidden);
   const pause = App.addListener('pause', save);
+  // Back on screen or back online: fetch what changed on the computer meanwhile.
+  const fresh = () => void cloud.syncNow().catch(() => {});
+  const resume = App.addListener('resume', fresh);
+  window.addEventListener('online', fresh);
   const back = App.addListener('backButton', () => {
     // Text being edited on the board is kept, as when tapping elsewhere
     // (Escape would discard the draft).
@@ -79,6 +87,8 @@ export function onAndroidLifecycle(flush: () => Promise<void>) {
   return () => {
     document.removeEventListener('visibilitychange', hidden);
     void pause.then((l) => l.remove());
+    void resume.then((l) => l.remove());
+    window.removeEventListener('online', fresh);
     void back.then((l) => l.remove());
   };
 }

@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Check, Copy, X } from 'lucide-react';
 import type { CloudStatus, SharePerson, ShareRole } from '../bridge';
+import { cloudApi } from '../bridge';
 import type { Library } from '../model';
 import './live-share.css';
 
 export function useCloudStatus() {
   const [status, setStatus] = useState<CloudStatus | null>(null);
   useEffect(() => {
-    const cloud = window.canvas?.cloud;
+    const cloud = cloudApi;
     if (!cloud) return;
     void cloud.status().then(setStatus);
     return cloud.onStatus(setStatus);
@@ -95,7 +96,7 @@ export function ShareDialog({
   status: CloudStatus | null;
   onClose: () => void;
 }) {
-  const cloud = window.canvas?.cloud;
+  const cloud = cloudApi;
   const [people, setPeople] = useState<SharePerson[]>([]);
   const [shareId, setShareId] = useState<string | null>(null);
   // A board in a shared folder: the people who reach it through the folder.
@@ -389,7 +390,7 @@ export function JoinDialog({
   status: CloudStatus | null;
   onClose: () => void;
 }) {
-  const cloud = window.canvas?.cloud;
+  const cloud = cloudApi;
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);

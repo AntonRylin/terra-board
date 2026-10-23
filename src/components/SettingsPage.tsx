@@ -4,7 +4,8 @@ import McpSettings from './McpSettings';
 import AppearanceSettings from './AppearanceSettings';
 import type { Appearance } from './useAppearance';
 import type { Library } from '../model';
-import { openLink } from '../bridge';
+import { android, openLink } from '../bridge';
+import { MobileAccountSettings } from '../mobile/platform';
 import {
   searchSettings,
   sectionById,
@@ -243,7 +244,8 @@ export default function SettingsPage({
               {section === 'canvas' && <CanvasSettings />}
               {section === 'radial' && <RadialSettings />}
               {section === 'shortcuts' && <ShortcutSettings />}
-              {section === 'cloud' && (
+              {section === 'cloud' && android && <MobileAccountSettings />}
+              {section === 'cloud' && !android && (
                 <CloudSettings
                   library={library}
                   onManageShare={onManageShare}
