@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld('canvas', {
     status: () => ipcRenderer.invoke('canvas:miro-status'),
     connect: (token, remember) => ipcRenderer.invoke('canvas:miro-connect', { token, remember }),
     boards: () => ipcRenderer.invoke('canvas:miro-boards'),
+    add: (link) => ipcRenderer.invoke('canvas:miro-add', link),
     forget: () => ipcRenderer.invoke('canvas:miro-forget'),
     import: (ids) => ipcRenderer.invoke('canvas:miro-import', { ids }),
     onProgress: (callback) => {

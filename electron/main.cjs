@@ -1014,14 +1014,23 @@ app
       return r.canceled ? null : call('importFile', { file: r.filePaths[0] });
     });
     // Import from Miro (miro-import.cjs). The access token stays in this process;
-    // "Remember" keeps it encrypted with the Windows user's key.
+    // "Remember" keeps it encrypted with the Windows user's key. Teams learned
+    // from board links are kept too (just ids and names), so their boards list.
     const miroFile = path.join(root, 'settings', 'miro.json'),
       miroSession = session.fromPartition('terra-miro', { cache: false }),
       miroFetch = (url, options) => miroSession.fetch(url, options);
-    let miroToken = '';
+    let miroToken = '',
+      miroTeams = null;
+    const readMiro = () => {
+      try {
+        return JSON.parse(fs.readFileSync(miroFile, 'utf8')) || {};
+      } catch {
+        return {};
+      }
+    };
     const savedMiroToken = () => {
       try {
-        const saved = JSON.parse(fs.readFileSync(miroFile, 'utf8')).token;
+        const saved = readMiro().token;
         return saved && safeStorage.isEncryptionAvailable()
           ? safeStorage.decryptString(Buffer.from(saved, 'base64'))
           : '';
@@ -1029,36 +1038,62 @@ app
         return '';
       }
     };
+    const knownMiroTeams = () => (miroTeams ??= Array.isArray(readMiro().teams) ? readMiro().teams : []);
+    const saveMiro = (patch) => {
+      const next = { ...readMiro(), ...patch };
+      if (!next.token) delete next.token;
+      fs.writeFileSync(miroFile, JSON.stringify(next));
+    };
     const miroClient = () => {
       const token = miroToken || savedMiroToken();
       if (!token) throw Error('Add a Miro access token first.');
       return new MiroClient(token, { fetch: miroFetch });
     };
+    const listMiro = async (client) => {
+      const r = await client.boards(knownMiroTeams());
+      miroTeams = r.teams;
+      saveMiro({ teams: r.teams });
+      return r.boards;
+    };
     ipcMain.handle('canvas:miro-status', (e) => {
       trusted(e);
-      return { saved: !!savedMiroToken(), canRemember: safeStorage.isEncryptionAvailable() };
+      return {
+        saved: !!(miroToken || savedMiroToken()),
+        canRemember: safeStorage.isEncryptionAvailable(),
+      };
     });
     ipcMain.handle('canvas:miro-connect', async (e, { token, remember } = {}) => {
       trusted(e);
       const client = new MiroClient(String(token || '').slice(0, 4000), { fetch: miroFetch });
       if (!client.token) throw Error('Paste the access token from Miro.');
-      const boards = await client.boards();
+      const boards = await listMiro(client);
       miroToken = client.token;
-      if (remember && safeStorage.isEncryptionAvailable())
-        fs.writeFileSync(
-          miroFile,
-          JSON.stringify({ token: safeStorage.encryptString(client.token).toString('base64') }),
-        );
-      else fs.rmSync(miroFile, { force: true });
+      saveMiro({
+        token:
+          remember && safeStorage.isEncryptionAvailable()
+            ? safeStorage.encryptString(client.token).toString('base64')
+            : undefined,
+      });
       return boards;
     });
     ipcMain.handle('canvas:miro-boards', (e) => {
       trusted(e);
-      return miroClient().boards();
+      return listMiro(miroClient());
+    });
+    // A pasted board link adds its whole team to the list.
+    ipcMain.handle('canvas:miro-add', async (e, link) => {
+      trusted(e);
+      const client = miroClient(),
+        id = boardIdFrom(link),
+        team = await client.teamOf(id);
+      if (team && !knownMiroTeams().some((t) => t.id === team.id))
+        miroTeams = [...knownMiroTeams(), team];
+      return { id, boards: await listMiro(client) };
     });
     ipcMain.handle('canvas:miro-forget', (e) => {
       trusted(e);
       miroToken = '';
+      miroTeams = [];
       fs.rmSync(miroFile, { force: true });
       return true;
     });

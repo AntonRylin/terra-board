@@ -137,7 +137,7 @@ export interface MiroBoard {
   id: string;
   name: string;
   modifiedAt?: string;
-  owner?: string;
+  team?: string;
 }
 export interface MiroSkipped {
   drawings: number;
@@ -226,6 +226,7 @@ interface DesktopBridge {
     status(): Promise<{ saved: boolean; canRemember: boolean }>;
     connect(token: string, remember: boolean): Promise<MiroBoard[]>;
     boards(): Promise<MiroBoard[]>;
+    add(link: string): Promise<{ id: string; boards: MiroBoard[] }>;
     forget(): Promise<boolean>;
     import(ids: string[]): Promise<MiroResult[]>;
     onProgress(callback: (progress: MiroProgress) => void): () => void;

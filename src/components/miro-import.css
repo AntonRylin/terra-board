@@ -1,125 +1,376 @@
+/* Import from Miro: a quiet, grouped-list dialog. */
 .modal:has(.miro-import) {
-  width: 480px;
+  width: 440px;
 }
 .miro-import {
+  --miro-fill: #f2f4f7;
+  --miro-row: #ffffff;
+  --miro-ink: #1d2733;
+  --miro-on-accent: #ffffff;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-}
-.miro-steps {
-  margin: 0;
-  padding-left: 20px;
+  gap: 12px;
+  color: var(--miro-ink);
   font-size: 13px;
-  line-height: 1.55;
 }
-.miro-link {
-  display: inline-flex;
+:root[data-theme='dark'] .miro-import {
+  --miro-fill: #18202a;
+  --miro-row: #232e3b;
+  --miro-ink: var(--ink);
+  --miro-on-accent: #0c1724;
+}
+.miro-center {
   align-items: center;
-  gap: 3px;
+  padding: 18px 0 6px;
+  text-align: center;
+}
+.miro-lead {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.miro-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.miro-error {
+  margin: 0;
+  color: #d93f3f;
+  font-size: 12px;
+}
+:root[data-theme='dark'] .miro-error {
+  color: #ff8c8c;
+}
+
+/* Inset group: a token field and the remember switch share one rounded card. */
+.miro-group {
+  overflow: hidden;
+  border-radius: 12px;
+  background: var(--miro-fill);
+}
+.miro-group > * + * {
+  border-top: 1px solid var(--line);
+}
+.modal .miro-field {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 11px 13px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--miro-fill);
+  color: inherit;
+  font-size: 14px;
+  outline: none;
+}
+.modal .miro-group .miro-field {
+  border-radius: 0;
+}
+.modal .miro-field:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+.modal label.miro-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0;
+  padding: 10px 13px;
+  color: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.modal .miro-switch input {
+  appearance: none;
+  position: relative;
+  flex: none;
+  width: 38px;
+  height: 22px;
+  margin: 0;
   padding: 0;
   border: 0;
-  background: none;
+  border-radius: 11px;
+  background: #cfd6df;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+:root[data-theme='dark'] .modal .miro-switch input {
+  background: #3b4859;
+}
+.modal .miro-switch input::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px #0003;
+  transition: transform 0.2s cubic-bezier(0.3, 0.7, 0.3, 1);
+}
+.modal .miro-switch input:checked {
+  background: #34c759;
+}
+.modal .miro-switch input:checked::after {
+  transform: translateX(16px);
+}
+.modal .miro-switch input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.miro-help summary {
+  width: fit-content;
   color: var(--accent);
+  font-size: 12px;
+  cursor: pointer;
+  list-style: none;
+}
+.miro-help summary::-webkit-details-marker {
+  display: none;
+}
+.miro-help ol {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.miro-help b {
+  color: var(--miro-ink);
+  font-weight: 600;
+}
+
+/* Buttons */
+.miro-primary,
+.miro-secondary,
+.miro-text-button {
+  border: 0;
   font: inherit;
   cursor: pointer;
 }
-.miro-link:hover {
+.miro-primary {
+  min-width: 96px;
+  padding: 9px 18px;
+  border-radius: 10px;
+  background: var(--accent);
+  color: var(--miro-on-accent);
+  font-size: 13px;
+  font-weight: 600;
+}
+form.miro-import > .miro-primary {
+  width: 100%;
+}
+.miro-primary:hover:not(:disabled) {
+  filter: brightness(1.07);
+}
+.miro-primary:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.miro-secondary {
+  flex: none;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: var(--miro-fill);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+}
+.miro-secondary:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.miro-text-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  background: none;
+  color: var(--accent);
+  font-size: 12px;
+}
+.miro-text-button:hover {
   text-decoration: underline;
 }
-.miro-boards {
-  display: flex;
-  flex-direction: column;
-  max-height: min(340px, 50vh);
-  overflow-y: auto;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-}
-.modal label.miro-board,
-.modal label.miro-all {
-  align-items: center;
-  gap: 10px;
-  margin: 0;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--line);
-  cursor: pointer;
-}
-.modal label.miro-board:last-child {
-  border-bottom: 0;
-}
-.modal label.miro-all {
+.miro-muted {
   color: var(--muted);
 }
-.miro-board-name {
+.miro-more {
+  align-self: flex-start;
+}
+
+/* Board list */
+.miro-search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 11px;
+  border-radius: 10px;
+  background: var(--miro-fill);
+  color: var(--muted);
+}
+.modal .miro-search input {
+  flex: 1;
+  margin: 0;
+  padding: 8px 0;
+  border: 0;
+  background: none;
+  color: var(--miro-ink);
+  font-size: 13px;
+  outline: none;
+}
+.miro-list {
+  display: flex;
+  flex-direction: column;
+  max-height: min(360px, 52vh);
+  overflow-y: auto;
+  padding: 4px;
+  border-radius: 12px;
+  background: var(--miro-fill);
+}
+.miro-section {
+  padding: 10px 10px 4px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.miro-row {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+button.miro-row {
+  cursor: pointer;
+}
+button.miro-row:hover,
+button.miro-row[aria-checked='true'] {
+  background: var(--miro-row);
+}
+.miro-check {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 1.5px solid #c3cbd6;
+  border-radius: 50%;
+  color: var(--miro-on-accent);
+  font-size: 12px;
+  font-weight: 700;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+:root[data-theme='dark'] .miro-check {
+  border-color: #4c5a6c;
+}
+.miro-check.on {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+.miro-check.failed {
+  border-color: #e05252;
+  background: #e05252;
+  color: #fff;
+}
+.miro-name {
   flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 13px;
 }
-.miro-board .quiet {
+.miro-date {
   flex: none;
+  color: var(--muted);
   font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
-.miro-boards > .quiet {
-  margin: 12px;
-}
-.miro-note {
+.miro-empty {
   margin: 0;
-  font-size: 12px;
+  padding: 18px;
+  color: var(--muted);
+  text-align: center;
 }
-.miro-forget {
-  margin-right: auto;
+.miro-add-form {
+  display: flex;
+  gap: 8px;
 }
+.miro-add-form .miro-field {
+  flex: 1;
+}
+
+.miro-footer {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 4px;
+}
+.miro-spacer {
+  flex: 1;
+}
+
+/* Progress */
 .miro-bar {
-  height: 6px;
+  width: 100%;
+  height: 4px;
   overflow: hidden;
-  border-radius: 3px;
-  background: var(--line);
+  border-radius: 2px;
+  background: var(--miro-fill);
 }
 .miro-bar span {
   display: block;
   height: 100%;
-  border-radius: 3px;
+  border-radius: 2px;
   background: var(--accent);
-  transition: width 0.2s ease;
+  transition: width 0.3s ease;
 }
-.miro-results {
+.miro-spinner {
+  width: 22px;
+  height: 22px;
+  border: 2.5px solid var(--line);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: miro-spin 0.8s linear infinite;
+}
+@keyframes miro-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .miro-spinner {
+    animation-duration: 2.4s;
+  }
+}
+
+/* Results */
+.miro-result-text {
   display: flex;
+  flex: 1;
   flex-direction: column;
-  gap: 10px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  gap: 1px;
+  min-width: 0;
 }
-.miro-results li {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 13px;
-}
-.miro-result-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-.modal .miro-links {
-  display: block;
-  width: 100%;
-  margin-top: 7px;
-  padding: 9px 11px;
-  border: 1px solid #dfe5ee;
-  border-radius: 8px;
-  background: #fafbfd;
-  color: inherit;
-  resize: vertical;
-  font: 12px/1.5 Consolas, 'Cascadia Mono', monospace;
-}
-.miro-more summary {
-  color: var(--accent);
-  font-size: 13px;
-  cursor: pointer;
-}
-.miro-more[open] summary {
-  margin-bottom: 8px;
+.miro-result-text .miro-hint {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

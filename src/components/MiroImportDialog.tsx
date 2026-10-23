@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { ExternalLink } from 'lucide-react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Check, ExternalLink, Plus, Search } from 'lucide-react';
 import { openLink, type MiroBoard, type MiroProgress, type MiroResult } from '../bridge';
 import './miro-import.css';
 
@@ -7,16 +7,24 @@ const APPS_PAGE = 'https://miro.com/app/settings/user-profile/apps';
 const message = (e: unknown) =>
   String(e).replace(/^Error: (Error invoking remote method '[^']+': )?(Error: )?/, '');
 const plural = (n: number, one: string, many = one + 's') => `${n} ${n === 1 ? one : many}`;
-
+const shortDate = (iso?: string) => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return d.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    ...(d.getFullYear() !== new Date().getFullYear() ? { year: 'numeric' } : {}),
+  });
+};
 function leftBehind(r: Extract<MiroResult, { board: object }>) {
   const s = r.skipped,
     parts = [
-      s.drawings && plural(s.drawings, 'pen drawing'),
+      s.drawings && plural(s.drawings, 'drawing'),
       s.arrows && plural(s.arrows, 'loose arrow'),
-      s.images && plural(s.images, 'image') + ' that failed to download',
-      s.other && plural(s.other, 'unsupported item'),
+      s.images && plural(s.images, 'image'),
+      s.other && plural(s.other, 'other item'),
     ].filter(Boolean);
-  return parts.length ? 'Not imported: ' + parts.join(', ') + '.' : '';
+  return parts.length ? parts.join(', ') + ' stayed in Miro' : 'Everything copied';
 }
 
 type Step =
@@ -44,22 +52,8 @@ export default function MiroImportDialog({
   const [busy, setBusy] = useState(false);
   const [filter, setFilter] = useState('');
   const [chosen, setChosen] = useState<Set<string>>(new Set());
-  const [links, setLinks] = useState('');
-  // Boards named by pasted links: Miro's list leaves out boards outside the token's team.
-  const linked = useMemo(
-    () => [
-      ...new Set(
-        [...links.matchAll(/miro\.com\/app\/board\/([^/?#\s]+)/gi)].map((m) => {
-          try {
-            return decodeURIComponent(m[1]);
-          } catch {
-            return m[1];
-          }
-        }),
-      ),
-    ],
-    [links],
-  );
+  const [adding, setAdding] = useState(false);
+  const [link, setLink] = useState('');
   const [progress, setProgress] = useState<MiroProgress | null>(null);
 
   useEffect(() => {
@@ -95,6 +89,7 @@ export default function MiroImportDialog({
 
   if (!miro) return <p className="quiet">Importing from Miro works in the desktop app.</p>;
 
+  const fail = (e: unknown) => setError(message(e));
   const connect = () => {
     setBusy(true);
     setError('');
@@ -104,27 +99,52 @@ export default function MiroImportDialog({
         setToken('');
         setStep({ kind: 'pick', boards });
       })
-      .catch((e) => setError(message(e)))
+      .catch(fail)
+      .finally(() => setBusy(false));
+  };
+  const addLink = () => {
+    setBusy(true);
+    setError('');
+    miro
+      .add(link)
+      .then(({ id, boards }) => {
+        setLink('');
+        setAdding(false);
+        setChosen((c) => new Set(c).add(id));
+        setStep({ kind: 'pick', boards });
+      })
+      .catch(fail)
       .finally(() => setBusy(false));
   };
   const start = () => {
-    const ids = [...new Set([...chosen, ...linked])];
     setError('');
     setProgress(null);
     setStep({ kind: 'importing' });
     miro
-      .import(ids)
+      .import([...chosen])
       .then((results) => {
         setStep({ kind: 'done', results });
         onImported();
       })
       .catch((e) => {
-        setError(message(e));
+        fail(e);
         setStep({ kind: 'token' });
       });
   };
+  const toggle = (id: string) =>
+    setChosen((c) => {
+      const next = new Set(c);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  const errorLine = error && <p className="miro-error">{error}</p>;
 
-  if (step.kind === 'loading') return <p className="quiet">Connecting to Miro…</p>;
+  if (step.kind === 'loading')
+    return (
+      <div className="miro-import miro-center">
+        <span className="miro-spinner" />
+      </div>
+    );
 
   if (step.kind === 'token')
     return (
@@ -135,166 +155,139 @@ export default function MiroImportDialog({
           if (token.trim() && !busy) connect();
         }}
       >
-        <p className="quiet">
-          Terra copies your boards straight from your Miro account with a personal access token.
-          Miro backup files (.rtb) are encrypted, so they can’t be opened directly.
-        </p>
-        <ol className="miro-steps">
-          <li>
-            Open{' '}
-            <button type="button" className="miro-link" onClick={() => void openLink(APPS_PAGE)}>
-              Miro → Settings → Your apps <ExternalLink size={12} />
-            </button>
-            .
-          </li>
-          <li>
-            Click <b>Create new app</b>, then under <b>Permissions</b> tick <b>boards:read</b>.
-          </li>
-          <li>
-            Click <b>Install app and get OAuth token</b> and pick the team that has your boards.
-          </li>
-          <li>Copy the access token and paste it here.</li>
-        </ol>
-        <label>
-          Access token
+        <p className="miro-lead">Paste your Miro access token.</p>
+        <div className="miro-group">
           <input
+            className="miro-field"
+            type="password"
             value={token}
             autoFocus
             spellCheck={false}
             autoComplete="off"
-            placeholder="eyJtaXJvLm9yaWdpbiI6…"
+            placeholder="Access token"
+            aria-label="Access token"
             onChange={(e) => setToken(e.target.value)}
           />
-        </label>
-        {canRemember && (
-          <label className="live-check">
-            <input
-              type="checkbox"
-              checked={remember}
-              onChange={(e) => setRemember(e.target.checked)}
-            />
-            Remember it on this computer (encrypted)
-          </label>
-        )}
-        {error && <p className="live-error">{error}</p>}
-        <div className="dialog-actions">
-          <button type="button" className="button" onClick={onClose}>
-            Cancel
-          </button>
-          <button className="button primary" disabled={busy || !token.trim()}>
-            {busy ? 'Connecting…' : 'Show my boards'}
-          </button>
+          {canRemember && (
+            <label className="miro-switch">
+              <span>Remember on this computer</span>
+              <input
+                type="checkbox"
+                role="switch"
+                checked={remember}
+                onChange={(e) => setRemember(e.target.checked)}
+              />
+            </label>
+          )}
         </div>
+        <details className="miro-help">
+          <summary>How do I get a token?</summary>
+          <ol>
+            <li>
+              <button type="button" className="miro-text-button" onClick={() => void openLink(APPS_PAGE)}>
+                Open Miro’s app settings <ExternalLink size={12} />
+              </button>{' '}
+              and create an app with <b>boards:read</b>.
+            </li>
+            <li>
+              Choose <b>Install app and get OAuth token</b>.
+            </li>
+            <li>Copy the token.</li>
+          </ol>
+        </details>
+        {errorLine}
+        <button className="miro-primary" disabled={busy || !token.trim()}>
+          {busy ? 'Connecting…' : 'Continue'}
+        </button>
       </form>
     );
 
   if (step.kind === 'pick') {
-    const allShown = shown.length > 0 && shown.every((b) => chosen.has(b.id)),
-      count = new Set([...chosen, ...linked]).size;
-    const linkField = (
-      <label>
-        Board links, one per line
-        <textarea
-          className="miro-links"
-          rows={3}
-          value={links}
-          autoFocus={!step.boards.length}
+    const teams = new Set(step.boards.map((b) => b.team || '')).size > 1;
+    const allShown = shown.length > 0 && shown.every((b) => chosen.has(b.id));
+    const linkForm = (
+      <form
+        className="miro-add-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (link.trim() && !busy) addLink();
+        }}
+      >
+        <input
+          className="miro-field"
+          value={link}
+          autoFocus
           spellCheck={false}
-          placeholder="https://miro.com/app/board/uXjV…/"
-          onChange={(e) => setLinks(e.target.value)}
+          placeholder="Paste a Miro board link"
+          aria-label="Miro board link"
+          onChange={(e) => setLink(e.target.value)}
         />
-      </label>
+        <button className="miro-secondary" disabled={busy || !link.trim()}>
+          {busy ? 'Finding…' : 'Add'}
+        </button>
+      </form>
     );
-    if (!step.boards.length)
-      return (
-        <div className="miro-import">
-          <p className="quiet">
-            Paste the links of the boards to copy. In Miro, open a board and copy the address from
-            the browser, or use <b>Share → Copy board link</b>.
-          </p>
-          {linkField}
-          <p className="quiet miro-note">
-            Each board becomes a new Terra board with its frames, text, notes, shapes, code and
-            full-size images. Pen drawings and arrows with loose ends stay in Miro.
-          </p>
-          {error && <p className="live-error">{error}</p>}
-          <div className="dialog-actions">
-            <button
-              type="button"
-              className="button miro-forget"
-              onClick={() => void miro.forget().then(() => setStep({ kind: 'token' }))}
-            >
-              Use another token
-            </button>
-            <button type="button" className="button" onClick={onClose}>
-              Cancel
-            </button>
-            <button className="button primary" disabled={!count} onClick={start}>
-              {count > 1 ? `Import ${count} boards` : 'Import board'}
-            </button>
-          </div>
-        </div>
+    const rows: ReactNode[] = [];
+    let team: string | undefined;
+    for (const b of shown) {
+      if (teams && b.team !== team) {
+        team = b.team;
+        rows.push(
+          <div key={'team-' + team} className="miro-section">
+            {team}
+          </div>,
+        );
+      }
+      const on = chosen.has(b.id);
+      rows.push(
+        <button
+          key={b.id}
+          type="button"
+          role="checkbox"
+          aria-checked={on}
+          className="miro-row"
+          onClick={() => toggle(b.id)}
+        >
+          <span className={'miro-check' + (on ? ' on' : '')}>{on && <Check size={12} strokeWidth={3} />}</span>
+          <span className="miro-name">{b.name}</span>
+          <span className="miro-date">{shortDate(b.modifiedAt)}</span>
+        </button>,
       );
+    }
     return (
       <div className="miro-import">
-        {step.boards.length > 6 && (
-          <input
-            className="miro-filter"
-            value={filter}
-            placeholder="Find a board"
-            onChange={(e) => setFilter(e.target.value)}
-          />
+        {step.boards.length ? (
+          <>
+            <div className="miro-search">
+              <Search size={14} />
+              <input
+                value={filter}
+                placeholder="Search"
+                aria-label="Search boards"
+                onChange={(e) => setFilter(e.target.value)}
+              />
+            </div>
+            <div className="miro-list">{rows.length ? rows : <p className="miro-empty">No matches</p>}</div>
+            {adding ? (
+              linkForm
+            ) : (
+              <button type="button" className="miro-text-button miro-more" onClick={() => setAdding(true)}>
+                <Plus size={13} /> Boards from another team
+              </button>
+            )}
+          </>
+        ) : (
+          <>
+            <p className="miro-lead">Add any board from your Miro team.</p>
+            <p className="miro-hint">Terra lists the rest of its team for you.</p>
+            {linkForm}
+          </>
         )}
-        <div className="miro-boards" role="group" aria-label="Miro boards">
-          {shown.length ? (
-            <>
-              <label className="live-check miro-all">
-                <input
-                  type="checkbox"
-                  checked={allShown}
-                  onChange={() => {
-                    const next = new Set(chosen);
-                    for (const b of shown) allShown ? next.delete(b.id) : next.add(b.id);
-                    setChosen(next);
-                  }}
-                />
-                Select all
-              </label>
-              {shown.map((b) => (
-                <label key={b.id} className="live-check miro-board">
-                  <input
-                    type="checkbox"
-                    checked={chosen.has(b.id)}
-                    onChange={() => {
-                      const next = new Set(chosen);
-                      next.has(b.id) ? next.delete(b.id) : next.add(b.id);
-                      setChosen(next);
-                    }}
-                  />
-                  <span className="miro-board-name">{b.name}</span>
-                  {b.modifiedAt && (
-                    <span className="quiet">{new Date(b.modifiedAt).toLocaleDateString()}</span>
-                  )}
-                </label>
-              ))}
-            </>
-          ) : (
-            <p className="quiet">No board matches.</p>
-          )}
-        </div>
-        <details className="miro-more">
-          <summary>A board isn’t listed?</summary>
-          {linkField}
-        </details>
-        <p className="quiet miro-note">
-          Each board becomes a new Terra board with its frames, text, notes, shapes, code and
-          full-size images. Pen drawings and arrows with loose ends stay in Miro.
-        </p>
-        {error && <p className="live-error">{error}</p>}
-        <div className="dialog-actions">
+        {errorLine}
+        <footer className="miro-footer">
           <button
             type="button"
-            className="button miro-forget"
+            className="miro-text-button miro-muted"
             onClick={() =>
               void miro.forget().then(() => {
                 setChosen(new Set());
@@ -302,15 +295,28 @@ export default function MiroImportDialog({
               })
             }
           >
-            Use another token
+            Disconnect
           </button>
-          <button type="button" className="button" onClick={onClose}>
-            Cancel
+          <span className="miro-spacer" />
+          {shown.length > 1 && (
+            <button
+              type="button"
+              className="miro-text-button"
+              onClick={() =>
+                setChosen((c) => {
+                  const next = new Set(c);
+                  for (const b of shown) allShown ? next.delete(b.id) : next.add(b.id);
+                  return next;
+                })
+              }
+            >
+              {allShown ? 'Deselect all' : 'Select all'}
+            </button>
+          )}
+          <button className="miro-primary" disabled={!chosen.size} onClick={start}>
+            {chosen.size > 1 ? `Import ${chosen.size}` : 'Import'}
           </button>
-          <button className="button primary" disabled={!count} onClick={start}>
-            {count > 1 ? `Import ${count} boards` : 'Import board'}
-          </button>
-        </div>
+        </footer>
       </div>
     );
   }
@@ -318,23 +324,21 @@ export default function MiroImportDialog({
   if (step.kind === 'importing') {
     const p = progress,
       share =
-        p && p.phase === 'images' && p.total ? (p.done || 0) / p.total : p?.phase === 'saving' ? 1 : 0;
+        p?.phase === 'images' && p.total ? (p.done || 0) / p.total : p?.phase === 'saving' ? 1 : 0;
+    const overall = ((p?.index || 0) + share) / (p?.count || 1);
     return (
-      <div className="miro-import" aria-live="polite">
-        <p>
-          {p
-            ? `${p.count > 1 ? `${p.index + 1} of ${p.count}: ` : ''}${p.board}`
-            : 'Starting…'}
-        </p>
+      <div className="miro-import miro-center" aria-live="polite">
+        <p className="miro-lead">{p?.board || 'Connecting…'}</p>
         <div className="miro-bar">
-          <span style={{ width: `${Math.round(((p?.index || 0) + share) / (p?.count || 1) * 100)}%` }} />
+          <span style={{ width: `${Math.max(3, Math.round(overall * 100))}%` }} />
         </div>
-        <p className="quiet">
+        <p className="miro-hint">
+          {p && p.count > 1 ? `Board ${p.index + 1} of ${p.count} · ` : ''}
           {!p || p.phase === 'reading'
-            ? 'Reading the board…'
+            ? 'Reading'
             : p.phase === 'images'
-              ? `Downloading images ${p.done} of ${p.total}`
-              : 'Placing everything on the board…'}
+              ? `Images ${p.done} of ${p.total}`
+              : 'Placing'}
         </p>
       </div>
     );
@@ -342,37 +346,45 @@ export default function MiroImportDialog({
 
   return (
     <div className="miro-import">
-      <ul className="miro-results">
-        {step.results.map((r) => (
-          <li key={r.id}>
-            {r.board ? (
-              <>
-                <div className="miro-result-head">
-                  <b>{r.board.name}</b>
-                  <button
-                    type="button"
-                    className="button"
-                    onClick={() => {
-                      onOpen(r.board.id);
-                      onClose();
-                    }}
-                  >
-                    Open
-                  </button>
-                </div>
-                <span className="quiet">{leftBehind(r) || 'Everything came across.'}</span>
-              </>
-            ) : (
-              <span className="live-error">{r.error}</span>
-            )}
-          </li>
-        ))}
-      </ul>
-      <div className="dialog-actions">
-        <button className="button primary" onClick={onClose}>
+      <div className="miro-list">
+        {step.results.map((r) =>
+          r.board ? (
+            <div key={r.id} className="miro-row miro-result">
+              <span className="miro-check on">
+                <Check size={12} strokeWidth={3} />
+              </span>
+              <span className="miro-result-text">
+                <span className="miro-name">{r.board.name}</span>
+                <span className="miro-hint">{leftBehind(r)}</span>
+              </span>
+              <button
+                type="button"
+                className="miro-secondary"
+                onClick={() => {
+                  onOpen(r.board.id);
+                  onClose();
+                }}
+              >
+                Open
+              </button>
+            </div>
+          ) : (
+            <div key={r.id} className="miro-row miro-result">
+              <span className="miro-check failed">!</span>
+              <span className="miro-result-text">
+                <span className="miro-name">Couldn’t import</span>
+                <span className="miro-hint">{r.error}</span>
+              </span>
+            </div>
+          ),
+        )}
+      </div>
+      <footer className="miro-footer">
+        <span className="miro-spacer" />
+        <button className="miro-primary" onClick={onClose}>
           Done
         </button>
-      </div>
+      </footer>
     </div>
   );
 }

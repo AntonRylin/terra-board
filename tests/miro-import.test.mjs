@@ -195,3 +195,36 @@ test('a Miro board imports through the API into a new board', async () => {
   );
   store.close();
 });
+
+test('boards list the token team plus teams learned from links', async () => {
+  const asked = [];
+  const reply = (body) => ({ ok: true, status: 200, headers: { get: () => null }, json: async () => body });
+  const fetch = async (url) => {
+    asked.push(url);
+    if (url.endsWith('/v1/oauth-token')) return reply({ team: { id: 1, name: 'NL' } });
+    if (url.includes('/boards/uX%3D')) return reply({ id: 'uX=', team: { id: 2, name: 'Kaban' } });
+    if (url.includes('team_id=1')) return reply({ data: [], total: 0 });
+    if (url.includes('team_id=2'))
+      return reply({
+        data: [
+          { id: 'a', name: 'Old', modifiedAt: '2026-01-01T00:00:00Z' },
+          { id: 'b', name: 'New', modifiedAt: '2026-09-01T00:00:00Z' },
+        ],
+        total: 2,
+      });
+    throw Error('unexpected ' + url);
+  };
+  const client = new MiroClient('tok', { fetch });
+  assert.deepEqual((await client.boards()).boards, []);
+  const team = await client.teamOf('uX=');
+  assert.deepEqual(team, { id: '2', name: 'Kaban' });
+  const r = await client.boards([team]);
+  assert.deepEqual(r.boards.map((b) => [b.name, b.team]), [
+    ['New', 'Kaban'],
+    ['Old', 'Kaban'],
+  ]);
+  assert.deepEqual(r.teams, [
+    { id: '1', name: 'NL' },
+    { id: '2', name: 'Kaban' },
+  ]);
+});

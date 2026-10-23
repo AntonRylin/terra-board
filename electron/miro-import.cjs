@@ -449,16 +449,37 @@ class MiroClient {
       return json ? res.json() : Buffer.from(await res.arrayBuffer());
     }
   }
-  async boards() {
-    const out = [];
-    for (let offset = 0; offset < 2000; ) {
-      const page = await this.request(`${API}/boards?limit=50&offset=${offset}&sort=last_modified`);
-      for (const b of page.data || [])
-        out.push({ id: b.id, name: b.name || 'Untitled', modifiedAt: b.modifiedAt, owner: b.owner?.name });
-      offset += (page.data || []).length;
-      if (!page.data?.length || offset >= (page.total ?? 0)) break;
+  // Boards in the token's own team plus `known` teams. Miro lists one team at a
+  // time and only Enterprise plans can list a user's teams, so other teams are
+  // learned from a board link (teamOf) and passed back in here.
+  async boards(known = []) {
+    const me = await this.request('https://api.miro.com/v1/oauth-token').catch((e) => {
+      if (/access token/.test(e.message)) throw e;
+      return null;
+    });
+    const teams = new Map();
+    if (me?.team?.id) teams.set(String(me.team.id), me.team.name || 'Team');
+    for (const t of known) if (t?.id) teams.set(String(t.id), t.name || 'Team');
+    const found = new Map();
+    for (const [teamId, team] of teams.size ? teams : new Map([['', '']])) {
+      for (let offset = 0; offset < 5000; ) {
+        const page = await this.request(
+          `${API}/boards?limit=50&offset=${offset}&sort=last_modified${teamId ? '&team_id=' + encodeURIComponent(teamId) : ''}`,
+        );
+        for (const b of page.data || [])
+          found.set(b.id, { id: b.id, name: b.name || 'Untitled', modifiedAt: b.modifiedAt, team });
+        offset += (page.data || []).length;
+        if (!page.data?.length || offset >= (page.total ?? 0)) break;
+      }
     }
-    return out;
+    return {
+      boards: [...found.values()].sort((a, b) => String(b.modifiedAt).localeCompare(String(a.modifiedAt))),
+      teams: [...teams].map(([id, name]) => ({ id, name })),
+    };
+  }
+  async teamOf(boardId) {
+    const b = await this.board(boardId);
+    return b.team?.id ? { id: String(b.team.id), name: b.team.name || 'Team' } : null;
   }
   board(id) {
     return this.request(`${API}/boards/${encodeURIComponent(id)}`);
