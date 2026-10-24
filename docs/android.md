@@ -85,8 +85,9 @@ server is always Terra Cloud (`package.json` → `terraCloud`); there is no serv
 
 **Signing in.** The sign-in screen (`src/mobile/ui/SignIn.tsx`) uses the accounts code shared
 with the desktop (`electron/cloud-auth.cjs` inside `CloudSync`, which runs in the worker like the
-rest): **Continue with Google** (and Microsoft when the server offers it) and **Continue with
-email** (a code by email, no browser). Only the methods the server enables are shown
+rest): **Continue with Google** (and Microsoft when the server offers it), **Continue with
+email** (email and password, for accounts that have one, such as the store review account) and
+**Email me a sign-in code** (no password, no browser). Only the methods the server enables are shown
 (`/auth/v1/settings`). Google refuses sign-in inside an app's WebView, so the provider page opens in
 a Custom Tab (`@capacitor/browser`): the worker cannot open it, so it posts `open-url` to the page.
 Supabase then redirects to `terraboard://auth/callback?code=…`; the intent filter in

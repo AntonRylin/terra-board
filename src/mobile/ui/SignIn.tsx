@@ -1,8 +1,9 @@
 // The first screen on Android: sign in to Terra Cloud. Google and Microsoft open in a
-// Custom Tab and come back through terraboard://auth/callback; the email code needs no
-// browser. The steps are electron/cloud-auth.cjs, the same as the desktop's.
+// Custom Tab and come back through terraboard://auth/callback. "Continue with email" asks
+// for a password; "Email me a code" signs in without one (no browser either way). The steps
+// are electron/cloud-auth.cjs, the same as the desktop's.
 import { useEffect, useState } from 'react';
-import { Mail } from 'lucide-react';
+import { KeyRound, Mail } from 'lucide-react';
 import type { CloudStatus, SignInProvider } from '../../bridge';
 import { cloud, signInWithPassword } from '../cloud.ts';
 import icon from '../../../assets/icon.png';
@@ -112,8 +113,8 @@ export function SignIn({ status }: { status: CloudStatus }) {
           if (email.trim() && !busy) void send(email);
         }}
       >
-        <h2>Sign in with email</h2>
-        <p className="mobile-lead">We send you a code. No password needed.</p>
+        <h2>Sign in with a code</h2>
+        <p className="mobile-lead">We email you a code. No password needed.</p>
         <label className="mobile-field">
           <span>Email</span>
           <input
@@ -161,13 +162,13 @@ export function SignIn({ status }: { status: CloudStatus }) {
               setError('');
             }}
           >
-            Use a password
+            Use a password instead
           </button>
         </div>
       </form>
     );
-  // Only accounts given a password in the Supabase dashboard have one (the app-store
-  // review account); everyone else signs in with a code or Google.
+  // Email and password. An account without a password (most sign up with a code or
+  // Google) is pointed to the code instead.
   else if (step === 'password')
     body = (
       <form
@@ -177,8 +178,8 @@ export function SignIn({ status }: { status: CloudStatus }) {
             void act(() => signInWithPassword(email, password));
         }}
       >
-        <h2>Sign in with a password</h2>
-        <p className="mobile-lead">For accounts that have a password.</p>
+        <h2>Sign in with email</h2>
+        <p className="mobile-lead">No password yet? Get a sign-in code by email instead.</p>
         <label className="mobile-field">
           <span>Email</span>
           <input
@@ -189,9 +190,11 @@ export function SignIn({ status }: { status: CloudStatus }) {
               setEmail(e.target.value);
               setError('');
             }}
+            placeholder="you@example.com"
             autoComplete="username"
             autoCapitalize="none"
             spellCheck={false}
+            autoFocus
             disabled={busy}
           />
         </label>
@@ -221,18 +224,32 @@ export function SignIn({ status }: { status: CloudStatus }) {
         >
           {busy ? 'Signing in…' : 'Sign in'}
         </button>
-        <button
-          type="button"
-          className="mobile-link"
-          disabled={busy}
-          onClick={() => {
-            setStep('email');
-            setPassword('');
-            setError('');
-          }}
-        >
-          Get a code by email instead
-        </button>
+        <div className="mobile-row">
+          <button
+            type="button"
+            className="mobile-link"
+            disabled={busy}
+            onClick={() => {
+              setStep('choose');
+              setPassword('');
+              setError('');
+            }}
+          >
+            Other ways to sign in
+          </button>
+          <button
+            type="button"
+            className="mobile-link"
+            disabled={busy}
+            onClick={() => {
+              setStep('email');
+              setPassword('');
+              setError('');
+            }}
+          >
+            Email me a code instead
+          </button>
+        </div>
       </form>
     );
   else if (step === 'code')
@@ -332,12 +349,26 @@ export function SignIn({ status }: { status: CloudStatus }) {
               className="mobile-button provider"
               disabled={busy}
               onClick={() => {
-                setStep('email');
+                setStep('password');
                 setError('');
               }}
             >
               <Mail size={19} />
               Continue with email
+            </button>
+          )}
+          {methods.email && (
+            <button
+              type="button"
+              className="mobile-button provider"
+              disabled={busy}
+              onClick={() => {
+                setStep('email');
+                setError('');
+              }}
+            >
+              <KeyRound size={19} />
+              Email me a sign-in code
             </button>
           )}
         </div>

@@ -56,7 +56,7 @@ review account's demo board (no personal content).
 - **Privacy policy:** the URL above.
 - **Ads:** No ads.
 - **App access:** "All or some functionality is restricted". Instructions:
-  `Tap "Continue with email", then "Use a password". Email: <review account> Password: <password>.`
+  `Tap "Continue with email" and sign in with: Email: <review account> Password: <password>.`
   The review account has a password (set in the Supabase dashboard); everyone else signs in
   with an email code or Google, which reviewers cannot use.
 - **Content rating:** questionnaire, category "Utility, productivity, communication or other".
