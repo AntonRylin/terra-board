@@ -1596,7 +1596,9 @@ test('Android: a tap inside a frame selects it, and a finger then drags it', () 
   f.engine.camera = { x: 0, y: 0, zoom: 1 };
   const touch = (x, y) => ({ ...f.event(x, y, 0), pointerType: 'touch', pointerId: 1 });
   f.engine.apply({
-    upserts: [{ id: 'f', type: 'frame', x: 100, y: 100, width: 400, height: 300, z: -1, text: 'Plan' }],
+    upserts: [
+      { id: 'f', type: 'frame', x: 100, y: 100, width: 400, height: 300, z: -1, text: 'Plan' },
+    ],
     deleted: [],
   });
   f.engine.down(touch(300, 250));
@@ -1607,4 +1609,71 @@ test('Android: a tap inside a frame selects it, and a finger then drags it', () 
   f.engine.move(touch(340, 270));
   f.engine.up(touch(340, 270));
   assert.deepEqual([f.engine.objects.get('f').x, f.engine.objects.get('f').y], [140, 120]);
+});
+
+test('view mode: a tap uses the object instead of selecting it, and drags pan', () => {
+  const f = fixture();
+  f.engine.setTouchGestures(true);
+  f.engine.camera = { x: 0, y: 0, zoom: 1 };
+  const taps = [];
+  f.engine.callbacks.viewTap = (o) => taps.push(o?.id ?? null);
+  const touch = (x, y) => ({ ...f.event(x, y, 0), pointerType: 'touch', pointerId: 1 });
+  f.engine.apply({
+    upserts: [{ id: 'n', type: 'note', x: 100, y: 100, width: 80, height: 80, z: 1 }],
+    deleted: [],
+  });
+  f.engine.setViewMode(true);
+  f.engine.down(touch(140, 140));
+  f.hold();
+  f.engine.up(touch(140, 140));
+  assert.deepEqual([...f.engine.selection], []);
+  assert.deepEqual(taps, ['n']);
+  f.tick(1000);
+  f.engine.down(touch(140, 140));
+  f.engine.move(touch(200, 170));
+  f.engine.up(touch(200, 170));
+  assert.equal(f.engine.objects.get('n').x, 100, 'nothing moves');
+  assert.deepEqual([f.engine.camera.x, f.engine.camera.y], [60, 30]);
+  assert.deepEqual(taps, ['n'], 'a drag is no tap');
+  assert.equal(f.menus.length, 0);
+  f.engine.setViewMode(false);
+  f.tick(1000);
+  f.engine.camera = { x: 0, y: 0, zoom: 1 };
+  f.engine.down(touch(140, 140));
+  f.engine.up(touch(140, 140));
+  assert.deepEqual([...f.engine.selection], ['n']);
+});
+
+test('locked objects let presses through; holding one for two seconds selects it', () => {
+  const f = fixture();
+  f.engine.camera = { x: 0, y: 0, zoom: 1 };
+  f.engine.apply({
+    upserts: [
+      { id: 'l', type: 'note', x: 100, y: 100, width: 80, height: 80, z: 1, locked: true },
+      { id: 'n', type: 'note', x: 300, y: 100, width: 80, height: 80, z: 2 },
+    ],
+    deleted: [],
+  });
+  // A click on it selects nothing and starts a selection box, which leaves it out.
+  f.engine.down(f.event(140, 140, 0));
+  assert.equal(f.engine.gesture.mode, 'box');
+  f.engine.move(f.event(420, 260, 0));
+  f.engine.up(f.event(420, 260, 0));
+  assert.deepEqual([...f.engine.selection], ['n']);
+  // A finger on it pans.
+  f.engine.setTouchGestures(true);
+  const touch = (x, y) => ({ ...f.event(x, y, 0), pointerType: 'touch', pointerId: 1 });
+  f.engine.down(touch(140, 140));
+  assert.equal(f.engine.gesture.mode, 'pan');
+  f.engine.move(touch(150, 150));
+  f.engine.up(touch(150, 150));
+  assert.equal(f.engine.objects.get('l').x, 100);
+  // Held for two seconds, it is selected (to be unlocked).
+  f.engine.camera = { x: 0, y: 0, zoom: 1 };
+  f.tick(1000);
+  f.engine.down(touch(140, 140));
+  f.hold();
+  assert.deepEqual([...f.engine.selection], ['l']);
+  f.engine.up(touch(140, 140));
+  assert.deepEqual([...f.engine.selection], ['l']);
 });

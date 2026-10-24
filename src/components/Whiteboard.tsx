@@ -166,6 +166,7 @@ import {
   PanelBottomClose,
   PanelBottomOpen,
   Pencil,
+  Eye,
   Files,
   FileStack,
   GalleryVerticalEnd,
@@ -338,6 +339,17 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     readOnlyRef.current = readOnly;
     engine.current?.setReadOnly(readOnly);
   }, [readOnly]);
+  // View mode: the board is looked at, panned and zoomed, and its embeds, links and
+  // pictures used, but nothing is selected, moved or changed. On by default on phones.
+  const { viewMode: viewPreference } = usePreferences();
+  const viewMode = !readOnly && (viewPreference ?? android);
+  const setViewMode = (on: boolean) => updatePreferences({ viewMode: on });
+  // Changes refused while the board can't be edited, or only looked at.
+  const blockedRef = useRef(readOnly || viewMode);
+  blockedRef.current = readOnly || viewMode;
+  useEffect(() => {
+    engine.current?.setViewMode(viewMode);
+  }, [viewMode]);
   const shortcutLabel = useShortcutLabels();
   const [historyOpen, setHistoryOpen] = useState(false);
   const [usageTarget, setUsageTarget] = useState<{
@@ -401,7 +413,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   // edit, so it saves, syncs and undoes like any other.
   const restoreObjects = (objects: CanvasObject[]): string | null => {
     const e = engine.current;
-    if (!e || readOnlyRef.current) return 'This board can’t be edited.';
+    if (!e || blockedRef.current) return 'This board can’t be edited.';
     if (objects.some((o) => e.objects.get(o.id)?.locked))
       return 'A locked object can’t be changed. Unlock it first.';
     finishEdit();
@@ -1188,7 +1200,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   };
   const makeAlbumFromSelection = () => {
     const e = engine.current;
-    if (!e || readOnlyRef.current) return;
+    if (!e || blockedRef.current) return;
     if (editingSession.current) finishEdit();
     const selected = e.selected;
     if (!canMakeAlbum(selected)) return;
@@ -1201,7 +1213,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   const addImagesToAlbum = async (albumId: string, files: File[] | null) => {
     const e = engine.current,
       album = e?.objects.get(albumId);
-    if (!e || !isAlbum(album) || album.locked || readOnlyRef.current) return;
+    if (!e || !isAlbum(album) || album.locked || blockedRef.current) return;
     setBusy((n) => n + 1);
     try {
       const wantsLink = album.album.storage === 'link' && !!window.canvas;
@@ -1415,7 +1427,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     structuredClone(copySelection(all, selectionWithGalleryImages([o], all)));
   const duplicatePinned = (o: CanvasObject, all: CanvasObject[]) => {
     const e = engine.current;
-    if (!e || readOnlyRef.current) return;
+    if (!e || blockedRef.current) return;
     const area = visibleBoardArea(e);
     finishEdit();
     pasteObjects(
@@ -1487,7 +1499,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   const createFolder = (point?: { x: number; y: number }) => {
     finishEdit();
     const e = engine.current;
-    if (!e || readOnlyRef.current) return;
+    if (!e || blockedRef.current) return;
     const p = e.center();
     const { width, height } = folderSize;
     const o: CanvasObject = {
@@ -1510,7 +1522,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   const addAppFrame = async (w: DesktopWindow, from: CanvasObject) => {
     const e = engine.current,
       files = window.canvas?.files;
-    if (!e || !files || readOnlyRef.current || !w.exe) return;
+    if (!e || !files || blockedRef.current || !w.exe) return;
     try {
       const source = await files.source({ path: w.exe });
       // As big as the window is (so its picture is sharp at 100%), within reason.
@@ -1543,7 +1555,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   const createDesktops = (point?: { x: number; y: number }) => {
     finishEdit();
     const e = engine.current;
-    if (!e || readOnlyRef.current) return;
+    if (!e || blockedRef.current) return;
     const p = e.center();
     const { width, height } = desktopsSize;
     const o: CanvasObject = {
@@ -1742,7 +1754,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     centered = false,
   ) => {
     const e = engine.current;
-    if (!e || readOnlyRef.current || !items.length) return;
+    if (!e || blockedRef.current || !items.length) return;
     // A drop centres the first item on the pointer.
     const first = items[0].folder && !asIcons ? folderSize : fileTileSize;
     let x = centered ? point.x - first.width / 2 : point.x,
@@ -1773,7 +1785,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   // icons), placed to the right of the frame.
   const addFromFolder = async (items: FileBoardItem[], asIcons: boolean, from: CanvasObject) => {
     const files = window.canvas?.files;
-    if (!files || readOnlyRef.current) return;
+    if (!files || blockedRef.current) return;
     const point = { x: from.x + from.width + 48, y: from.y };
     try {
       const live = asIcons ? items : items.filter((item) => item.folder);
@@ -1839,7 +1851,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     asIcons: boolean,
   ): Promise<File[]> => {
     const bridge = window.canvas?.files;
-    if (!bridge || readOnlyRef.current) return files;
+    if (!bridge || blockedRef.current) return files;
     const paths = files.map((file) => window.canvas!.filePath(file) || '');
     if (!paths.some(Boolean)) return files;
     let kinds: DroppedPath[] = [];
@@ -2339,6 +2351,26 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     else if (o.type === 'link') openObject(o);
     else startEdit(o);
   };
+  // View mode: a tap uses what it lands on (pages run, links and videos open, pictures
+  // and documents show) and changes nothing; a tap on anything else ends a running page.
+  const viewTap = useRef<(o: CanvasObject | null) => void>(() => {});
+  viewTap.current = (o) => {
+    if (o?.frameLink) void openOriginalFrame(o).catch(error);
+    else if (o?.type === 'file') {
+      if (o.file?.kind === 'file') openFileObject(o, onError);
+      else if (o.file?.kind === 'app') requestAppUse(o.id);
+    } else if (o?.type === 'html') interactHtml(o);
+    else if (o?.type === 'browser') void openBrowser(o);
+    else if (o?.type === 'link' && o.linkCompact) openLink(o.url!).catch(error);
+    else if (o?.type === 'link' || o?.type === 'video') openObject(o);
+    else if (o?.type === 'image') void openImageViewer(o).catch(error);
+    else if (o?.type === 'document') void openDocument(o).catch(error);
+    else {
+      setLiveHtml(null);
+      if (liveBrowserState.current) void endBrowser();
+      engine.current?.setSelection([]);
+    }
+  };
   const previewRequests = useRef(new Map<string, Engine>());
   const refreshLink = (o: CanvasObject, e: Engine, autoplay = false) => {
     if (!window.canvas?.linkPreview || previewRequests.current.get(o.id) === e) return;
@@ -2804,6 +2836,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         }
       },
       activate,
+      viewTap: (o) => viewTap.current(o),
       create,
       context: (p) => setMenu(p),
       highlightSize: (size) => setHighlightStyle((style) => ({ ...style, size })),
@@ -2850,6 +2883,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     applyInput();
     e.setTouchGestures(android);
     e.setReadOnly(readOnlyRef.current);
+    e.setViewMode(blockedRef.current && !readOnlyRef.current);
     const stopInput = subscribePreferences(applyInput);
     e.setFrameBoard(doc.board.id, fitted, true);
     let frameRefresh: Promise<void> | null = null;
@@ -3439,7 +3473,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         'input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role=dialog]',
       );
     const paste = async (event: ClipboardEvent) => {
-      if (typing() || readOnlyRef.current) return;
+      if (typing() || blockedRef.current) return;
       const e = engine.current;
       if (!e) return;
       const data = event.clipboardData;
@@ -3535,7 +3569,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       if (!e) return;
       const mod = (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey;
       const command = activeCommand(event, 'board');
-      if (readOnlyRef.current) {
+      if (blockedRef.current) {
         if (command === 'view.fit' && !event.repeat) e.fit();
         return;
       }
@@ -3586,7 +3620,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     window.addEventListener('pointermove', rememberPointer, true);
     window.addEventListener('copy', copyEvent);
     const cut = (event: ClipboardEvent) => {
-      if (typing() || readOnlyRef.current) {
+      if (typing() || blockedRef.current) {
         window.canvas?.cancelCopy();
         return;
       }
@@ -3610,7 +3644,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   }, []);
   async function drop(e: React.DragEvent) {
     e.preventDefault();
-    if (readOnlyRef.current) return;
+    if (blockedRef.current) return;
     setPdfDropTarget(null);
     const files = [...e.dataTransfer.files];
     const r = host.current!.getBoundingClientRect(),
@@ -4169,6 +4203,14 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       ? []
       : [
           {
+            label: viewMode ? 'Edit board' : 'View only',
+            icon: viewMode ? <Pencil /> : <Eye />,
+            action: () => {
+              if (!viewMode) finishEdit();
+              setViewMode(!viewMode);
+            },
+          },
+          {
             label: toolbarHidden ? 'Show toolbar' : 'Hide toolbar',
             icon: toolbarHidden ? <PanelBottomOpen /> : <PanelBottomClose />,
             action: () => updatePreferences({ toolbarHidden: !toolbarHidden }),
@@ -4313,7 +4355,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         selectedIds={selected.map((o) => o.id)}
         editingId={editingComposerId}
         onEdit={setEditingComposerId}
-        interactive={tool === 'select'}
+        interactive={tool === 'select' && !viewMode}
         onSelect={(id) => {
           finishEdit();
           engine.current?.setSelection([id]);
@@ -4337,7 +4379,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         editingId={editingPaperId}
         onEdit={setEditingPaperId}
         host={host.current}
-        interactive={tool === 'select'}
+        interactive={tool === 'select' && !viewMode}
         beginPointer={(event) => engine.current?.beginOverlayPointer(event)}
         selected={selected.map((o) => o.id)}
         select={(id) => {
@@ -4353,7 +4395,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         editingId={editingListId}
         onEdit={setEditingListId}
         host={host.current}
-        interactive={tool === 'select'}
+        interactive={tool === 'select' && !viewMode}
         beginPointer={(event) => engine.current?.beginOverlayPointer(event)}
         selected={selected.map((o) => o.id)}
         select={(id) => {
@@ -4367,7 +4409,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         editingId={editingTableId}
         onEdit={setEditingTableId}
         host={host.current}
-        interactive={tool === 'select'}
+        interactive={tool === 'select' && !viewMode}
         beginPointer={(event) => engine.current?.beginOverlayPointer(event)}
         selected={selected.map((o) => o.id)}
         select={(id) => {
@@ -4382,7 +4424,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         view={filesView}
         host={host.current}
         interactive={tool === 'select'}
-        readOnly={readOnly}
+        readOnly={readOnly || viewMode}
         beginPointer={(event) => engine.current?.beginOverlayPointer(event)}
         selected={selected.map((o) => o.id)}
         select={(id) => {
@@ -4436,7 +4478,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           boardName={doc.board.name}
           engine={ready ? engine.current : null}
           objects={pinSource}
-          readOnly={readOnly}
+          readOnly={readOnly || viewMode}
           update={(o) => {
             if (o.type === 'paper') updatePaper(o);
             else updateList(o);
@@ -4676,7 +4718,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             ))}
           </div>
         )}
-      {activeGallery && !editing && (
+      {activeGallery && !editing && !viewMode && (
         <div
           ref={toolsRef}
           className="selection-tools gallery-controls"
@@ -4758,7 +4800,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             <kbd>Ctrl V</kbd>
           </div>
         )}
-      {selected.length > 0 && !cropping && !activeGallery && (
+      {selected.length > 0 && !cropping && !activeGallery && !viewMode && (
         <div
           ref={toolsRef}
           className="selection-tools"
@@ -5489,8 +5531,43 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           }}
         />
       )}
-      {!readOnly && !toolbarHidden && (
+      {!readOnly && !toolbarHidden && viewMode && (
+        <div
+          className="canvas-toolbar customizable-toolbar view-mode-bar"
+          role="toolbar"
+          aria-label="View mode"
+        >
+          <div className="toolbar-glass glass-surface" aria-hidden="true" />
+          <button
+            type="button"
+            className="view-mode-edit"
+            onClick={() => setViewMode(false)}
+            title="Edit the board: select, move and add"
+          >
+            <Pencil size={17} strokeWidth={1.8} />
+            Edit
+          </button>
+          {android && (
+            <button
+              type="button"
+              className="icon-button view-mode-more"
+              aria-label="Canvas options"
+              onClick={(e) => {
+                const r = e.currentTarget.getBoundingClientRect();
+                setMenu({ x: r.left, y: r.top - 6 });
+              }}
+            >
+              <MoreHorizontal size={19} strokeWidth={1.7} />
+            </button>
+          )}
+        </div>
+      )}
+      {!readOnly && !toolbarHidden && !viewMode && (
         <CanvasToolbar
+          onView={() => {
+            finishEdit();
+            setViewMode(true);
+          }}
           onHide={() => updatePreferences({ toolbarHidden: true })}
           onMore={(r) => setMenu({ x: r.left, y: r.top - 6 })}
           tools={[
@@ -5651,7 +5728,23 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           <MoreHorizontal size={17} />
         </button>
       </div>
-      {menu && !readOnly && (
+      {menu && !readOnly && viewMode && (
+        // View mode's menu holds only what changes nothing on the board.
+        <ContextMenu
+          {...menu}
+          items={[
+            { label: 'Edit board', icon: <Pencil />, action: () => setViewMode(false) },
+            { label: 'Fit board', icon: <Maximize2 />, action: () => engine.current?.fit() },
+            {
+              label: toolbarHidden ? 'Show toolbar' : 'Hide toolbar',
+              icon: toolbarHidden ? <PanelBottomOpen /> : <PanelBottomClose />,
+              action: () => updatePreferences({ toolbarHidden: !toolbarHidden }),
+            },
+          ]}
+          onClose={() => setMenu(null)}
+        />
+      )}
+      {menu && !readOnly && !viewMode && (
         <ContextMenu
           {...menu}
           items={contextItems.map(

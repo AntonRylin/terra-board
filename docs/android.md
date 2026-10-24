@@ -236,6 +236,16 @@ On Android:
   edges are wider for a finger (20 px on screen). A frame's name is edited on the line above it,
   growing upward and kept within the screen; a new frame's "Untitled frame" is selected so
   typing replaces it.
+- **View mode** is on by default on Android (the `viewMode` preference; null means the
+  device's default, off on computers). The board pans and zooms, and a tap uses what it lands on
+  (HTML embeds and browser frames run, links and videos open, pictures and documents show), but
+  nothing is selected, moved or changed; lists, tables and documents on the board take no input.
+  The toolbar is then one **Edit** button (and … on a phone); + → **View only** or the canvas
+  menu switch back. Desktop has the same mode, off by default.
+- **Locked objects** let presses through, on every platform: a click or a finger on one selects
+  nothing (a finger pans, a mouse starts a selection box, which leaves locked objects out).
+  Holding one still for two seconds selects it, so its Unlock button shows; a right-click on
+  desktop still opens its menu.
 - New text, notes, shapes and frames made while zoomed out are made larger, so they show at a
   readable size on screen (text at least 16 px).
 - Outside the canvas (the rows of the home screen), `src/mobile/index.ts` turns a

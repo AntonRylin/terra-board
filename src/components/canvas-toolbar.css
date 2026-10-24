@@ -278,3 +278,26 @@ body.toolbar-reordering * {
     flex: none;
   }
 }
+/* View mode (Whiteboard.tsx): the toolbar is one Edit button (and … on Android). */
+.canvas-toolbar.view-mode-bar {
+  width: auto;
+  gap: 4px;
+}
+.view-mode-edit {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 14px 0 12px;
+  border: 0;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.view-mode-edit:hover {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}

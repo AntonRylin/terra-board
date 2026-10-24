@@ -185,6 +185,8 @@ interface Callbacks {
   selectionView?: (bounds: Bounds | null, viewport: { width: number; height: number }) => void;
   rotation?: (value: { angle: number; x: number; y: number } | null) => void;
   activate: (o: CanvasObject, intent?: 'title') => void;
+  // View mode: a tap on an object (embeds, links, pictures open), or on empty board.
+  viewTap?: (o: CanvasObject | null) => void;
   create: (tool: Tool, p: Point) => void;
   context: (p: Point) => void;
   highlightSize?: (size: number) => void;
@@ -235,6 +237,12 @@ type Gesture = {
   tapClears?: boolean;
   // Touch: a selection box begun by holding a finger still, and where it was held.
   holdAt?: Point;
+  // View mode (and read-only boards): a press that pans, and on a tap opens what it hit.
+  view?: boolean;
+  viewTarget?: CanvasObject;
+  // A locked object under the press: it lets the press through, and holding it for two
+  // seconds selects it (to unlock it).
+  lockedTarget?: CanvasObject;
 };
 const composerPreviewKey = (o: CanvasObject) =>
   `composer:${JSON.stringify(o.pdfComposer)}:${o.width}:${o.height}`;
@@ -915,6 +923,20 @@ export class Engine {
       // Nor does the second press of a double-click that revealed an object.
       if (performance.now() - this.lastObjectReveal < 400) return;
     }
+    if ((this.viewOnly || this.readOnly) && e.button === 0 && !this.space) {
+      this.gesture = {
+        mode: 'pan',
+        start: p,
+        world: w,
+        camera: { ...this.camera },
+        original: [],
+        view: true,
+        viewTarget: this.hit(w),
+      };
+      this.updateCursor();
+      this.capturePointer(e);
+      return;
+    }
     if (this.inkTool && e.button === 2 && !this.space && !this.hit(w)) {
       // Right-drag on empty canvas sizes the marker: left shrinks it, right grows it.
       this.gesture = {
@@ -1020,7 +1042,11 @@ export class Engine {
           scaleBounds: this.selection.size > 1 ? bounds || undefined : undefined,
         };
       else {
-        const hit = this.hit(w);
+        // A locked object lets presses through: it is not selected or dragged by a
+        // click or a finger, only by holding it for two seconds (touchContext).
+        const found = this.hit(w);
+        const hit = found?.locked ? undefined : found;
+        const lockedTarget = found?.locked ? found : undefined;
         if (hit) {
           const ids = this.members(hit);
           const editOnClick =
@@ -1079,6 +1105,7 @@ export class Engine {
             camera: { ...this.camera },
             original: [],
             tapClears: true,
+            lockedTarget,
           };
         } else {
           if (!additive) this.setSelection([]);
@@ -1089,6 +1116,7 @@ export class Engine {
             camera: { ...this.camera },
             original: this.selected,
             toggle: e.ctrlKey || e.metaKey,
+            lockedTarget,
           };
         }
       }
@@ -1114,9 +1142,10 @@ export class Engine {
     }
     this.updateCursor();
     this.capturePointer(e);
-    if (this.touchInput && this.gesture && !this.inkTool) {
+    const lockedTarget = this.gesture?.lockedTarget;
+    if (this.gesture && !this.inkTool && (this.touchInput || lockedTarget)) {
       const at = { x: e.clientX, y: e.clientY };
-      this.longPress = window.setTimeout(() => this.touchContext(at), 550);
+      this.longPress = window.setTimeout(() => this.touchContext(at), lockedTarget ? 2000 : 550);
     }
   };
   private clearLongPress() {
@@ -1130,8 +1159,19 @@ export class Engine {
   // it out again). Elsewhere: the context menu where a right-click would open it.
   private touchContext(at: { x: number; y: number }) {
     this.longPress = 0;
-    if (this.touches.size !== 1 || this.pinch) return;
+    if (this.pinch || (this.touchInput && this.touches.size !== 1)) return;
+    if (this.viewOnly || this.readOnly) return;
     const g = this.gesture;
+    // Held on a locked object for two seconds: it is selected, so it can be unlocked.
+    if (g?.lockedTarget) {
+      const locked = g.lockedTarget;
+      globalThis.navigator?.vibrate?.(20);
+      this.longPressOpened = performance.now();
+      this.cancel();
+      this.setSelection(this.members(locked));
+      this.invalidate();
+      return;
+    }
     if (this.tool === 'select' && g && ((g.mode === 'pan' && g.tapClears) || g.mode === 'move')) {
       globalThis.navigator?.vibrate?.(20);
       this.longPressOpened = performance.now();
@@ -1283,6 +1323,7 @@ export class Engine {
     const p = this.point(e),
       dx = p.x - g.start.x,
       dy = p.y - g.start.y;
+    if (this.longPress && Math.hypot(dx, dy) > 8) this.clearLongPress();
     const moved = Math.abs(dx) + Math.abs(dy) > 2;
     g.dragged ||= moved;
     g.changed = g.secondary ? g.changed || moved : moved;
@@ -1424,6 +1465,7 @@ export class Engine {
   };
   private finishGesture(e: PointerEvent) {
     if (this.releaseTouch(e)) return;
+    this.clearLongPress();
     const g = this.gesture;
     if (!g || g.clickToPlace) return;
     if (this.isTouch(e) && !g.dragged && !g.holdAt && this.doubleTap(e)) {
@@ -1478,7 +1520,10 @@ export class Engine {
       this.setTool('select');
       this.callbacks.tool?.('select');
     } else if (g.secondary && !g.changed) this.openContext(e);
-    else if (g.mode === 'pan') {
+    else if (g.mode === 'pan' && g.view) {
+      this.callbacks.camera({ ...this.camera });
+      if (!g.dragged) this.callbacks.viewTap?.(g.viewTarget ?? null);
+    } else if (g.mode === 'pan') {
       this.callbacks.camera({ ...this.camera });
       // A tap inside a frame selects the frame, so a finger can then drag it; elsewhere a
       // tap clears the selection.
@@ -1496,6 +1541,8 @@ export class Engine {
         this.index
           .search(g.box)
           .filter((o) => {
+            // Locked objects stay out of a selection box; holding one selects it.
+            if (o.locked) return false;
             const b = visualBounds(o, false, this.camera.zoom);
             return (
               b.x <= g.box!.x + g.box!.width &&
@@ -1543,6 +1590,7 @@ export class Engine {
     this.invalidate();
   }
   private cancel = () => {
+    this.clearLongPress();
     this.callbacks.objectDrag?.([], null);
     this.endLive();
     const g = this.gesture;
@@ -1647,6 +1695,8 @@ export class Engine {
       )
     )
       return;
+    // View mode: the board takes no editing keys (selection, delete, tools, clipboard).
+    if (this.viewOnly) return;
     if (this.gesture?.arrowPointer && ['Shift', 'Control', 'Alt'].includes(e.key)) {
       this.updateArrowPreview(e.shiftKey, e.ctrlKey, e.altKey);
       return;
@@ -1715,7 +1765,7 @@ export class Engine {
     const source = (e as MouseEvent & { sourceCapabilities?: { firesTouchEvents?: boolean } })
       .sourceCapabilities;
     if (!tap && this.touchGestures && (source?.firesTouchEvents || this.touchInput)) return;
-    if (this.editingId || this.readOnly) return;
+    if (this.editingId || this.readOnly || this.viewOnly) return;
     if (performance.now() - this.lastObjectReveal < 600) return;
     // Pointer capture on the surface retargets Chromium's subsequent click /
     // dblclick to that surface, even when both presses began on the canvas.
@@ -1773,10 +1823,25 @@ export class Engine {
     this.openContext(e);
   };
   private openContext(e: MouseEvent) {
+    if (this.viewOnly) return;
     const p = this.point(e),
       o = this.hit(this.screenPoint(p));
     if (o && !this.selection.has(o.id)) this.setSelection(this.members(o));
     this.callbacks.context({ x: e.clientX, y: e.clientY });
+  }
+  // View mode: the board can be looked at, panned and zoomed, and its embeds, links and
+  // pictures used, but nothing is selected, moved or edited.
+  private viewOnly = false;
+  get viewMode() {
+    return this.viewOnly;
+  }
+  setViewMode(on: boolean) {
+    if (this.viewOnly === on) return;
+    this.viewOnly = on;
+    this.cancel();
+    this.setSelection([]);
+    this.updateCursor();
+    this.invalidate();
   }
   // Visitors without edit rights can only pan, zoom and look.
   setReadOnly(readOnly: boolean) {
@@ -3229,6 +3294,14 @@ export class Engine {
       }
     }
     if (this.snapGuides.length) g.stroke({ color: '#568cff', width: 1, alpha: 0.9 });
+    // View mode shows no selection: an embed in use is selected only to run its page.
+    if (this.viewOnly) {
+      this.callbacks.selectionView?.(null, {
+        width: this.host.clientWidth,
+        height: this.host.clientHeight,
+      });
+      return;
+    }
     const c = this.camera,
       b = boundsOf(this.editingPreview ? [this.editingPreview] : this.selected);
     let toolbarBounds = b

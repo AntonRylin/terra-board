@@ -1,6 +1,7 @@
 import { type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import {
+  Eye,
   MoreHorizontal,
   PanelBottomClose,
   Plus,
@@ -32,6 +33,7 @@ export default function CanvasToolbar({
   options,
   onHide,
   onMore,
+  onView,
 }: {
   tools: ToolbarAction[];
   // The canvas menu (…), shown at the end of the bar where the zoom bar gives way
@@ -39,6 +41,8 @@ export default function CanvasToolbar({
   onMore?: (anchor: DOMRect) => void;
   // Hides the whole toolbar (the last item of the "more tools" menu).
   onHide?: () => void;
+  // Switches the board to view mode (the first item of the "more tools" menu).
+  onView?: () => void;
   // Settings of the active tool, shown above the bar while the tool menu is closed.
   options?: ReactNode;
 }) {
@@ -206,7 +210,20 @@ export default function CanvasToolbar({
             aria-label="More tools"
             data-tool-zone="inventory"
           >
-            {/* First, so it shows without scrolling the menu (short in landscape). */}
+            {/* First, so they show without scrolling the menu (short in landscape). */}
+            {onView && !dragging && (
+              <button
+                type="button"
+                className="icon-button toolbar-hide"
+                onClick={() => {
+                  setOpen(false);
+                  onView();
+                }}
+              >
+                <Eye size={19} strokeWidth={1.7} />
+                <span className="tool-inventory-name">View only</span>
+              </button>
+            )}
             {onHide && !dragging && (
               <button
                 type="button"

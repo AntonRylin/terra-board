@@ -23,6 +23,9 @@ export type Preferences = {
   recordImageDetails: boolean;
   // The canvas toolbar is hidden (+ → Hide toolbar); the zoom bar offers it back.
   toolbarHidden: boolean;
+  // View mode (look, pan, zoom and use embeds; nothing moves). null: the device's default,
+  // on for phones and tablets, off on computers.
+  viewMode: boolean | null;
   radial: ToolbarId[];
   shortcuts: ShortcutOverrides;
 };
@@ -39,6 +42,7 @@ export const defaultPreferences = (): Preferences => ({
   hearOwnSong: true,
   recordImageDetails: true,
   toolbarHidden: false,
+  viewMode: null,
   radial: defaultRadialLayout(),
   shortcuts: {},
 });
@@ -64,6 +68,7 @@ export function readPreferences(value: unknown, legacyRadial?: unknown): Prefere
     hearOwnSong: pick(raw.hearOwnSong, [true, false], d.hearOwnSong),
     recordImageDetails: pick(raw.recordImageDetails, [true, false], d.recordImageDetails),
     toolbarHidden: pick(raw.toolbarHidden, [true, false], d.toolbarHidden),
+    viewMode: pick(raw.viewMode, [true, false, null], d.viewMode),
     radial: readRadialLayout(raw.radial !== undefined ? raw.radial : legacyRadial),
     shortcuts: cleanOverrides(raw.shortcuts),
   };
