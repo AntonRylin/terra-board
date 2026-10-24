@@ -47,20 +47,27 @@ async function run() {
 
 /** The best icon there is now for an item, asking for the wanted size if missing. */
 export function fileIcon(path: string, modified: number, size: number): string | null | undefined {
-  const exact = cache.get(keyOf(path, modified, size));
-  if (exact !== undefined) return exact;
+  // A sharper picture already loaded serves smaller sizes too: zooming out
+  // never reloads anything.
+  for (const tier of tiers) {
+    if (tier < size) break;
+    const url = cache.get(keyOf(path, modified, tier));
+    if (url !== undefined && (url || tier === size)) return url;
+  }
   const key = keyOf(path, modified, size);
   if (!queued.has(key)) {
+    // A size asked for during a zoom that went past it is no longer needed.
+    for (let i = pending.length - 1; i >= 0; i--)
+      if (pending[i].path === path && pending[i].size !== size) {
+        queued.delete(pending[i].key);
+        pending.splice(i, 1);
+      }
     queued.add(key);
     pending.push({ key, path, size, modified });
     window.clearTimeout(timer);
     timer = window.setTimeout(() => void run(), 16);
   }
-  for (const tier of tiers) {
-    const url = cache.get(keyOf(path, modified, tier));
-    if (url) return url;
-  }
-  return undefined;
+  return loadedIcon(path, modified);
 }
 
 /** Any icon already loaded for these items (the picture a drag carries). */

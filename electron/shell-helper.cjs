@@ -32,9 +32,22 @@ public static class TerraShell
         public ushort bmPlanes, bmBitsPixel;
         public IntPtr bmBits;
     }
+    [StructLayout(LayoutKind.Sequential)]
+    struct BITMAPINFOHEADER
+    {
+        public uint biSize;
+        public int biWidth, biHeight;
+        public ushort biPlanes, biBitCount;
+        public uint biCompression, biSizeImage;
+        public int biXPelsPerMeter, biYPelsPerMeter;
+        public uint biClrUsed, biClrImportant;
+    }
     [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = false)]
     static extern void SHCreateItemFromParsingName(string path, IntPtr pbc, [MarshalAs(UnmanagedType.LPStruct)] Guid riid, [MarshalAs(UnmanagedType.Interface)] out IShellItemImageFactory item);
     [DllImport("gdi32.dll")] static extern int GetObject(IntPtr h, int size, out BITMAP bm);
+    [DllImport("gdi32.dll")] static extern int GetDIBits(IntPtr dc, IntPtr bmp, uint start, uint lines, byte[] bits, ref BITMAPINFOHEADER info, uint usage);
+    [DllImport("user32.dll")] static extern IntPtr GetDC(IntPtr hwnd);
+    [DllImport("user32.dll")] static extern int ReleaseDC(IntPtr hwnd, IntPtr dc);
     [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr h);
 
     static string Arg(string value) { return Encoding.UTF8.GetString(Convert.FromBase64String(value)); }
@@ -89,22 +102,25 @@ public static class TerraShell
         try
         {
             BITMAP bm;
-            GetObject(hbm, Marshal.SizeOf(typeof(BITMAP)), out bm);
-            int w = bm.bmWidth, h = Math.Abs(bm.bmHeight), stride = bm.bmWidthBytes;
-            if (bm.bmBits == IntPtr.Zero || bm.bmBitsPixel != 32) throw new Exception("Unexpected bitmap");
+            if (GetObject(hbm, Marshal.SizeOf(typeof(BITMAP)), out bm) == 0) throw new Exception("Unexpected bitmap");
+            int w = bm.bmWidth, h = Math.Abs(bm.bmHeight), stride = w * 4;
+            // GDI copies the rows top-down. Reading bmBits directly cannot tell
+            // which way up they are: thumbnails and icons both claim bottom-up,
+            // but photo thumbnails are stored the other way round.
+            var info = new BITMAPINFOHEADER { biSize = 40, biWidth = w, biHeight = -h, biPlanes = 1, biBitCount = 32 };
             byte[] px = new byte[stride * h];
-            Marshal.Copy(bm.bmBits, px, 0, px.Length);
+            IntPtr dc = GetDC(IntPtr.Zero);
+            int lines;
+            try { lines = GetDIBits(dc, hbm, 0, (uint)h, px, ref info, 0); }
+            finally { ReleaseDC(IntPtr.Zero, dc); }
+            if (lines != h) throw new Exception("Unexpected bitmap");
             // Thumbnails of photos come without alpha (all zero): they are opaque.
             bool alpha = false;
             for (int i = 3; i < px.Length; i += 4) if (px[i] != 0) { alpha = true; break; }
             using (var bmp = new Bitmap(w, h, alpha ? PixelFormat.Format32bppPArgb : PixelFormat.Format32bppRgb))
             {
                 var data = bmp.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.WriteOnly, bmp.PixelFormat);
-                for (int y = 0; y < h; y++)
-                {
-                    int src = (bm.bmHeight > 0 ? h - 1 - y : y) * stride;
-                    Marshal.Copy(px, src, data.Scan0 + y * data.Stride, w * 4);
-                }
+                for (int y = 0; y < h; y++) Marshal.Copy(px, y * stride, data.Scan0 + y * data.Stride, stride);
                 bmp.UnlockBits(data);
                 using (var ms = new MemoryStream())
                 {
