@@ -68,3 +68,12 @@ build/yt-dlp/
 
 # The extension catalog the build writes (scripts/build-extensions.mjs)
 electron/generated/
+
+# Telegram credentials and sessions: they stay in the app on each PC
+electron/generated/telegram-app.json
+**/telegram/credentials.bin
+**/telegram/database-key.bin
+**/telegram/database/
+*.session
+*.session-journal
+credentials.txt

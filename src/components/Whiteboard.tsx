@@ -1635,7 +1635,10 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     if (!e || !surface || !telegramBridge()) return null;
     const r = surface.getBoundingClientRect(),
       c = e.camera;
-    return telegramDropAt(r.left + point.x * c.zoom + c.x, r.top + point.y * c.zoom + c.y);
+    const x = r.left + point.x * c.zoom + c.x,
+      y = r.top + point.y * c.zoom + c.y;
+    const id = telegramDropAt(x, y);
+    return id ? { id, x, y } : null;
   };
   // Where a board point falls in the running browser frame's page, in the
   // page's own pixels, for dropping board files into it (Telegram Web…).
@@ -2561,7 +2564,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           !folder && point && objects.length && objects.every(savableToFolder)
             ? telegramDropAtWorld(point)
             : null;
-        markTelegramDrop(chat);
+        markTelegramDrop(chat?.id ?? null, chat?.x, chat?.y);
         if (objects.length) boardDragging(true);
         const page =
           !folder && !chat && point && objects.length && objects.every(savableToFolder)
@@ -2584,11 +2587,13 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             : null;
         if (chat) {
           dropOnTelegram(
-            chat,
+            chat.id,
             objects.map((o) => ({
               assetId: o.assetId!,
               name: (o.type === 'image' ? o.imageTitle : o.text) || undefined,
             })),
+            chat.x,
+            chat.y,
           );
           return true;
         }

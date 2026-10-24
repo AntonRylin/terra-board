@@ -2,7 +2,8 @@
 // become attachments waiting to be sent there (Whiteboard's objectDrag/Drop).
 
 export type TelegramSource = { path: string } | { assetId: string; name?: string };
-type Receiver = (sources: TelegramSource[]) => void;
+// Where on screen the drop happened, to find the chat under it.
+type Receiver = (sources: TelegramSource[], x: number, y: number) => void;
 const receivers = new Map<string, Receiver>();
 
 /** A frame with an open chat registers where its drops go. */
@@ -13,7 +14,7 @@ export function receiveTelegramDrops(id: string, receiver: Receiver) {
   };
 }
 
-/** The Telegram frame with an open chat under a screen point. */
+/** The signed-in Telegram frame under a screen point. */
 export function telegramDropAt(clientX: number, clientY: number): string | null {
   for (const element of document.elementsFromPoint(clientX, clientY)) {
     const frame = (element as HTMLElement).closest<HTMLElement>('.canvas-telegram');
@@ -23,8 +24,18 @@ export function telegramDropAt(clientX: number, clientY: number): string | null 
   return null;
 }
 
-/** Marks the frame a board drag would drop into. */
-export function markTelegramDrop(id: string | null) {
+/** Marks the frame (and the chat in its list) a board drag would drop into. */
+export function markTelegramDrop(id: string | null, x = 0, y = 0) {
+  for (const element of document.querySelectorAll<HTMLElement>('.tg-chat[data-board-drop]'))
+    delete element.dataset.boardDrop;
+  if (id)
+    for (const element of document.elementsFromPoint(x, y)) {
+      const row = (element as HTMLElement).closest<HTMLElement>('.tg-chat[data-chat-id]');
+      if (row) {
+        row.dataset.boardDrop = 'true';
+        break;
+      }
+    }
   for (const element of document.querySelectorAll<HTMLElement>('.canvas-telegram[data-board-drop]'))
     if (element.dataset.fileId !== id) delete element.dataset.boardDrop;
   if (id)
@@ -33,8 +44,8 @@ export function markTelegramDrop(id: string | null) {
       ?.setAttribute('data-board-drop', 'true');
 }
 
-export function dropOnTelegram(id: string, sources: TelegramSource[]) {
-  receivers.get(id)?.(sources);
+export function dropOnTelegram(id: string, sources: TelegramSource[], x: number, y: number) {
+  receivers.get(id)?.(sources, x, y);
 }
 
 // A Telegram file dragged out of a frame before it was downloaded: the board

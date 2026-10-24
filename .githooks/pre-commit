@@ -1,0 +1,3 @@
+#!/bin/sh
+# Refuses commits that would add Telegram API credentials (scripts/check-secrets.mjs).
+exec node scripts/check-secrets.mjs

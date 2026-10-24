@@ -142,6 +142,8 @@ const child = spawn(
     resolve('.'),
     `--remote-debugging-port=${port}`,
     '--disable-renderer-backgrounding',
+    // A built-in stand-in microphone (a beep) for the voice message.
+    '--use-fake-device-for-media-stream',
     '--disable-backgrounding-occluded-windows',
   ],
   { env, stdio: process.env.TERRA_TELEGRAM_DEBUG ? 'inherit' : 'ignore' },
@@ -377,26 +379,90 @@ try {
   );
   assert.equal(unread, '', 'an open chat on screen is marked as read');
 
-  // 7. A board picture dragged into the chat waits to be sent, then goes.
+  // Profile photos (kept beside TDLib's database) show.
+  await until(
+    () =>
+      read(
+        `[...document.querySelectorAll('.tg-chat .tg-avatar img')].some(i=>i.src.startsWith('terra-telegram:')&&i.naturalWidth>0)`,
+      ),
+    'profile photos',
+  );
+
+  // 7. A board picture dragged onto another chat in the list: that chat opens
+  // with the picture in its send dialog; sending puts it in the chat.
   const pic = await screenAt(160, 844);
-  const chat = await rect('.canvas-telegram[data-file-id="tg"] .tg-messages');
-  await drag(pic, { x: chat.x + chat.width / 2, y: chat.y + chat.height / 2 });
-  await until(() => rect('.tg-chip'), 'attachment chip');
-  assert.match(await textOf('.tg-chip'), /Board sketch\.png/);
+  const maria = await until(
+    () =>
+      read(
+        `(()=>{const e=[...document.querySelectorAll('.tg-chat')].find(e=>e.innerText.includes('Maria Lopez'));if(!e)return null;const r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}})()`,
+      ),
+    'Maria in the list',
+  );
+  await drag(pic, { x: maria.x + maria.width / 2, y: maria.y + maria.height / 2 });
+  await until(() => rect('.tg-dialog'), 'send dialog');
+  assert.match(await textOf('.tg-dialog'), /Board sketch\.png/);
+  assert.match(await textOf('.tg-chat-head'), /Maria Lopez/);
   assert.ok(
     (await objects()).find((o) => o.id === 'pic').x === 40,
     'the picture stays on the board',
   );
-  await type('.tg-composer textarea', 'From the board');
+  await type('.tg-dialog-caption input', 'From the board');
   await screenshot('07-attached.png');
-  await click('.tg-send');
-  await until(async () => !(await rect('.tg-chip')), 'sent');
+  await closeUp('.canvas-telegram[data-file-id="tg"]', 'closeup-5-send-dialog.png');
+  await clickText('.tg-dialog-actions button', 'Send');
+  await until(async () => !(await rect('.tg-dialog')), 'sent');
   await until(
     async () => (await textOf('.tg-messages')).includes('From the board'),
     'sent message shows',
   );
   await screenshot('08-sent.png');
-  await closeUp('.canvas-telegram[data-file-id="tg"]', 'closeup-4-sent-from-board.png');
+
+  // A file from Explorer dropped on a chat in the list opens the same dialog.
+  const alex = await until(
+    () =>
+      read(
+        `(()=>{const e=[...document.querySelectorAll('.tg-chat')].find(e=>e.innerText.includes('Alex Kim'));if(!e)return null;const r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`,
+      ),
+    'Alex in the list',
+  );
+  const pdf = join(mediaDir, 'brief.pdf');
+  for (const type of ['dragEnter', 'dragOver', 'drop'])
+    await send('Input.dispatchDragEvent', {
+      type,
+      x: alex.x,
+      y: alex.y,
+      data: { items: [], files: [pdf], dragOperationsMask: 1 },
+    });
+  await until(() => rect('.tg-dialog'), 'dialog for a dropped file');
+  assert.match(await textOf('.tg-dialog'), /Send as a file[\s\S]*brief\.pdf/);
+  assert.match(await textOf('.tg-chat-head'), /Alex Kim/);
+  await clickText('.tg-dialog-actions button', 'Send');
+  await until(async () => (await textOf('.tg-messages')).includes('brief.pdf'), 'file sent');
+
+  // A voice message, from Chromium's stand-in microphone.
+  await click('.tg-mic');
+  await until(() => rect('.tg-recording'), 'recording');
+  await sleep(1800);
+  await screenshot('08b-recording.png');
+  await click('.tg-recording .tg-send');
+  await until(
+    () => read(`document.querySelectorAll('.tg-row[data-out] .tg-voice').length > 0`),
+    'voice message sent',
+    20000,
+  );
+  await click('.tg-row[data-out] .tg-voice-play');
+  await until(
+    () => read(`[...document.querySelectorAll('audio')].some(a=>!a.paused)`),
+    'voice plays',
+  );
+  await closeUp('.canvas-telegram[data-file-id="tg"]', 'closeup-6-voice.png');
+
+  // Back to the group chat for the next steps.
+  await clickText('.canvas-telegram[data-file-id="tg"] .tg-chat', 'Design team');
+  await until(
+    () => read(`[...document.querySelectorAll('.tg-photo')].some(i=>i.naturalWidth>0)`),
+    'group photos',
+  );
 
   // 8. A Telegram photo added to the board from its menu.
   const before = (await objects()).filter((o) => o.type === 'image').length;

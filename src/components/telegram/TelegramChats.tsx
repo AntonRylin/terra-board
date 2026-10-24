@@ -17,15 +17,18 @@ import {
   CheckCheck,
   Download,
   File as FileIcon,
+  Image as ImageIcon,
   ImagePlus,
   Loader2,
   MapPin,
   Mic,
   Paperclip,
+  Pause,
   Pin,
   Play,
   Search,
   SendHorizontal,
+  Trash2,
   User,
   X,
 } from 'lucide-react';
@@ -61,6 +64,8 @@ import {
   privateUserId,
   sortedChats,
   textParts,
+  packWaveform,
+  unpackWaveform,
   userName,
   type StagedFile,
   type Td,
@@ -124,6 +129,13 @@ export function TelegramChats({
 }) {
   const [selected, setSelected] = useState(() => readChoice(o.id));
   const { chats } = useTelegram();
+  // Files dropped on a chat, waiting in its send dialog.
+  const [incoming, setIncoming] = useState<{
+    chatId: number;
+    files: StagedFile[];
+    key: number;
+  } | null>(null);
+  const openChat = useRef(0);
   useEffect(() => {
     listComplete = false;
     void loadChats();
@@ -132,10 +144,32 @@ export function TelegramChats({
     setSelected(id);
     saveChoice(o.id, id);
   };
+  // Files for a chat (dropped on it in the list or in the open chat, or from
+  // the board): that chat opens with them in its send dialog.
+  const deliver = useCallback(async (chatId: number, sources: TelegramSource[]) => {
+    try {
+      const files = await telegramBridge()!.stage(sources);
+      if (!files.length) return;
+      choose(chatId);
+      setIncoming({ chatId, files, key: Date.now() });
+    } catch (e) {
+      actions.onError(message(e));
+    }
+  }, []);
+  useEffect(
+    () =>
+      receiveTelegramDrops(o.id, (sources, x, y) => {
+        const chatId = chatAt(o.id, x, y) || openChat.current;
+        if (chatId) void deliver(chatId, sources);
+        else actions.onError('Drop the files onto a chat.');
+      }),
+    [o.id],
+  );
   const height = o.height - 48;
   const wide = o.width >= 640;
   const listWidth = wide ? Math.round(Math.min(340, Math.max(240, o.width * 0.36))) : o.width;
   const open = selected && chats.has(selected) ? selected : 0;
+  openChat.current = open;
   return (
     <div className="tg-chats" style={{ height }}>
       {(wide || !open) && (
@@ -145,6 +179,12 @@ export function TelegramChats({
           selected={open}
           zoom={camera.zoom}
           onSelect={choose}
+          onFiles={(chatId, paths) =>
+            void deliver(
+              chatId,
+              paths.map((path) => ({ path })),
+            )
+          }
         />
       )}
       {open ? (
@@ -156,6 +196,9 @@ export function TelegramChats({
           frameWidth={o.width}
           onBack={wide ? undefined : () => choose(0)}
           actions={actions}
+          incoming={incoming?.chatId === open ? incoming : null}
+          onFiles={(sources) => void deliver(open, sources)}
+          onIncomingTaken={() => setIncoming(null)}
         />
       ) : (
         wide && (
@@ -167,6 +210,22 @@ export function TelegramChats({
     </div>
   );
 }
+
+// The chat in the list under a screen point, in one frame.
+function chatAt(frameId: string, x: number, y: number) {
+  for (const element of document.elementsFromPoint(x, y)) {
+    const row = (element as HTMLElement).closest<HTMLElement>('.tg-chat[data-chat-id]');
+    if (row && row.closest(`.canvas-telegram[data-file-id="${CSS.escape(frameId)}"]`))
+      return Number(row.dataset.chatId) || 0;
+  }
+  return 0;
+}
+// Files from Explorer or folder frames (not Telegram's own being dragged out).
+const draggingFiles = (event: DragEvent) =>
+  event.dataTransfer.types.includes('Files') &&
+  !event.dataTransfer.types.includes(telegramFileType);
+const droppedPaths = (event: DragEvent) =>
+  [...event.dataTransfer.files].map((file) => window.canvas?.filePath(file) || '').filter(Boolean);
 
 function Avatar({
   id,
@@ -181,20 +240,26 @@ function Avatar({
 }) {
   useTelegram();
   const file = photo ? fileOf(photo.small) : null;
+  const [failed, setFailed] = useState('');
   useEffect(() => {
     if (photo) want(photo.small, 4);
   }, [photo?.small.id]);
-  const src = file?.local.is_downloading_completed
+  const picture = file?.local.is_downloading_completed
     ? fileUrl(file)
     : photo?.minithumbnail
       ? `data:image/jpeg;base64,${photo.minithumbnail.data}`
       : null;
+  const src = picture && picture !== failed ? picture : null;
   return (
     <span
       className="tg-avatar"
       style={{ width: size, height: size, background: avatarColor(id), fontSize: size * 0.38 }}
     >
-      {src ? <img src={src} alt="" draggable={false} /> : initials(title)}
+      {src ? (
+        <img src={src} alt="" draggable={false} onError={() => setFailed(src)} />
+      ) : (
+        initials(title)
+      )}
     </span>
   );
 }
@@ -206,12 +271,15 @@ const ChatRow = memo(function ChatRow({
   pinned,
   active,
   onSelect,
+  onFiles,
 }: {
   chat: TdChat;
   pinned: boolean;
   active: boolean;
   onSelect: (id: number) => void;
+  onFiles: (chatId: number, paths: string[]) => void;
 }) {
+  const [dropping, setDropping] = useState(false);
   const last = chat.last_message;
   let prefix = '';
   if (last?.is_outgoing && !isChannel(chat)) prefix = 'You: ';
@@ -222,9 +290,25 @@ const ChatRow = memo(function ChatRow({
   return (
     <button
       className="tg-chat"
+      data-chat-id={chat.id}
       data-active={active || undefined}
+      data-dropping={dropping || undefined}
       style={{ height: rowHeight }}
       onClick={() => onSelect(chat.id)}
+      onDragOver={(event) => {
+        if (!draggingFiles(event)) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'copy';
+        setDropping(true);
+      }}
+      onDragLeave={() => setDropping(false)}
+      onDrop={(event) => {
+        if (!draggingFiles(event)) return;
+        event.preventDefault();
+        setDropping(false);
+        const paths = droppedPaths(event);
+        if (paths.length) onFiles(chat.id, paths);
+      }}
     >
       <Avatar id={chat.id} title={chat.title} photo={chat.photo} size={46} />
       <span className="tg-chat-text">
@@ -269,12 +353,14 @@ function ChatList({
   selected,
   zoom,
   onSelect,
+  onFiles,
 }: {
   width: number;
   height: number;
   selected: number;
   zoom: number;
   onSelect: (id: number) => void;
+  onFiles: (chatId: number, paths: string[]) => void;
 }) {
   const { chats } = useTelegram();
   const [query, setQuery] = useState('');
@@ -320,6 +406,7 @@ function ChatList({
                 pinned={pinned}
                 active={chat.id === selected}
                 onSelect={onSelect}
+                onFiles={onFiles}
               />
             ))}
           </div>
@@ -349,6 +436,9 @@ function Conversation({
   frameWidth,
   onBack,
   actions,
+  incoming,
+  onFiles,
+  onIncomingTaken,
 }: {
   frameId: string;
   chatId: number;
@@ -356,6 +446,9 @@ function Conversation({
   frameWidth: number;
   onBack?: () => void;
   actions: TelegramFrameActions;
+  incoming: { files: StagedFile[]; key: number } | null;
+  onFiles: (sources: TelegramSource[]) => void;
+  onIncomingTaken: () => void;
 }) {
   const bridge = telegramBridge()!;
   useTelegram();
@@ -368,7 +461,8 @@ function Conversation({
   const [sponsored, setSponsored] = useState<Td | null>(null);
   const [canPost, setCanPost] = useState(!isChannel(chat));
   const [replyTo, setReplyTo] = useState<TdMessage | null>(null);
-  const [pending, setPending] = useState<StagedFile[]>([]);
+  // Files waiting in the send dialog.
+  const [sending, setSending] = useState<StagedFile[] | null>(null);
   const [dropping, setDropping] = useState(false);
   const [sendError, setSendError] = useState('');
 
@@ -398,17 +492,21 @@ function Conversation({
     };
   }, [chatId]);
 
-  // Files dropped from the board wait in the composer, like Telegram's own apps.
-  const addSources = useCallback(async (sources: TelegramSource[]) => {
+  // Files dropped while the dialog is open join the ones already there.
+  useEffect(() => {
+    if (!incoming) return;
+    if (canPost) setSending((current) => [...(current || []), ...incoming.files].slice(0, 20));
+    else actions.onError('You can’t send files to this chat.');
+    onIncomingTaken();
+  }, [incoming?.key]);
+  const pick = async () => {
     try {
-      const staged = await bridge.stage(sources);
-      setPending((p) => [...p, ...staged].slice(0, 20));
-      setSendError('');
+      const picked = await bridge.pick();
+      if (picked.length) setSending((current) => [...(current || []), ...picked].slice(0, 20));
     } catch (e) {
       actions.onError(message(e));
     }
-  }, []);
-  useEffect(() => receiveTelegramDrops(frameId, (s) => void addSources(s)), [frameId]);
+  };
 
   const ids = history.ids;
   const lastId = ids[ids.length - 1] || 0;
@@ -469,17 +567,12 @@ function Conversation({
         ? 'Bot'
         : statusText(user?.status);
 
-  const dropFiles = async (event: DragEvent) => {
+  const dropFiles = (event: DragEvent) => {
     event.preventDefault();
     setDropping(false);
-    const paths = [...event.dataTransfer.files]
-      .map((file) => window.canvas?.filePath(file) || '')
-      .filter(Boolean);
-    if (paths.length) await addSources(paths.map((path) => ({ path })));
+    const paths = droppedPaths(event);
+    if (paths.length) onFiles(paths.map((path) => ({ path })));
   };
-  const draggingFiles = (event: DragEvent) =>
-    event.dataTransfer.types.includes('Files') &&
-    !event.dataTransfer.types.includes(telegramFileType);
 
   return (
     <div
@@ -495,7 +588,7 @@ function Conversation({
         if (!event.currentTarget.contains(event.relatedTarget as Node)) setDropping(false);
       }}
       onDrop={(event) => {
-        if (draggingFiles(event) && canPost) void dropFiles(event);
+        if (draggingFiles(event) && canPost) dropFiles(event);
       }}
     >
       <div className="tg-chat-head" onPointerDown={(e) => e.stopPropagation()}>
@@ -557,8 +650,6 @@ function Conversation({
       {canPost ? (
         <Composer
           chatId={chatId}
-          pending={pending}
-          setPending={setPending}
           replyTo={replyTo}
           clearReply={() => setReplyTo(null)}
           error={sendError}
@@ -566,14 +657,7 @@ function Conversation({
           onSent={() => {
             stick.current = true;
           }}
-          onPick={async () => {
-            try {
-              const staged = await bridge.pick();
-              setPending((p) => [...p, ...staged].slice(0, 20));
-            } catch (e) {
-              actions.onError(message(e));
-            }
-          }}
+          onPick={() => void pick()}
         />
       ) : (
         <div className="tg-readonly">
@@ -587,6 +671,21 @@ function Conversation({
           <ImagePlus size={28} />
           Drop to send to {title}
         </div>
+      )}
+      {sending && (
+        <SendDialog
+          title={title}
+          files={sending}
+          setFiles={setSending}
+          onAdd={() => void pick()}
+          onClose={() => setSending(null)}
+          chatId={chatId}
+          replyTo={replyTo?.id}
+          onSent={() => {
+            setReplyTo(null);
+            stick.current = true;
+          }}
+        />
       )}
     </div>
   );
@@ -746,7 +845,8 @@ function Media({ message: m, actions }: { message: TdMessage; actions: TelegramF
     );
   }
   if (type === 'messageSticker') return <Sticker sticker={c.sticker} />;
-  if (type === 'messageVoiceNote' || type === 'messageAudio') return <Audio message={m} />;
+  if (type === 'messageVoiceNote') return <Voice message={m} />;
+  if (type === 'messageAudio') return <Audio message={m} />;
   if (type === 'messageDocument') return <Document message={m} actions={actions} />;
   if (type === 'messageLocation' || type === 'messageVenue') {
     const at = c.location || c.venue?.location;
@@ -1204,13 +1304,324 @@ function Sponsored({
   );
 }
 
-const imageName = /\.(jpe?g|png|webp|gif|bmp|heic|avif)$/i;
+const imageName = /\.(jpe?g|png|webp|bmp|heic|avif)$/i;
 const videoName = /\.(mp4|mov|m4v|webm)$/i;
+
+/**
+ * Sends files to a chat, the caption on the first. Pictures and videos go as
+ * media when `compress` is on (as Telegram's apps send them), anything else
+ * (or everything, with it off) as files.
+ */
+async function sendFiles(
+  chatId: number,
+  files: StagedFile[],
+  caption: string,
+  compress: boolean,
+  replyTo?: number,
+) {
+  const bridge = telegramBridge()!;
+  for (let i = 0; i < files.length; i++) {
+    const f = files[i];
+    const text = { '@type': 'formattedText', text: i === 0 ? caption : '', entities: [] };
+    const local = { '@type': 'inputFileLocal', path: f.path };
+    const content =
+      compress && imageName.test(f.name) && f.size < 10 * 1048576
+        ? {
+            '@type': 'inputMessagePhoto',
+            photo: { '@type': 'inputPhoto', photo: local },
+            caption: text,
+          }
+        : compress && videoName.test(f.name)
+          ? {
+              '@type': 'inputMessageVideo',
+              video: { '@type': 'inputVideo', video: local },
+              caption: text,
+            }
+          : {
+              '@type': 'inputMessageDocument',
+              document: { '@type': 'inputDocument', document: local },
+              caption: text,
+            };
+    await bridge.invoke({
+      '@type': 'sendMessage',
+      chat_id: chatId,
+      reply_to: i === 0 && replyTo ? { message_id: replyTo } : undefined,
+      input_message_content: content,
+    });
+  }
+}
+
+// Loudness samples taken while recording, as 100 waveform values.
+function waveformOf(levels: number[]) {
+  if (!levels.length) return '';
+  const peak = Math.max(...levels, 0.01);
+  const values = Array.from({ length: 100 }, (_, i) => {
+    const from = Math.floor((i * levels.length) / 100),
+      to = Math.max(from + 1, Math.floor(((i + 1) * levels.length) / 100));
+    const slice = levels.slice(from, to);
+    return (Math.max(...slice) / peak) * 31;
+  });
+  return packWaveform(values);
+}
+
+function Bars({
+  values,
+  progress,
+  height = 26,
+}: {
+  values: number[];
+  progress: number;
+  height?: number;
+}) {
+  const bars = values.length ? values : Array.from({ length: 40 }, () => 6);
+  // About 40 bars, like Telegram's apps.
+  const step = Math.max(1, Math.round(bars.length / 40));
+  const shown: number[] = [];
+  for (let i = 0; i < bars.length; i += step) shown.push(Math.max(...bars.slice(i, i + step)));
+  return (
+    <span className="tg-bars" style={{ height }}>
+      {shown.map((v, i) => (
+        <span
+          key={i}
+          data-played={i / shown.length < progress || undefined}
+          style={{ height: Math.max(3, (v / 31) * height) }}
+        />
+      ))}
+    </span>
+  );
+}
+
+// A voice message: play button, loudness bars that fill as it plays, time.
+function Voice({ message: m }: { message: TdMessage }) {
+  const note = m.content.voice_note;
+  const file = useFile(note.voice, true, 16)!;
+  const audio = useRef<HTMLAudioElement>(null);
+  const [playing, setPlaying] = useState(false);
+  const [position, setPosition] = useState(0);
+  const [wanted, setWanted] = useState(false);
+  const done = file.local.is_downloading_completed;
+  const length = note.duration || 1;
+  useEffect(() => {
+    if (done && wanted && audio.current?.paused) void audio.current.play().catch(() => {});
+  }, [done, wanted]);
+  const toggle = () => {
+    const el = audio.current;
+    if (!done || !el) {
+      want(file, 32);
+      setWanted(true);
+      return;
+    }
+    if (el.paused) {
+      void el.play().catch(() => {});
+      if (!m.is_outgoing && !m.content.is_listened)
+        void telegramBridge()
+          ?.invoke({ '@type': 'openMessageContent', chat_id: m.chat_id, message_id: m.id })
+          .catch(() => {});
+    } else el.pause();
+  };
+  return (
+    <span
+      className="tg-voice"
+      data-unheard={(!m.is_outgoing && !m.content.is_listened) || undefined}
+    >
+      <button className="tg-voice-play" aria-label={playing ? 'Pause' : 'Play'} onClick={toggle}>
+        {file.local.is_downloading_active ? (
+          <Loader2 size={20} className="tg-spin" />
+        ) : playing ? (
+          <Pause size={20} />
+        ) : (
+          <Play size={20} />
+        )}
+      </button>
+      <span className="tg-voice-body">
+        <span
+          className="tg-voice-wave"
+          onClick={(event) => {
+            const el = audio.current;
+            if (!el || !done) return;
+            const r = event.currentTarget.getBoundingClientRect();
+            el.currentTime = ((event.clientX - r.left) / r.width) * (el.duration || length);
+          }}
+        >
+          <Bars values={unpackWaveform(note.waveform)} progress={position / length} />
+        </span>
+        <span className="tg-file-progress">
+          {duration(playing || position ? position : length)}
+          {!done && !file.local.is_downloading_active && ` · ${formatBytes(file.size)}`}
+        </span>
+      </span>
+      {done && (
+        <audio
+          ref={audio}
+          src={fileUrl(file)}
+          preload="metadata"
+          onPlay={() => setPlaying(true)}
+          onPause={() => setPlaying(false)}
+          onEnded={() => {
+            setPlaying(false);
+            setPosition(0);
+          }}
+          onTimeUpdate={(event) => setPosition(event.currentTarget.currentTime)}
+        />
+      )}
+    </span>
+  );
+}
+
+// Files on their way to a chat, as Telegram's apps ask before sending: the
+// files, whether pictures go compressed, and a caption.
+function SendDialog({
+  title,
+  files,
+  setFiles,
+  onAdd,
+  onClose,
+  chatId,
+  replyTo,
+  onSent,
+}: {
+  title: string;
+  files: StagedFile[];
+  setFiles: (files: StagedFile[]) => void;
+  onAdd: () => void;
+  onClose: () => void;
+  chatId: number;
+  replyTo?: number;
+  onSent: () => void;
+}) {
+  const [caption, setCaption] = useState('');
+  const media = files.some((f) => imageName.test(f.name) || videoName.test(f.name));
+  const [compress, setCompress] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const field = useRef<HTMLInputElement>(null);
+  useEffect(() => field.current?.focus(), []);
+  const asMedia =
+    media && compress && files.every((f) => imageName.test(f.name) || videoName.test(f.name));
+  const heading = asMedia
+    ? files.every((f) => imageName.test(f.name))
+      ? files.length === 1
+        ? 'Send a photo'
+        : `Send ${files.length} photos`
+      : files.length === 1
+        ? 'Send a video'
+        : `Send ${files.length} items`
+    : files.length === 1
+      ? 'Send as a file'
+      : `Send ${files.length} files`;
+  const send = async () => {
+    if (busy || !files.length) return;
+    setBusy(true);
+    setError('');
+    try {
+      await sendFiles(chatId, files, caption.trim(), compress, replyTo);
+      onSent();
+      onClose();
+    } catch (e) {
+      setError(message(e));
+      setBusy(false);
+    }
+  };
+  return (
+    <div
+      className="tg-dialog-backdrop"
+      onPointerDown={(event) => {
+        event.stopPropagation();
+        if (event.target === event.currentTarget && !busy) onClose();
+      }}
+    >
+      <div
+        className="tg-dialog"
+        role="dialog"
+        aria-label={heading}
+        onKeyDown={(event) => {
+          event.stopPropagation();
+          if (event.key === 'Escape' && !busy) onClose();
+        }}
+      >
+        <h3>{heading}</h3>
+        <p className="tg-dialog-to">to {title}</p>
+        <div className="tg-dialog-files">
+          {files.map((f, i) => (
+            <div key={f.path + i} className="tg-dialog-file">
+              <span className="tg-file-icon">
+                {imageName.test(f.name) ? <ImageIcon size={20} /> : <FileIcon size={20} />}
+              </span>
+              <span className="tg-file-text">
+                <span className="tg-file-name">{f.name}</span>
+                <span className="tg-file-progress">{formatBytes(f.size)}</span>
+              </span>
+              <button
+                className="cf-button"
+                aria-label={`Remove ${f.name}`}
+                disabled={busy}
+                onClick={() => {
+                  const next = files.filter((_, j) => j !== i);
+                  if (next.length) setFiles(next);
+                  else onClose();
+                }}
+              >
+                <X size={16} />
+              </button>
+            </div>
+          ))}
+        </div>
+        {media && (
+          <label className="tg-dialog-check">
+            <input
+              type="checkbox"
+              checked={compress}
+              onChange={(e) => setCompress(e.target.checked)}
+            />
+            Send pictures and videos as media (compressed)
+          </label>
+        )}
+        <label className="tg-dialog-caption">
+          Caption
+          <input
+            ref={field}
+            value={caption}
+            maxLength={4096}
+            onChange={(e) => setCaption(e.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
+                event.preventDefault();
+                void send();
+              }
+            }}
+          />
+        </label>
+        {error && <p className="tg-error">{error}</p>}
+        <div className="tg-dialog-actions">
+          <button className="tg-link" disabled={busy || files.length >= 20} onClick={onAdd}>
+            Add
+          </button>
+          <span />
+          <button className="tg-link" disabled={busy} onClick={onClose}>
+            Cancel
+          </button>
+          <button className="tg-link strong" disabled={busy} onClick={() => void send()}>
+            {busy ? <Loader2 size={15} className="tg-spin" /> : 'Send'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+type Recording = {
+  recorder: MediaRecorder;
+  stream: MediaStream;
+  context: AudioContext;
+  parts: Blob[];
+  levels: number[];
+  timer: number;
+  started: number;
+  cancelled: boolean;
+};
 
 function Composer({
   chatId,
-  pending,
-  setPending,
   replyTo,
   clearReply,
   error,
@@ -1219,8 +1630,6 @@ function Composer({
   onPick,
 }: {
   chatId: number;
-  pending: StagedFile[];
-  setPending: (update: (p: StagedFile[]) => StagedFile[]) => void;
   replyTo: TdMessage | null;
   clearReply: () => void;
   error: string;
@@ -1232,6 +1641,10 @@ function Composer({
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const field = useRef<HTMLTextAreaElement>(null);
+  const recording = useRef<Recording | null>(null);
+  const [recordState, setRecordState] = useState<{ seconds: number; levels: number[] } | null>(
+    null,
+  );
   useLayoutEffect(() => {
     const el = field.current;
     if (!el) return;
@@ -1241,56 +1654,24 @@ function Composer({
   useEffect(() => {
     if (replyTo) field.current?.focus();
   }, [replyTo]);
+  // Leaving the chat drops a recording in progress.
+  useEffect(() => () => stopRecording(false), []);
+
   const send = async () => {
     const value = text.trim();
-    if (busy || (!value && !pending.length)) return;
+    if (busy || !value) return;
     setBusy(true);
     setError('');
-    const reply = replyTo ? { message_id: replyTo.id } : undefined;
     try {
-      if (pending.length) {
-        for (let i = 0; i < pending.length; i++) {
-          const f = pending[i];
-          const caption = { '@type': 'formattedText', text: i === 0 ? value : '', entities: [] };
-          const local = { '@type': 'inputFileLocal', path: f.path };
-          // Pictures and videos go as media (as Telegram's apps send them);
-          // anything else, or anything very large, as a file.
-          const content =
-            imageName.test(f.name) && f.size < 10 * 1048576 && !/\.gif$/i.test(f.name)
-              ? {
-                  '@type': 'inputMessagePhoto',
-                  photo: { '@type': 'inputPhoto', photo: local },
-                  caption,
-                }
-              : videoName.test(f.name)
-                ? {
-                    '@type': 'inputMessageVideo',
-                    video: { '@type': 'inputVideo', video: local },
-                    caption,
-                  }
-                : {
-                    '@type': 'inputMessageDocument',
-                    document: { '@type': 'inputDocument', document: local },
-                    caption,
-                  };
-          await bridge.invoke({
-            '@type': 'sendMessage',
-            chat_id: chatId,
-            reply_to: i === 0 ? reply : undefined,
-            input_message_content: content,
-          });
-        }
-        setPending(() => []);
-      } else
-        await bridge.invoke({
-          '@type': 'sendMessage',
-          chat_id: chatId,
-          reply_to: reply,
-          input_message_content: {
-            '@type': 'inputMessageText',
-            text: { '@type': 'formattedText', text: value, entities: [] },
-          },
-        });
+      await bridge.invoke({
+        '@type': 'sendMessage',
+        chat_id: chatId,
+        reply_to: replyTo ? { message_id: replyTo.id } : undefined,
+        input_message_content: {
+          '@type': 'inputMessageText',
+          text: { '@type': 'formattedText', text: value, entities: [] },
+        },
+      });
       setText('');
       clearReply();
       onSent();
@@ -1301,6 +1682,107 @@ function Composer({
       field.current?.focus();
     }
   };
+
+  const startRecording = async () => {
+    if (recording.current || busy) return;
+    setError('');
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+    } catch (e) {
+      setError(
+        (e as Error)?.name === 'NotAllowedError'
+          ? 'Terra couldn’t use the microphone. Check Windows Settings → Privacy & security → Microphone.'
+          : 'No microphone was found.',
+      );
+      return;
+    }
+    const context = new AudioContext();
+    const analyser = context.createAnalyser();
+    analyser.fftSize = 1024;
+    context.createMediaStreamSource(stream).connect(analyser);
+    const samples = new Float32Array(analyser.fftSize);
+    const recorder = new MediaRecorder(stream, {
+      mimeType: 'audio/webm;codecs=opus',
+      audioBitsPerSecond: 32000,
+    });
+    const r: Recording = {
+      recorder,
+      stream,
+      context,
+      parts: [],
+      levels: [],
+      started: Date.now(),
+      cancelled: false,
+      timer: 0,
+    };
+    recorder.ondataavailable = (event) => event.data.size && r.parts.push(event.data);
+    recorder.onstop = () => void finishRecording(r);
+    r.timer = window.setInterval(() => {
+      analyser.getFloatTimeDomainData(samples);
+      let sum = 0;
+      for (const v of samples) sum += v * v;
+      r.levels.push(Math.sqrt(sum / samples.length));
+      const seconds = (Date.now() - r.started) / 1000;
+      setRecordState({ seconds, levels: r.levels.slice(-48) });
+      // Telegram's apps stop at about an hour; ten minutes is plenty here.
+      if (seconds >= 600) stopRecording(true);
+    }, 60);
+    recording.current = r;
+    recorder.start(250);
+    setRecordState({ seconds: 0, levels: [] });
+  };
+  function stopRecording(sendIt: boolean) {
+    const r = recording.current;
+    if (!r) return;
+    recording.current = null;
+    r.cancelled = !sendIt;
+    clearInterval(r.timer);
+    if (r.recorder.state !== 'inactive') r.recorder.stop();
+    else void finishRecording(r);
+    setRecordState(null);
+  }
+  async function finishRecording(r: Recording) {
+    r.stream.getTracks().forEach((t) => t.stop());
+    void r.context.close().catch(() => {});
+    if (r.cancelled) return;
+    const seconds = (Date.now() - r.started) / 1000;
+    if (seconds < 0.6) {
+      setError('Hold on a bit longer to record a voice message.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const bytes = new Uint8Array(await new Blob(r.parts).arrayBuffer());
+      const saved = await bridge.voice(bytes);
+      await bridge.invoke({
+        '@type': 'sendMessage',
+        chat_id: chatId,
+        reply_to: replyTo ? { message_id: replyTo.id } : undefined,
+        input_message_content: {
+          '@type': 'inputMessageVoiceNote',
+          voice_note: { '@type': 'inputFileLocal', path: saved.path },
+          duration: Math.round(saved.seconds),
+          waveform: waveformOf(r.levels),
+          caption: { '@type': 'formattedText', text: '', entities: [] },
+        },
+      });
+      clearReply();
+      onSent();
+    } catch (e) {
+      setError(message(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const keyDown = (event: KeyboardEvent) => {
     event.stopPropagation();
     if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
@@ -1308,12 +1790,21 @@ function Composer({
       void send();
     } else if (event.key === 'Escape') {
       if (replyTo) clearReply();
-      else if (pending.length) setPending(() => []);
       else field.current?.blur();
     }
   };
+  const peak = Math.max(0.02, ...(recordState?.levels ?? []));
   return (
-    <div className="tg-composer" onPointerDown={(e) => e.stopPropagation()}>
+    <div
+      className="tg-composer"
+      onPointerDown={(e) => e.stopPropagation()}
+      onKeyDown={(event) => {
+        if (recordState && event.key === 'Escape') {
+          event.stopPropagation();
+          stopRecording(false);
+        }
+      }}
+    >
       {replyTo && (
         <div className="tg-composer-reply">
           <span className="tg-reply">
@@ -1325,51 +1816,74 @@ function Composer({
           </button>
         </div>
       )}
-      {pending.length > 0 && (
-        <div className="tg-pending">
-          {pending.map((f, i) => (
-            <span key={f.path + i} className="tg-chip" title={f.path}>
-              {imageName.test(f.name) ? <ImagePlus size={13} /> : <FileIcon size={13} />}
-              <span>{f.name}</span>
-              <small>{formatBytes(f.size)}</small>
-              <button
-                aria-label={`Remove ${f.name}`}
-                onClick={() => setPending((p) => p.filter((_, j) => j !== i))}
-              >
-                <X size={12} />
-              </button>
-            </span>
-          ))}
+      {error && <div className="tg-error">{error}</div>}
+      {recordState ? (
+        <div className="tg-composer-row tg-recording">
+          <button
+            className="cf-button"
+            aria-label="Cancel the recording"
+            title="Cancel (Esc)"
+            autoFocus
+            onClick={() => stopRecording(false)}
+          >
+            <Trash2 size={18} />
+          </button>
+          <span className="tg-rec-dot" />
+          <span className="tg-rec-time">{duration(recordState.seconds)}</span>
+          <span className="tg-rec-levels">
+            {recordState.levels.map((v, i) => (
+              <span key={i} style={{ height: Math.max(3, (v / peak) * 22) }} />
+            ))}
+          </span>
+          <button
+            className="cf-button tg-send"
+            aria-label="Send the voice message"
+            title="Send"
+            onClick={() => stopRecording(true)}
+          >
+            <SendHorizontal size={18} />
+          </button>
+        </div>
+      ) : (
+        <div className="tg-composer-row">
+          <button
+            className="cf-button"
+            aria-label="Attach files"
+            title="Attach files"
+            onClick={onPick}
+          >
+            <Paperclip size={18} />
+          </button>
+          <textarea
+            ref={field}
+            rows={1}
+            value={text}
+            placeholder="Message"
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={keyDown}
+          />
+          {text.trim() || busy ? (
+            <button
+              className="cf-button tg-send"
+              aria-label="Send"
+              title="Send (Enter)"
+              disabled={busy}
+              onClick={() => void send()}
+            >
+              {busy ? <Loader2 size={18} className="tg-spin" /> : <SendHorizontal size={18} />}
+            </button>
+          ) : (
+            <button
+              className="cf-button tg-mic"
+              aria-label="Record a voice message"
+              title="Record a voice message"
+              onClick={() => void startRecording()}
+            >
+              <Mic size={18} />
+            </button>
+          )}
         </div>
       )}
-      {error && <div className="tg-error">{error}</div>}
-      <div className="tg-composer-row">
-        <button
-          className="cf-button"
-          aria-label="Attach files"
-          title="Attach files"
-          onClick={onPick}
-        >
-          <Paperclip size={18} />
-        </button>
-        <textarea
-          ref={field}
-          rows={1}
-          value={text}
-          placeholder={pending.length ? 'Add a caption…' : 'Message'}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={keyDown}
-        />
-        <button
-          className="cf-button tg-send"
-          aria-label="Send"
-          title="Send (Enter)"
-          disabled={busy || (!text.trim() && !pending.length)}
-          onClick={() => void send()}
-        >
-          {busy ? <Loader2 size={18} className="tg-spin" /> : <SendHorizontal size={18} />}
-        </button>
-      </div>
     </div>
   );
 }

@@ -701,10 +701,15 @@ app
         wc === win.webContents &&
         details?.isMainFrame !== false &&
         (url.startsWith('canvas-app://app/') || (!!dev && url.startsWith(dev + '/')));
-      // Electron lists no media types for a desktop source; a camera or
-      // microphone would ask for 'video' or 'audio' and stays refused.
+      // Electron lists no media types for a desktop source (app frames); the
+      // microphone ('audio') is for voice messages in Telegram frames. A
+      // camera stays refused.
       const types = details?.mediaTypes || [];
-      cb(permission === 'media' && own && types.length === 0);
+      cb(
+        permission === 'media' &&
+          own &&
+          (types.length === 0 || (types.length === 1 && types[0] === 'audio')),
+      );
     });
     win.webContents.session.webRequest.onBeforeRequest((details, cb) => {
       const host = new URL(details.url).hostname;

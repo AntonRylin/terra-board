@@ -103,6 +103,8 @@ export interface TelegramBridge {
   invoke<T = Td>(query: Td): Promise<T>;
   stage(sources: ({ path: string } | { assetId: string; name?: string })[]): Promise<StagedFile[]>;
   pick(): Promise<StagedFile[]>;
+  /** A recorded voice message (WebM Opus) saved for sending as Ogg Opus. */
+  voice(bytes: Uint8Array): Promise<{ path: string; seconds: number }>;
   download(id: number): Promise<string>;
   setCredentials(input: { apiId: string; apiHash: string }): Promise<TelegramStatus>;
   logOut(): Promise<TelegramStatus>;
@@ -350,4 +352,37 @@ export function textParts(text: TdText | undefined): TextPart[] {
     parts.push(part);
   }
   return parts;
+}
+
+// Telegram's voice waveform: 5-bit loudness values packed little-endian.
+export function packWaveform(values: number[]) {
+  const bytes = new Uint8Array(Math.ceil((values.length * 5) / 8));
+  values.forEach((value, i) => {
+    const v = Math.max(0, Math.min(31, Math.round(value)));
+    const bit = i * 5,
+      at = bit >> 3,
+      shift = bit & 7;
+    bytes[at] |= (v << shift) & 0xff;
+    if (shift > 3) bytes[at + 1] |= v >> (8 - shift);
+  });
+  return btoa(String.fromCharCode(...bytes));
+}
+export function unpackWaveform(base64: string | undefined): number[] {
+  if (!base64) return [];
+  let bytes: Uint8Array;
+  try {
+    bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+  } catch {
+    return [];
+  }
+  const count = Math.floor((bytes.length * 8) / 5);
+  const values: number[] = [];
+  for (let i = 0; i < count; i++) {
+    const bit = i * 5,
+      at = bit >> 3,
+      shift = bit & 7;
+    const word = bytes[at] | ((bytes[at + 1] ?? 0) << 8);
+    values.push((word >> shift) & 31);
+  }
+  return values;
 }

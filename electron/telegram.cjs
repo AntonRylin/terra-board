@@ -11,6 +11,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { randomBytes, randomUUID } = require('node:crypto');
+const { webmToOgg } = require('./opus-ogg.cjs');
 
 // TDLib's shared library in the extension folder, by platform.
 const LIBRARY = { win32: 'tdjson.dll', linux: 'libtdjson.so', darwin: 'libtdjson.dylib' };
@@ -57,6 +58,7 @@ const REQUESTS = new Set([
   'resendAuthenticationCode',
   'getCountryCode',
   'setChatDraftMessage',
+  'openMessageContent',
 ]);
 // Message contents a frame may send. Files must have been prepared with
 // stage(), so a frame can only send what someone dropped or picked.
@@ -67,6 +69,7 @@ const SEND_CONTENTS = new Set([
   'inputMessageVideo',
   'inputMessageAudio',
   'inputMessageAnimation',
+  'inputMessageVoiceNote',
 ]);
 const FILE_FIELDS = {
   inputMessageDocument: 'document',
@@ -592,6 +595,21 @@ function createTelegram({
     if (kind === 'inputMessageText') {
       if (!text.text.trim()) throw Error('Write a message first.');
       input = { '@type': kind, text, clear_draft: true };
+    } else if (kind === 'inputMessageVoiceNote') {
+      // A recording made by voice(): its file, length and loudness bars.
+      const file = content.voice_note;
+      const local = file?.['@type'] === 'inputFileLocal' ? path.resolve(String(file.path)) : null;
+      if (!local || !staged.has(local)) throw Error('Record the voice message again.');
+      const waveform = typeof content.waveform === 'string' ? content.waveform : '';
+      if (waveform.length > 200 || !/^[A-Za-z0-9+/]*={0,2}$/.test(waveform))
+        throw Error('Invalid voice message');
+      input = {
+        '@type': kind,
+        voice_note: { '@type': 'inputFileLocal', path: local },
+        duration: Math.max(1, Math.min(3600, Math.round(Number(content.duration) || 1))),
+        waveform,
+        caption: text,
+      };
     } else {
       const field = FILE_FIELDS[kind];
       const file = content[field]?.[field];
@@ -648,6 +666,21 @@ function createTelegram({
     return result;
   }
 
+  // A voice message recorded in a frame (Opus in WebM, as Chromium records)
+  // saved as Ogg Opus, the way Telegram's apps send them.
+  async function voice(input) {
+    const bytes = input instanceof Uint8Array ? input : null;
+    if (!bytes || !bytes.length || bytes.length > 64 * 1024 * 1024)
+      throw Error('The recording is empty or too long.');
+    const { bytes: ogg, seconds } = webmToOgg(bytes);
+    const folder = path.join(outgoingDir, randomUUID());
+    await fs.promises.mkdir(folder, { recursive: true });
+    const file = path.join(folder, 'Voice message.ogg');
+    await fs.promises.writeFile(file, ogg);
+    staged.add(file);
+    return { path: file, seconds };
+  }
+
   // Copies made for sending stay until Telegram has uploaded them; anything
   // older than a day goes at start or after a send.
   function sweepOutgoing() {
@@ -677,8 +710,7 @@ function createTelegram({
     if (!Number.isSafeInteger(fileId) || fileId <= 0) throw Error('Invalid file');
     const file = await request({ '@type': 'getFile', file_id: fileId });
     const local = file.local?.is_downloading_completed ? path.resolve(file.local.path) : '';
-    if (!local || !(within(filesDir, local) || within(outgoingDir, local) || staged.has(local)))
-      throw Error('This file isn’t downloaded yet.');
+    if (!local || !ownFile(local)) throw Error('This file isn’t downloaded yet.');
     return local;
   }
   // Downloads a file (if needed) and returns where it is, for the board or a drag.
@@ -743,11 +775,25 @@ function createTelegram({
     return status();
   }
 
+  // Telegram's own files: downloads, copies made for sending, and the
+  // pictures TDLib keeps beside its database (profile photos, thumbnails,
+  // stickers), never the database itself.
+  const pictureDirs = ['profile_photos', 'thumbnails', 'stickers', 'wallpapers'].map((d) =>
+    path.join(dbDir, d),
+  );
+  function ownFile(local) {
+    return (
+      within(filesDir, local) ||
+      within(outgoingDir, local) ||
+      pictureDirs.some((dir) => within(dir, local)) ||
+      staged.has(local)
+    );
+  }
   // A file a frame shows as downloaded, if it is one of Telegram's own.
   function draggable(file) {
     if (typeof file !== 'string' || !file) return null;
     const local = path.resolve(file);
-    if (!(within(filesDir, local) || within(outgoingDir, local) || staged.has(local))) return null;
+    if (!ownFile(local)) return null;
     return fs.existsSync(local) ? local : null;
   }
 
@@ -761,6 +807,7 @@ function createTelegram({
     unload,
     invoke,
     stage,
+    voice,
     download,
     localFile,
     setCredentials,
@@ -837,6 +884,7 @@ function registerTelegram({ ipcMain, trusted, telegram, dialog, getWindow, dragI
   handle('start', () => telegram.start());
   handle('invoke', (query) => telegram.invoke(query));
   handle('stage', (sources) => telegram.stage(sources));
+  handle('voice', (bytes) => telegram.voice(bytes));
   handle('download', (id) => telegram.download(id));
   handle('credentials', (input) => telegram.setCredentials(input));
   handle('log-out', () => telegram.logOut());

@@ -803,3 +803,215 @@
 .tg-chat[data-active]:hover {
   background: var(--tg-accent);
 }
+
+/* Files dragged onto a chat in the list. */
+.tg-chat[data-dropping],
+.tg-chat[data-board-drop] {
+  background: rgb(58 143 214 / 0.22);
+  box-shadow: inset 0 0 0 2px var(--tg-accent);
+}
+
+/* Voice messages: play button, loudness bars, time. */
+.tg-voice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 240px;
+  padding: 4px 6px;
+}
+.tg-voice-play {
+  flex: none;
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: var(--tg-accent);
+  color: #fff;
+  cursor: pointer;
+}
+.tg-voice-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.tg-voice-wave {
+  cursor: pointer;
+}
+.tg-voice[data-unheard] .tg-file-progress::after {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: var(--tg-accent);
+}
+.tg-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+}
+.tg-bars span {
+  flex: 1;
+  min-width: 2px;
+  max-width: 3px;
+  border-radius: 2px;
+  background: rgb(58 143 214 / 0.4);
+}
+.tg-bars span[data-played] {
+  background: var(--tg-accent);
+}
+.tg-row[data-out] .tg-bars span {
+  background: rgb(79 174 78 / 0.45);
+}
+.tg-row[data-out] .tg-bars span[data-played] {
+  background: #4fae4e;
+}
+.tg-row[data-out] .tg-voice-play {
+  background: #4fae4e;
+}
+
+/* Recording a voice message. */
+.tg-mic:not(:disabled) {
+  color: var(--tg-muted);
+}
+.tg-recording {
+  align-items: center;
+  min-height: 34px;
+}
+.tg-rec-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #e5484d;
+  animation: tg-pulse 1s ease-in-out infinite;
+}
+@keyframes tg-pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+.tg-rec-time {
+  flex: none;
+  min-width: 40px;
+  font-variant-numeric: tabular-nums;
+}
+.tg-rec-levels {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  overflow: hidden;
+}
+.tg-rec-levels span {
+  flex: none;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--tg-accent);
+}
+
+/* The send dialog for dropped or picked files. */
+.tg-dialog-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgb(0 0 0 / 0.35);
+}
+.tg-dialog {
+  width: min(420px, 100%);
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px 20px 12px;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 12px 40px rgb(0 0 0 / 0.3);
+  overflow: hidden;
+}
+.tg-dialog h3 {
+  margin: 0;
+  font-size: 17px;
+}
+.tg-dialog-to {
+  margin: -8px 0 0;
+  font-size: 12px;
+  color: var(--tg-muted);
+}
+.tg-dialog-files {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  max-height: 220px;
+  scrollbar-width: thin;
+}
+.tg-dialog-file {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.tg-dialog-file .tg-file-text {
+  flex: 1;
+}
+.tg-dialog-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.tg-dialog-caption {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--tg-accent);
+}
+.tg-dialog-caption input {
+  border: 0;
+  border-bottom: 2px solid var(--tg-accent);
+  padding: 6px 0;
+  font: inherit;
+  font-size: 14px;
+  color: inherit;
+  background: transparent;
+  outline: none;
+}
+.tg-dialog-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 4px;
+}
+.tg-dialog-actions > span {
+  flex: 1;
+}
+.tg-dialog-actions .tg-link {
+  font-weight: 600;
+  font-size: 14px;
+  padding: 6px 0;
+}
+.tg-link:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+[data-theme='dark'] .tg-dialog {
+  background: #17212b;
+  color: #e6ecf2;
+}
+.tg-dialog .tg-dialog-caption input:focus,
+.tg-dialog .tg-dialog-caption input:focus-visible {
+  outline: none;
+  box-shadow: none;
+}

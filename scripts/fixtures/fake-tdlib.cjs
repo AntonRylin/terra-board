@@ -10,6 +10,7 @@ const path = require('node:path');
 const source = process.env.TERRA_TELEGRAM_FAKE_MEDIA || '';
 // Copied into TDLib's files folder once the frame sets it, as real downloads are.
 let media = source;
+let profiles = source;
 const now = Math.floor(Date.now() / 1000);
 const queue = [];
 let clientId = 0;
@@ -29,7 +30,8 @@ const setAuth = (type, extra = {}) => {
 };
 
 function file(id, name, { downloaded = true, size } = {}) {
-  const local = name ? path.join(media, name) : '';
+  // Profile photos sit beside TDLib's database, as real TDLib keeps them.
+  const local = name ? path.join(name.startsWith('avatar-') ? profiles : media, name) : '';
   const exists = local && fs.existsSync(local);
   const f = {
     '@type': 'file',
@@ -308,8 +310,13 @@ function handle(query) {
     case 'setTdlibParameters':
       media = path.join(query.files_directory, 'photos');
       fs.mkdirSync(media, { recursive: true });
+      profiles = path.join(query.database_directory, 'profile_photos');
+      fs.mkdirSync(profiles, { recursive: true });
       for (const name of source ? fs.readdirSync(source) : [])
-        fs.copyFileSync(path.join(source, name), path.join(media, name));
+        fs.copyFileSync(
+          path.join(source, name),
+          path.join(name.startsWith('avatar-') ? profiles : media, name),
+        );
       reply(query, { '@type': 'ok' });
       seed();
       setAuth('authorizationStateWaitPhoneNumber');
@@ -441,7 +448,35 @@ function handle(query) {
       let shown;
       if (content['@type'] === 'inputMessageText')
         shown = { '@type': 'messageText', text: content.text };
-      else {
+      else if (content['@type'] === 'inputMessageVoiceNote') {
+        const local = content.voice_note.path;
+        const id = 500 + sent.length;
+        files.set(id, {
+          ...file(id, ''),
+          local: {
+            path: local,
+            can_be_downloaded: false,
+            can_be_deleted: true,
+            is_downloading_active: false,
+            is_downloading_completed: true,
+            downloaded_size: fs.statSync(local).size,
+          },
+          size: fs.statSync(local).size,
+          _name: '',
+        });
+        shown = {
+          '@type': 'messageVoiceNote',
+          voice_note: {
+            '@type': 'voiceNote',
+            duration: content.duration,
+            waveform: content.waveform,
+            mime_type: 'audio/ogg',
+            voice: pub(files.get(id)),
+          },
+          caption: content.caption,
+          is_listened: false,
+        };
+      } else {
         const field = {
           inputMessagePhoto: 'photo',
           inputMessageDocument: 'document',
