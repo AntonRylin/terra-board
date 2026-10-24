@@ -49,6 +49,8 @@ contextBridge.exposeInMainWorld('canvas', {
     appPopup: (args) => ipcRenderer.invoke('canvas:files-app-popup', args),
     appPicture: (args) => ipcRenderer.send('canvas:files-app-picture', args),
     appPictures: () => ipcRenderer.invoke('canvas:files-app-pictures'),
+    nightLight: () => ipcRenderer.invoke('canvas:files-night-light'),
+    setNightLight: (args) => ipcRenderer.invoke('canvas:files-set-night-light', args),
     onRepark: (callback) => {
       const handler = () => callback();
       ipcRenderer.on('canvas:files-repark', handler);

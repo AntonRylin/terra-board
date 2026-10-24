@@ -73,6 +73,10 @@
   background: rgb(130 150 170 / 0.14);
   color: #29313b;
 }
+.cf-button.cf-on,
+.cf-button.cf-on:hover:not(:disabled) {
+  color: #e8902a;
+}
 .cf-button:disabled {
   opacity: 0.35;
   cursor: default;

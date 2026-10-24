@@ -167,6 +167,7 @@ export interface DesktopWindow {
 export type DesktopsState =
   | { supported: true; current: string; desktops: VirtualDesktop[]; windows: DesktopWindow[] }
   | { supported: false; message: string };
+export type NightLightState = { supported: true; on: boolean } | { supported: false };
 export type AppInputEvent =
   | {
       type: 'mouse';
@@ -211,6 +212,9 @@ export interface FilesBridge {
   focusWindow(args: { id: string; steps: number }): Promise<void>;
   switchDesktop(args: { steps: number }): Promise<void>;
   closeWindow(args: { id: string }): Promise<void>;
+  // Windows' Night light (low blue light); optional for older preloads.
+  nightLight?(): Promise<NightLightState>;
+  setNightLight?(args: { on: boolean }): Promise<NightLightState>;
   // App frames. rect: the frame's app area in the page, in CSS pixels;
   // pixels: the size the window gets, in screen pixels.
   parkWindow(args: {
