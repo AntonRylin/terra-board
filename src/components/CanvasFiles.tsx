@@ -38,7 +38,6 @@ import {
   Link2,
   List,
   Monitor,
-  Moon,
   Music,
   Pencil,
   RefreshCw,
@@ -76,7 +75,7 @@ import {
 import { ContextMenu, type MenuItem } from './Dialogs';
 import { DesktopsCard } from './CanvasDesktops';
 import { AppFrame } from './CanvasApps';
-import type { DesktopWindow, NightLightState } from '../canvas/file-link';
+import type { DesktopWindow } from '../canvas/file-link';
 import { fileIcon, loadedIcon, useFileIcons } from './file-icons';
 import { forwardWheel } from './forward-wheel';
 import './canvas-files.css';
@@ -235,51 +234,6 @@ function RenameField({
 }
 
 type Menu = { x: number; y: number; items: (MenuItem | null)[]; header?: ReactNode };
-
-// Windows' Night light switch for Desktop frames. Its state is read again
-// when Terra comes back to the front and every minute (its schedule can
-// change it).
-function NightLightButton({ onError }: { onError: (text: string) => void }) {
-  const files = bridge();
-  const [state, setState] = useState<NightLightState | null>(null);
-  const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    if (!files?.nightLight) return;
-    let live = true;
-    const read = () =>
-      void files.nightLight!().then(
-        (next) => live && setState(next),
-        () => {},
-      );
-    read();
-    const timer = window.setInterval(read, 60000);
-    window.addEventListener('focus', read);
-    return () => {
-      live = false;
-      window.clearInterval(timer);
-      window.removeEventListener('focus', read);
-    };
-  }, [files]);
-  if (!files?.setNightLight || !state?.supported) return null;
-  const label = state.on ? 'Turn off Night light' : 'Turn on Night light (low blue light)';
-  return (
-    <button
-      className={'cf-button' + (state.on ? ' cf-on' : '')}
-      aria-label={label}
-      aria-pressed={state.on}
-      title={label}
-      disabled={busy}
-      onClick={() => {
-        setBusy(true);
-        files.setNightLight!({ on: !state.on })
-          .then(setState, (error) => onError(message(error)))
-          .finally(() => setBusy(false));
-      }}
-    >
-      <Moon size={17} fill={state.on ? 'currentColor' : 'none'} />
-    </button>
-  );
-}
 
 function FolderCard({
   object: o,
@@ -1362,7 +1316,6 @@ function FolderCard({
             title
           )}
         </span>
-        {files && link.root === 'desktop' && !link.path && <NightLightButton onError={onError} />}
         {files && listing?.state === 'folder' && (
           <>
             <button

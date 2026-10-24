@@ -5,7 +5,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
-const { createNightLight } = require('./night-light.cjs');
 
 const roots = ['desktop', 'downloads', 'documents', 'pictures', 'music', 'videos', 'home'];
 const rootLabels = {
@@ -1085,7 +1084,6 @@ function createLocalFiles({
 
 // The renderer's channels: canvas:files-<name>.
 function registerLocalFiles({ ipcMain, trusted, files }) {
-  const nightLight = createNightLight();
   const handlers = {
     list: files.list,
     icons: files.iconBatch,
@@ -1113,8 +1111,6 @@ function registerLocalFiles({ ipcMain, trusted, files }) {
     'release-window': files.releaseWindow,
     'app-popup': files.appPopup,
     'app-pictures': files.appPictures,
-    'night-light': nightLight.state,
-    'set-night-light': nightLight.set,
     source: ({ path: file } = {}) => files.sourceFor(file),
     watch: ({ key, dirs } = {}) => files.watch(key, dirs),
     unwatch: ({ key } = {}) => files.unwatch(key),
