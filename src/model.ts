@@ -1,4 +1,5 @@
 import type { TextMark } from './canvas/rich-text';
+import type { FileLink } from './canvas/file-link';
 export type ObjectType =
   | 'text'
   | 'note'
@@ -20,7 +21,9 @@ export type ObjectType =
   // someone interacts with it and shows a captured picture otherwise.
   | 'html'
   // A website by URL, like a browser tab: live while someone uses it.
-  | 'browser';
+  | 'browser'
+  // A folder or file on this computer, shown live (src/canvas/file-link.ts).
+  | 'file';
 export interface ListItem {
   id: string;
   text: string;
@@ -141,6 +144,7 @@ export interface CanvasObject {
   items?: ListItem[];
   listScale?: number;
   table?: TableData;
+  file?: FileLink;
   gallery?: { direction: 'right' | 'below'; size: number; gap: number };
   album?: Album;
   pdfComposer?: PdfComposer;

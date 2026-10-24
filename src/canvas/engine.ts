@@ -90,6 +90,7 @@ import { renderAlbumName } from './album-rendering';
 import { isWebCard, snapshotKey } from './html-card';
 import { listLayout } from './list-layout';
 import { drawTable } from './table-drawing';
+import { drawFilePlaceholder } from './file-link';
 import { unionBounds } from './pins';
 import {
   paginateLines,
@@ -162,6 +163,7 @@ export type InputPreferences = { wheel: WheelMode; zoomSpeed: ZoomSpeed; snappin
 interface Callbacks {
   lists?: (objects: CanvasObject[], camera: Camera) => void;
   tables?: (objects: CanvasObject[], camera: Camera) => void;
+  files?: (objects: CanvasObject[], camera: Camera) => void;
   papers?: (objects: CanvasObject[], camera: Camera) => void;
   composers?: (objects: CanvasObject[], camera: Camera) => void;
   objectDrag?: (objects: CanvasObject[], point: Point | null) => void;
@@ -2332,6 +2334,10 @@ export class Engine {
       visible.filter((o) => o.type === 'table' && !concealed(o)),
       c,
     );
+    this.callbacks.files?.(
+      visible.filter((o) => o.type === 'file' && !concealed(o)),
+      c,
+    );
     this.callbacks.papers?.(
       visible.filter((o) => o.type === 'paper' && !concealed(o)),
       c,
@@ -2848,6 +2854,21 @@ export class Engine {
       });
       return container;
     }
+    if (o.type === 'file') {
+      // Folder frames and file tiles are live HTML on screen. Elsewhere they are
+      // a placeholder: what a folder holds never leaves this computer.
+      if (!exporting && !staticPreview) return container;
+      const canvas = drawFilePlaceholder(o, resolution, dark);
+      const texture = new Texture({
+        source: new CanvasSource({ resource: canvas, resolution: canvas.width / o.width }),
+      });
+      const sprite = new Sprite(texture);
+      sprite.width = o.width;
+      sprite.height = o.height;
+      sprite.once('destroyed', () => texture.destroy(true));
+      container.addChild(sprite);
+      return container;
+    }
     if (o.type === 'table') {
       // Interactive tables are HTML; exports and previews draw the same card.
       if (!exporting && !staticPreview) return container;
@@ -3291,7 +3312,12 @@ export class Engine {
             .roundRect(0, 0, o.width * c.zoom, o.height * c.zoom, linkCornerRadius * c.zoom)
             .stroke({ color: '#4486d9', width: 1.5 })
             .restore();
-        } else if (o.type !== 'list' && o.type !== 'paper' && o.type !== 'table')
+        } else if (
+          o.type !== 'list' &&
+          o.type !== 'paper' &&
+          o.type !== 'table' &&
+          o.type !== 'file'
+        )
           g.poly(outline).stroke({ color: '#4486d9', width: 1.5 });
         for (const handle of resizeHandles) {
           const p = screen(handlePoint(o, handle));

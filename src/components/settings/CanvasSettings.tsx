@@ -12,6 +12,7 @@ import {
   NotebookPen,
   CodeXml,
   Globe,
+  FolderOpen,
   MousePointer2,
   MoveUpRight,
   Settings2,
@@ -91,6 +92,7 @@ const toolInfo: Record<ToolbarId, { label: string; icon: LucideIcon }> = {
   paper: { label: 'Document', icon: NotebookPen },
   html: { label: 'HTML embed', icon: CodeXml },
   browser: { label: 'Browser', icon: Globe },
+  folder: { label: 'Folder', icon: FolderOpen },
   media: { label: 'Files', icon: ImagePlus },
   gallery: { label: 'Gallery', icon: Images },
 };

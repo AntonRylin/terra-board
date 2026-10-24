@@ -22,6 +22,22 @@ const revision = z
   );
 const point = z.object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1) });
 const head = z.enum(['none', 'arrow', 'triangle', 'open', 'diamond', 'circle']);
+const fileLink = z
+  .object({
+    root: z
+      .enum(['desktop', 'downloads', 'documents', 'pictures', 'music', 'videos', 'home'])
+      .optional(),
+    path: z.string().max(4096),
+    kind: z.enum(['folder', 'file']),
+    view: z.enum(['icons', 'list']).optional(),
+    iconSize: z.enum(['small', 'medium', 'large', 'huge']).optional(),
+    sort: z.enum(['name', 'modified', 'type', 'size']).optional(),
+    descending: z.boolean().optional(),
+    hidden: z.boolean().optional(),
+  })
+  .describe(
+    'A folder or file on this computer (type file). With root, path is relative to that folder ("" for the folder itself, "Projects/Notes" below it), so the board shows it on each of the person\'s computers; without root, path is a full path. kind folder shows a live window of the folder; kind file an icon that opens it.',
+  );
 const table = z
   .object({
     columns: z
@@ -155,6 +171,7 @@ const object = z
       'paper',
       'html',
       'browser',
+      'file',
     ]),
     items: z
       .array(
@@ -221,6 +238,7 @@ const object = z
     frameLink: z.object({ boardId: id, frameId: id }).optional(),
     pdfComposer: pdfComposer.optional(),
     table: table.optional(),
+    file: fileLink.optional(),
     galleryIndex: z.number().min(0).max(1e7).optional(),
     galleryRow: z.number().int().min(0).max(10000).optional(),
     galleryColumn: z.number().int().min(0).max(10000).optional(),
@@ -462,7 +480,7 @@ function tools(call, services = {}) {
   );
   add(
     'edit_board',
-    'Atomically create, replace or delete objects. Upserts are COMPLETE objects, not partial patches; preserve fields read earlier, including gallery layout, image membership, document metadata, pdfComposer and inline formatting (textMarks on text and frame names, titleMarks on image and document titles, marks on list items: non-overlapping {start,end,...style} ranges, start and end being JavaScript string indexes (UTF-16 code units) into that text, end exclusive; spoiler ranges hide text until a viewer clicks; spoiler: true on an image, video, document, link or frame hides the whole object, and a plain frame also hides what it holds). Coordinates are board units; z controls stacking. Text (type text) uses Segoe UI at fontSize (default 18), line height 1.3 x fontSize and padding 0.14 x fontSize on each side; bold true bolds all of it. Without textBox it never wraps: lines break only at \n, so make width and height fit the longest line and the line count. With textBox true it wraps at width minus padding and, when the wrapped text is taller than height, shrinks the font until it fits; for a readable fixed size give height at least lines x 1.3 x fontSize + 0.28 x fontSize, counting wrapped lines (Segoe UI averages about 0.5 x fontSize per character). Images/videos/documents require imported assetId; document text retains its filename and documentTitle is an independent board title; arrows require normalized points; links require http(s) URL. Tables (type table) hold typed columns and rows in table; give text a title and any height, Terra fits the height to the rows, and the width sets the scale (scale 1 width is 58 plus the column widths). Browser frames (type browser) show a website like a browser tab: url is the page, text its title, height includes a 40-unit address bar. HTML embeds (type html) hold a complete web page in html; prefer html_embed to create and change them. They run while the pointer rests on them; hoverLive false makes one wait for a double-click instead. An embed upsert that omits html keeps its stored source. Web cards show a picture that Terra captures and refreshes after their page or size changes; omit assetId and snapshotKey on new ones. Galleries are frames with gallery settings; member images use galleryId, galleryIndex, galleryRow and galleryColumn. PDF composers are non-gallery frames with sources and columns; page references use source IDs, zero-based pageIndex and 90-degree rotation deltas. Preserve original source asset IDs. This is undoable on the open board. Edits to separate objects merge automatically. If a target object changed or was deleted since your read, the whole edit is rejected with conflicting IDs; read again and preserve those changes.',
+    'Atomically create, replace or delete objects. Upserts are COMPLETE objects, not partial patches; preserve fields read earlier, including gallery layout, image membership, document metadata, pdfComposer and inline formatting (textMarks on text and frame names, titleMarks on image and document titles, marks on list items: non-overlapping {start,end,...style} ranges, start and end being JavaScript string indexes (UTF-16 code units) into that text, end exclusive; spoiler ranges hide text until a viewer clicks; spoiler: true on an image, video, document, link or frame hides the whole object, and a plain frame also hides what it holds). Coordinates are board units; z controls stacking. Text (type text) uses Segoe UI at fontSize (default 18), line height 1.3 x fontSize and padding 0.14 x fontSize on each side; bold true bolds all of it. Without textBox it never wraps: lines break only at \n, so make width and height fit the longest line and the line count. With textBox true it wraps at width minus padding and, when the wrapped text is taller than height, shrinks the font until it fits; for a readable fixed size give height at least lines x 1.3 x fontSize + 0.28 x fontSize, counting wrapped lines (Segoe UI averages about 0.5 x fontSize per character). Images/videos/documents require imported assetId; document text retains its filename and documentTitle is an independent board title; arrows require normalized points; links require http(s) URL. Tables (type table) hold typed columns and rows in table; give text a title and any height, Terra fits the height to the rows, and the width sets the scale (scale 1 width is 58 plus the column widths). Folder frames (type file, file.kind folder) show a folder on this computer live, like a desktop window (760 by 500 is a good size); file tiles (file.kind file) show a file or app as a desktop icon (112 by 132); text is their name. Their contents are never stored in the board. Browser frames (type browser) show a website like a browser tab: url is the page, text its title, height includes a 40-unit address bar. HTML embeds (type html) hold a complete web page in html; prefer html_embed to create and change them. They run while the pointer rests on them; hoverLive false makes one wait for a double-click instead. An embed upsert that omits html keeps its stored source. Web cards show a picture that Terra captures and refreshes after their page or size changes; omit assetId and snapshotKey on new ones. Galleries are frames with gallery settings; member images use galleryId, galleryIndex, galleryRow and galleryColumn. PDF composers are non-gallery frames with sources and columns; page references use source IDs, zero-based pageIndex and 90-degree rotation deltas. Preserve original source asset IDs. This is undoable on the open board. Edits to separate objects merge automatically. If a target object changed or was deleted since your read, the whole edit is rejected with conflicting IDs; read again and preserve those changes.',
     {
       id,
       revision,

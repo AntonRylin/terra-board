@@ -52,7 +52,8 @@ export function resizeObject(
     !edge &&
     (o.type === 'text' ||
       o.type === 'list' ||
-      (['image', 'video', 'document'].includes(o.type) && !free))
+      (['image', 'video', 'document'].includes(o.type) && !free) ||
+      (o.type === 'file' && o.file?.kind === 'file' && !free))
   ) {
     // Project the pointer onto the original diagonal, so either axis scales naturally.
     const requested = 1 + (dw * o.width + dh * o.height) / (o.width ** 2 + o.height ** 2);
@@ -81,6 +82,11 @@ export function resizeObject(
     const layout = listLayout(o);
     width = Math.min(layout.maximumWidth, Math.max(240, width));
     height = Math.max(layout.minimumHeight * (edge ? 1 : width / o.width), height);
+  }
+  if (o.type === 'file' && o.file?.kind === 'folder') {
+    // A folder frame keeps room for its header and a row of icons.
+    width = Math.max(240, width);
+    height = Math.max(160, height);
   }
   const shift = rotatePoint(
     { x: (width - o.width) * (west ? -0.5 : 0.5), y: (height - o.height) * (north ? -0.5 : 0.5) },

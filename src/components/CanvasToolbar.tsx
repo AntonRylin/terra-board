@@ -91,6 +91,8 @@ export default function CanvasToolbar({
               ? 'HTML embed'
               : id === 'browser'
                 ? 'Browser'
+                : id === 'folder'
+                  ? 'Folder'
                 : id === 'media'
                   ? 'Images and video'
                   : item.label;

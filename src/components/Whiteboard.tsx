@@ -2,6 +2,21 @@ import ArrowControls from './ArrowControls';
 import CanvasLists, { listHeight, type ListView } from './CanvasLists';
 import CanvasPapers, { type PaperView } from './CanvasPapers';
 import CanvasTables, { type TableView } from './CanvasTables';
+import CanvasFiles, {
+  folderDropAt,
+  markFolderDrop,
+  openFileObject,
+  rememberFileOps,
+  showFileObject,
+  type FileBoardItem,
+  type FilesView,
+} from './CanvasFiles';
+import {
+  fileTileSize,
+  folderSize,
+  type DroppedPath,
+  type FileSource,
+} from '../canvas/file-link';
 import PinnedViews from './PinnedViews';
 import {
   pinKey,
@@ -121,6 +136,7 @@ import {
   NotebookPen,
   CodeXml,
   Globe,
+  FolderOpen,
   MousePointerClick,
   Images,
   ArrowRight,
@@ -951,6 +967,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   const [pinSource, setPinSource] = useState<CanvasObject[] | null>(null);
   const [listView, setListView] = useState<ListView>({ objects: [], camera: doc.camera });
   const [tableView, setTableView] = useState<TableView>({ objects: [], camera: doc.camera });
+  const [filesView, setFilesView] = useState<FilesView>({ objects: [], camera: doc.camera });
+  const filesViewKey = useRef('');
   const [editingTableId, setEditingTableId] = useState<string | null>(null);
   const [composerView, setComposerView] = useState<ListView>({ objects: [], camera: doc.camera });
   const [editingComposerId, setEditingComposerId] = useState<string | null>(null);
@@ -1430,6 +1448,155 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     e.setSelection([o.id]);
     selectTool('select');
   };
+  // Folder frames and file tiles: folders and files on this computer, live
+  // (src/components/CanvasFiles.tsx). Only which item to show is saved.
+  const createFolder = (point?: { x: number; y: number }) => {
+    finishEdit();
+    const e = engine.current;
+    if (!e || readOnlyRef.current) return;
+    const p = e.center();
+    const { width, height } = folderSize;
+    const o: CanvasObject = {
+      id: uid(),
+      type: 'file',
+      text: 'Desktop',
+      file: { root: 'desktop', path: '', kind: 'folder' },
+      x: point?.x ?? p.x - width / 2,
+      y: point?.y ?? p.y - height / 2,
+      width,
+      height,
+      z: e.topZ() + 1,
+    };
+    e.apply({ upserts: [o], deleted: [] });
+    e.setSelection([o.id]);
+    selectTool('select');
+  };
+  // Dropped or chosen items as board objects: folders as folder frames,
+  // anything else (or everything, as icons) as file tiles, left to right.
+  const addFileObjects = (
+    items: { name: string; folder: boolean; source: FileSource }[],
+    point: { x: number; y: number },
+    asIcons: boolean,
+    centered = false,
+  ) => {
+    const e = engine.current;
+    if (!e || readOnlyRef.current || !items.length) return;
+    // A drop centres the first item on the pointer.
+    const first = items[0].folder && !asIcons ? folderSize : fileTileSize;
+    let x = centered ? point.x - first.width / 2 : point.x,
+      z = e.topZ();
+    const top = centered ? point.y - first.height / 2 : point.y;
+    const created = items.slice(0, 40).map((item) => {
+      const frame = item.folder && !asIcons;
+      const { width, height } = frame ? folderSize : fileTileSize;
+      const o: CanvasObject = {
+        id: uid(),
+        type: 'file',
+        text: item.name,
+        file: { ...item.source, kind: frame ? 'folder' : 'file' },
+        x,
+        y: top,
+        width,
+        height,
+        z: ++z,
+      };
+      x += width + (frame ? 40 : 16);
+      return o;
+    });
+    e.apply({ upserts: created, deleted: [] });
+    e.setSelection(created.map((o) => o.id));
+    selectTool('select');
+  };
+  // "Add to board" in a folder frame: folders as frames, files as cards (or
+  // icons), placed to the right of the frame.
+  const addFromFolder = async (items: FileBoardItem[], asIcons: boolean, from: CanvasObject) => {
+    const files = window.canvas?.files;
+    if (!files || readOnlyRef.current) return;
+    const point = { x: from.x + from.width + 48, y: from.y };
+    try {
+      const live = asIcons ? items : items.filter((item) => item.folder);
+      const copies = asIcons ? [] : items.filter((item) => !item.folder);
+      if (live.length) {
+        const sources = await Promise.all(live.map((item) => files.source({ path: item.path })));
+        addFileObjects(
+          live.map((item, i) => ({ name: item.name, folder: item.folder, source: sources[i] })),
+          point,
+          asIcons,
+        );
+      }
+      if (copies.length) {
+        const below = { x: point.x, y: point.y + (live.length ? folderSize.height + 48 : 0) };
+        await performImport(
+          async () => {
+            const result = await files.import({ paths: copies.map((item) => item.path) });
+            if (result.errors.length) error(result.errors.join('\n'));
+            return result.assets;
+          },
+          below,
+          null,
+        );
+      }
+    } catch (e) {
+      error(e);
+    }
+  };
+  const savableToFolder = (o: CanvasObject) =>
+    !!o.assetId && !o.album && !o.pdfComposer && ['image', 'video', 'document'].includes(o.type);
+  const folderDropAtWorld = (point: { x: number; y: number }) => {
+    const e = engine.current,
+      surface = host.current;
+    if (!e || !surface || !window.canvas?.files) return null;
+    const r = surface.getBoundingClientRect(),
+      c = e.camera;
+    return folderDropAt(r.left + point.x * c.zoom + c.x, r.top + point.y * c.zoom + c.y);
+  };
+  // Board pictures and documents dropped on a folder frame: their originals
+  // are saved there as files; the cards stay where they were.
+  const saveToFolder = async (objects: CanvasObject[], dir: string) => {
+    const files = window.canvas?.files;
+    if (!files) return;
+    try {
+      const result = await files.saveAssets({
+        target: dir,
+        items: objects.map((o) => ({
+          id: o.assetId!,
+          name: (o.type === 'image' ? o.imageTitle : o.text) || undefined,
+        })),
+      });
+      rememberFileOps(result.ops);
+      if (result.errors.length) error(result.errors.join('\n'));
+    } catch (e) {
+      error(e);
+    }
+  };
+  // Dropped paths that become folder frames or file tiles rather than cards:
+  // folders, apps and shortcuts, or anything with Alt (Windows' shortcut key).
+  const dropLiveFiles = async (
+    files: File[],
+    point: { x: number; y: number },
+    asIcons: boolean,
+  ): Promise<File[]> => {
+    const bridge = window.canvas?.files;
+    if (!bridge || readOnlyRef.current) return files;
+    const paths = files.map((file) => window.canvas!.filePath(file) || '');
+    if (!paths.some(Boolean)) return files;
+    let kinds: DroppedPath[] = [];
+    try {
+      kinds = await bridge.classify({ paths: paths.filter(Boolean) });
+    } catch {
+      return files;
+    }
+    const live = kinds.filter((k) => asIcons || k.kind !== 'file');
+    if (!live.length) return files;
+    addFileObjects(
+      live.map((k) => ({ name: k.name, folder: k.kind === 'folder', source: k.source })),
+      point,
+      asIcons,
+      true,
+    );
+    const taken = new Set(live.map((k) => k.path));
+    return files.filter((_, i) => !paths[i] || !taken.has(paths[i]));
+  };
   const fitPaper = (o: CanvasObject) => {
     const current = engine.current?.objects.get(o.id);
     if (!current || current.locked || current.text !== o.text) return;
@@ -1647,6 +1814,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         'paper',
         'html',
         'browser',
+        'file',
       ].includes(o.type),
   );
   const editorOrigin =
@@ -1687,7 +1855,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     setTool(value);
   };
   const startEdit = (o: CanvasObject) => {
-    if (o.frameLink) return;
+    if (o.frameLink || o.type === 'file') return;
     if (engine.current?.objects.get(o.id)?.locked || o.type === 'highlight') return;
     // An album's name is its title; it is edited with its other settings.
     if (isAlbum(o)) {
@@ -1868,6 +2036,11 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   const activate = (o: CanvasObject, intent?: 'title') => {
     if (o.frameLink) {
       void openOriginalFrame(o).catch(error);
+      return;
+    }
+    if (o.type === 'file') {
+      // A file tile opens with Windows, locked or not; a folder frame is used in place.
+      if (o.file?.kind === 'file') openFileObject(o, onError);
       return;
     }
     if (engine.current?.objects.get(o.id)?.locked) return;
@@ -2082,14 +2255,29 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         }
       },
       objectDrag: (objects, point) => {
+        // Pictures and documents dragged over a folder frame are saved into it.
+        const folder =
+          point && objects.length && objects.every(savableToFolder)
+            ? folderDropAtWorld(point)
+            : null;
+        markFolderDrop(folder?.id ?? null);
         const target =
-          point && objects.length && objects.every(isPdfComposerInput)
+          !folder && point && objects.length && objects.every(isPdfComposerInput)
             ? pdfComposerTargetAt(e.all, point, new Set(objects.map((o) => o.id)))
             : null;
         setPdfDropTarget((previous) => (previous?.id === target?.id ? previous : target));
       },
       live: (objects) => liveSender.current?.moving(objects),
       objectDrop: (objects, point) => {
+        markFolderDrop(null);
+        const folder =
+          !external.current && objects.length && objects.every(savableToFolder)
+            ? folderDropAtWorld(point)
+            : null;
+        if (folder) {
+          void saveToFolder(objects, folder.dir);
+          return true;
+        }
         if (external.current || !objects.length || !objects.every(isPdfComposerInput)) return false;
         const target = pdfComposerTargetAt(e.all, point, new Set(objects.map((o) => o.id)));
         if (!target) return false;
@@ -2113,6 +2301,13 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         if (key !== tableViewKey.current) {
           tableViewKey.current = key;
           setTableView({ objects, camera: { ...camera } });
+        }
+      },
+      files: (objects, camera) => {
+        const key = objects.length ? JSON.stringify([objects, camera]) : '';
+        if (key !== filesViewKey.current) {
+          filesViewKey.current = key;
+          setFilesView({ objects, camera: { ...camera } });
         }
       },
       lists: (objects, camera) => {
@@ -3051,7 +3246,9 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       await composerFiles(target.id, files).catch(error);
       return;
     }
-    await performImport(() => importFiles(files), point);
+    const rest = await dropLiveFiles(files, point, e.altKey);
+    if (!rest.length) return;
+    await performImport(() => importFiles(rest), point);
   }
   function startExport(format: ExportFormat, quality: ExportQuality) {
     if (exportTask.current || !exportScope) return;
@@ -3157,6 +3354,24 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     />
   );
   const contextItems: (MenuItem | null)[] = [
+    ...(selected.length === 1 && selected[0].type === 'file' && window.canvas?.files
+      ? [
+          ...(selected[0].file?.kind === 'file'
+            ? [
+                {
+                  label: 'Open',
+                  icon: <ExternalLink />,
+                  action: () => openFileObject(selected[0], onError),
+                },
+              ]
+            : []),
+          {
+            label: 'Show in Explorer',
+            icon: <FolderOpen />,
+            action: () => showFileObject(selected[0], onError),
+          },
+        ]
+      : []),
     ...(selected.length === 1 && selected[0].type === 'frame'
       ? [
           {
@@ -3755,6 +3970,25 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         update={updateTable}
         fit={fitTable}
       />
+      <CanvasFiles
+        view={filesView}
+        host={host.current}
+        interactive={tool === 'select'}
+        readOnly={readOnly}
+        beginPointer={(event) => engine.current?.beginOverlayPointer(event)}
+        selected={selected.map((o) => o.id)}
+        select={(id) => {
+          finishEdit();
+          if (!engine.current?.selection.has(id) || engine.current.selection.size > 1)
+            engine.current?.setSelection([id]);
+        }}
+        update={(o) => {
+          if (engine.current?.objects.get(o.id)?.locked) return;
+          engine.current?.apply({ upserts: [o], deleted: [] });
+        }}
+        addToBoard={(items, asIcons, from) => void addFromFolder(items, asIcons, from)}
+        onError={onError}
+      />
       {pinning && (
         <PinnedViews
           boardId={doc.board.id}
@@ -4198,6 +4432,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
                   'paper',
                   'html',
                   'browser',
+                  'file',
                 ].includes(o.type),
             ) && (
               <div key="colors" className="color-options">
@@ -4756,6 +4991,9 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             { id: 'paper', label: 'Document', icon: NotebookPen, action: createPaper },
             { id: 'html', label: 'HTML embed', icon: CodeXml, action: () => createHtml() },
             { id: 'browser', label: 'Browser', icon: Globe, action: () => createBrowser() },
+            ...(window.canvas?.files
+              ? [{ id: 'folder' as const, label: 'Folder', icon: FolderOpen, action: () => createFolder() }]
+              : []),
             { id: 'media', label: 'Files', icon: ImagePlus, action: importMedia },
             { id: 'gallery', label: 'Gallery', icon: Images, action: createGallery },
           ]}
@@ -4772,6 +5010,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             else if (id === 'paper') createPaper(anchor);
             else if (id === 'html') createHtml(anchor);
             else if (id === 'browser') createBrowser(anchor);
+            else if (id === 'folder') createFolder(anchor);
             else if (id === 'gallery') createGallery(anchor);
             else if (id === 'media') void performImport(pickMedia, anchor);
             else if (id === 'select' || id === 'hand' || id === 'highlight' || id === 'pen')
@@ -4798,6 +5037,16 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             { id: 'paper', label: 'Add document', icon: NotebookPen, action: createPaper },
             { id: 'html', label: 'Add HTML embed', icon: CodeXml, action: () => createHtml() },
             { id: 'browser', label: 'Add browser', icon: Globe, action: () => createBrowser() },
+            ...(window.canvas?.files
+              ? [
+                  {
+                    id: 'folder' as const,
+                    label: 'Add folder',
+                    icon: FolderOpen,
+                    action: () => createFolder(),
+                  },
+                ]
+              : []),
             { id: 'media', label: 'Add files', icon: ImagePlus, action: importMedia },
             { id: 'gallery', label: 'Gallery', icon: Images, action: createGallery },
           ]}
@@ -4939,6 +5188,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
                       'Copy text',
                       'Details',
                       'Find usages',
+                      'Open',
+                      'Show in Explorer',
                     ].includes(item.label)),
               },
           )}

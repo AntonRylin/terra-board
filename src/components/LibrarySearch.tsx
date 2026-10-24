@@ -14,6 +14,7 @@ import {
   NotebookPen,
   CodeXml,
   Globe,
+  FolderOpen,
 } from 'lucide-react';
 import type { ContentSearchResponse, Library, ObjectType } from '../model';
 import { invoke } from '../bridge';
@@ -46,6 +47,7 @@ const kinds: Record<ObjectType, { label: string; icon: typeof Search }> = {
   highlight: { label: 'Highlight', icon: Shapes },
   html: { label: 'HTML embed', icon: CodeXml },
   browser: { label: 'Browser', icon: Globe },
+  file: { label: 'Folder or file', icon: FolderOpen },
 };
 function Excerpt({ text, query }: { text: string; query: string }) {
   const index = text.toLowerCase().indexOf(query.toLowerCase());

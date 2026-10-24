@@ -45,6 +45,7 @@ const types = new Set([
   'paper',
   'html',
   'browser',
+  'file',
 ]);
 // An arrow end held to an object: its id and the spot as fractions of its size.
 const arrowEndValid = (end) =>
@@ -229,6 +230,33 @@ function tableCellValue(column, value) {
       );
     }
   }
+}
+// Folder frames and file tiles: keep equal to fileLinkValue in
+// src/canvas/file-link.ts (a test compares them).
+const fileRoots = ['desktop', 'downloads', 'documents', 'pictures', 'music', 'videos', 'home'];
+const fileViews = ['icons', 'list'];
+const fileIconSizes = ['small', 'medium', 'large', 'huge'];
+const fileSorts = ['name', 'modified', 'type', 'size'];
+function fileLinkValue(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw Error('Invalid file link');
+  const { root, path: link, kind, view, iconSize, sort, descending, hidden } = value;
+  if (root !== undefined && !fileRoots.includes(root)) throw Error('Invalid file link folder');
+  if (typeof link !== 'string' || link.length > 4096 || /[\x00-\x1f]/.test(link))
+    throw Error('Invalid file link path');
+  if (root !== undefined) {
+    if (/^([a-z]:|[\\/])/i.test(link) || link.split(/[\\/]+/).some((p) => p === '..' || p === '.'))
+      throw Error('Invalid file link path');
+  } else if (!/^([a-z]:[\\/]|\\\\[^\\/]+[\\/][^\\/]+|\/)/i.test(link))
+    throw Error('Invalid file link path');
+  if (kind !== 'folder' && kind !== 'file') throw Error('Invalid file link kind');
+  const result = { path: link, kind };
+  if (root !== undefined) result.root = root;
+  if (fileViews.includes(view)) result.view = view;
+  if (fileIconSizes.includes(iconSize)) result.iconSize = iconSize;
+  if (fileSorts.includes(sort)) result.sort = sort;
+  if (descending === true) result.descending = true;
+  if (hidden === true) result.hidden = true;
+  return result;
 }
 function tableValue(input) {
   if (
@@ -581,6 +609,8 @@ function objectValue(o) {
   }
   if (o.type === 'table') result.table = tableValue(o.table);
   else if (o.table !== undefined) throw Error('Only tables hold table data');
+  if (o.type === 'file') result.file = fileLinkValue(o.file);
+  else if (o.file !== undefined) throw Error('Only folder frames and file tiles hold a file');
   if (o.imageTitle !== undefined) {
     if (o.type !== 'image' || typeof o.imageTitle !== 'string' || o.imageTitle.length > 100000)
       throw Error('Invalid image title');
@@ -1945,4 +1975,4 @@ class Store {
     this.db.prepare('UPDATE boards SET camera=? WHERE id=?').run(JSON.stringify(camera), id);
   }
 }
-module.exports = { Store, objectValue, cameraValue, viewValue, tableValue };
+module.exports = { Store, objectValue, cameraValue, viewValue, tableValue, fileLinkValue };

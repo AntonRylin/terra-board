@@ -19,6 +19,36 @@ contextBridge.exposeInMainWorld('canvas', {
   // Where a dropped file is on disk ('' for pasted or generated files).
   filePath: (file) => webUtils.getPathForFile(file),
   importPortable: () => ipcRenderer.invoke('canvas:import-board'),
+  // Folder frames and file tiles (electron/local-files.cjs).
+  files: {
+    list: (args) => ipcRenderer.invoke('canvas:files-list', args),
+    icons: (requests) => ipcRenderer.invoke('canvas:files-icons', requests),
+    transfer: (args) => ipcRenderer.invoke('canvas:files-transfer', args),
+    rename: (args) => ipcRenderer.invoke('canvas:files-rename', args),
+    newFolder: (args) => ipcRenderer.invoke('canvas:files-new-folder', args),
+    trash: (args) => ipcRenderer.invoke('canvas:files-trash', args),
+    revert: (args) => ipcRenderer.invoke('canvas:files-revert', args),
+    saveAssets: (args) => ipcRenderer.invoke('canvas:files-save-assets', args),
+    classify: (args) => ipcRenderer.invoke('canvas:files-classify', args),
+    import: (args) => ipcRenderer.invoke('canvas:files-import', args),
+    open: (args) => ipcRenderer.invoke('canvas:files-open', args),
+    openWith: (args) => ipcRenderer.invoke('canvas:files-open-with', args),
+    reveal: (args) => ipcRenderer.invoke('canvas:files-reveal', args),
+    copy: (args) => ipcRenderer.invoke('canvas:files-clipboard-copy', args),
+    readClipboard: () => ipcRenderer.invoke('canvas:files-clipboard-read'),
+    clearClipboard: () => ipcRenderer.invoke('canvas:files-clipboard-clear'),
+    choose: (args) => ipcRenderer.invoke('canvas:files-choose', args),
+    source: (args) => ipcRenderer.invoke('canvas:files-source', args),
+    watch: (args) => ipcRenderer.invoke('canvas:files-watch', args),
+    unwatch: (args) => ipcRenderer.invoke('canvas:files-unwatch', args),
+    reset: () => ipcRenderer.invoke('canvas:files-reset'),
+    drag: (paths, icon) => ipcRenderer.send('canvas:files-drag', { paths, icon }),
+    onChange: (callback) => {
+      const handler = (_event, dir) => callback(dir);
+      ipcRenderer.on('canvas:files-changed', handler);
+      return () => ipcRenderer.removeListener('canvas:files-changed', handler);
+    },
+  },
   miro: {
     status: () => ipcRenderer.invoke('canvas:miro-status'),
     connect: (token, remember) => ipcRenderer.invoke('canvas:miro-connect', { token, remember }),

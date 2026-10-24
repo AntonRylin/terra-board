@@ -42,6 +42,8 @@ const { downloadSongLink, YT_DLP } = require('./song-link.cjs');
 const { createOcr, textRecognitionAvailable } = require('./ocr.cjs');
 const { createHtmlCards, embedRequest, fromEmbed } = require('./html-cards.cjs');
 const { browserSession, hardenWebviews, guestOf } = require('./browser-frames.cjs');
+const { createLocalFiles, registerLocalFiles } = require('./local-files.cjs');
+const { createShellHelper } = require('./shell-helper.cjs');
 const { acceptLanguages, spellcheckLanguages } = require('./system-languages.cjs');
 const { Worker } = require('node:worker_threads');
 const path = require('node:path');
@@ -168,6 +170,8 @@ const cloudTransaction = (job) =>
 let cloud = null;
 let ocr = null;
 let liveShare = null;
+let shellHelper = null;
+let localFiles = null;
 // Guests' edits are already saved; refresh the host's open board, batched.
 let guestRefresh = null;
 function refreshAfterGuestEdit(boardId) {
@@ -1334,6 +1338,30 @@ app
       app.setLoginItemSettings({ openAtLogin: enabled === true });
       return app.getLoginItemSettings().openAtLogin;
     });
+    // Folder frames and file tiles: live folders on this computer.
+    shellHelper = createShellHelper();
+    localFiles = createLocalFiles({
+      getPath: (name) => app.getPath(name),
+      helper: shellHelper,
+      shell,
+      nativeImage,
+      getFileIcon: (file, options) => app.getFileIcon(file, options),
+      sharp: require('sharp'),
+      readAsset: (args) => call('asset', args),
+      importFile: (file) => call('importFile', { file, attachment: true }),
+      pickFolder: async (defaultPath) => {
+        const r = await dialog.showOpenDialog(win, {
+          title: 'Choose a folder to show on the board',
+          defaultPath,
+          properties: ['openDirectory', 'createDirectory'],
+        });
+        return r.canceled ? null : r.filePaths[0] || null;
+      },
+      send: (channel, data) => {
+        if (win && !win.isDestroyed()) win.webContents.send(channel, data);
+      },
+    });
+    registerLocalFiles({ ipcMain, trusted, files: localFiles });
     ipcMain.handle('canvas:open-folder', async (e, which) => {
       trusted(e);
       const folder = { library: root, backups: path.join(root, 'backups') }[which];
@@ -1481,6 +1509,8 @@ app.on('before-quit', (event) => {
   extensions?.cancelAll();
   void backgroundRemoval?.stop();
   ocr?.dispose();
+  localFiles?.unwatchAll();
+  shellHelper?.stop();
   void mcp?.stop();
   cloud?.stop();
   void liveShare?.stop();

@@ -5,6 +5,7 @@ import { htmlSourceLimit } from './html-card.ts';
 import { albumValue } from './album.ts';
 import { addedValue } from './image-added.ts';
 import { tableValue } from './table.ts';
+import { fileLinkValue } from './file-link.ts';
 // An arrow end held to an object: its id and the spot as fractions of its size.
 const arrowEndValid = (end: any) =>
   end === undefined ||
@@ -52,6 +53,7 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
         'paper',
         'html',
         'browser',
+        'file',
       ].includes(o.type)
     )
       throw Error('Invalid clipboard object');
@@ -328,9 +330,12 @@ export function clipboardObjects(input: unknown): CanvasObject[] {
     }
     if (o.table !== undefined && o.type !== 'table') throw Error('Invalid clipboard table');
     const table = o.type === 'table' ? tableValue(o.table) : undefined;
+    if (o.file !== undefined && o.type !== 'file') throw Error('Invalid clipboard file');
+    const file = o.type === 'file' ? fileLinkValue(o.file) : undefined;
     return {
       ...(pdfComposer === undefined ? {} : { pdfComposer }),
       ...(table ? { table } : {}),
+      ...(file ? { file } : {}),
       ...(o.type === 'list'
         ? {
             items: o.items.map(({ id, text, checked, marks }: any) => {

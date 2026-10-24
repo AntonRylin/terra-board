@@ -1,5 +1,6 @@
 import type { Asset, Board, CanvasObject } from './model';
 import type { RecognizedText } from './canvas/recognized-text';
+import type { FilesBridge } from './canvas/file-link';
 import * as mobile from './mobile/platform';
 export interface McpStatus {
   enabled: boolean;
@@ -259,6 +260,8 @@ interface DesktopBridge {
   importAlbumFiles(args: { paths?: string[]; link: boolean }): Promise<Asset[]>;
   locateAsset(args: { id: string; name: string }): Promise<AssetLink | null>;
   filePath(file: File): string;
+  // Folder frames and file tiles; absent outside the desktop app.
+  files?: FilesBridge;
   importPortable(): Promise<Board | null>;
   miro: {
     status(): Promise<{ saved: boolean; canRemember: boolean }>;
