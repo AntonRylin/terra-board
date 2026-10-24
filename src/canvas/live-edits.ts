@@ -23,11 +23,16 @@ type Timers = {
   now: () => number;
   setTimeout: (job: () => void, ms: number) => unknown;
   clearTimeout: (timer: unknown) => void;
+  // The next screen frame (requestAnimationFrame).
+  frame: (job: () => void) => unknown;
+  cancelFrame: (id: unknown) => void;
 };
 const realTimers: Timers = {
-  now: () => Date.now(),
+  now: () => performance.now(),
   setTimeout: (job, ms) => setTimeout(job, ms),
   clearTimeout: (timer) => clearTimeout(timer as ReturnType<typeof setTimeout>),
+  frame: (job) => requestAnimationFrame(() => job()),
+  cancelFrame: (id) => cancelAnimationFrame(id as number),
 };
 
 const fits = (objects: unknown[], extra: unknown[] = []) =>
@@ -114,6 +119,93 @@ export class LiveSender {
   }
 }
 
+// --- Smooth motion -------------------------------------------------------------------
+// Positions from other people arrive 10 to 20 times a second, while the screen draws 60 to
+// 144 times. Each one glides from where the thing is on screen to where it was sent, over
+// a little more than the time between updates, so motion stays steady instead of jumping.
+
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+// Degrees, the short way round.
+const lerpAngle = (a: number, b: number, t: number) => {
+  const d = ((((b - a) % 360) + 540) % 360) - 180;
+  return (((a + d * t) % 360) + 360) % 360;
+};
+
+// `b`, with its position, size, turn and arrow points part of the way from `a`.
+export function between(a: CanvasObject, b: CanvasObject, t: number): CanvasObject {
+  if (t >= 1) return b;
+  const o: CanvasObject = {
+    ...b,
+    x: lerp(a.x, b.x, t),
+    y: lerp(a.y, b.y, t),
+    width: lerp(a.width, b.width, t),
+    height: lerp(a.height, b.height, t),
+  };
+  if (a.rotation || b.rotation) o.rotation = lerpAngle(a.rotation || 0, b.rotation || 0, t);
+  const from = a.arrow?.points,
+    to = b.arrow?.points;
+  if (from && to && b.arrow && from.length === to.length)
+    o.arrow = {
+      ...b.arrow,
+      points: to.map((p, i) => ({ ...p, x: lerp(from[i].x, p.x, t), y: lerp(from[i].y, p.y, t) })),
+    };
+  return o;
+}
+
+const geometryChanged = (a: CanvasObject, b: CanvasObject) =>
+  a.x !== b.x ||
+  a.y !== b.y ||
+  a.width !== b.width ||
+  a.height !== b.height ||
+  (a.rotation || 0) !== (b.rotation || 0) ||
+  stable(a.arrow?.points ?? null) !== stable(b.arrow?.points ?? null);
+
+// How long each glide lasts, from how often updates have been arriving from each person.
+export class Pace {
+  private last = new Map<string, number>();
+  private gap = new Map<string, number>();
+  private expected: number;
+  constructor(expected: number) {
+    this.expected = expected;
+  }
+  next(key: string, now: number) {
+    const before = this.last.get(key);
+    this.last.set(key, now);
+    let gap = this.gap.get(key) ?? this.expected;
+    // A pause (they held still) says nothing about the pace.
+    if (before !== undefined && now - before < 400)
+      gap = gap * 0.7 + Math.max(16, now - before) * 0.3;
+    this.gap.set(key, gap);
+    return Math.min(200, Math.max(30, gap * 1.25));
+  }
+}
+
+type Point = { x: number; y: number };
+// One gliding point per key: other people's cursors.
+export class Glides {
+  private items = new Map<string, { from: Point; to: Point; start: number; duration: number }>();
+  private pace: Pace;
+  private now: () => number;
+  constructor(expected: number, now: () => number = () => performance.now()) {
+    this.pace = new Pace(expected);
+    this.now = now;
+  }
+  set(key: string, to: Point) {
+    const now = this.now();
+    const from = this.at(key, now) ?? to;
+    this.items.set(key, { from, to, start: now, duration: this.pace.next(key, now) });
+  }
+  at(key: string, now = this.now()): Point | null {
+    const g = this.items.get(key);
+    if (!g) return null;
+    const t = Math.min(1, (now - g.start) / g.duration);
+    return { x: lerp(g.from.x, g.to.x, t), y: lerp(g.from.y, g.to.y, t) };
+  }
+  delete(key: string) {
+    this.items.delete(key);
+  }
+}
+
 // The board as the live receiver sees it.
 export interface LiveTarget {
   get(id: string): CanvasObject | undefined;
@@ -125,13 +217,29 @@ export interface LiveTarget {
   busy(id: string): boolean;
 }
 
+// An object on its way from what is on screen to where it was sent.
+type Glide = {
+  from: CanvasObject;
+  to: CanvasObject;
+  shown: CanvasObject;
+  start: number;
+  duration: number;
+};
+// Mid-drag, with what it was before the drag.
+type Moving = Glide & { key: string; base: CanvasObject; at: number };
+// Objects moved without a drag (aligned, nudged, undone over there) glide this long.
+export const LAND_MS = 140;
+
 // The other people's side: shows what arrives, and keeps it until sync catches up.
 export class LiveReceiver {
-  // Objects shown mid-drag, with what they were before it.
-  private moving = new Map<string, { key: string; base: CanvasObject; at: number }>();
+  private moving = new Map<string, Moving>();
+  // Objects gliding to where an edit from elsewhere put them; the edit is already applied.
+  private landing = new Map<string, Glide>();
   // Edits that arrived live (null: deleted), until the stored copy has them.
   private held = new Map<string, { object: CanvasObject | null; at: number }>();
   private timer: unknown = null;
+  private frameId: unknown = null;
+  private pace = new Pace(FRAME_MS);
   private target: LiveTarget;
   private timers: Timers;
   constructor(target: LiveTarget, timers: Timers = realTimers) {
@@ -150,50 +258,90 @@ export class LiveReceiver {
       return;
     }
     const now = this.timers.now();
-    const shown: CanvasObject[] = [];
+    const duration = this.pace.next(key, now);
+    let any = false;
     for (const o of message.objects) {
       const current = this.target.get(o.id);
       if (!current || this.target.busy(o.id)) continue;
+      const landing = this.landing.get(o.id);
+      this.landing.delete(o.id);
       const entry = this.moving.get(o.id);
-      if (entry) {
-        entry.key = key;
-        entry.at = now;
-      } else this.moving.set(o.id, { key, base: current, at: now });
-      shown.push(o);
+      const shown = entry?.shown ?? landing?.shown ?? current;
+      if (entry) Object.assign(entry, { key, at: now, from: shown, to: o, start: now, duration });
+      else
+        this.moving.set(o.id, {
+          key,
+          at: now,
+          base: landing?.to ?? current,
+          from: shown,
+          to: o,
+          shown,
+          start: now,
+          duration,
+        });
+      any = true;
     }
-    if (!shown.length) return;
-    this.target.show(shown);
+    if (!any) return;
+    this.animate();
     this.watch();
   }
 
   private receiveEdit(message: Extract<LiveMessage, { kind: 'edit' }>) {
     const upserts = message.upserts.filter((o) => {
       if (this.target.busy(o.id)) return false;
-      const current = this.moving.get(o.id)?.base ?? this.target.get(o.id);
+      const current =
+        this.moving.get(o.id)?.base ?? this.landing.get(o.id)?.to ?? this.target.get(o.id);
       const known = new Set(current ? assetsOf(current) : []);
       return assetsOf(o).every((id) => known.has(id));
     });
     const deleted = message.deleted.filter((id) => this.target.get(id) && !this.target.busy(id));
     if (!upserts.length && !deleted.length) return;
-    // A drag shown from elsewhere ends where the objects really landed; undo here goes
-    // back to where they were before it.
+    // What is on screen now: the objects glide from there to where they landed. Before the
+    // edit the board goes back to where they were before any drag, which undo returns to.
     const touched = new Set([...upserts.map((o) => o.id), ...deleted]);
-    const bases = [...touched].flatMap((id) => {
-      const entry = this.moving.get(id);
+    const onScreen = new Map<string, { object: CanvasObject; duration: number }>();
+    const bases: CanvasObject[] = [];
+    for (const id of touched) {
+      const entry = this.moving.get(id),
+        landing = this.landing.get(id),
+        shown = entry?.shown ?? landing?.shown ?? this.target.get(id);
+      if (shown) onScreen.set(id, { object: shown, duration: entry?.duration ?? LAND_MS });
+      if (entry) bases.push(entry.base);
+      else if (landing) bases.push(landing.to);
       this.moving.delete(id);
-      return entry ? [entry.base] : [];
-    });
+      this.landing.delete(id);
+    }
     if (bases.length) this.target.show(bases);
-    const at = this.timers.now();
-    for (const o of upserts) this.held.set(o.id, { object: o, at });
-    for (const id of deleted) this.held.set(id, { object: null, at });
+    const now = this.timers.now();
+    for (const o of upserts) this.held.set(o.id, { object: o, at: now });
+    for (const id of deleted) this.held.set(id, { object: null, at: now });
     this.target.accept({ upserts, deleted });
+    const starts: CanvasObject[] = [];
+    for (const o of upserts) {
+      const from = onScreen.get(o.id);
+      if (!from || !geometryChanged(from.object, o)) continue;
+      const shown = between(from.object, o, 0);
+      this.landing.set(o.id, {
+        from: from.object,
+        to: o,
+        shown,
+        start: now,
+        duration: from.duration,
+      });
+      starts.push(shown);
+    }
+    // Shown before the board draws them where they landed.
+    if (starts.length) {
+      this.target.show(starts);
+      this.animate();
+    }
   }
 
   // This person's own edits win over anything shown from elsewhere.
   local(edit: Edit) {
     for (const id of [...edit.upserts.map((o) => o.id), ...edit.deleted]) {
       this.moving.delete(id);
+      this.landing.delete(id);
       this.held.delete(id);
     }
   }
@@ -202,6 +350,7 @@ export class LiveReceiver {
   // back to where they started (their next frame shows them again), and edits that
   // arrived live but are not stored yet stay instead of jumping back.
   merge(objects: CanvasObject[]): CanvasObject[] {
+    this.land();
     this.revert(() => true);
     const now = this.timers.now();
     for (const [id, h] of this.held) if (now - h.at > LIVE_HOLD_MS) this.held.delete(id);
@@ -224,6 +373,7 @@ export class LiveReceiver {
   // Before the board takes a stored copy that is newer than anything shown live (an AI
   // edit): drags shown from elsewhere go back, and the stored copy is taken as it is.
   settle(objects: CanvasObject[]): CanvasObject[] {
+    this.land();
     this.revert(() => true);
     this.held.clear();
     return objects;
@@ -231,12 +381,14 @@ export class LiveReceiver {
 
   stop() {
     if (this.timer !== null) this.timers.clearTimeout(this.timer);
-    this.timer = null;
+    if (this.frameId !== null) this.timers.cancelFrame(this.frameId);
+    this.timer = this.frameId = null;
     this.moving.clear();
+    this.landing.clear();
     this.held.clear();
   }
 
-  private revert(which: (entry: { key: string; base: CanvasObject; at: number }) => boolean) {
+  private revert(which: (entry: Moving) => boolean) {
     const bases: CanvasObject[] = [];
     for (const [id, entry] of this.moving)
       if (which(entry)) {
@@ -246,14 +398,47 @@ export class LiveReceiver {
     if (bases.length) this.target.show(bases);
   }
 
+  // Glides still under way end where they are going, at once.
+  private land() {
+    const ends = [...this.landing].filter(([id]) => !this.target.busy(id)).map(([, g]) => g.to);
+    this.landing.clear();
+    if (ends.length) this.target.show(ends);
+  }
+
+  private animate() {
+    this.frameId ??= this.timers.frame(() => this.tick());
+  }
+
+  private tick() {
+    this.frameId = null;
+    const now = this.timers.now();
+    const shown: CanvasObject[] = [];
+    let going = false;
+    const step = (g: Glide) => {
+      const t = (now - g.start) / g.duration;
+      g.shown = t >= 1 ? g.to : between(g.from, g.to, t);
+      shown.push(g.shown);
+      return g.shown !== g.to;
+    };
+    for (const [id, m] of this.moving)
+      if (m.shown !== m.to && !this.target.busy(id) && step(m)) going = true;
+    for (const [id, g] of this.landing)
+      if (this.target.busy(id) || !step(g)) this.landing.delete(id);
+      else going = true;
+    if (shown.length) this.target.show(shown);
+    if (going) this.animate();
+  }
+
   // Drags whose end never came (the other app closed mid-drag) go back.
   private watch() {
-    if (this.timer !== null) return;
+    if (this.timer !== null || !this.moving.size) return;
+    const oldest = Math.min(...[...this.moving.values()].map((m) => m.at));
+    const wait = Math.max(16, oldest + MOVING_HOLD_MS - this.timers.now());
     this.timer = this.timers.setTimeout(() => {
       this.timer = null;
       const now = this.timers.now();
       this.revert((m) => now - m.at >= MOVING_HOLD_MS);
-      if (this.moving.size) this.watch();
-    }, MOVING_HOLD_MS);
+      this.watch();
+    }, wait);
   }
 }

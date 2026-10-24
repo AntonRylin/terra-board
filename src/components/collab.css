@@ -9,7 +9,7 @@
   position: absolute;
   top: 0;
   left: 0;
-  transition: transform 80ms linear;
+  /* Moved every screen frame by CollabLayer, gliding between updates. */
   will-change: transform;
 }
 .collab-cursor svg {

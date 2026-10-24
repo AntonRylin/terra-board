@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { Crosshair, Eye, LocateFixed, Pencil, UserMinus, X } from 'lucide-react';
 import type { Engine } from '../canvas/engine';
+import { Glides } from '../canvas/live-edits';
 import type { Camera } from '../model';
 import type { PresencePerson, ViewRect } from '../bridge';
 import { cloudApi, mediaUrl } from '../bridge';
@@ -56,6 +57,19 @@ export default function CollabLayer({
   const followRef = useRef<string | null>(null);
   followRef.current = following;
   const known = useRef<Set<string> | null>(null);
+  // Cursors arrive up to 10 times a second and glide in between (live-edits.ts), drawn
+  // every screen frame where the board is now, so they also keep up with panning here.
+  const glides = useRef(new Glides(100));
+  const cursorEls = useRef(new Map<string, HTMLDivElement>());
+  const cameraRef = useRef(camera);
+  cameraRef.current = camera;
+  const place = (key: string, el: HTMLDivElement) => {
+    const p = glides.current.at(key);
+    if (!p) return;
+    const c = engine.current?.camera ?? cameraRef.current;
+    const value = `translate(${p.x * c.zoom + c.x}px, ${p.y * c.zoom + c.y}px)`;
+    if (el.style.transform !== value) el.style.transform = value;
+  };
   const joins = useJoinToasts();
   const me = status?.workspace;
 
@@ -104,6 +118,7 @@ export default function CollabLayer({
     return cloud.onPresence((event) => {
       if (event.boardId !== boardId) return;
       if (event.type === 'cursor') {
+        glides.current.set(event.key, { x: event.x, y: event.y });
         setCursors((all) => ({
           ...all,
           [event.key]: { x: event.x, y: event.y, view: event.view, at: Date.now() },
@@ -239,6 +254,18 @@ export default function CollabLayer({
     return () => clearInterval(timer);
   }, []);
 
+  const anyCursor = Object.keys(cursors).length > 0;
+  useEffect(() => {
+    if (!anyCursor) return;
+    let frame = 0;
+    const draw = () => {
+      for (const [key, el] of cursorEls.current) place(key, el);
+      frame = requestAnimationFrame(draw);
+    };
+    frame = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(frame);
+  }, [anyCursor]);
+
   const latestView = (p: Person) =>
     p.keys
       .map((k) => cursors[k])
@@ -308,7 +335,7 @@ export default function CollabLayer({
     <>
       {toasts}
       <div className="collab-cursors" aria-hidden="true">
-        {Object.entries(cursors).map(([key, c]) => {
+        {Object.keys(cursors).map((key) => {
           const p = byKey.get(key);
           if (!p) return null;
           const color = colorOf(p.id);
@@ -316,8 +343,10 @@ export default function CollabLayer({
             <div
               key={key}
               className="collab-cursor"
-              style={{
-                transform: `translate(${c.x * camera.zoom + camera.x}px, ${c.y * camera.zoom + camera.y}px)`,
+              ref={(el) => {
+                if (!el) return void cursorEls.current.delete(key);
+                cursorEls.current.set(key, el);
+                place(key, el);
               }}
             >
               <svg width="18" height="18" viewBox="0 0 18 18">
