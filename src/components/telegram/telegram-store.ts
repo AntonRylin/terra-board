@@ -297,8 +297,12 @@ export async function loadOlder(chatId: number, count = 40) {
   }
 }
 
-/** Marks messages as seen while a chat is open on screen (as Telegram apps do). */
-export function viewMessages(chatId: number, ids: number[]) {
+/**
+ * Marks messages as seen while a chat is open on screen (as Telegram apps do).
+ * TDLib also keeps reactions and view counts current only for messages it is
+ * told are on screen.
+ */
+export function viewMessages(chatId: number, ids: number[], forceRead = true) {
   if (!ids.length) return;
   void telegramBridge()
     ?.invoke({
@@ -306,7 +310,7 @@ export function viewMessages(chatId: number, ids: number[]) {
       chat_id: chatId,
       message_ids: ids,
       source: { '@type': 'messageSourceChatHistory' },
-      force_read: true,
+      force_read: forceRead,
     })
     .catch(() => {});
 }

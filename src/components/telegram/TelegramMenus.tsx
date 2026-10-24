@@ -286,19 +286,54 @@ const emojiOf = (reaction: Td) =>
 /** An emoji drawn in color: symbols like ❤ need the emoji presentation selector. */
 export const shownEmoji = (emoji: string) =>
   [...emoji].length === 1 && emoji.codePointAt(0)! < 0x2c00 ? emoji + '\uFE0F' : emoji;
-/** The reactions on a message, as Telegram shows them under it. */
-export function reactionsOf(m: TdMessage) {
-  return ((m.interaction_info?.reactions?.reactions || []) as Td[])
-    .map((r) => ({ emoji: emojiOf(r.type), count: r.total_count as number, chosen: !!r.is_chosen }))
-    .filter((r) => r.emoji);
+/** One reaction under a message: an emoji, a custom emoji or paid stars. */
+export interface Reaction {
+  key: string;
+  /** TDLib's ReactionType, as sent back to add or remove it. */
+  type: Td;
+  /** The emoji; for a custom emoji, empty (its picture comes by `customId`). */
+  emoji: string;
+  customId?: string;
+  paid: boolean;
+  count: number;
+  chosen: boolean;
+  /** Who reacted lately (MessageSender), newest first. */
+  senders: Td[];
 }
-export function toggleReaction(m: TdMessage, emoji: string, tools: ChatTools) {
-  const chosen = reactionsOf(m).some((r) => r.emoji === emoji && r.chosen);
+const reactionKey = (type: Td) =>
+  type?.['@type'] === 'reactionTypeEmoji'
+    ? (type.emoji as string)
+    : type?.['@type'] === 'reactionTypeCustomEmoji'
+      ? `custom:${type.custom_emoji_id}`
+      : type?.['@type'] === 'reactionTypePaid'
+        ? 'paid'
+        : '';
+/** The reactions on a message, as Telegram shows them under it. */
+export function reactionsOf(m: TdMessage): Reaction[] {
+  return ((m.interaction_info?.reactions?.reactions || []) as Td[])
+    .map((r) => ({
+      key: reactionKey(r.type),
+      type: r.type,
+      emoji: emojiOf(r.type),
+      customId:
+        r.type?.['@type'] === 'reactionTypeCustomEmoji' ? String(r.type.custom_emoji_id) : undefined,
+      paid: r.type?.['@type'] === 'reactionTypePaid',
+      count: r.total_count as number,
+      chosen: !!r.is_chosen,
+      senders: (r.recent_sender_ids || []) as Td[],
+    }))
+    .filter((r) => r.key && r.count > 0);
+}
+/** Adds this account's reaction, or takes it back. Paid stars are sent from Telegram's apps. */
+export function toggleReaction(m: TdMessage, type: Td, tools: ChatTools) {
+  const key = reactionKey(type);
+  if (!key || type['@type'] === 'reactionTypePaid') return;
+  const chosen = reactionsOf(m).some((r) => r.key === key && r.chosen);
   run(tools, {
     '@type': chosen ? 'removeMessageReaction' : 'addMessageReaction',
     chat_id: m.chat_id,
     message_id: m.id,
-    reaction_type: { '@type': 'reactionTypeEmoji', emoji },
+    reaction_type: type,
     ...(!chosen && { is_big: false, update_recent_reactions: true }),
   });
 }
@@ -459,7 +494,7 @@ export async function openMessageMenu(
           title={emoji}
           onClick={() => {
             tools.actions.openMenu(null);
-            toggleReaction(m, emoji, tools);
+            toggleReaction(m, { '@type': 'reactionTypeEmoji', emoji }, tools);
           }}
         >
           {shownEmoji(emoji)}

@@ -1122,6 +1122,41 @@
   background: var(--tg-accent);
   color: #fff;
 }
+.tg-reactions button:hover {
+  filter: brightness(1.08);
+}
+.tg-reactions button[data-paid] {
+  background: rgb(255 179 0 / 0.18);
+  cursor: default;
+}
+.tg-reactions button[data-paid][data-chosen] {
+  background: #e3a008;
+}
+.tg-row[data-out] .tg-reactions button:not([data-chosen]):not([data-paid]) {
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+[data-theme='dark'] .tg-row[data-out] .tg-reactions button[data-chosen]:not([data-paid]) {
+  background: #fff;
+  color: var(--tg-out);
+}
+.tg-reaction-custom {
+  width: 1.35em;
+  height: 1.35em;
+  object-fit: contain;
+}
+.tg-reaction-faces {
+  display: inline-flex;
+}
+.tg-reaction-faces .tg-avatar {
+  font-size: 8px !important;
+  box-shadow: 0 0 0 1.5px var(--tg-in);
+}
+.tg-reaction-faces .tg-avatar + .tg-avatar {
+  margin-left: -5px;
+}
+.tg-row[data-out] .tg-reaction-faces .tg-avatar {
+  box-shadow: 0 0 0 1.5px var(--tg-out);
+}
 
 /* The chat's pinned message, under its name. */
 .tg-pinned-bar {

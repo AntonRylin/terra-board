@@ -589,6 +589,18 @@ function onScreen(element: HTMLElement | null, zoom: number, width: number) {
   return r.bottom > 40 && r.right > 40 && r.top < innerHeight - 40 && r.left < innerWidth - 40;
 }
 
+/** The (server) messages at least partly visible in the message list. */
+function messagesInView(scroller: HTMLElement | null) {
+  if (!scroller) return [];
+  const box = scroller.getBoundingClientRect();
+  const ids: number[] = [];
+  for (const el of scroller.querySelectorAll<HTMLElement>('[data-message-id]')) {
+    const r = el.getBoundingClientRect();
+    if (r.bottom > box.top && r.top < box.bottom) ids.push(Number(el.dataset.messageId));
+  }
+  return ids.filter((id) => id > 0).slice(-60);
+}
+
 function Conversation({
   frameId,
   chatId,
@@ -713,8 +725,12 @@ function Conversation({
 
   const ids = history.ids;
   const lastId = ids[ids.length - 1] || 0;
-  // Seen while on screen: incoming messages up to the newest.
+  // Seen while on screen: incoming messages up to the newest. The messages in
+  // view are also told to TDLib (again now and then), which is what keeps
+  // their reactions current.
   useEffect(() => {
+    let shown = '',
+      shownAt = 0;
     const check = () => {
       if (!onScreen(scroller.current, zoom, frameWidth)) return;
       const current = chatOf(chatId);
@@ -723,6 +739,13 @@ function Conversation({
       if (unseen.length || current.is_marked_as_unread)
         viewMessages(chatId, unseen.length ? unseen : [lastId]);
       if (sponsored && stick.current) viewMessages(chatId, [sponsored.message_id]);
+      const inView = messagesInView(scroller.current);
+      const key = inView.join(',');
+      if (inView.length && (key !== shown || Date.now() - shownAt > 20000)) {
+        shown = key;
+        shownAt = Date.now();
+        viewMessages(chatId, inView, false);
+      }
     };
     check();
     const timer = setInterval(check, 1500);
@@ -1504,7 +1527,6 @@ const Bubble = memo(function Bubble({
   };
   const menu = (event: React.MouseEvent) =>
     void openMessageMenu(m, event, { ...tools, reply: onReply, edit: onEdit });
-  const reactions = reactionsOf(m);
   const sticker = c['@type'] === 'messageSticker' || c['@type'] === 'messageVideoNote';
   return (
     <div className="tg-row" data-out={m.is_outgoing || undefined}>
@@ -1538,20 +1560,7 @@ const Bubble = memo(function Bubble({
         {m.reply_markup?.['@type'] === 'replyMarkupInlineKeyboard' && (
           <InlineKeyboard message={m} actions={actions} onNotice={tools.notice} />
         )}
-        {reactions.length > 0 && (
-          <span className="tg-reactions">
-            {reactions.map((r) => (
-              <button
-                key={r.emoji}
-                data-chosen={r.chosen || undefined}
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={() => toggleReaction(m, r.emoji, tools)}
-              >
-                {shownEmoji(r.emoji)} {r.count}
-              </button>
-            ))}
-          </span>
-        )}
+        <Reactions message={m} chat={chat} tools={tools} />
         <span className="tg-meta">
           {m.is_pinned && <Pin size={11} />}
           {m.edit_date > 0 && 'edited '}
@@ -1571,6 +1580,125 @@ const Bubble = memo(function Bubble({
     </div>
   );
 });
+
+/** Who a MessageSender is, for reaction tooltips. */
+function senderTitle(sender: Td) {
+  if (sender?.['@type'] === 'messageSenderUser')
+    return sender.user_id === myUserId() ? 'You' : userName(userOf(sender.user_id));
+  const chat = chatOf(sender?.chat_id);
+  return chat ? chatTitle(chat) : '';
+}
+function SenderAvatar({ sender }: { sender: Td }) {
+  if (sender?.['@type'] === 'messageSenderUser') {
+    const user = userOf(sender.user_id);
+    return (
+      <Avatar
+        id={sender.user_id}
+        title={userName(user)}
+        photo={user?.profile_photo}
+        size={18}
+      />
+    );
+  }
+  const chat = chatOf(sender?.chat_id);
+  return <Avatar id={sender?.chat_id} title={chat ? chatTitle(chat) : ''} photo={chat?.photo} size={18} />;
+}
+
+// Custom emoji stickers by ID, asked for once each.
+const customEmoji = new Map<string, Promise<Td | null>>();
+function loadCustomEmoji(id: string) {
+  let task = customEmoji.get(id);
+  if (!task) {
+    task =
+      telegramBridge()
+        ?.invoke<Td>({ '@type': 'getCustomEmojiStickers', custom_emoji_ids: [id] })
+        .then((result) => (result.stickers?.[0] as Td) || null)
+        .catch(() => null) ?? Promise.resolve(null);
+    customEmoji.set(id, task);
+  }
+  return task;
+}
+const pictureThumbnail = (thumbnail: Td | undefined) =>
+  ['thumbnailFormatWebp', 'thumbnailFormatJpeg', 'thumbnailFormatPng', 'thumbnailFormatGif'].includes(
+    thumbnail?.format?.['@type'],
+  )
+    ? (thumbnail!.file as TdFile)
+    : undefined;
+/** A custom emoji (Premium) as a small picture, or the emoji it stands for until it loads. */
+function CustomEmoji({ id }: { id: string }) {
+  const [sticker, setSticker] = useState<Td | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void loadCustomEmoji(id).then((s) => alive && setSticker(s));
+    return () => {
+      alive = false;
+    };
+  }, [id]);
+  const format = sticker?.format?.['@type'];
+  const file = useFile(
+    format === 'stickerFormatWebp' || format === 'stickerFormatWebm' ? sticker!.sticker : undefined,
+    true,
+    2,
+  );
+  const thumb = useFile(pictureThumbnail(sticker?.thumbnail), true, 2);
+  if (file?.local.is_downloading_completed && format === 'stickerFormatWebm')
+    return (
+      <video className="tg-reaction-custom" src={fileUrl(file)} autoPlay loop muted playsInline />
+    );
+  const picture = file?.local.is_downloading_completed ? file : thumb?.local.is_downloading_completed ? thumb : null;
+  if (picture)
+    return <img className="tg-reaction-custom" src={fileUrl(picture)} alt={sticker?.emoji} draggable={false} />;
+  return <span>{shownEmoji(sticker?.emoji || '⭐')}</span>;
+}
+
+/** Reactions under a message, as in Telegram: click one to add yours or take it back. */
+function Reactions({ message: m, chat, tools }: { message: TdMessage; chat: TdChat; tools: ChatTools }) {
+  const reactions = reactionsOf(m);
+  if (!reactions.length) return null;
+  const direct = !!privateUserId(chat);
+  return (
+    <span className="tg-reactions">
+      {reactions.map((r) => {
+        const names = r.senders.map(senderTitle).filter(Boolean);
+        // Few people: their pictures instead of a number (not in channels or one-to-one chats).
+        const faces =
+          !direct && !isChannel(chat) && r.count <= 3 && r.senders.length === r.count && !r.paid;
+        const title = r.paid
+          ? `${r.count} stars${names.length ? ` from ${names.join(', ')}` : ''} · send stars in Telegram's app`
+          : names.length
+            ? names.join(', ') + (r.count > names.length ? ` and ${r.count - names.length} more` : '')
+            : undefined;
+        return (
+          <button
+            key={r.key}
+            data-chosen={r.chosen || undefined}
+            data-paid={r.paid || undefined}
+            title={title}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={() => toggleReaction(m, r.type, tools)}
+          >
+            {r.paid ? (
+              <span>{shownEmoji('⭐')}</span>
+            ) : r.customId ? (
+              <CustomEmoji id={r.customId} />
+            ) : (
+              <span>{shownEmoji(r.emoji)}</span>
+            )}
+            {faces ? (
+              <span className="tg-reaction-faces">
+                {r.senders.map((sender, i) => (
+                  <SenderAvatar key={i} sender={sender} />
+                ))}
+              </span>
+            ) : (
+              (!direct || r.count > 1) && <span>{r.count}</span>
+            )}
+          </button>
+        );
+      })}
+    </span>
+  );
+}
 
 function serviceText(m: TdMessage) {
   const who = senderName(m);
