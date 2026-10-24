@@ -40,13 +40,18 @@ export interface FileLink {
   // What it was when added; decides the placeholder where it can't be read.
   // 'desktops' is a Desktops frame: Windows' virtual desktops and the windows
   // open on each (no root, path '').
-  kind: 'folder' | 'file' | 'desktops';
+  // 'app' is an app frame: a running program's window on the board; path is
+  // its program file, found running (or started) on each computer.
+  kind: 'folder' | 'file' | 'desktops' | 'app';
   view?: FileView;
   iconSize?: FileIconSize;
   sort?: FileSort;
   descending?: boolean;
   // Show hidden and system items.
   hidden?: boolean;
+  // Icons stay where they are dropped, like the desktop's own (where, is
+  // remembered on each computer); otherwise they are sorted.
+  arrange?: 'free';
 }
 
 // Keep equal to fileLinkValue in electron/store.cjs (a test compares them).
@@ -67,7 +72,7 @@ export function fileLinkValue(input: unknown): FileLink {
       throw Error('Invalid file link path');
   } else if (!/^([a-z]:[\\/]|\\\\[^\\/]+[\\/][^\\/]+|\/)/i.test(path))
     throw Error('Invalid file link path');
-  if (kind !== 'folder' && kind !== 'file') throw Error('Invalid file link kind');
+  if (kind !== 'folder' && kind !== 'file' && kind !== 'app') throw Error('Invalid file link kind');
   const pick = <T extends string>(v: unknown, options: readonly T[]) =>
     options.includes(v as T) ? (v as T) : undefined;
   const result: FileLink = { path, kind };
@@ -80,6 +85,7 @@ export function fileLinkValue(input: unknown): FileLink {
   if (order) result.sort = order;
   if (descending === true) result.descending = true;
   if (hidden === true) result.hidden = true;
+  if (value.arrange === 'free') result.arrange = 'free';
   return result;
 }
 
@@ -180,6 +186,14 @@ export interface FilesBridge {
   focusWindow(args: { id: string; steps: number }): Promise<void>;
   switchDesktop(args: { steps: number }): Promise<void>;
   closeWindow(args: { id: string }): Promise<void>;
+  // rect: the frame's area in the page, in CSS pixels.
+  dockWindow(args: {
+    id: string;
+    rect: { x: number; y: number; width: number; height: number };
+    activate?: boolean;
+  }): Promise<void>;
+  undockWindow(args: { id: string }): Promise<void>;
+  onUndocked(callback: (id: string) => void): () => void;
   source(args: { path: string }): Promise<FileSource>;
   watch(args: { key: string; dirs: string[] }): Promise<void>;
   unwatch(args: { key: string }): Promise<void>;
@@ -201,6 +215,7 @@ export const folderFooter = 26;
 export const folderSize = { width: 760, height: 500 };
 export const fileTileSize = { width: 112, height: 132 };
 export const desktopsSize = { width: 960, height: 460 };
+export const appFrameSize = { width: 800, height: 600 };
 export const folderMinimum = { width: 240, height: 160 };
 
 export const isFileObject = (o: CanvasObject) => o.type === 'file' && !!o.file;
@@ -305,7 +320,8 @@ export function drawFilePlaceholder(o: CanvasObject, resolution: number, dark: b
     ctx.font = `600 16px 'Segoe UI', sans-serif`;
     ctx.textBaseline = 'middle';
     ctx.fillText(name, 52, folderHeader / 2, Math.max(10, o.width - 70));
-    const glyph = o.file?.kind === 'desktops' ? drawScreensGlyph : drawFolderGlyph;
+    const glyph =
+      o.file?.kind === 'desktops' || o.file?.kind === 'app' ? drawScreensGlyph : drawFolderGlyph;
     glyph(ctx, 16, folderHeader / 2 - 11, 26);
     const size = Math.min(o.width, o.height - folderHeader) * 0.32;
     if (size > 24)

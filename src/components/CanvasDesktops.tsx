@@ -2,17 +2,12 @@
 // side by side with the windows open on each, live, like Task View. Clicking a
 // window brings it forward (moving to its desktop first); clicking a desktop
 // switches to it. Window titles are only shown, never stored in the board.
-import { useCallback, useEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react';
+import { useState, type PointerEvent, type ReactNode } from 'react';
+import { refreshDesktops, useDesktops } from './desktop-windows';
 import { AppWindow, Copy, ExternalLink, Link2, Monitor, MonitorUp, X } from 'lucide-react';
 import type { Camera, CanvasObject } from '../model';
 import { localToWorld } from '../canvas/transform';
-import {
-  folderFooter,
-  folderHeader,
-  iconTier,
-  type DesktopWindow,
-  type DesktopsState,
-} from '../canvas/file-link';
+import { folderFooter, folderHeader, iconTier, type DesktopWindow } from '../canvas/file-link';
 import type { MenuItem } from './Dialogs';
 import { fileIcon, useFileIcons } from './file-icons';
 
@@ -20,7 +15,7 @@ const message = (error: unknown) => (error instanceof Error ? error.message : St
 const columnHeader = 68;
 const rowHeight = 46;
 
-function AppIcon({ exe, size, zoom }: { exe: string; size: number; zoom: number }) {
+export function AppIcon({ exe, size, zoom }: { exe: string; size: number; zoom: number }) {
   const url = exe ? fileIcon(exe, 0, iconTier(size * zoom * (window.devicePixelRatio || 1))) : null;
   return (
     <span className="cd-app-icon" style={{ width: size, height: size }}>
@@ -50,6 +45,7 @@ export function DesktopsCard({
   onError,
   openMenu,
   addAppIcon,
+  addAppFrame,
 }: {
   object: CanvasObject;
   camera: Camera;
@@ -60,33 +56,12 @@ export function DesktopsCard({
   onError: (message: string) => void;
   openMenu: (menu: { x: number; y: number; items: (MenuItem | null)[] } | null) => void;
   addAppIcon: (exe: string, name: string) => void;
+  addAppFrame: (w: DesktopWindow) => void;
 }) {
   useFileIcons();
   const files = window.canvas?.files;
-  const [state, setState] = useState<DesktopsState | null>(null);
+  const state = useDesktops();
   const [status, setStatus] = useState('');
-  const last = useRef('');
-  const load = useCallback(async () => {
-    if (!files) return;
-    let next: DesktopsState;
-    try {
-      next = await files.desktops();
-    } catch (error) {
-      next = { supported: false, message: message(error) };
-    }
-    // Polled often: only a real change re-renders.
-    const key = JSON.stringify(next);
-    if (key === last.current) return;
-    last.current = key;
-    setState(next);
-  }, [files]);
-  useEffect(() => {
-    void load();
-    const timer = window.setInterval(() => {
-      if (document.visibilityState === 'visible') void load();
-    }, 1500);
-    return () => window.clearInterval(timer);
-  }, [load]);
 
   const run = async (working: string, task: () => Promise<void>) => {
     setStatus(working);
@@ -96,7 +71,7 @@ export function DesktopsCard({
       onError(message(error));
     } finally {
       setStatus('');
-      window.setTimeout(() => void load(), 450);
+      refreshDesktops(450);
     }
   };
   const live = state?.supported ? state : null;
@@ -117,6 +92,11 @@ export function DesktopsCard({
     { label: 'Switch to window', icon: <MonitorUp />, action: () => focus(w) },
     ...(w.exe
       ? [
+          {
+            label: 'Put window on the board',
+            icon: <AppWindow />,
+            action: () => addAppFrame(w),
+          },
           {
             label: 'Add app icon to board',
             icon: <Link2 />,

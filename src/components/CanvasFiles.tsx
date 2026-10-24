@@ -73,6 +73,8 @@ import {
 } from '../canvas/file-link';
 import { ContextMenu, type MenuItem } from './Dialogs';
 import { DesktopsCard } from './CanvasDesktops';
+import { AppFrame } from './CanvasApps';
+import type { DesktopWindow } from '../canvas/file-link';
 import { fileIcon, loadedIcon, useFileIcons } from './file-icons';
 import { forwardWheel } from './forward-wheel';
 import './canvas-files.css';
@@ -362,7 +364,49 @@ function FolderCard({
   const columns = view === 'icons' ? Math.max(1, Math.floor((bodyWidth - 16) / layout.cell)) : 1;
   const rowHeight = view === 'icons' ? layout.row : listRow;
   const top = view === 'icons' ? 8 : listRow + 4;
-  const rows = Math.ceil(items.length / columns);
+  // Free placement: icons stay in the grid cell they were dropped in, like
+  // the desktop's own. Cells are remembered on this computer only (names of
+  // files never go into the board); items without one fill the first free cells.
+  const free = view === 'icons' && link.arrange === 'free';
+  const layoutKey =
+    listing?.state === 'folder' ? `terra.folder-layout.${o.id}.${listing.dir.toLowerCase()}` : '';
+  const [placed, setPlaced] = useState<Record<string, [number, number]>>({});
+  useEffect(() => {
+    try {
+      setPlaced(layoutKey ? JSON.parse(localStorage.getItem(layoutKey) || '{}') : {});
+    } catch {
+      setPlaced({});
+    }
+  }, [layoutKey]);
+  const savePlaced = (next: Record<string, [number, number]>) => {
+    setPlaced(next);
+    try {
+      localStorage.setItem(layoutKey, JSON.stringify(next));
+    } catch {}
+  };
+  const slots = useMemo(() => {
+    if (!free) return null;
+    const taken = new Set<string>(),
+      result = new Map<string, [number, number]>();
+    for (const item of items) {
+      const cell = placed[item.name];
+      if (!cell || taken.has(cell.join())) continue;
+      taken.add(cell.join());
+      result.set(item.path, cell);
+    }
+    let c = 0,
+      r = 0;
+    for (const item of items) {
+      if (result.has(item.path)) continue;
+      while (taken.has(`${c},${r}`)) if (++c >= columns) ((c = 0), r++);
+      taken.add(`${c},${r}`);
+      result.set(item.path, [c, r]);
+    }
+    return result;
+  }, [free, items, placed, columns]);
+  const rows = slots
+    ? Math.max(0, ...[...slots.values()].map(([, r]) => r + 1))
+    : Math.ceil(items.length / columns);
   const contentHeight = top + rows * rowHeight + 8;
   const firstRow = Math.max(0, Math.floor((scroll - top) / rowHeight) - 1);
   const lastRow = Math.min(rows - 1, Math.ceil((scroll + bodyHeight - top) / rowHeight) + 1);
@@ -372,8 +416,9 @@ function FolderCard({
   // Too small to read: a summary instead of hundreds of tiny icons.
   const tiny = iconPixels * camera.zoom < 5;
   const cellOf = (index: number) => {
-    const row = Math.floor(index / columns),
-      column = index % columns;
+    const slot = slots?.get(items[index]?.path);
+    const row = slot ? slot[1] : Math.floor(index / columns),
+      column = slot ? slot[0] : index % columns;
     return view === 'icons'
       ? {
           x: 8 + column * layout.cell,
@@ -384,6 +429,29 @@ function FolderCard({
       : { x: 0, y: top + row * rowHeight, width: bodyWidth, height: rowHeight };
   };
 
+  // Puts named items at a cell and the free cells after it (left to right,
+  // then down), keeping everything else where it is.
+  const placeAt = (names: string[], [c0, r0]: [number, number]) => {
+    if (!names.length) return;
+    const moving = new Set(names);
+    const next: Record<string, [number, number]> = {};
+    const taken = new Set<string>();
+    for (const item of items) {
+      if (moving.has(item.name)) continue;
+      const cell = slots?.get(item.path) ?? placed[item.name];
+      if (!cell) continue;
+      next[item.name] = cell;
+      taken.add(cell.join());
+    }
+    let c = c0,
+      r = r0;
+    for (const name of names) {
+      while (taken.has(`${c},${r}`)) if (++c >= columns) ((c = 0), r++);
+      next[name] = [c, r];
+      taken.add(`${c},${r}`);
+    }
+    savePlaced(next);
+  };
   const selectedItems = () => items.filter((item) => selection.has(item.path));
   const selectOnly = (paths: string[]) => {
     setSelection(new Set(paths));
@@ -734,9 +802,37 @@ function FolderCard({
       onError('Only files and folders from this computer can be dropped here.');
       return;
     }
+    // Free placement: items of this folder dropped on its own empty space move
+    // to that cell; nothing happens on disk.
+    const point = bodyPoint(event.clientX, event.clientY);
+    const cell: [number, number] = [
+      Math.max(0, Math.min(columns - 1, Math.floor((point.x - 8) / layout.cell))),
+      Math.max(0, Math.floor((point.y - top) / rowHeight)),
+    ];
+    const here = paths.every((p) => byPath.has(p));
+    if (free && !into && here) {
+      placeAt(
+        paths.map((p) => byPath.get(p)!.name),
+        cell,
+      );
+      return;
+    }
     if (into && !into.folder)
       void run(`Opening with ${displayName(into, hideExtensions)}…`, () =>
         files.openWith({ app: into.path, paths }),
+      );
+    else if (free && !into)
+      // Items arriving from elsewhere land where they were dropped.
+      void run(
+        mode === 'link' ? 'Creating shortcuts…' : mode === 'copy' ? 'Copying…' : 'Moving…',
+        async () => {
+          const result = await files.transfer({ paths, target: listing.dir, mode });
+          placeAt(
+            result.ops.map((op) => op.to.split(/[\\/]/).pop()!),
+            cell,
+          );
+          return result;
+        },
       );
     else
       void run(
@@ -1008,11 +1104,19 @@ function FolderCard({
     content = <div className="cf-message cf-empty">This folder is empty.</div>;
   else {
     const rendered: ReactNode[] = [];
-    for (let row = firstRow; row <= lastRow; row++)
-      for (let column = 0; column < columns; column++) {
-        const index = row * columns + column;
+    // Only the rows in view are drawn (in free placement, the items in them).
+    const indexes: number[] = [];
+    if (slots)
+      items.forEach((item, i) => {
+        const r = slots.get(item.path)![1];
+        if (r >= firstRow && r <= lastRow) indexes.push(i);
+      });
+    else
+      for (let i = firstRow * columns; i < Math.min(items.length, (lastRow + 1) * columns); i++)
+        indexes.push(i);
+    for (const index of indexes) {
+      {
         const item = items[index];
-        if (!item) break;
         const cell = cellOf(index);
         const name = displayName(item, hideExtensions);
         const props = {
@@ -1062,6 +1166,7 @@ function FolderCard({
           ),
         );
       }
+    }
     content = (
       <div className="cf-content" style={{ height: contentHeight }}>
         {view === 'list' && (
@@ -1345,6 +1450,27 @@ function FolderOptions({
             ),
           )}
       </div>
+      {view === 'icons' && (
+        <>
+          <h3>Arrange</h3>
+          <div className="cf-chips">
+            {chip(
+              !link.arrange,
+              'Sorted',
+              () => setLink({ arrange: undefined }),
+              'sorted',
+              'Icons follow the sort order',
+            )}
+            {chip(
+              link.arrange === 'free',
+              'Free, like the desktop',
+              () => setLink({ arrange: 'free' }),
+              'free',
+              'Drag icons to any spot; they stay there',
+            )}
+          </div>
+        </>
+      )}
       <h3>Sort by</h3>
       <div className="cf-chips">
         {fileSorts.map((s) =>
@@ -1545,6 +1671,7 @@ export default function CanvasFiles({
   beginPointer,
   update,
   addToBoard,
+  addApp,
   onError,
 }: {
   view: FilesView;
@@ -1556,6 +1683,7 @@ export default function CanvasFiles({
   beginPointer: (event: globalThis.PointerEvent) => void;
   update: (o: CanvasObject) => void;
   addToBoard: (items: FileBoardItem[], asIcons: boolean, from: CanvasObject) => void;
+  addApp: (w: DesktopWindow, from: CanvasObject) => void;
   onError: (message: string) => void;
 }) {
   const overlay = useRef<HTMLDivElement>(null);
@@ -1605,6 +1733,18 @@ export default function CanvasFiles({
             addAppIcon={(exe, name) =>
               readOnly ? undefined : addToBoard([{ path: exe, name, folder: false }], true, o)
             }
+            addAppFrame={(w) => (readOnly ? undefined : addApp(w, o))}
+          />
+        ) : o.file?.kind === 'app' ? (
+          <AppFrame
+            key={o.id}
+            object={o}
+            camera={view.camera}
+            active={selected.includes(o.id)}
+            host={host}
+            select={select}
+            forward={shared.forward}
+            onError={onError}
           />
         ) : o.file?.kind === 'file' ? (
           <FileTile

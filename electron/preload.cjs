@@ -42,6 +42,13 @@ contextBridge.exposeInMainWorld('canvas', {
     focusWindow: (args) => ipcRenderer.invoke('canvas:files-focus-window', args),
     switchDesktop: (args) => ipcRenderer.invoke('canvas:files-switch-desktop', args),
     closeWindow: (args) => ipcRenderer.invoke('canvas:files-close-window', args),
+    dockWindow: (args) => ipcRenderer.invoke('canvas:files-dock-window', args),
+    undockWindow: (args) => ipcRenderer.invoke('canvas:files-undock-window', args),
+    onUndocked: (callback) => {
+      const handler = (_event, id) => callback(id);
+      ipcRenderer.on('canvas:files-undocked', handler);
+      return () => ipcRenderer.removeListener('canvas:files-undocked', handler);
+    },
     source: (args) => ipcRenderer.invoke('canvas:files-source', args),
     watch: (args) => ipcRenderer.invoke('canvas:files-watch', args),
     unwatch: (args) => ipcRenderer.invoke('canvas:files-unwatch', args),

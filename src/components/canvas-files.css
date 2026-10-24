@@ -622,3 +622,50 @@
 [data-theme='dark'] .cd-app {
   color: #9aa7b8;
 }
+
+/* App frames: a running program's window, pictured until it is used. */
+.ca-body {
+  position: relative;
+  flex: none;
+  overflow: hidden;
+  background: #11161c;
+}
+.ca-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+}
+.ca-cover {
+  background: #f7f9fc;
+}
+.ca-live {
+  background: #e9f1fb;
+  color: #2f6fc0;
+}
+.canvas-app[data-live] {
+  border-color: #4486d9;
+  box-shadow:
+    0 0 0 3px rgb(68 134 217 / 0.35),
+    0 6px 24px rgb(37 59 90 / 0.08);
+}
+.canvas-app .cf-title-icon {
+  color: inherit;
+}
+.ca-use {
+  color: #2f6fc0;
+}
+.canvas-app .button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+[data-theme='dark'] .ca-cover {
+  background: #1f2630;
+}
+[data-theme='dark'] .ca-live {
+  background: #1d2a3b;
+  color: #a9c8f0;
+}

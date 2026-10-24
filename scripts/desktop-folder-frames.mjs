@@ -368,6 +368,38 @@ try {
   await sleep(300);
   await screenshot('3-list.png');
 
+  // 9b. Free placement: icons dropped on the frame's own space stay there,
+  // with nothing moved on disk; files from elsewhere land where dropped.
+  await click('.canvas-folder[data-file-id="scratch"] [aria-label="Show as icons"]');
+  await click('.canvas-folder[data-file-id="scratch"] [aria-label="Folder and view"]');
+  await read(
+    `[...document.querySelectorAll('.cf-options .cf-chip')].find((b) => b.textContent.includes('Free')).click()`,
+  );
+  await until(
+    async () => (await objects()).find((o) => o.id === 'scratch').file.arrange === 'free',
+    'free arrange saved',
+  );
+  await key('Escape', 'Escape', 27);
+  const freeBody = await rect('.canvas-folder[data-file-id="scratch"] .cf-body');
+  const cellAt = { x: freeBody.x + freeBody.width - 60, y: freeBody.y + freeBody.height - 50 };
+  await until(() => rect(item('a.txt')), 'a.txt shown');
+  await drop(cellAt, [join(folder, 'a.txt')]);
+  await until(async () => {
+    const r = await rect(item('a.txt'));
+    return r && Math.abs(r.x + r.width / 2 - cellAt.x) < r.width && Math.abs(r.y + r.height / 2 - cellAt.y) < r.height;
+  }, 'icon moved to the drop spot');
+  assert.ok(fs.existsSync(join(folder, 'a.txt')), 'still in its folder');
+  fs.writeFileSync(join(outside, 'placed.txt'), 'P');
+  const placeAtSpot = { x: freeBody.x + 60, y: freeBody.y + freeBody.height - 50 };
+  await drop(placeAtSpot, [join(outside, 'placed.txt')]);
+  await until(() => fs.existsSync(join(folder, 'placed.txt')), 'outside file moved in');
+  await until(async () => {
+    const r = await rect(item('placed.txt'));
+    return r && Math.abs(r.x + r.width / 2 - placeAtSpot.x) < r.width && Math.abs(r.y + r.height / 2 - placeAtSpot.y) < r.height;
+  }, 'new file at the drop spot');
+  await sleep(400);
+  await screenshot('3b-free.png');
+
   // 10. More tools → Folder adds a frame of this computer's Desktop (read only here).
   await click('.toolbar-insert');
   await click('[aria-label="More tools"] [aria-label="Add folder"]');
@@ -415,6 +447,105 @@ try {
     assert.ok(shown.windows >= 1, 'at least one window is open');
     await sleep(1500);
     await screenshot('6-desktops.png');
+
+    // 12. A window put on the board shows live, docks over its frame while
+    // used, goes back when the board is clicked, and closes from the frame.
+    // Uses a small window of its own (scripts/fixtures/test-app-window.ps1).
+    const report = join(root, 'test-app.json');
+    const app = spawn(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-STA',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-File',
+        resolve('scripts/fixtures/test-app-window.ps1'),
+        '-Report',
+        report,
+      ],
+      { stdio: 'ignore' },
+    );
+    const where = () => {
+      try {
+        return JSON.parse(fs.readFileSync(report, 'utf8'));
+      } catch {
+        return null;
+      }
+    };
+    try {
+      const home = await until(where, 'test app window', 30000);
+      await until(
+        () =>
+          read(
+            `[...document.querySelectorAll('.cd-window .cd-title')].some((e) => e.textContent === 'Terra test app')`,
+          ),
+        'test app listed',
+      );
+      await read(`(()=>{
+        const row = [...document.querySelectorAll('.cd-window')].find((e) => e.querySelector('.cd-title').textContent === 'Terra test app');
+        const r = row.getBoundingClientRect();
+        row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.x + 20, clientY: r.y + 10 }));
+      })()`);
+      await until(
+        () =>
+          read(
+            `!![...document.querySelectorAll('.context-menu button')].find((b) => b.textContent.includes('Put window on the board'))`,
+          ),
+        'put on board item',
+      );
+      await read(
+        `[...document.querySelectorAll('.context-menu button')].find((b) => b.textContent.includes('Put window on the board')).click()`,
+      );
+      const appFrame = await until(
+        async () => (await objects()).find((o) => o.type === 'file' && o.file.kind === 'app'),
+        'app frame',
+      );
+      assert.equal(appFrame.file.kind, 'app');
+      const frameSel = `.canvas-app[data-file-id="${appFrame.id}"]`;
+      await until(
+        () =>
+          read(
+            `(()=>{const v=document.querySelector('${frameSel} video');return !!v && v.videoWidth > 0})()`,
+          ),
+        'live picture of the window',
+      ).catch(async (error) => {
+        console.error(
+          'App frame shows:',
+          await read(`document.querySelector('${frameSel}')?.innerText`),
+        );
+        throw error;
+      });
+      await sleep(600);
+      await screenshot('7-app-picture.png');
+      // Use it: the real window moves over the frame.
+      // The new frame lies partly off screen here: press its button directly.
+      await read(`document.querySelector('${frameSel} [aria-label="Use the app"]').click()`);
+      const docked = await until(() => {
+        const w = where();
+        return w && (Math.abs(w.x - home.x) > 20 || Math.abs(w.width - home.width) > 20) ? w : null;
+      }, 'window docked over the frame');
+      assert.ok(await read(`!!document.querySelector('${frameSel}[data-live]')`));
+      // A click on the board gives it back where it was.
+      const s = await rect('.canvas-surface');
+      await clickAt(s.x + s.width - 40, s.y + s.height - 160);
+      const back = await until(() => {
+        const w = where();
+        return w &&
+          Math.abs(w.x - home.x) <= 2 &&
+          Math.abs(w.y - home.y) <= 2 &&
+          Math.abs(w.width - home.width) <= 2
+          ? w
+          : null;
+      }, 'window given back');
+      assert.ok(await read(`!document.querySelector('${frameSel}[data-live]')`));
+      // Close it from the frame.
+      await read(`document.querySelector('${frameSel} [aria-label^="Close "]').click()`);
+      await until(() => app.exitCode !== null, 'test app closed', 15000);
+      console.log('app frame', { home, docked, back });
+    } finally {
+      if (app.exitCode === null) app.kill();
+    }
   }
   // Zoomed far out, a frame shows a summary instead of tiny icons.
   await read(`window.dispatchEvent(new Event('resize'))`);

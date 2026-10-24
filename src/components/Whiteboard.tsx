@@ -11,10 +11,14 @@ import CanvasFiles, {
   type FileBoardItem,
   type FilesView,
 } from './CanvasFiles';
+import { requestAppUse } from './CanvasApps';
+import { bindAppWindow } from './desktop-windows';
 import {
+  appFrameSize,
   desktopsSize,
   fileTileSize,
   folderSize,
+  type DesktopWindow,
   type DroppedPath,
   type FileSource,
 } from '../canvas/file-link';
@@ -1473,6 +1477,33 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     e.setSelection([o.id]);
     selectTool('select');
   };
+  // An app frame for a window listed in a Desktops frame: that program's
+  // window, live, beside the Desktops frame. The board keeps the program only.
+  const addAppFrame = async (w: DesktopWindow, from: CanvasObject) => {
+    const e = engine.current,
+      files = window.canvas?.files;
+    if (!e || !files || readOnlyRef.current || !w.exe) return;
+    try {
+      const source = await files.source({ path: w.exe });
+      const { width, height } = appFrameSize;
+      const o: CanvasObject = {
+        id: uid(),
+        type: 'file',
+        text: w.app || w.title,
+        file: { ...source, kind: 'app' },
+        x: from.x + from.width + 48,
+        y: from.y,
+        width,
+        height,
+        z: e.topZ() + 1,
+      };
+      bindAppWindow(o.id, w.id);
+      e.apply({ upserts: [o], deleted: [] });
+      e.setSelection([o.id]);
+    } catch (error) {
+      onError(error instanceof Error ? error.message : String(error));
+    }
+  };
   // A Desktops frame: Windows' virtual desktops and the windows open on each.
   const createDesktops = (point?: { x: number; y: number }) => {
     finishEdit();
@@ -2065,6 +2096,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     if (o.type === 'file') {
       // A file tile opens with Windows, locked or not; a folder frame is used in place.
       if (o.file?.kind === 'file') openFileObject(o, onError);
+      else if (o.file?.kind === 'app') requestAppUse(o.id);
       return;
     }
     if (engine.current?.objects.get(o.id)?.locked) return;
@@ -4014,6 +4046,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           engine.current?.apply({ upserts: [o], deleted: [] });
         }}
         addToBoard={(items, asIcons, from) => void addFromFolder(items, asIcons, from)}
+        addApp={(w, from) => void addAppFrame(w, from)}
         onError={onError}
       />
       {pinning && (

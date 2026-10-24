@@ -252,7 +252,8 @@ function fileLinkValue(value) {
       throw Error('Invalid file link path');
   } else if (!/^([a-z]:[\\/]|\\\\[^\\/]+[\\/][^\\/]+|\/)/i.test(link))
     throw Error('Invalid file link path');
-  if (kind !== 'folder' && kind !== 'file') throw Error('Invalid file link kind');
+  if (kind !== 'folder' && kind !== 'file' && kind !== 'app')
+    throw Error('Invalid file link kind');
   const result = { path: link, kind };
   if (root !== undefined) result.root = root;
   if (fileViews.includes(view)) result.view = view;
@@ -260,6 +261,7 @@ function fileLinkValue(value) {
   if (fileSorts.includes(sort)) result.sort = sort;
   if (descending === true) result.descending = true;
   if (hidden === true) result.hidden = true;
+  if (value.arrange === 'free') result.arrange = 'free';
   return result;
 }
 function tableValue(input) {

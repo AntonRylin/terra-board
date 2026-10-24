@@ -57,6 +57,8 @@ public static class TerraShell
                 case "focus": TerraDesktops.Focus(long.Parse(parts[2]), int.Parse(parts[3])); return id + "\tok\t";
                 case "switch": TerraDesktops.Switch(int.Parse(parts[2])); return id + "\tok\t";
                 case "close": TerraDesktops.Close(long.Parse(parts[2])); return id + "\tok\t";
+                case "dock": TerraDesktops.Dock(long.Parse(parts[2]), long.Parse(parts[3]), int.Parse(parts[4]), int.Parse(parts[5]), int.Parse(parts[6]), int.Parse(parts[7]), parts[8] == "1"); return id + "\tok\t";
+                case "undock": TerraDesktops.Undock(long.Parse(parts[2])); return id + "\tok\t";
                 case "ping": return id + "\tok\t";
             }
             return id + "\terr\t" + Out("Unknown operation");
@@ -363,6 +365,64 @@ public static class TerraDesktops
         if (!SetForegroundWindow(h)) SwitchToThisWindow(h, true);
     }
 
+    // App frames: the real window placed over its frame on the board while
+    // someone uses it, owned by Terra's window so it stays above it, and put
+    // back where it was (and as it was) afterwards.
+    [StructLayout(LayoutKind.Sequential)]
+    struct RECT { public int Left, Top, Right, Bottom; }
+    [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out RECT r);
+    [DllImport("user32.dll")] static extern bool IsZoomed(IntPtr h);
+    [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags);
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] static extern IntPtr SetWindowLongPtr(IntPtr h, int index, IntPtr value);
+    [DllImport("user32.dll")] static extern IntPtr SetProcessDpiAwarenessContext(IntPtr value);
+    struct Home { public RECT Rect; public bool Maximized; }
+    static readonly System.Collections.Generic.Dictionary<long, Home> homes = new System.Collections.Generic.Dictionary<long, Home>();
+    static bool dpiAware;
+
+    // x, y, width and height are physical screen pixels.
+    public static void Dock(long id, long owner, int x, int y, int width, int height, bool activate)
+    {
+        if (!dpiAware)
+        {
+            // Per-monitor aware (v2), so positions are real pixels on every screen.
+            SetProcessDpiAwarenessContext(new IntPtr(-4));
+            dpiAware = true;
+        }
+        IntPtr h = new IntPtr(id);
+        if (!IsWindow(h)) throw new Exception("That window has closed.");
+        if (!homes.ContainsKey(id))
+        {
+            bool maximized = IsZoomed(h);
+            if (IsIconic(h) || maximized) ShowWindow(h, 9);
+            RECT r;
+            GetWindowRect(h, out r);
+            homes[id] = new Home { Rect = r, Maximized = maximized };
+            SetWindowLongPtr(h, -8, new IntPtr(owner));
+        }
+        // SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW, plus SWP_NOOWNERZORDER.
+        uint flags = 0x0004 | 0x0040 | 0x0200 | (activate ? 0u : 0x0010u);
+        SetWindowPos(h, IntPtr.Zero, x, y, Math.Max(120, width), Math.Max(80, height), flags);
+        if (activate)
+        {
+            keybd_event(0x12, 0, 0, UIntPtr.Zero);
+            keybd_event(0x12, 0, 2, UIntPtr.Zero);
+            if (!SetForegroundWindow(h)) SwitchToThisWindow(h, true);
+        }
+    }
+
+    public static void Undock(long id)
+    {
+        IntPtr h = new IntPtr(id);
+        if (!IsWindow(h)) { homes.Remove(id); return; }
+        SetWindowLongPtr(h, -8, IntPtr.Zero);
+        Home home;
+        if (!homes.TryGetValue(id, out home)) return;
+        homes.Remove(id);
+        // SWP_NOZORDER | SWP_NOACTIVATE.
+        SetWindowPos(h, IntPtr.Zero, home.Rect.Left, home.Rect.Top, home.Rect.Right - home.Rect.Left, home.Rect.Bottom - home.Rect.Top, 0x0004 | 0x0010);
+        if (home.Maximized) ShowWindow(h, 3);
+    }
+
     // Asks a window to close, as its X button does; the app may ask to save first.
     public static void Close(long id)
     {
@@ -402,7 +462,8 @@ function createShellHelper({
     nextId = 1,
     busy = null,
     idleTimer = null,
-    buffer = '';
+    buffer = '',
+    held = false;
   const queue = [];
   const stop = () => {
     clearTimeout(idleTimer);
@@ -469,7 +530,8 @@ function createShellHelper({
           if (status === 'ok') request.resolve(payload || '');
           else request.reject(Error(unb64(payload) || 'Windows could not do that'));
           pump();
-          if (!busy && !queue.length) idleTimer = setTimeout(stop, idleMs);
+          // A docked app window needs this process to put it back: no idle stop then.
+          if (!busy && !queue.length && !held) idleTimer = setTimeout(stop, idleMs);
         }
       });
       c.stderr.on('data', () => {});
@@ -552,6 +614,20 @@ function createShellHelper({
     },
     async closeWindow(id) {
       await request(`close\t${id}`, true);
+    },
+    async dockWindow(id, owner, { x, y, width, height }, activate) {
+      await request(
+        `dock\t${id}\t${owner}\t${x | 0}\t${y | 0}\t${width | 0}\t${height | 0}\t${activate ? 1 : 0}`,
+        true,
+      );
+    },
+    async undockWindow(id) {
+      await request(`undock\t${id}`, true);
+    },
+    // Keeps the process running (windows are docked) or lets it stop when idle.
+    hold(on) {
+      held = !!on;
+      if (held) clearTimeout(idleTimer);
     },
     async readClipboard() {
       const text = unb64(await request('clip-get', true));

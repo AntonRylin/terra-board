@@ -658,7 +658,20 @@ app
     });
     win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     win.webContents.on('will-navigate', (e) => e.preventDefault());
-    win.webContents.session.setPermissionRequestHandler((_wc, _p, cb) => cb(false));
+    // App frames show other windows of this computer (desktop video, no sound,
+    // camera or microphone), asked for by Terra's own page only: never by
+    // embeds or websites inside it.
+    win.webContents.session.setPermissionRequestHandler((wc, permission, cb, details) => {
+      const url = details?.requestingUrl || '';
+      const own =
+        wc === win.webContents &&
+        details?.isMainFrame !== false &&
+        (url.startsWith('canvas-app://app/') || (!!dev && url.startsWith(dev + '/')));
+      // Electron lists no media types for a desktop source; a camera or
+      // microphone would ask for 'video' or 'audio' and stays refused.
+      const types = details?.mediaTypes || [];
+      cb(permission === 'media' && own && types.length === 0);
+    });
     win.webContents.session.webRequest.onBeforeRequest((details, cb) => {
       const host = new URL(details.url).hostname;
       const playerHost = [
@@ -1360,7 +1373,24 @@ app
       send: (channel, data) => {
         if (win && !win.isDestroyed()) win.webContents.send(channel, data);
       },
+      dockGeometry: (rect) => {
+        const bounds = win.getContentBounds();
+        const dip = {
+          x: Math.round(bounds.x + rect.x),
+          y: Math.round(bounds.y + rect.y),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+        };
+        const physical =
+          process.platform === 'win32' ? require('electron').screen.dipToScreenRect(win, dip) : dip;
+        return { owner: win.getNativeWindowHandle().readBigUInt64LE(0).toString(), ...physical };
+      },
     });
+    // A docked app window belongs to Terra's window while it is used: hand it
+    // back before that window moves, minimizes or closes.
+    for (const event of ['minimize', 'move', 'resize', 'enter-full-screen', 'leave-full-screen'])
+      win.on(event, () => void localFiles.undockAll());
+    win.webContents.on('render-process-gone', () => void localFiles.undockAll());
     registerLocalFiles({ ipcMain, trusted, files: localFiles });
     ipcMain.handle('canvas:open-folder', async (e, which) => {
       trusted(e);
@@ -1426,8 +1456,10 @@ app
       trusted(e);
       readyResolve();
     });
-    ipcMain.on('canvas:close-ready', (e) => {
+    ipcMain.on('canvas:close-ready', async (e) => {
       trusted(e);
+      // Windows destroys owned windows with their owner: give app windows back first.
+      await localFiles?.undockAll().catch(() => {});
       closed = true;
       win.close();
     });

@@ -403,6 +403,26 @@ test('folders are watched, and a change is reported once', async () => {
   }
 });
 
+test('app frames keep their program, and folders can be arranged freely', () => {
+  for (const link of [
+    { root: 'home', path: 'AppData/Roaming/Telegram Desktop/Telegram.exe', kind: 'app' },
+    { path: 'C:\\Program Files\\VideoLAN\\VLC\\vlc.exe', kind: 'app' },
+    { root: 'desktop', path: '', kind: 'folder', arrange: 'free' },
+    { root: 'desktop', path: '', kind: 'folder', arrange: 'grid' },
+  ])
+    assert.deepEqual(fileLinkValue(link), storeFileLinkValue(link));
+  assert.equal(
+    fileLinkValue({ root: 'desktop', path: '', kind: 'folder', arrange: 'free' }).arrange,
+    'free',
+  );
+  assert.equal(
+    fileLinkValue({ root: 'desktop', path: '', kind: 'folder', arrange: 'grid' }).arrange,
+    undefined,
+  );
+  assert.throws(() => fileLinkValue({ path: 'relative.exe', kind: 'app' }));
+  assert.throws(() => storeFileLinkValue({ path: 'relative.exe', kind: 'app' }));
+});
+
 test('desktops frames hold nothing but their kind', () => {
   const desktops = { path: '', kind: 'desktops', view: 'list', root: undefined };
   assert.deepEqual(fileLinkValue(desktops), { path: '', kind: 'desktops' });

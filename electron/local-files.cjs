@@ -150,6 +150,9 @@ function createLocalFiles({
   readAsset = null,
   importFile = null,
   pickFolder = null,
+  // A frame's rectangle in the page (CSS pixels) to Terra's window handle and
+  // physical screen pixels.
+  dockGeometry = null,
   send = () => {},
   pollMs = 5000,
 } = {}) {
@@ -837,6 +840,47 @@ function createLocalFiles({
     await helper.closeWindow(windowId(id));
   }
 
+  // App frames: the real window laid over its frame while someone uses it.
+  const docked = new Set();
+  async function dockWindow({ id, rect, activate = false } = {}) {
+    if (!windows || !helper?.available || !dockGeometry)
+      throw Error('App frames need Terra Board for Windows.');
+    windowId(id);
+    if (
+      !rect ||
+      !['x', 'y', 'width', 'height'].every((k) => Number.isFinite(rect[k])) ||
+      rect.width < 1 ||
+      rect.height < 1 ||
+      rect.width > 20000 ||
+      rect.height > 20000
+    )
+      throw Error('Invalid frame');
+    const geometry = dockGeometry(rect);
+    docked.add(id);
+    helper.hold(true);
+    try {
+      await helper.dockWindow(id, geometry.owner, geometry, activate === true);
+    } catch (error) {
+      docked.delete(id);
+      if (!docked.size) helper.hold(false);
+      throw Error(friendly(error));
+    }
+  }
+  async function undockWindow({ id } = {}) {
+    windowId(id);
+    if (!docked.has(id)) return;
+    docked.delete(id);
+    try {
+      await helper.undockWindow(id);
+    } finally {
+      if (!docked.size) helper.hold(false);
+      send('canvas:files-undocked', id);
+    }
+  }
+  async function undockAll() {
+    for (const id of [...docked]) await undockWindow({ id }).catch(() => {});
+  }
+
   async function choose({ defaultPath } = {}) {
     const start = typeof defaultPath === 'string' && defaultPath ? defaultPath : knownPath('home');
     const chosen = await pickFolder(start);
@@ -886,6 +930,9 @@ function createLocalFiles({
     focusWindow,
     switchDesktop,
     closeWindow,
+    dockWindow,
+    undockWindow,
+    undockAll,
     dragIcon,
     absolute,
     paths,
@@ -916,10 +963,16 @@ function registerLocalFiles({ ipcMain, trusted, files }) {
     'focus-window': files.focusWindow,
     'switch-desktop': files.switchDesktop,
     'close-window': files.closeWindow,
+    'dock-window': files.dockWindow,
+    'undock-window': files.undockWindow,
     source: ({ path: file } = {}) => files.sourceFor(file),
     watch: ({ key, dirs } = {}) => files.watch(key, dirs),
     unwatch: ({ key } = {}) => files.unwatch(key),
-    reset: () => files.unwatchAll(),
+    // A page (re)load: watches and docked windows from before it are let go.
+    reset: async () => {
+      files.unwatchAll();
+      await files.undockAll();
+    },
   };
   for (const [name, handler] of Object.entries(handlers))
     ipcMain.handle('canvas:files-' + name, async (event, args) => {
