@@ -201,7 +201,12 @@ import {
   type GalleryTarget,
 } from '../canvas/gallery';
 import { textAppearance } from '../canvas/text-style';
-import { textLayout, fitTextObject, fitTextToView } from '../canvas/text-layout';
+import {
+  textLayout,
+  fitTextObject,
+  fitTextToView,
+  widenNoteForWords,
+} from '../canvas/text-layout';
 import { textPlacement } from '../canvas/text-alignment';
 import { localToWorld, worldToLocal, objectBounds, containsObject } from '../canvas/transform';
 import { SaveQueue, CameraSaveQueue, type SaveState } from '../canvas/save-queue';
@@ -953,7 +958,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   const [editingPaperId, setEditingPaperId] = useState<string | null>(null);
   const editingOpen = !!editing || !!editingListId || !!editingPaperId;
   // Android: the keyboard shrinks the page when text on the board is edited. The text
-  // being typed moves up to stay above it (the toolbars give way: mobile/index.ts).
+  // being typed moves to stay in view above it (the toolbars give way: mobile/index.ts),
+  // following the caret as it moves along a line, so what is typed is always seen.
   useEffect(() => {
     if (!android || !editingOpen) return;
     const keepVisible = () =>
@@ -961,15 +967,35 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         const field = document.activeElement as HTMLElement | null;
         if (!field?.closest('.whiteboard')) return;
         const box = field.getBoundingClientRect();
-        const room = window.innerHeight - 16;
-        if (box.bottom <= room) return;
+        let caret: DOMRect | undefined;
+        const selection = window.getSelection();
+        if (field.isContentEditable && selection?.rangeCount) {
+          const range = selection.getRangeAt(0);
+          caret = [...range.getClientRects()].pop() || range.getBoundingClientRect();
+          if (!caret.width && !caret.height && !caret.x && !caret.y) caret = undefined;
+        }
+        const target = caret || box;
+        const board = (field.closest('.whiteboard') as HTMLElement).getBoundingClientRect();
+        const left = board.left + 16,
+          right = Math.min(board.right, window.innerWidth) - 16,
+          room = window.innerHeight - 16;
+        const dx =
+          target.right > right
+            ? right - target.right
+            : target.left < left
+              ? left - target.left
+              : 0;
         // Up far enough for the caret's end of the text, never past the top of the view.
-        engine.current?.panBy(0, -Math.min(box.bottom - room, Math.max(0, box.top - 72)));
+        const dy =
+          target.bottom > room
+            ? -Math.min(target.bottom - room, Math.max(0, target.top - 72))
+            : 0;
+        if (dx || dy) engine.current?.panBy(dx, dy);
       });
     keepVisible();
     window.addEventListener('resize', keepVisible);
     return () => window.removeEventListener('resize', keepVisible);
-  }, [editingOpen]);
+  }, [editingOpen, draft]);
   const [paperView, setPaperView] = useState<PaperView>({ objects: [], camera: doc.camera });
   // The open board's objects for pins to the screen; a new array after each edit.
   const [pinSource, setPinSource] = useState<CanvasObject[] | null>(null);
@@ -2265,6 +2291,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
                   padding * 2,
               );
         let next: CanvasObject = { ...editing, text: draft, height };
+        if (editing.type === 'note') next = widenNoteForWords(next);
         if (editing.type === 'frame' || editing.type === 'list') {
           const { textMarks: _, ...rest } = next,
             trimmed = trimTrailingBreaks(draft, editing.textMarks);

@@ -25,7 +25,18 @@ type Layout = {
   editorContentHeight?: number;
   // Formatted text lays out its own lines, which the renderer then draws as is.
   rich?: { lines: RichLine[]; base: RichBase };
+  // A note's word had to break between letters to fit its width.
+  split?: boolean;
 };
+
+// Scripts written without spaces wrap between any letters, so breaking there
+// is normal and never counts as splitting a word.
+const unspaced = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}]/u;
+const spacedWords = (text: string) => text.split(/\s+/).filter((w) => w && !unspaced.test(w));
+// Notes shrink their text to keep words whole, but not below about a third of the
+// note's own automatic size: past that a long word breaks between letters instead.
+export const noteWordFloor = (o: CanvasObject, fontSize: number) =>
+  Math.min(fontSize, Math.max(1, Math.min(o.width, o.height) * 0.3) * 0.35);
 const cache = new Map<string, Layout>();
 // Frame titles are sized per zoom level, so an animated zoom makes new entries
 // on every frame. Kept apart, they cannot push note and text layouts out.
@@ -96,6 +107,15 @@ export function textLayout(
   const base = { ...textAppearance(o), ...titleSize };
   const fittedBox = o.type === 'note' || (o.type === 'text' && !!o.textBox);
   const rich = hasRichText(o);
+  // Plain text: the longest word at 100px, scaled to each candidate size.
+  let longestWord: number | undefined;
+  if (o.type === 'note' && !rich) {
+    const ctx = measureContext();
+    ctx.font = `${base.fontWeight} 100px ${base.fontFamily}`;
+    longestWord = 0;
+    for (const word of spacedWords(text))
+      longestWord = Math.max(longestWord, ctx.measureText(word).width);
+  }
   const measure = (fontSize: number): Layout => {
     const padding = o.type === 'text' ? fontSize * 0.14 : base.padding;
     // Leave room for the handwriting font's ink overhang at a wrapped edge.
@@ -129,6 +149,16 @@ export function textLayout(
         o.type !== 'text' || o.textBox ? wrapWidth : Infinity,
       );
       const width = richTextWidth(lines);
+      // A wrap with letters on both sides of it cut a word.
+      const split =
+        o.type === 'note' &&
+        lines.some((line, i) => {
+          const at = line.end;
+          if (i === lines.length - 1 || lines[i + 1].start !== at) return false;
+          const before = text[at - 1] || ' ',
+            after = text[at] || ' ';
+          return !/\s/.test(before + after) && !unspaced.test(before + after);
+        });
       return {
         appearance,
         metrics: {
@@ -138,6 +168,7 @@ export function textLayout(
           height: richTextHeight(lines),
         },
         rich: { lines, base: richBase },
+        split,
       };
     }
     // Pixi drops a trailing empty line; the native editor needs it for the caret.
@@ -158,7 +189,9 @@ export function textLayout(
         wordWrapWidth: wrapWidth,
       }),
     );
-    return { appearance, metrics };
+    // Pixi breaks a word between letters exactly when it is wider than the wrap width.
+    const split = longestWord !== undefined && (longestWord * fontSize) / 100 > wrapWidth;
+    return { appearance, metrics, split };
   };
   let result = measure(base.fontSize);
   if (o.type === 'frame' && frameZoom !== undefined) {
@@ -188,7 +221,10 @@ export function textLayout(
   if (fittedBox) {
     // `quick` skips the hidden editor probe. It only ever accepts more than the full
     // check does, so it narrows the search cheaply before the full check confirms.
+    const floor = o.type === 'note' ? noteWordFloor(o, base.fontSize) : 0;
     const fits = (layout: Layout, quick = false) => {
+      // Smaller type that keeps every word whole beats larger type that cuts one.
+      if (layout.split && layout.appearance.fontSize > floor) return false;
       const width = Math.max(1, o.width - layout.appearance.padding * 2);
       const height = Math.max(1, o.height - layout.appearance.padding * 2);
       // Pixi wraps by adding up word widths, so a wrapped line can measure a hair wider
@@ -316,6 +352,36 @@ export function fitTextObject(
     fitted.y += before.y - after.y;
   }
   return fitted;
+}
+
+// The longest word a note makes room for, in widths of its smallest whole-word
+// type: about 29 letters ("wfhwfiowefiowqefhiowehfwiqoeh", bold, is 16.3).
+const widestNoteWord = 17;
+
+// A note whose word still breaks at the smallest whole-word size grows just wide
+// enough to hold it, keeping its left edge, but never past `widestNoteWord`.
+// Longer words break as before. It runs once editing ends, not on each key.
+export function widenNoteForWords(o: CanvasObject): CanvasObject {
+  if (o.type !== 'note' || !textLayout(o).split) return o;
+  const floor = noteWordFloor(o, textAppearance(o).fontSize);
+  const wider = (width: number) => ({ ...o, width });
+  const cap = Math.ceil(widestNoteWord * floor + floor * 0.25 + 47);
+  if (cap <= o.width || textLayout(wider(cap)).split) return o;
+  let low = o.width,
+    high = cap;
+  while (high - low > 1) {
+    const mid = Math.floor((low + high) / 2);
+    if (textLayout(wider(mid)).split) low = mid;
+    else high = mid;
+  }
+  const next = wider(high);
+  if (o.rotation) {
+    const before = localToWorld(o, { x: 0, y: 0 }),
+      after = localToWorld(next, { x: 0, y: 0 });
+    next.x += before.x - after.x;
+    next.y += before.y - after.y;
+  }
+  return next;
 }
 
 // Pasted text has to land readable inside the visible area without taking it over:
