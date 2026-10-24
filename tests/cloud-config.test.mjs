@@ -62,11 +62,11 @@ test('parseServerFile fills sign-in defaults and refuses secret keys', () => {
     url: 'https://api.acme.eu',
     key: 'sb_publishable_xxxxxxxxxxxxxxxxxxxx',
     address: 'https://terra.acme.eu',
-    signIn: { email: true, google: false, microsoft: false },
+    signIn: { email: true, google: false, microsoft: false, sso: false },
   });
   assert.deepEqual(
     parseServerFile(description(' Acme ', { signIn: { google: true }, extra: 1 }), null).signIn,
-    { email: true, google: true, microsoft: false },
+    { email: true, google: true, microsoft: false, sso: false },
   );
   assert.equal(parseServerFile(description(' Acme '), null).name, 'Acme');
 
@@ -103,7 +103,7 @@ test('terraCloud reads the built-in server from package.json', () => {
     url: 'https://cloud.terra.test',
     key: 'k'.repeat(30),
     address: null,
-    signIn: { email: true, google: true, microsoft: true },
+    signIn: { email: true, google: true, microsoft: true, sso: false },
   });
   assert.equal(terraCloud({}), null);
   assert.equal(terraCloud({ terraCloud: { url: 'https://x.test' } }), null);
@@ -206,7 +206,7 @@ test('saveServerChoice writes a file resolveServer reads back, and null removes 
     name: 'Acme boards',
     supabaseUrl: 'https://api.acme.eu',
     publicKey,
-    signIn: { email: true, google: true, microsoft: false },
+    signIn: { email: true, google: true, microsoft: false, sso: false },
     address: 'https://terra.acme.eu',
   });
   assert.equal(fs.existsSync(personalServerFile(root) + '.tmp'), false);

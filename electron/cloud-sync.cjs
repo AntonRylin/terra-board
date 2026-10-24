@@ -19,6 +19,7 @@ const { randomUUID } = require('node:crypto');
 const { createClient } = require('@supabase/supabase-js');
 const { referencedAssets } = require('./store-sync.cjs');
 const { createCloudAuth, userInfo } = require('./cloud-auth.cjs');
+const { createCompany } = require('./company.cjs');
 
 // Where a 0.1.28 computer's anonymous session waits for the claim after signing in.
 const ANONYMOUS_KEY = 'terra-cloud-anonymous';
@@ -149,6 +150,7 @@ class CloudSync {
       error: null,
       shared: [],
       sharedWithMe: [],
+      company: null,
       account: SIGNED_OUT,
       methods: null,
       waiting: null,
@@ -212,6 +214,14 @@ class CloudSync {
           onBeforeSignIn: () => this.keepAnonymousSession(),
         })
       : null;
+    // A company's own server may carry the admin side (ee/); Terra Cloud never does.
+    this.company =
+      this.client && config.kind !== 'terra'
+        ? createCompany({
+            client: this.client,
+            hosts: [config.address, config.url].filter(Boolean),
+          })
+        : null;
     // The session can end on its own (this computer removed from the account, a refresh
     // that fails); the account shown follows it. No awaiting Supabase inside this callback.
     const client = this.client;
@@ -280,7 +290,13 @@ class CloudSync {
     this.workspace = null;
     this.userId = null;
     this.makeClient(config);
-    return this.emit({ configured: !!config, server: server || null, state: 'off', error: null });
+    return this.emit({
+      configured: !!config,
+      server: server || null,
+      state: 'off',
+      error: null,
+      company: null,
+    });
   }
 
   // The saved session belongs to one server; this file records which, so a different server
@@ -400,6 +416,7 @@ class CloudSync {
     if (!this.status.methods) void this.loadMethods().catch(() => {});
     if (account.state !== 'signedIn') return account;
     this.userId = account.userId;
+    void this.loadCompany().catch(() => {});
     let revoked = false;
     try {
       revoked = (await this.registerHere())?.revoked;
@@ -422,6 +439,29 @@ class CloudSync {
     });
     if (this.config === config) this.emit({ methods });
     return methods;
+  }
+
+  // The company server's status for the signed-in person (company.cjs): the admin panel and
+  // the free-limit note. null on Terra Cloud and on servers without ee/.
+  async loadCompany() {
+    const company = this.company;
+    if (!company) return this.emit({ company: null }).company;
+    const status = await company.status();
+    if (this.company === company) this.emit({ company: status });
+    return status;
+  }
+
+  // Admin actions (company.cjs): people, setDisabled, setAdmin, setLicense, setAudit, audit.
+  // Changes reload the status, so the panel and the license note stay current.
+  async companyAction(name, ...args) {
+    this.requireClient();
+    const reads = new Set(['people', 'audit']);
+    const changes = new Set(['setDisabled', 'setAdmin', 'setLicense', 'setAudit']);
+    if (!this.company || (!reads.has(name) && !changes.has(name)))
+      throw Error('This server has no admin settings.');
+    const result = await this.company[name](...args);
+    if (changes.has(name)) await this.loadCompany().catch(() => {});
+    return result;
   }
 
   async requireSignedOut() {
@@ -457,13 +497,14 @@ class CloudSync {
     return this.afterSignIn();
   }
 
-  // Google or Microsoft in the system browser; finishes when the terraboard://auth/callback
-  // link arrives (finishOAuth), or fails on cancelSignIn().
-  async signInWithProvider(provider) {
+  // Google, Microsoft or company sign-in ('sso', with a work email) in the system browser;
+  // finishes when the terraboard://auth/callback link arrives (finishOAuth), or fails on
+  // cancelSignIn().
+  async signInWithProvider(provider, email) {
     await this.requireSignedOut();
     this.emit({ waiting: provider });
     try {
-      await this.auth.signInWithProvider(provider);
+      await this.auth.signInWithProvider(provider, { email });
     } catch (e) {
       this.emit({ waiting: null });
       await this.resumeAfterFailedSignIn();
@@ -738,6 +779,7 @@ class CloudSync {
       lastSync: null,
       shared: [],
       sharedWithMe: [],
+      company: null,
       account: SIGNED_OUT,
     });
   }
@@ -770,6 +812,7 @@ class CloudSync {
       lastSync: null,
       shared: [],
       sharedWithMe: [],
+      company: null,
       account: SIGNED_OUT,
       waiting: null,
     });

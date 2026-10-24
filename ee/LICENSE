@@ -1,0 +1,57 @@
+Terra Board Enterprise License
+
+Copyright (c) 2026 AntonRylin. All rights reserved.
+
+This license applies to everything in the ee/ folder of this repository ("the Software").
+Everything outside ee/ stays under the MIT License in the LICENSE file at the root.
+
+1. Definitions
+
+"Licensor" means AntonRylin, the copyright holder.
+"Server" means one running installation of the Terra Board server (a Supabase instance with
+the Software's database migrations applied, or the Docker package in ee/server).
+"People" means the accounts on a Server that can sign in: accounts that are not anonymous
+and not disabled.
+"License Key" means a key issued by the Licensor that the Terra Board app accepts as valid
+for a Server, together with the number of People it covers.
+
+2. What you may do without paying
+
+a. Use, copy and modify the Software for development, testing and evaluation.
+b. Run the Software in production on Servers with at most 10 People.
+
+3. What needs a License Key
+
+Running the Software in production on a Server with more than 10 People requires a valid
+License Key covering at least that many People, bought from the Licensor. A License Key is
+valid until the expiry date written in it; the app allows 30 days after that date to renew.
+
+4. Conditions
+
+a. You may modify the Software for your own use, but you may not remove, disable or work
+   around the License Key checks, the People count, or the notices the app shows about them.
+b. You may not sell, sublicense or distribute the Software, or offer it as a hosted service
+   to third parties, without a separate written agreement with the Licensor.
+c. Keep this license and the copyright notice with every copy of the Software.
+d. Contributions to ee/ are accepted only under a contributor agreement that lets the
+   Licensor license them under these terms.
+
+5. No warranty
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
+PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE LICENSOR BE LIABLE FOR ANY CLAIM, DAMAGES
+OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF
+OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE, EXCEPT WHERE
+SUCH A LIMITATION IS NOT PERMITTED BY LAW.
+
+6. Ending
+
+This license ends automatically for anyone who breaks its conditions. It comes back if the
+breach is fixed within 30 days of the Licensor's notice.
+
+7. Law
+
+Austrian law applies, without its conflict-of-law rules.
+
+To buy a License Key, use the contact on https://antonrylin.github.io/terra-board/.

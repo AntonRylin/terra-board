@@ -9,6 +9,8 @@ import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
 
 const migrations = fileURLToPath(new URL('../supabase/migrations/', import.meta.url));
+// Company features (ee/LICENSE), applied after every core migration.
+const eeMigrations = fileURLToPath(new URL('../ee/supabase/migrations/', import.meta.url));
 
 const supabaseStub = `
 create role anon nologin;
@@ -23,7 +25,10 @@ grant usage on schema auth to anon, authenticated, service_role;
 create table auth.users (
   id uuid primary key,
   email text,
-  is_anonymous boolean not null default false
+  is_anonymous boolean not null default false,
+  created_at timestamptz default now(),
+  last_sign_in_at timestamptz,
+  banned_until timestamptz
 );
 create table auth.sessions (
   id uuid primary key,
@@ -58,6 +63,8 @@ create table storage.objects (
   id uuid primary key default gen_random_uuid(),
   bucket_id text references storage.buckets (id),
   name text not null,
+  metadata jsonb,
+  created_at timestamptz default now(),
   unique (bucket_id, name)
 );
 alter table storage.objects enable row level security;
@@ -80,19 +87,24 @@ $$;
 grant execute on function realtime.topic() to authenticated;
 `;
 
-export async function supabaseDb({ until } = {}) {
+const sqlFiles = (dir) =>
+  fs
+    .readdirSync(dir)
+    .filter((f) => f.endsWith('.sql'))
+    .sort()
+    .map((f) => ({ name: f, file: path.join(dir, f) }));
+
+// `until`: stop after this core migration. `ee`: also run ee/supabase/migrations after core.
+export async function supabaseDb({ until, ee = false } = {}) {
   const db = await PGlite.create();
   await db.exec(supabaseStub);
-  const files = fs
-    .readdirSync(migrations)
-    .filter((f) => f.endsWith('.sql'))
-    .sort();
-  for (const file of files) {
-    if (until && file > until) break;
+  const files = sqlFiles(migrations).filter((f) => !until || f.name <= until);
+  if (ee) files.push(...sqlFiles(eeMigrations).map((f) => ({ ...f, name: `ee/${f.name}` })));
+  for (const { name, file } of files) {
     try {
-      await db.exec(fs.readFileSync(path.join(migrations, file), 'utf8'));
+      await db.exec(fs.readFileSync(file, 'utf8'));
     } catch (e) {
-      throw new Error(`${file}: ${e.message}`);
+      throw new Error(`${name}: ${e.message}`);
     }
   }
   return new TestServer(db);

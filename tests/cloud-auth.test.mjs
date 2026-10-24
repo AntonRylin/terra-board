@@ -223,7 +223,7 @@ test('methods follow both the server description and the server settings', async
       key: 'key',
       allowed: { email: true, google: true, microsoft: true },
     }),
-    { email: true, google: true, microsoft: false },
+    { email: true, google: true, microsoft: false, sso: false },
   );
   const down = createCloudAuth({
     client: fakeClient(),
@@ -233,7 +233,7 @@ test('methods follow both the server description and the server settings', async
   });
   assert.deepEqual(
     await down.methods({ url: 'u', key: 'k', allowed: { email: true, google: false } }),
-    { email: true, google: false, microsoft: false },
+    { email: true, google: false, microsoft: false, sso: false },
   );
 });
 
@@ -461,4 +461,51 @@ test('devices carry their platform, town and sign-in time; older servers still w
   assert.equal(list[1].version, '0.1.38');
   assert.equal(list[1].platform, null);
   assert.equal(list[1].current, false);
+});
+
+test('company sign-in uses the work email domain and finishes with the callback link', async () => {
+  const client = fakeClient();
+  client.auth.signInWithSSO = async (args) => {
+    client.calls.push(['signInWithSSO', args]);
+    return { data: { url: 'https://idp.acme.eu/saml' }, error: null };
+  };
+  const opened = [];
+  const auth = createCloudAuth({ client, openUrl: async (url) => opened.push(url) });
+  const signingIn = auth.signInWithProvider('sso', { email: ' Anton@Acme.EU ' });
+  await new Promise((r) => setImmediate(r));
+  assert.deepEqual(client.calls[0], [
+    'signInWithSSO',
+    { domain: 'acme.eu', options: { redirectTo: REDIRECT_URL, skipBrowserRedirect: true } },
+  ]);
+  assert.deepEqual(opened, ['https://idp.acme.eu/saml']);
+  assert.equal(auth.waiting(), 'sso');
+  assert.equal(await auth.finishOAuth('terraboard://auth/callback?code=abcdef123456'), true);
+  assert.equal((await signingIn).state, 'signedIn');
+});
+
+test('company sign-in explains a domain without a provider and a bad email', async () => {
+  const client = fakeClient();
+  client.auth.signInWithSSO = async () => ({
+    data: null,
+    error: { code: 'sso_provider_not_found', message: 'No SSO provider assigned for this domain' },
+  });
+  const auth = createCloudAuth({ client, openUrl: () => {} });
+  await assert.rejects(auth.signInWithProvider('sso', { email: 'me@gmail.com' }), {
+    message: /No company sign-in is set up for gmail\.com/,
+  });
+  await assert.rejects(auth.signInWithProvider('sso', { email: 'nope' }), {
+    message: 'Enter a valid email address.',
+  });
+  assert.equal(auth.waiting(), null);
+});
+
+test('company sign-in shows only when the description and the server both allow it', async () => {
+  const settings = (saml) => async () =>
+    Response.json({ external: { email: true }, saml_enabled: saml });
+  const on = createCloudAuth({ client: fakeClient(), fetch: settings(true) });
+  const allowed = { email: true, sso: true };
+  assert.equal((await on.methods({ url: 'u', key: 'k', allowed })).sso, true);
+  const off = createCloudAuth({ client: fakeClient(), fetch: settings(false) });
+  assert.equal((await off.methods({ url: 'u', key: 'k', allowed })).sso, false);
+  assert.equal((await on.methods({ url: 'u', key: 'k', allowed: { email: true } })).sso, false);
 });

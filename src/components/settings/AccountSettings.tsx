@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import { LogOut, Mail, RefreshCw } from 'lucide-react';
+import { Building2, LogOut, Mail, RefreshCw } from 'lucide-react';
 import type { CloudDevice, CloudStatus, SignInProvider } from '../../bridge';
 import type { Library } from '../../model';
 import { Group, Notice, Row, errorText, useNotice } from './controls';
 import { ServerSettings } from './ServerSettings';
+import { LicenseNote, ServerAdmin } from './ServerAdmin';
 import { unsentText } from './server-text';
 import { placeBoards, type PlaceGroup } from './board-places';
 import { BoardSummary, DeviceList } from './AccountLists';
@@ -45,7 +46,7 @@ const MicrosoftMark = () => (
 );
 
 const providerName = (provider: SignInProvider) =>
-  provider === 'microsoft' ? 'Microsoft' : 'Google';
+  provider === 'sso' ? 'your company' : provider === 'microsoft' ? 'Microsoft' : 'Google';
 
 // The sign-in buttons and the email-code steps. Used signed out, and on a 0.1.28 computer
 // (anonymous), where signing in also moves its cloud boards onto the account.
@@ -53,6 +54,9 @@ function SignIn({ status, busy, act }: { status: CloudStatus; busy: boolean; act
   const cloud = window.canvas!.cloud;
   const methods = status.methods ?? { email: true, google: false, microsoft: false };
   const [emailOpen, setEmailOpen] = useState(false);
+  // Company sign-in: the work email's domain picks the company's sign-in page.
+  const [companyOpen, setCompanyOpen] = useState(false);
+  const [workEmail, setWorkEmail] = useState('');
   const [email, setEmail] = useState('');
   const [sentTo, setSentTo] = useState('');
   const [code, setCode] = useState('');
@@ -87,6 +91,51 @@ function SignIn({ status, busy, act }: { status: CloudStatus; busy: boolean; act
         </p>
         <div className="server-actions">
           <button type="button" className="st-button" onClick={() => void cloud.cancelSignIn()}>
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+
+  const company = () =>
+    act(async () => {
+      await cloud.signInWith('sso', workEmail);
+      setCompanyOpen(false);
+    }, 'Signed in.');
+
+  if (companyOpen)
+    return (
+      <div className="server-panel">
+        <p className="server-note">
+          Enter your work email. Your company's sign-in page opens in the browser.
+        </p>
+        <input
+          type="email"
+          aria-label="Work email"
+          placeholder="you@company.com"
+          value={workEmail}
+          autoFocus
+          spellCheck={false}
+          onChange={(e) => setWorkEmail(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && workEmail.trim() && !busy) void company();
+          }}
+        />
+        <div className="server-actions">
+          <button
+            type="button"
+            className="st-button primary"
+            disabled={busy || !workEmail.trim()}
+            onClick={() => void company()}
+          >
+            Continue
+          </button>
+          <button
+            type="button"
+            className="st-button"
+            disabled={busy}
+            onClick={() => setCompanyOpen(false)}
+          >
             Cancel
           </button>
         </div>
@@ -185,6 +234,17 @@ function SignIn({ status, busy, act }: { status: CloudStatus; busy: boolean; act
   const provider = (name: SignInProvider) => act(() => cloud.signInWith(name), 'Signed in.');
   return (
     <div className="account-buttons">
+      {methods.sso && (
+        <button
+          type="button"
+          className="st-button"
+          disabled={busy}
+          onClick={() => setCompanyOpen(true)}
+        >
+          <Building2 size={14} />
+          Continue with company sign-in
+        </button>
+      )}
       {methods.google && (
         <button
           type="button"
@@ -484,6 +544,8 @@ export function AccountSettings({
       />
 
       {server}
+      <LicenseNote company={status.company} />
+      <ServerAdmin status={status} busy={busy} act={act} />
       {deleteRow}
       <Notice notice={notice} />
     </>

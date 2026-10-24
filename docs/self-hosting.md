@@ -2,6 +2,10 @@
 
 Terra Board syncs through Terra Cloud by default. A company can run its own Supabase and point the app at it instead. Local boards never need a server.
 
+The quickest way is the Docker package in [`ee/server`](../ee/server/README.md): it sets up Supabase, the schema, email codes, company sign-in and HTTPS in one go. This page describes the same setup by hand.
+
+The company features (server admin panel, audit log, the Docker package) are in [`ee/`](../ee) under the [Terra Board Enterprise License](../ee/LICENSE): free for a server with up to 10 people, and a license key above that. The app and everything else stay MIT.
+
 People sign in with an email code, Google or Microsoft ([cloud-sync.md](cloud-sync.md#accounts)). Anyone who can sign in can create an account and upload files, so if only your staff should use the server, turn off sign-ups for new email addresses in Supabase (Authentication → Sign In / Providers → "Allow new users to sign up") and create the accounts yourself (Authentication → Users → Invite), or keep the server behind your VPN.
 
 ## Set up the server
@@ -40,11 +44,11 @@ People sign in with an email code, Google or Microsoft ([cloud-sync.md](cloud-sy
      "name": "Acme boards",
      "supabaseUrl": "https://supabase.acme.example",
      "publicKey": "<publishable or anon key>",
-     "signIn": { "email": true, "google": false, "microsoft": false }
+     "signIn": { "email": true, "google": false, "microsoft": false, "sso": false }
    }
    ```
 
-   - `signIn` is optional. Email is on by default, Google and Microsoft are off. The app also asks the server which providers are on and shows only buttons that work.
+   - `signIn` is optional. Email is on by default, Google, Microsoft and company sign-in (`sso`) are off. The app also asks the server which providers are on and shows only buttons that work.
    - The address must be `https://`. Only `localhost`, `127.0.0.1` and `[::1]` may use plain http. The same goes for `supabaseUrl`, which must be just the origin: no path, no trailing details.
    - The app does not follow redirects and ignores replies over 64 KB.
    - **Never put the service role or secret key here.** A key starting with `sb_secret_`, or a service_role JWT, is refused.
@@ -84,3 +88,37 @@ First match wins:
 5. The built-in Terra Cloud.
 
 On Linux the managed file is `/etc/terra-board/server.json` instead. A missing or broken file is skipped, and the app moves to the next entry.
+
+## Company sign-in (SSO)
+
+People can sign in with their company account through SAML 2.0: Microsoft Entra ID, Okta, Google Workspace, Keycloak, JumpCloud or any other SAML identity provider. In the app they choose **Continue with company sign-in** and type their work email; its domain picks your identity provider, and the sign-in page opens in the browser.
+
+1. Turn SAML on in Supabase Auth:
+   - **supabase.com project:** SAML SSO needs the Pro plan. Dashboard → Authentication → Sign In / Providers → SAML 2.0.
+   - **Self-hosted:** set `GOTRUE_SAML_ENABLED=true` and `GOTRUE_SAML_PRIVATE_KEY` (a base64 DER RSA key, `openssl genrsa 2048 | openssl rsa -outform DER | base64 -w0`) on the auth service. The Docker package does this for you.
+2. In your identity provider, create a SAML app with
+   - Entity ID / metadata: `https://<supabase host>/auth/v1/sso/saml/metadata`
+   - Reply (ACS) URL: `https://<supabase host>/auth/v1/sso/saml/acs`
+   - Name ID: the email address; send an `email` attribute too.
+3. Register it with Supabase, with the domains whose people should use it:
+
+   ```bash
+   npx supabase sso add --type saml --project-ref <ref> --metadata-url "https://login.microsoftonline.com/<tenant>/federationmetadata/2007-06/federationmetadata.xml?appid=<app id>" --domains acme.eu
+   ```
+
+   On a self-hosted server use the auth admin API instead (see [`ee/server/README.md`](../ee/server/README.md)).
+4. Add `"sso": true` to `signIn` in `terra-board.json`. The app also checks that the server has SAML on.
+
+Accounts made through SSO are ordinary accounts: the same person's email code and SSO sign-ins reach the same account. To make SSO the only way in, turn off the email provider (and Google/Microsoft) in Supabase and set them to `false` in the description file.
+
+## Server admin and license
+
+Apply the company migrations in `ee/supabase/migrations` after the core ones (the Docker package does this). Then name the first admin:
+
+```sql
+insert into public.server_admins (email) values ('it@acme.eu') on conflict do nothing;
+```
+
+Admins see **Server admin** in Settings → Account: the people on the server (disable or enable a sign-in, make someone an admin), the audit log (who shared, unshared, created or deleted which board, and every admin action), and the license.
+
+A server is free for up to 10 people (accounts that can sign in). Above that, an admin pastes the license key into Server admin → License. Nothing stops working without one: the app tells the people on the server that it's over the free limit.

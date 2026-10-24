@@ -11,7 +11,7 @@ const UNCLEAR_ADDRESS = 'Enter just the server address, like terra.example.com.'
 const NEEDS_HTTPS = 'Use an https:// address.';
 const SECRET_KEY = 'This file contains a secret key. Use the public key instead.';
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
-const ALL_SIGN_IN = { email: true, google: true, microsoft: true };
+const ALL_SIGN_IN = { email: true, google: true, microsoft: true, sso: false };
 
 function normalizeAddress(input) {
   const text = typeof input === 'string' ? input.trim() : '';
@@ -64,6 +64,8 @@ const serverFileSchema = z.object({
       email: z.boolean().default(true),
       google: z.boolean().default(false),
       microsoft: z.boolean().default(false),
+      // Company sign-in (SAML SSO), set up on the server per email domain.
+      sso: z.boolean().default(false),
     })
     .prefault({}),
 });
@@ -131,7 +133,7 @@ function resolveServer({ env = process.env, root, packageJson, managedFile }) {
       url: env.TERRA_CLOUD_URL,
       key: env.TERRA_CLOUD_KEY,
       address: null,
-      signIn: { ...ALL_SIGN_IN },
+      signIn: { ...ALL_SIGN_IN, sso: true },
     };
     return { config, locked: false, source: 'env' };
   }

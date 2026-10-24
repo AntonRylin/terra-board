@@ -16,6 +16,7 @@ const {
   webContents,
 } = require('electron');
 const { CloudSync, lookUpLocation } = require('./cloud-sync.cjs');
+const { auditCsv } = require('./company.cjs');
 const {
   resolveServer,
   discover,
@@ -911,13 +912,40 @@ app
     cloudAction('verify-code', (email, code) =>
       cloud.verifyEmailCode(text(email, 254), text(code, 20)),
     );
-    cloudAction('sign-in-with', (provider) =>
-      cloud.signInWithProvider(provider === 'microsoft' ? 'microsoft' : 'google'),
+    cloudAction('sign-in-with', (provider, email) =>
+      cloud.signInWithProvider(
+        provider === 'microsoft' || provider === 'sso' ? provider : 'google',
+        text(email, 254),
+      ),
     );
     cloudAction('cancel-sign-in', () => cloud.cancelSignIn());
     cloudAction('sign-out', () => cloud.signOut());
     cloudAction('delete-cloud-data', () => cloud.deleteCloudData());
     cloudAction('sign-in-methods', () => cloud.loadMethods().then(() => cloud.status));
+    // Server admin (company servers, ee/): only these actions, with plain arguments.
+    cloudAction('company-status', () => cloud.loadCompany().then(() => cloud.status));
+    cloudAction('company', (action, ...args) => {
+      const allowed = ['people', 'audit', 'setDisabled', 'setAdmin', 'setLicense', 'setAudit'];
+      if (!allowed.includes(action)) throw Error('Unknown server admin action.');
+      return cloud.companyAction(action, ...args);
+    });
+    // Saves the whole audit log as CSV, page by page.
+    cloudAction('company-export-audit', async () => {
+      const r = await dialog.showSaveDialog(win, {
+        defaultPath: 'Terra Board audit log.csv',
+        filters: [{ name: 'CSV', extensions: ['csv'] }],
+      });
+      if (r.canceled || !r.filePath) return false;
+      const events = [];
+      for (let before = null, round = 0; round < 500; round++) {
+        const page = await cloud.companyAction('audit', { before, limit: 500 });
+        events.push(...page);
+        if (page.length < 500) break;
+        before = page.at(-1).id;
+      }
+      await fs.promises.writeFile(r.filePath, '﻿' + auditCsv(events), 'utf8');
+      return events.length;
+    });
     // Server requests go through their own session: the window's session blocks outside requests.
     const serverFetch = (url, options) =>
       session.fromPartition('terra-cloud', { cache: false }).fetch(url, options);

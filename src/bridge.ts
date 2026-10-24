@@ -58,12 +58,61 @@ export interface CloudStatus {
   methods: SignInMethods | null;
   /** A browser sign-in waiting for its callback. */
   waiting: SignInProvider | null;
+  /** A company server's admin side (ee/); null on Terra Cloud and plain servers. */
+  company?: CompanyStatus | null;
 }
-export type SignInProvider = 'google' | 'microsoft';
+export interface LicenseCheck {
+  state: 'valid' | 'grace' | 'expired' | 'server' | 'invalid';
+  customer?: string;
+  seats?: number;
+  expires?: string;
+  daysLeft?: number;
+  message: string;
+}
+export interface CompanyStatus {
+  admin: boolean;
+  people: number;
+  freePeople: number;
+  audit: boolean;
+  license: LicenseCheck | null;
+  summary: { licensed: boolean; over: boolean; limit: number; people: number; note: string | null };
+}
+export interface CompanyPerson {
+  id: string;
+  email: string | null;
+  createdAt: string | null;
+  lastSignIn: string | null;
+  disabled: boolean;
+  admin: boolean;
+  devices: number;
+  storageBytes: number;
+}
+export interface AuditEvent {
+  id: number;
+  at: string;
+  actorEmail: string | null;
+  action: string;
+  target: string | null;
+  details: Record<string, unknown>;
+}
+export interface CompanyActions {
+  (
+    action: 'people',
+    options?: { search?: string; limit?: number; offset?: number },
+  ): Promise<CompanyPerson[]>;
+  (action: 'audit', options?: { before?: number | null; limit?: number }): Promise<AuditEvent[]>;
+  (action: 'setDisabled', userId: string, disabled: boolean): Promise<void>;
+  (action: 'setAdmin', email: string, admin: boolean): Promise<void>;
+  (action: 'setLicense', key: string | null): Promise<void>;
+  (action: 'setAudit', on: boolean): Promise<void>;
+}
+/** 'sso': company sign-in (SAML), picked by the work email's domain. */
+export type SignInProvider = 'google' | 'microsoft' | 'sso';
 export interface SignInMethods {
   email: boolean;
   google: boolean;
   microsoft: boolean;
+  sso?: boolean;
 }
 /** 'anonymous': a computer set up by Terra Board 0.1.28, before accounts. */
 export interface CloudAccount {
@@ -365,12 +414,18 @@ interface DesktopBridge {
     syncNow(): Promise<CloudStatus>;
     sendCode(email: string): Promise<{ email: string }>;
     verifyCode(email: string, code: string): Promise<CloudStatus>;
-    signInWith(provider: SignInProvider): Promise<CloudStatus>;
+    /** email: the work email, for 'sso'. */
+    signInWith(provider: SignInProvider, email?: string): Promise<CloudStatus>;
     cancelSignIn(): Promise<CloudStatus>;
     signOut(): Promise<CloudStatus>;
     /** Removes the cloud library, its files and shares, and the sign-in. */
     deleteCloudData(): Promise<{ userDeleted: boolean }>;
     signInMethods(): Promise<CloudStatus>;
+    /** Server admin on company servers (ee/); the phone has none. */
+    companyStatus?(): Promise<CloudStatus>;
+    company?: CompanyActions;
+    /** Saves the audit log as CSV; resolves to the number of events, or false if cancelled. */
+    companyExportAudit?(): Promise<number | false>;
     serverTest(input: ServerInput): Promise<ServerPreview>;
     serverSet(
       input: ServerInput | { terra: true },

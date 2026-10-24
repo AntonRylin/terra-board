@@ -40,7 +40,7 @@ export const cloud: CloudBridge = {
   syncNow: () => run('syncNow'),
   sendCode: (email) => run('sendEmailCode', email),
   verifyCode: (email, code) => run('verifyEmailCode', email, code),
-  signInWith: (provider) => run('signInWithProvider', provider),
+  signInWith: (provider, email) => run('signInWithProvider', provider, email),
   cancelSignIn: () => run('cancelSignIn'),
   signInMethods: () => run('signInMethods'),
   // Deletes the account and its cloud data, then this phone's library; the app reloads.

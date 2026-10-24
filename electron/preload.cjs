@@ -199,11 +199,15 @@ contextBridge.exposeInMainWorld('canvas', {
     syncNow: () => ipcRenderer.invoke('canvas:cloud-sync-now'),
     sendCode: (email) => ipcRenderer.invoke('canvas:cloud-send-code', email),
     verifyCode: (email, code) => ipcRenderer.invoke('canvas:cloud-verify-code', email, code),
-    signInWith: (provider) => ipcRenderer.invoke('canvas:cloud-sign-in-with', provider),
+    signInWith: (provider, email) =>
+      ipcRenderer.invoke('canvas:cloud-sign-in-with', provider, email),
     cancelSignIn: () => ipcRenderer.invoke('canvas:cloud-cancel-sign-in'),
     signOut: () => ipcRenderer.invoke('canvas:cloud-sign-out'),
     deleteCloudData: () => ipcRenderer.invoke('canvas:cloud-delete-cloud-data'),
     signInMethods: () => ipcRenderer.invoke('canvas:cloud-sign-in-methods'),
+    companyStatus: () => ipcRenderer.invoke('canvas:cloud-company-status'),
+    company: (action, ...args) => ipcRenderer.invoke('canvas:cloud-company', action, ...args),
+    companyExportAudit: () => ipcRenderer.invoke('canvas:cloud-company-export-audit'),
     serverTest: (input) => ipcRenderer.invoke('canvas:cloud-server-test', input),
     serverSet: (input, options) => ipcRenderer.invoke('canvas:cloud-server-set', input, options),
     onDeepLink: (callback) => {

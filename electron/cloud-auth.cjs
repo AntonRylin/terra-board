@@ -9,6 +9,7 @@
 //   await auth.sendEmailCode('me@example.com');
 //   await auth.verifyEmailCode('me@example.com', '123456');
 //   await auth.signInWithProvider('google'); // resolves when finishOAuth() gets the callback
+//   await auth.signInWithProvider('sso', { email: 'me@acme.eu' }); // company sign-in (SAML)
 //   auth.finishOAuth('terraboard://auth/callback?code=…');
 //
 // Every error thrown here has a message meant for the person, never a raw server message.
@@ -31,6 +32,8 @@ const CANCELLED = 'Signing in was cancelled.';
 const TIMED_OUT = 'Signing in took too long. Try again.';
 const NOT_SIGNED_IN = 'Sign in first.';
 const SIGN_IN_FAILED = 'Could not sign in. Try again.';
+const noCompanySignIn = (domain) =>
+  `No company sign-in is set up for ${domain}. Use another way to sign in, or ask your IT team.`;
 
 class AuthError extends Error {
   constructor(message, code) {
@@ -165,6 +168,24 @@ function createCloudAuth({
     }
   };
 
+  // Opens a sign-in page in the browser; resolves when finishOAuth() gets its callback.
+  const browserSignIn = async (provider, url) => {
+    const done = new Promise((resolve, reject) => {
+      pending = {
+        provider,
+        resolve,
+        reject,
+        timer: setTimeout(() => settle(new AuthError(TIMED_OUT, 'timeout')), OAUTH_TIMEOUT),
+      };
+    });
+    try {
+      await openUrl(url);
+    } catch {
+      settle(new AuthError(BROWSER_FAILED, 'browser'));
+    }
+    return done;
+  };
+
   const auth = {
     REDIRECT_URL: redirectTo,
 
@@ -176,14 +197,16 @@ function createCloudAuth({
 
     session,
 
-    // The sign-in methods this server offers: { email, google, microsoft }. allowed is what
+    // The sign-in methods this server offers: { email, google, microsoft, sso }. allowed is what
     // the server description (terra-board.json) enables; the server's own settings decide
     // the rest. If they can't be read, the description alone counts.
+    // sso is company sign-in (SAML): off unless the description turns it on.
     async methods({ url, key, allowed = { email: true, google: true, microsoft: true } }) {
       const wanted = {
         email: !!allowed.email,
         google: !!allowed.google,
         microsoft: !!allowed.microsoft,
+        sso: !!allowed.sso,
       };
       try {
         const response = await fetch(`${url}/auth/v1/settings`, {
@@ -197,6 +220,7 @@ function createCloudAuth({
           email: wanted.email && on.email !== false,
           google: wanted.google && on.google === true,
           microsoft: wanted.microsoft && on.azure === true,
+          sso: wanted.sso && settings?.saml_enabled !== false,
         };
       } catch {
         return wanted;
@@ -259,10 +283,12 @@ function createCloudAuth({
       return userInfo(result.data.session);
     },
 
-    // Google ('google') or Microsoft ('microsoft'): opens the provider's page in the system
-    // browser and resolves once finishOAuth() receives the callback. A new call or cancel()
-    // ends the previous one.
-    async signInWithProvider(provider) {
+    // Google ('google'), Microsoft ('microsoft') or company sign-in ('sso', with the person's
+    // work email, whose domain picks the company's identity provider): opens the sign-in
+    // page in the system browser and resolves once finishOAuth() receives the callback.
+    // A new call or cancel() ends the previous one.
+    async signInWithProvider(provider, { email } = {}) {
+      if (provider === 'sso') return auth.signInWithCompany(email);
       const name = PROVIDERS[provider];
       if (!name) throw new AuthError(PROVIDER_OFF, 'provider_disabled');
       settle(new AuthError(CANCELLED, 'cancelled'));
@@ -282,20 +308,34 @@ function createCloudAuth({
         throw friendly(e);
       }
       if (result.error || !result.data?.url) throw friendly(result.error, BROWSER_FAILED);
-      const done = new Promise((resolve, reject) => {
-        pending = {
-          provider,
-          resolve,
-          reject,
-          timer: setTimeout(() => settle(new AuthError(TIMED_OUT, 'timeout')), OAUTH_TIMEOUT),
-        };
-      });
+      return browserSignIn(provider, result.data.url);
+    },
+
+    // Company sign-in through the SAML identity provider registered for the email's domain
+    // (Supabase SSO). The same terraboard://auth/callback link finishes it.
+    async signInWithCompany(email) {
+      const address = cleanEmail(email);
+      const domain = address.split('@')[1];
+      settle(new AuthError(CANCELLED, 'cancelled'));
+      let result;
       try {
-        await openUrl(result.data.url);
-      } catch {
-        settle(new AuthError(BROWSER_FAILED, 'browser'));
+        result = await client.auth.signInWithSSO({
+          domain,
+          options: { redirectTo, skipBrowserRedirect: true },
+        });
+      } catch (e) {
+        throw friendly(e);
       }
-      return done;
+      if (result.error) {
+        const text = `${result.error.code || ''} ${result.error.message || ''}`;
+        if (/sso_provider_not_found|no sso provider|not found/i.test(text))
+          throw new AuthError(noCompanySignIn(domain), 'sso_provider_not_found');
+        if (/(saml|sso).*(disabled|not enabled)/i.test(text))
+          throw new AuthError(PROVIDER_OFF, 'provider_disabled');
+        throw friendly(result.error, BROWSER_FAILED);
+      }
+      if (!result.data?.url) throw new AuthError(BROWSER_FAILED, 'browser');
+      return browserSignIn('sso', result.data.url);
     },
 
     // Is a browser sign-in waiting for its callback?

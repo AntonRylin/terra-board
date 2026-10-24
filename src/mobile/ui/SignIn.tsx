@@ -42,7 +42,8 @@ const MicrosoftMark = () => (
     <rect x="11" y="11" width="9" height="9" fill="#FFB900" />
   </svg>
 );
-const providerName = (p: SignInProvider) => (p === 'microsoft' ? 'Microsoft' : 'Google');
+const providerName = (p: SignInProvider) =>
+  p === 'sso' ? 'your company' : p === 'microsoft' ? 'Microsoft' : 'Google';
 
 export function SignIn({ status }: { status: CloudStatus }) {
   // Until the server says which methods it offers, Google and the email code are shown
