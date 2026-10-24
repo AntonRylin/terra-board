@@ -48,8 +48,11 @@ Terra Board is open source (MIT). The desktop app is free and works fully offlin
 
 **Category:** Productivity · **Tags:** whiteboard, notes, mind map, study, productivity
 
-**Screenshots:** at least 2 phone screenshots (portrait and landscape), 16:9 or 9:16, from the
-review account's demo board (no personal content).
+**Screenshots:** `docs/play-store/screenshots/`: a board, view mode, the board list and
+landscape, cut to Play's 2:1 limit. Taken on the emulator with a demo board ("Space & Stars");
+its photos are public-domain NASA images from Wikimedia Commons (Blue Marble, Saturn by Cassini,
+Curiosity on Mars, the Pillars of Creation by Webb, Earthrise, Bruce McCandless's 1984 spacewalk).
+No third-party brands or logos, which Play rejects without permission.
 
 ## App content (Policy → App content)
 
