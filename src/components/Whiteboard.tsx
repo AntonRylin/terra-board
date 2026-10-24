@@ -958,8 +958,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   const [editingPaperId, setEditingPaperId] = useState<string | null>(null);
   const editingOpen = !!editing || !!editingListId || !!editingPaperId;
   // Android: the keyboard shrinks the page when text on the board is edited. The text
-  // being typed moves to stay in view above it (the toolbars give way: mobile/index.ts),
-  // following the caret as it moves along a line, so what is typed is always seen.
+  // being typed moves up to stay above it (the toolbars give way: mobile/index.ts).
   useEffect(() => {
     if (!android || !editingOpen) return;
     const keepVisible = () =>
@@ -967,35 +966,15 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         const field = document.activeElement as HTMLElement | null;
         if (!field?.closest('.whiteboard')) return;
         const box = field.getBoundingClientRect();
-        let caret: DOMRect | undefined;
-        const selection = window.getSelection();
-        if (field.isContentEditable && selection?.rangeCount) {
-          const range = selection.getRangeAt(0);
-          caret = [...range.getClientRects()].pop() || range.getBoundingClientRect();
-          if (!caret.width && !caret.height && !caret.x && !caret.y) caret = undefined;
-        }
-        const target = caret || box;
-        const board = (field.closest('.whiteboard') as HTMLElement).getBoundingClientRect();
-        const left = board.left + 16,
-          right = Math.min(board.right, window.innerWidth) - 16,
-          room = window.innerHeight - 16;
-        const dx =
-          target.right > right
-            ? right - target.right
-            : target.left < left
-              ? left - target.left
-              : 0;
+        const room = window.innerHeight - 16;
+        if (box.bottom <= room) return;
         // Up far enough for the caret's end of the text, never past the top of the view.
-        const dy =
-          target.bottom > room
-            ? -Math.min(target.bottom - room, Math.max(0, target.top - 72))
-            : 0;
-        if (dx || dy) engine.current?.panBy(dx, dy);
+        engine.current?.panBy(0, -Math.min(box.bottom - room, Math.max(0, box.top - 72)));
       });
     keepVisible();
     window.addEventListener('resize', keepVisible);
     return () => window.removeEventListener('resize', keepVisible);
-  }, [editingOpen, draft]);
+  }, [editingOpen]);
   const [paperView, setPaperView] = useState<PaperView>({ objects: [], camera: doc.camera });
   // The open board's objects for pins to the screen; a new array after each edit.
   const [pinSource, setPinSource] = useState<CanvasObject[] | null>(null);
