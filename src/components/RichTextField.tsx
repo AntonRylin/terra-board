@@ -112,10 +112,11 @@ function setCaret(root: HTMLElement, caret: Caret) {
   const [focusNode, focusOffset] = pointAt(root, caret.focus);
   document.getSelection()?.setBaseAndExtent(anchorNode, anchorOffset, focusNode, focusOffset);
 }
-export function focusField(root: HTMLElement, at: 'start' | 'end') {
+export function focusField(root: HTMLElement, at: 'start' | 'end' | 'all') {
   root.focus({ preventScroll: true });
-  const offset = at === 'start' ? 0 : readText(root).length;
-  setCaret(root, { anchor: offset, focus: offset });
+  const length = readText(root).length;
+  const offset = at === 'start' ? 0 : length;
+  setCaret(root, { anchor: at === 'all' ? 0 : offset, focus: offset });
 }
 
 function styledNode(text: string, style: TextStyle): Node {

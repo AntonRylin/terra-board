@@ -79,7 +79,9 @@ export default function CanvasToolbar({
   });
   const toolsById = new Map(tools.map((tool) => [tool.id, tool]));
   const renderTool = (id: ToolbarId, zone: ToolbarZone) => {
-    const item = toolsById.get(id)!;
+    // A saved or default layout can name a tool this device lacks (folders on a phone).
+    const item = toolsById.get(id);
+    if (!item) return null;
     const name =
       id === 'list'
         ? 'List'

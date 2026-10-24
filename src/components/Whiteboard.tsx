@@ -958,7 +958,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
   const [editingPaperId, setEditingPaperId] = useState<string | null>(null);
   const editingOpen = !!editing || !!editingListId || !!editingPaperId;
   // Android: the keyboard shrinks the page when text on the board is edited. The text
-  // being typed moves up to stay above it (the toolbars give way: mobile/index.ts).
+  // being typed moves to stay in view above it (the toolbars give way: mobile/index.ts),
+  // following the caret as it moves along a line, so what is typed is always seen.
   useEffect(() => {
     if (!android || !editingOpen) return;
     const keepVisible = () =>
@@ -966,15 +967,35 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         const field = document.activeElement as HTMLElement | null;
         if (!field?.closest('.whiteboard')) return;
         const box = field.getBoundingClientRect();
-        const room = window.innerHeight - 16;
-        if (box.bottom <= room) return;
+        let caret: DOMRect | undefined;
+        const selection = window.getSelection();
+        if (field.isContentEditable && selection?.rangeCount) {
+          const range = selection.getRangeAt(0);
+          caret = [...range.getClientRects()].pop() || range.getBoundingClientRect();
+          if (!caret.width && !caret.height && !caret.x && !caret.y) caret = undefined;
+        }
+        const target = caret || box;
+        const board = (field.closest('.whiteboard') as HTMLElement).getBoundingClientRect();
+        const left = board.left + 16,
+          right = Math.min(board.right, window.innerWidth) - 16,
+          room = window.innerHeight - 16;
+        const dx =
+          target.right > right
+            ? right - target.right
+            : target.left < left
+              ? left - target.left
+              : 0;
         // Up far enough for the caret's end of the text, never past the top of the view.
-        engine.current?.panBy(0, -Math.min(box.bottom - room, Math.max(0, box.top - 72)));
+        const dy =
+          target.bottom > room
+            ? -Math.min(target.bottom - room, Math.max(0, target.top - 72))
+            : 0;
+        if (dx || dy) engine.current?.panBy(dx, dy);
       });
     keepVisible();
     window.addEventListener('resize', keepVisible);
     return () => window.removeEventListener('resize', keepVisible);
-  }, [editingOpen]);
+  }, [editingOpen, draft]);
   const [paperView, setPaperView] = useState<PaperView>({ objects: [], camera: doc.camera });
   // The open board's objects for pins to the screen; a new array after each edit.
   const [pinSource, setPinSource] = useState<CanvasObject[] | null>(null);
@@ -1890,6 +1911,17 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     editingObject && editingPlacement
       ? localToWorld(editingObject, { x: editingPlacement.left, y: editingPlacement.top })
       : null;
+  // Where the editor sits on screen. On a phone a frame's name can be far wider than
+  // the screen, so while it is typed it wraps inside the view instead of running off it.
+  const editorBox = (() => {
+    if (!editing || !editingAppearance) return null;
+    const left = (editorOrigin?.x ?? editing.x) * camera.zoom + camera.x,
+      width = editingAppearance.wrapWidth * camera.zoom;
+    if (!android || !isName(editing) || editing.rotation) return { left, width };
+    const view = host.current?.clientWidth || window.innerWidth;
+    const fitted = Math.max(1, Math.min(width, view - 32));
+    return { left: Math.min(Math.max(left, 16), view - 16 - fitted), width: fitted };
+  })();
   const setSelectionColor = (color: string, restoreFocus = true) => {
     const session = editingSession.current;
     if (session) {
@@ -2675,7 +2707,13 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       if (editor instanceof HTMLTextAreaElement) {
         editor.focus();
         editor.setSelectionRange(editor.value.length, editor.value.length);
-      } else if (editor) focusField(editor, 'end');
+      }
+      // A frame still called "Untitled frame" is selected whole, so typing replaces it.
+      else if (editor)
+        focusField(
+          editor,
+          editing.type === 'frame' && editing.text === 'Untitled frame' ? 'all' : 'end',
+        );
     }
   }, [editing?.id]);
   useLayoutEffect(() => {
@@ -4942,12 +4980,12 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           style={{
             whiteSpace: editing.type === 'text' && !editing.textBox ? 'pre' : 'pre-wrap',
             overflowWrap: editing.type === 'text' && !editing.textBox ? 'normal' : 'break-word',
-            left: (editorOrigin?.x ?? editing.x) * camera.zoom + camera.x,
+            left: editorBox!.left,
             top: (editorOrigin?.y ?? editing.y) * camera.zoom + camera.y,
             transform: `rotate(${editing.rotation || 0}deg)`,
             transformOrigin: '0 0',
             textAlign: !isName(editing) && editing.centerX ? 'center' : 'left',
-            width: editingAppearance.wrapWidth * camera.zoom,
+            width: editorBox!.width,
             fontSize: editingAppearance.fontSize * camera.zoom,
             // Unitless, so larger formatted runs grow their own line like on the canvas.
             lineHeight: editingAppearance.lineHeight / editingAppearance.fontSize,
