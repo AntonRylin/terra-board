@@ -165,6 +165,19 @@ export interface DesktopWindow {
 export type DesktopsState =
   | { supported: true; current: string; desktops: VirtualDesktop[]; windows: DesktopWindow[] }
   | { supported: false; message: string };
+export type AppInputEvent =
+  | {
+      type: 'mouse';
+      kind: 'move' | 'down' | 'double' | 'up' | 'wheel' | 'hwheel' | 'leave';
+      x: number;
+      y: number;
+      button?: number;
+      keys?: number;
+      delta?: number;
+    }
+  | { type: 'key'; vk: number; scan?: number; extended?: boolean; down: boolean; mods: number }
+  | { type: 'text'; text: string }
+  | { type: 'focus'; on: boolean };
 export interface FilesBridge {
   list(args: { source: FileSource; sub?: string; hidden?: boolean }): Promise<FileListing>;
   icons(requests: { path: string; size: number; modified: number }[]): Promise<(string | null)[]>;
@@ -206,6 +219,10 @@ export interface FilesBridge {
     click?: { x: number; y: number } | null;
   }): Promise<void>;
   releaseWindow(args: { id: string }): Promise<void>;
+  // Input for an app frame used in place (mouse spots in ten-thousandths of
+  // what shows of the window; keys as Windows virtual-key codes).
+  appInput(args: { id: string; event: AppInputEvent }): void;
+  appPopup(args: { id: string }): Promise<boolean>;
   // Terra's window moved, resized or came back: put app windows in place again.
   onRepark(callback: () => void): () => void;
   source(args: { path: string }): Promise<FileSource>;

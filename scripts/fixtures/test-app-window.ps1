@@ -32,6 +32,13 @@ $button.ForeColor = [System.Drawing.Color]::White
 $button.Font = New-Object System.Drawing.Font('Segoe UI', 20)
 $button.Add_Click({ $script:clicks++ })
 $form.Controls.Add($button)
+# A text box across the top half, for typing.
+$text = New-Object System.Windows.Forms.TextBox
+$text.Multiline = $true
+$text.Dock = 'Top'
+$text.Height = 130
+$text.Font = New-Object System.Drawing.Font('Segoe UI', 14)
+$form.Controls.Add($text)
 $timer = New-Object System.Windows.Forms.Timer
 $timer.Interval = 200
 $timer.Add_Tick({
@@ -47,7 +54,8 @@ $timer.Add_Tick({
   $json = '{"x":' + $r.Left + ',"y":' + $r.Top + ',"width":' + ($r.Right - $r.Left) + ',"height":' + ($r.Bottom - $r.Top) +
     ',"visible":{"x":' + $v.Left + ',"y":' + $v.Top + ',"width":' + ($v.Right - $v.Left) + ',"height":' + ($v.Bottom - $v.Top) + '}' +
     ',"owner":"' + $owner + '","above":"' + $above + '","minimized":' + ([TestAppWin32]::IsIconic($form.Handle)).ToString().ToLower() +
-    ',"clicks":' + $script:clicks + ',"handle":"' + $form.Handle.ToInt64() + '"}'
+    ',"clicks":' + $script:clicks + ',"text":"' + ($text.Text -replace '[^\w ]', '_') + '"' +
+    ',"handle":"' + $form.Handle.ToInt64() + '"}'
   [IO.File]::WriteAllText($Report, $json)
 })
 $timer.Start()

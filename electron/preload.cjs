@@ -45,6 +45,8 @@ contextBridge.exposeInMainWorld('canvas', {
     parkWindow: (args) => ipcRenderer.invoke('canvas:files-park-window', args),
     dockWindow: (args) => ipcRenderer.invoke('canvas:files-dock-window', args),
     releaseWindow: (args) => ipcRenderer.invoke('canvas:files-release-window', args),
+    appInput: (args) => ipcRenderer.send('canvas:files-app-input', args),
+    appPopup: (args) => ipcRenderer.invoke('canvas:files-app-popup', args),
     onRepark: (callback) => {
       const handler = () => callback();
       ipcRenderer.on('canvas:files-repark', handler);

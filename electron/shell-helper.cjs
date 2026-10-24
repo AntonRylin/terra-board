@@ -61,6 +61,11 @@ public static class TerraShell
                 case "park": TerraDesktops.Park(long.Parse(parts[2]), long.Parse(parts[3]), int.Parse(parts[4]), int.Parse(parts[5]), int.Parse(parts[6]), int.Parse(parts[7])); return id + "\tok\t";
                 case "release": TerraDesktops.Release(long.Parse(parts[2])); return id + "\tok\t";
                 case "hide": TerraDesktops.Hide(long.Parse(parts[2])); return id + "\tok\t";
+                case "mouse": TerraInput.Mouse(long.Parse(parts[2]), parts[3], int.Parse(parts[4]), int.Parse(parts[5]), int.Parse(parts[6]), int.Parse(parts[7]), int.Parse(parts[8])); return id + "\tok\t";
+                case "key": TerraInput.Key(long.Parse(parts[2]), int.Parse(parts[3]), int.Parse(parts[4]), parts[5] == "1", parts[6] == "1", int.Parse(parts[7])); return id + "\tok\t";
+                case "text": TerraInput.Text(long.Parse(parts[2]), Arg(parts[3])); return id + "\tok\t";
+                case "appfocus": TerraInput.Focus(long.Parse(parts[2]), parts[3] == "1"); return id + "\tok\t";
+                case "popup": return id + "\tok\t" + (TerraInput.HasPopup(long.Parse(parts[2])) ? "1" : "0");
                 case "ping": return id + "\tok\t";
             }
             return id + "\terr\t" + Out("Unknown operation");
@@ -519,6 +524,221 @@ public static class TerraDesktops
         PostMessage(h, 0x0010, IntPtr.Zero, IntPtr.Zero);
     }
 }
+// App frames used in place: Terra is the app's screen, mouse and keyboard.
+// The real window stays hidden behind Terra; the frame's mouse and keyboard
+// input is posted to it as the Windows messages real input would bring, and it
+// is told it has the focus. Nothing comes to the front.
+public static class TerraInput
+{
+    [StructLayout(LayoutKind.Sequential)] struct RECT { public int Left, Top, Right, Bottom; }
+    [StructLayout(LayoutKind.Sequential)] struct POINT { public int X, Y; }
+    [StructLayout(LayoutKind.Sequential)]
+    struct GUITHREADINFO
+    {
+        public int cbSize, flags;
+        public IntPtr hwndActive, hwndFocus, hwndCapture, hwndMenuOwner, hwndMoveSize, hwndCaret;
+        public RECT rcCaret;
+    }
+    [DllImport("user32.dll")] static extern bool IsWindow(IntPtr h);
+    [DllImport("user32.dll")] static extern bool PostMessage(IntPtr h, uint msg, IntPtr w, IntPtr l);
+    [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out RECT r);
+    [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr h, int attr, out RECT value, int size);
+    [DllImport("user32.dll")] static extern bool ScreenToClient(IntPtr h, ref POINT p);
+    [DllImport("user32.dll")] static extern IntPtr ChildWindowFromPointEx(IntPtr parent, POINT p, uint flags);
+    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+    [DllImport("user32.dll")] static extern bool GetGUIThreadInfo(uint thread, ref GUITHREADINFO info);
+    [DllImport("user32.dll")] static extern bool AttachThreadInput(uint attach, uint to, bool on);
+    [DllImport("user32.dll")] static extern bool GetKeyboardState(byte[] state);
+    [DllImport("user32.dll")] static extern bool SetKeyboardState(byte[] state);
+    [DllImport("user32.dll")] static extern uint MapVirtualKey(uint code, uint type);
+    [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
+    [DllImport("user32.dll")] static extern IntPtr SetThreadDpiAwarenessContext(IntPtr value);
+    [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
+    [DllImport("user32.dll")] static extern int GetWindowLong(IntPtr h, int index);
+    delegate bool EnumWindowsProc(IntPtr h, IntPtr l);
+    [DllImport("user32.dll")] static extern bool EnumWindows(EnumWindowsProc cb, IntPtr l);
+
+    const uint WM_MOUSEMOVE = 0x0200, WM_MOUSEWHEEL = 0x020A, WM_MOUSEHWHEEL = 0x020E, WM_MOUSELEAVE = 0x02A3;
+    static readonly uint[] Down = { 0x0201, 0x0207, 0x0204 };
+    static readonly uint[] Up = { 0x0202, 0x0208, 0x0205 };
+    static readonly uint[] Double = { 0x0203, 0x0209, 0x0206 };
+
+    // The window that took a press keeps the drag until the release, as mouse capture would.
+    static IntPtr pressed = IntPtr.Zero;
+    static IntPtr hovered = IntPtr.Zero;
+
+    static IntPtr Pack(int low, int high) { return new IntPtr((int)((ushort)low | ((uint)(ushort)high << 16))); }
+
+    static IntPtr Window(long id)
+    {
+        IntPtr h = new IntPtr(id);
+        if (!IsWindow(h)) throw new Exception("That window has closed.");
+        return h;
+    }
+
+    // Mouse input at a spot of the window's picture: x and y in ten-thousandths
+    // of what shows of the window (without its invisible border).
+    public static void Mouse(long id, string kind, int x, int y, int button, int keys, int delta)
+    {
+        SetThreadDpiAwarenessContext(new IntPtr(-4));
+        IntPtr top = Window(id);
+        RECT v;
+        if (DwmGetWindowAttribute(top, 9, out v, Marshal.SizeOf(typeof(RECT))) != 0) GetWindowRect(top, out v);
+        int sx = v.Left + (int)Math.Round((v.Right - v.Left) * x / 10000.0);
+        int sy = v.Top + (int)Math.Round((v.Bottom - v.Top) * y / 10000.0);
+        if (kind == "leave")
+        {
+            if (hovered != IntPtr.Zero) PostMessage(hovered, WM_MOUSELEAVE, IntPtr.Zero, IntPtr.Zero);
+            hovered = IntPtr.Zero;
+            return;
+        }
+        if (kind == "wheel" || kind == "hwheel")
+        {
+            // Wheel messages carry the screen position; they go to the window under it.
+            IntPtr wheelTarget = Deepest(top, sx, sy);
+            PostMessage(wheelTarget, kind == "wheel" ? WM_MOUSEWHEEL : WM_MOUSEHWHEEL, Pack(keys, delta), Pack(sx, sy));
+            return;
+        }
+        IntPtr target = (kind == "move" || kind == "up") && pressed != IntPtr.Zero && IsWindow(pressed) ? pressed : Deepest(top, sx, sy);
+        POINT c = new POINT { X = sx, Y = sy };
+        ScreenToClient(target, ref c);
+        IntPtr at = Pack(c.X, c.Y);
+        if (hovered != target && hovered != IntPtr.Zero && pressed == IntPtr.Zero)
+            PostMessage(hovered, WM_MOUSELEAVE, IntPtr.Zero, IntPtr.Zero);
+        hovered = target;
+        int b = Math.Max(0, Math.Min(2, button));
+        switch (kind)
+        {
+            case "move":
+                PostMessage(target, WM_MOUSEMOVE, new IntPtr(keys), at);
+                break;
+            case "down":
+            case "double":
+                pressed = target;
+                PostMessage(target, WM_MOUSEMOVE, new IntPtr(keys), at);
+                PostMessage(target, kind == "double" ? Double[b] : Down[b], new IntPtr(keys), at);
+                break;
+            case "up":
+                PostMessage(target, Up[b], new IntPtr(keys), at);
+                pressed = IntPtr.Zero;
+                break;
+        }
+    }
+
+    // The innermost visible child window at a screen point (classic apps put
+    // their controls in child windows; most modern ones draw everything in one).
+    static IntPtr Deepest(IntPtr top, int sx, int sy)
+    {
+        IntPtr target = top;
+        for (int depth = 0; depth < 32; depth++)
+        {
+            POINT p = new POINT { X = sx, Y = sy };
+            ScreenToClient(target, ref p);
+            // CWP_SKIPINVISIBLE | CWP_SKIPDISABLED | CWP_SKIPTRANSPARENT
+            IntPtr child = ChildWindowFromPointEx(target, p, 0x0001 | 0x0002 | 0x0004);
+            if (child == IntPtr.Zero || child == target) break;
+            target = child;
+        }
+        return target;
+    }
+
+    // Where keys go in that app: its focused control, or the window itself.
+    static IntPtr Focused(IntPtr top, out uint thread)
+    {
+        uint pid;
+        thread = GetWindowThreadProcessId(top, out pid);
+        var info = new GUITHREADINFO();
+        info.cbSize = Marshal.SizeOf(typeof(GUITHREADINFO));
+        if (GetGUIThreadInfo(thread, ref info) && info.hwndFocus != IntPtr.Zero) return info.hwndFocus;
+        return top;
+    }
+
+    // A key pressed or released (virtual-key code, scan code). mods: 1 Shift,
+    // 2 Ctrl, 4 Alt. With modifiers the app's thread briefly sees them held,
+    // as it reads them from its own keyboard state rather than the message.
+    public static void Key(long id, int vk, int scan, bool extended, bool down, int mods)
+    {
+        IntPtr top = Window(id);
+        uint thread;
+        IntPtr target = Focused(top, out thread);
+        if (scan == 0) scan = (int)MapVirtualKey((uint)vk, 0);
+        bool alt = (mods & 4) != 0;
+        uint lp = 1u | ((uint)(scan & 0xFF) << 16) | (extended ? 1u << 24 : 0) | (alt ? 1u << 29 : 0) | (down ? 0 : (1u << 30) | (1u << 31));
+        uint msg = alt ? (down ? 0x0104u : 0x0105u) : (down ? 0x0100u : 0x0101u);
+        if (mods == 0)
+        {
+            PostMessage(target, msg, new IntPtr(vk), new IntPtr((int)lp));
+            return;
+        }
+        uint self = GetCurrentThreadId();
+        bool attached = AttachThreadInput(self, thread, true);
+        byte[] state = new byte[256], saved = new byte[256];
+        GetKeyboardState(saved);
+        Array.Copy(saved, state, 256);
+        if ((mods & 1) != 0) { state[0x10] = 0x80; state[0xA0] = 0x80; }
+        if ((mods & 2) != 0) { state[0x11] = 0x80; state[0xA2] = 0x80; }
+        if (alt) { state[0x12] = 0x80; state[0xA4] = 0x80; }
+        SetKeyboardState(state);
+        PostMessage(target, msg, new IntPtr(vk), new IntPtr((int)lp));
+        System.Threading.Thread.Sleep(30);
+        SetKeyboardState(saved);
+        if (attached) AttachThreadInput(self, thread, false);
+    }
+
+    // Typed text: one character message per UTF-16 unit, as the keyboard and
+    // input methods deliver it.
+    public static void Text(long id, string text)
+    {
+        IntPtr top = Window(id);
+        uint thread;
+        IntPtr target = Focused(top, out thread);
+        foreach (char ch in text) PostMessage(target, 0x0102, new IntPtr(ch), new IntPtr(1));
+    }
+
+    // Tells the app its window is (or no longer is) the active one, so it
+    // shows its caret and takes keys, while Terra stays in front.
+    public static void Focus(long id, bool on)
+    {
+        IntPtr top = Window(id);
+        if (on)
+        {
+            PostMessage(top, 0x001C, new IntPtr(1), IntPtr.Zero); // WM_ACTIVATEAPP
+            PostMessage(top, 0x0086, new IntPtr(1), IntPtr.Zero); // WM_NCACTIVATE
+            PostMessage(top, 0x0006, new IntPtr(1), IntPtr.Zero); // WM_ACTIVATE (WA_ACTIVE)
+            PostMessage(top, 0x0007, IntPtr.Zero, IntPtr.Zero); // WM_SETFOCUS
+        }
+        else
+        {
+            PostMessage(top, 0x0008, IntPtr.Zero, IntPtr.Zero); // WM_KILLFOCUS
+            PostMessage(top, 0x0006, IntPtr.Zero, IntPtr.Zero); // WM_ACTIVATE (WA_INACTIVE)
+            PostMessage(top, 0x0086, IntPtr.Zero, IntPtr.Zero); // WM_NCACTIVATE
+            PostMessage(top, 0x001C, IntPtr.Zero, IntPtr.Zero); // WM_ACTIVATEAPP
+        }
+    }
+
+    // Whether the app shows a popup (a menu or list) of its own right now:
+    // a visible top-level window of its process other than the window itself.
+    public static bool HasPopup(long id)
+    {
+        IntPtr top = Window(id);
+        uint pid;
+        GetWindowThreadProcessId(top, out pid);
+        bool found = false;
+        EnumWindows((h, l) =>
+        {
+            uint p;
+            GetWindowThreadProcessId(h, out p);
+            // WS_POPUP windows of the same process, other than the app's own window.
+            if (p == pid && h != top && IsWindowVisible(h) && (GetWindowLong(h, -16) & unchecked((int)0x80000000)) != 0)
+            {
+                found = true;
+                return false;
+            }
+            return true;
+        }, IntPtr.Zero);
+        return found;
+    }
+}
 `;
 
 // The C# arrives as the first line on stdin (base64): a command line is
@@ -661,10 +881,23 @@ function createShellHelper({
     }, timeoutMs);
     child.stdin.write(`${request.id}\t${request.line}\n`);
   };
-  const request = (line, urgent = false) => {
+  const request = (line, urgent = false, coalesce = null) => {
     if (broken) return Promise.reject(Error('The Windows icon helper is unavailable'));
     return new Promise((resolve, reject) => {
-      queue.push({ id: nextId++, line, urgent, resolve, reject });
+      if (coalesce) {
+        const waiting = queue.find((r) => r.coalesce === coalesce);
+        if (waiting) {
+          waiting.line = line;
+          waiting.resolvers.push(resolve);
+          return;
+        }
+      }
+      const entry = { id: nextId++, line, urgent, coalesce, resolvers: [], resolve: null, reject };
+      entry.resolve = (value) => {
+        resolve(value);
+        for (const other of entry.resolvers) other(value);
+      };
+      queue.push(entry);
       start().then(pump, (error) => fail(error));
     });
   };
@@ -718,6 +951,23 @@ function createShellHelper({
     },
     async hideWindow(id) {
       await request(`hide\t${id}`, true);
+    },
+    // App frames used in place: input posted to the hidden window. Mouse moves
+    // replace a move still waiting, so a busy app never lags behind the pointer.
+    appInput(id, event) {
+      let line;
+      if (event.type === 'mouse')
+        line = `mouse\t${id}\t${event.kind}\t${event.x | 0}\t${event.y | 0}\t${event.button | 0}\t${event.keys | 0}\t${event.delta | 0}`;
+      else if (event.type === 'key')
+        line = `key\t${id}\t${event.vk | 0}\t${event.scan | 0}\t${event.extended ? 1 : 0}\t${event.down ? 1 : 0}\t${event.mods | 0}`;
+      else if (event.type === 'text') line = `text\t${id}\t${b64(event.text)}`;
+      else if (event.type === 'focus') line = `appfocus\t${id}\t${event.on ? 1 : 0}`;
+      else return Promise.resolve();
+      const coalesce = event.type === 'mouse' && event.kind === 'move' ? `move:${id}` : null;
+      return request(line, true, coalesce).catch(() => {});
+    },
+    async hasPopup(id) {
+      return (await request(`popup\t${id}`, true)) === '1';
     },
     // Keeps the process running (app windows are on the board: it must put
     // them back) or lets it stop when idle.

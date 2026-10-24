@@ -668,7 +668,27 @@
   backdrop-filter: blur(20px);
 }
 .canvas-app[data-running] .ca-body {
-  cursor: pointer;
+  cursor: default;
+}
+/* Typing goes to the app. */
+.canvas-app[data-focused] .ca-body {
+  box-shadow:
+    0 0 0 2px rgb(68 134 217 / 0.85),
+    0 10px 30px rgb(20 30 45 / 0.16);
+}
+/* Where keys arrive before they are sent on to the app. */
+.ca-keys {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  resize: none;
+  pointer-events: none;
+  overflow: hidden;
 }
 .ca-label {
   position: absolute;

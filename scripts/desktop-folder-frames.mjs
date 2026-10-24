@@ -579,11 +579,51 @@ try {
         })()`);
       const first = await picture();
       await until(async () => (await picture()) !== first, 'picture follows the parked window');
-      // Using it: the click (made by the page, not a person) docks the window
-      // over the frame without passing a click on.
-      await read(
-        `document.querySelector('${frameSel} .ca-body').dispatchEvent(new MouseEvent('click', { bubbles: true }))`,
+      // Used in place: clicks and typing on the frame reach the hidden window,
+      // which never comes forward (it stays right behind Terra, not owned).
+      const viewport = await read('({ width: innerWidth, height: innerHeight })');
+      const spotX = Math.min(area.x + area.width * 0.2, viewport.width - 20);
+      const terraWindow = parked.above;
+      // The button fills the lower half of the test window.
+      await clickAt(spotX, area.y + area.height * 0.85);
+      await until(() => where()?.clicks === 1, 'click reached the app').catch((error) => {
+        console.error('window', where());
+        throw error;
+      });
+      assert.ok(await read(`!!document.querySelector('${frameSel}[data-focused]')`));
+      // The text box fills the top: click it, type, delete a letter, then
+      // select back to the line's start (Shift+Home: a held modifier) and
+      // type over it. (Windows' multi-line text box has no Ctrl+A.)
+      await clickAt(spotX, area.y + area.height * 0.2);
+      await sleep(300);
+      await send('Input.insertText', { text: 'hello' });
+      await until(() => where()?.text === 'hello', 'typed text reached the app').catch((error) => {
+        console.error('window', where());
+        throw error;
+      });
+      await key('Backspace', 'Backspace', 8);
+      await until(() => where()?.text === 'hell', 'Backspace reached the app');
+      await key('Home', 'Home', 36, 8);
+      await sleep(200);
+      await send('Input.insertText', { text: 'x' });
+      await until(() => where()?.text === 'x', 'Shift+Home then typing replaced the text').catch(
+        (error) => {
+          console.error('window', where());
+          throw error;
+        },
       );
+      const used = where();
+      assert.equal(used.owner, '0', 'never owned by Terra while used in place');
+      assert.equal(used.above, terraWindow, 'still right behind Terra');
+      // A click on the board takes the keys back from the app.
+      const s = await rect('.canvas-surface');
+      await clickAt(s.x + s.width - 40, s.y + s.height - 160);
+      await until(
+        () => read(`!document.querySelector('${frameSel}[data-focused]')`),
+        'app blurred',
+      );
+      // "Open as a window" still lays the real window over the frame.
+      await read(`document.querySelector('${frameSel} [aria-label="Open as a window"]').click()`);
       const docked = await until(() => {
         const w = where();
         return w &&
@@ -592,14 +632,8 @@ try {
           Math.abs(w.visible.height - area.height * dpr) <= 3
           ? w
           : null;
-      }, 'window docked over the frame');
-      assert.ok(await read(`!!document.querySelector('${frameSel}[data-live]')`));
-      // Parked, it was directly behind Terra's window (now its owner).
-      assert.equal(parked.above, docked.owner, 'parked just behind Terra');
-      await sleep(400);
-      assert.equal(where().clicks, 0, 'no click passed on without a real cursor there');
-      // A click on the board parks it again.
-      const s = await rect('.canvas-surface');
+      }, 'window opened over the frame');
+      assert.equal(docked.owner, terraWindow);
       await clickAt(s.x + s.width - 40, s.y + s.height - 160);
       await until(() => where()?.owner === '0', 'window parked again');
       assert.ok(await read(`!document.querySelector('${frameSel}[data-live]')`));

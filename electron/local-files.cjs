@@ -923,6 +923,46 @@ function createLocalFiles({
       }
   }
   const isDocked = (id) => managed.get(id) === 'docked';
+  // An app frame used in place: its mouse and keyboard input, only ever for a
+  // window that is on a board.
+  const mouseKinds = new Set(['move', 'down', 'double', 'up', 'wheel', 'hwheel', 'leave']);
+  const clamp = (value, low, high) =>
+    Math.max(low, Math.min(high, Math.round(Number.isFinite(value) ? value : 0)));
+  function appInput({ id, event } = {}) {
+    if (!windows || !helper?.available || !event || typeof event !== 'object') return;
+    windowId(id);
+    if (!managed.has(id)) return;
+    let clean;
+    if (event.type === 'mouse' && mouseKinds.has(event.kind))
+      clean = {
+        type: 'mouse',
+        kind: event.kind,
+        x: clamp(event.x, -20000, 30000),
+        y: clamp(event.y, -20000, 30000),
+        button: clamp(event.button, 0, 2),
+        keys: clamp(event.keys, 0, 0xffff),
+        delta: clamp(event.delta, -32768, 32767),
+      };
+    else if (event.type === 'key')
+      clean = {
+        type: 'key',
+        vk: clamp(event.vk, 1, 254),
+        scan: clamp(event.scan, 0, 255),
+        extended: event.extended === true,
+        down: event.down === true,
+        mods: clamp(event.mods, 0, 7),
+      };
+    else if (event.type === 'text' && typeof event.text === 'string' && event.text.length <= 2000)
+      clean = { type: 'text', text: event.text };
+    else if (event.type === 'focus') clean = { type: 'focus', on: event.on === true };
+    else return;
+    void helper.appInput(id, clean);
+  }
+  async function appPopup({ id } = {}) {
+    windowId(id);
+    if (!windows || !helper?.available || !managed.has(id)) return false;
+    return helper.hasPopup(id).catch(() => false);
+  }
 
   async function choose({ defaultPath } = {}) {
     const start = typeof defaultPath === 'string' && defaultPath ? defaultPath : knownPath('home');
@@ -979,6 +1019,8 @@ function createLocalFiles({
     releaseAll,
     hideAll,
     isDocked,
+    appInput,
+    appPopup,
     dragIcon,
     absolute,
     paths,
@@ -1012,6 +1054,7 @@ function registerLocalFiles({ ipcMain, trusted, files }) {
     'park-window': files.parkWindow,
     'dock-window': files.dockWindow,
     'release-window': files.releaseWindow,
+    'app-popup': files.appPopup,
     source: ({ path: file } = {}) => files.sourceFor(file),
     watch: ({ key, dirs } = {}) => files.watch(key, dirs),
     unwatch: ({ key } = {}) => files.unwatch(key),
@@ -1026,6 +1069,13 @@ function registerLocalFiles({ ipcMain, trusted, files }) {
       trusted(event);
       return handler(args || {});
     });
+  // Mouse and keyboard for an app frame used in place: sent, not awaited.
+  ipcMain.on('canvas:files-app-input', (event, args) => {
+    try {
+      trusted(event);
+      files.appInput(args || {});
+    } catch {}
+  });
   // A real Windows drag of files, to Explorer, other apps or the board itself.
   ipcMain.on('canvas:files-drag', (event, { paths: input, icon } = {}) => {
     try {

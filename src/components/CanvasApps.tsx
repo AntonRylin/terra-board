@@ -1,16 +1,29 @@
-// App frames (type 'file', kind 'app'): a running program's window on the
-// board. While nobody uses it, the real window waits hidden just behind
-// Terra's window and the frame shows a live picture of it (captured by
-// Windows, only while the frame is on screen). A click lays the real window
-// exactly over the frame, owned by Terra's window, so typing, scrolling and
-// video are the app's own; a click back on the board puts it behind again.
-// Deleting the frame, closing the board or Terra gives the window back as it
-// was. The board stores the program, never the window or what it shows.
-import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react';
-import { AppWindow, Check, MousePointerClick, Play, X } from 'lucide-react';
+// App frames (type 'file', kind 'app'): a running program inside the board.
+// Its real window waits hidden just behind Terra's window, and the frame shows
+// a live picture of it (captured by Windows while the frame is on screen).
+// Terra is the app's mouse and keyboard: pointer, wheel and keys on the frame
+// are sent to the hidden window as the input Windows would deliver, and it is
+// told it has the focus, so the app is used in place and never comes forward.
+// "Open as a window" lays the real window over the frame instead, for apps
+// that ignore such input. Deleting the frame, closing the board or Terra
+// gives the window back as it was. The board stores the program only.
+import {
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type PointerEvent,
+  type ReactNode,
+} from 'react';
+import { AppWindow, Check, ExternalLink, Play, X } from 'lucide-react';
 import type { Camera, CanvasObject } from '../model';
-import { localToWorld } from '../canvas/transform';
-import { appLabelHeight, fileLinkLabel, type FileSource } from '../canvas/file-link';
+import { localToWorld, worldToLocal } from '../canvas/transform';
+import {
+  appLabelHeight,
+  fileLinkLabel,
+  type AppInputEvent,
+  type FileSource,
+} from '../canvas/file-link';
 import { AppIcon } from './CanvasDesktops';
 import { appWindowFor, isAppWindowBound, refreshDesktops, useDesktops } from './desktop-windows';
 import { useFileIcons } from './file-icons';
@@ -19,6 +32,27 @@ const message = (error: unknown) => (error instanceof Error ? error.message : St
 // Captures running at once; frames beyond show the app's icon until one stops.
 const captureLimit = 6;
 const captures = new Set<string>();
+// Keys Windows marks as extended (the arrows and the block above them, and
+// the right-hand Ctrl and Alt).
+const extendedKeys = new Set([
+  'ArrowUp',
+  'ArrowDown',
+  'ArrowLeft',
+  'ArrowRight',
+  'Insert',
+  'Delete',
+  'Home',
+  'End',
+  'PageUp',
+  'PageDown',
+  'NumpadEnter',
+  'NumpadDivide',
+  'ControlRight',
+  'AltRight',
+  'MetaLeft',
+  'MetaRight',
+  'ContextMenu',
+]);
 
 export function AppFrame({
   object: o,
@@ -221,10 +255,193 @@ export function AppFrame({
     },
     [],
   );
-  // The board's own double-click (see Whiteboard activate) asks to use it.
+  // Used in place: Terra is the app's mouse and keyboard. The real window
+  // stays hidden behind Terra; what happens on the frame is sent to it as the
+  // input Windows itself would deliver, and it is told it has the focus.
+  const section = useRef<HTMLElement>(null);
+  const keys = useRef<HTMLTextAreaElement>(null);
+  const [focused, setFocused] = useState(false);
+  const focusedRef = useRef(false);
+  const winRef = useRef(win);
+  winRef.current = win;
+  const send = (event: AppInputEvent) => {
+    const target = winRef.current;
+    if (files && target) files.appInput({ id: target.id, event });
+  };
+  // A spot of the window's picture from a pointer on the screen, in
+  // ten-thousandths of the picture (zoom and rotation allowed for).
+  const spotOf = (clientX: number, clientY: number) => {
+    const parent = section.current?.offsetParent?.getBoundingClientRect();
+    if (!parent) return null;
+    const local = worldToLocal(o, {
+      x: (clientX - parent.left - camera.x) / camera.zoom,
+      y: (clientY - parent.top - camera.y) / camera.zoom,
+    });
+    return {
+      x: Math.round((local.x / o.width) * 10000),
+      y: Math.round(((local.y - appLabelHeight) / bodyHeight) * 10000),
+    };
+  };
+  // Mouse buttons and keys held, as Windows passes them with mouse messages.
+  const mouseKeys = (e: { buttons: number; shiftKey: boolean; ctrlKey: boolean }) =>
+    (e.buttons & 1 ? 1 : 0) |
+    (e.buttons & 2 ? 2 : 0) |
+    (e.buttons & 4 ? 0x10 : 0) |
+    (e.shiftKey ? 4 : 0) |
+    (e.ctrlKey ? 8 : 0);
+  const focusApp = () => {
+    keys.current?.focus({ preventScroll: true });
+    if (focusedRef.current) return;
+    focusedRef.current = true;
+    setFocused(true);
+    send({ type: 'focus', on: true });
+  };
+  const blurApp = () => {
+    if (!focusedRef.current) return;
+    focusedRef.current = false;
+    setFocused(false);
+    send({ type: 'focus', on: false });
+    // A menu or list the app opened would otherwise stay over the board.
+    const target = winRef.current;
+    if (files && target)
+      void files.appPopup({ id: target.id }).then((open) => {
+        if (!open) return;
+        send({ type: 'key', vk: 0x1b, down: true, mods: 0 });
+        send({ type: 'key', vk: 0x1b, down: false, mods: 0 });
+      });
+  };
+  useEffect(() => () => blurApp(), []);
+  // Pointer moves go once per frame, the newest only.
+  const move = useRef<{ x: number; y: number; keys: number } | null>(null);
+  const moveFrame = useRef(0);
+  const flushMove = () => {
+    cancelAnimationFrame(moveFrame.current);
+    moveFrame.current = 0;
+    const m = move.current;
+    move.current = null;
+    if (m) send({ type: 'mouse', kind: 'move', ...m });
+  };
+  const lastDown = useRef({ at: 0, x: 0, y: 0, button: -1 });
+  const inPlace = !!win && !live && !win.minimized;
+  const pointerDown = (e: PointerEvent<HTMLDivElement>) => {
+    if (!win || live || e.button > 2) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (win.minimized) {
+      // Back from the taskbar into the board.
+      void park(win.id).then(() => refreshDesktops(300));
+      focusApp();
+      return;
+    }
+    const spot = spotOf(e.clientX, e.clientY);
+    if (!spot) return;
+    focusApp();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    flushMove();
+    const now = performance.now(),
+      last = lastDown.current;
+    const double =
+      last.button === e.button &&
+      now - last.at < 500 &&
+      Math.hypot(e.clientX - last.x, e.clientY - last.y) < 5;
+    lastDown.current = double
+      ? { at: 0, x: 0, y: 0, button: -1 }
+      : { at: now, x: e.clientX, y: e.clientY, button: e.button };
+    send({
+      type: 'mouse',
+      kind: double ? 'double' : 'down',
+      ...spot,
+      button: e.button,
+      keys: mouseKeys(e),
+    });
+  };
+  const pointerMove = (e: PointerEvent<HTMLDivElement>) => {
+    if (!inPlace) return;
+    const spot = spotOf(e.clientX, e.clientY);
+    if (!spot) return;
+    move.current = { ...spot, keys: mouseKeys(e) };
+    if (!moveFrame.current) moveFrame.current = requestAnimationFrame(flushMove);
+  };
+  const pointerUp = (e: PointerEvent<HTMLDivElement>) => {
+    if (!inPlace || e.button > 2) return;
+    e.stopPropagation();
+    flushMove();
+    const spot = spotOf(e.clientX, e.clientY);
+    if (spot) send({ type: 'mouse', kind: 'up', ...spot, button: e.button, keys: mouseKeys(e) });
+    if (e.currentTarget.hasPointerCapture(e.pointerId))
+      e.currentTarget.releasePointerCapture(e.pointerId);
+  };
+  // The wheel scrolls the app (Ctrl+wheel still zooms the board).
+  const wheelRest = useRef({ x: 0, y: 0 });
+  useEffect(() => {
+    const element = body.current;
+    if (!element || !inPlace) return;
+    const wheel = (e: WheelEvent) => {
+      if (e.ctrlKey) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const spot = spotOf(e.clientX, e.clientY);
+      if (!spot) return;
+      const unit = e.deltaMode === 1 ? 33.3 : e.deltaMode === 2 ? 1000 : 1;
+      // One notch is about 100 pixels here and 120 units in Windows.
+      const rest = wheelRest.current;
+      rest.y += (-e.deltaY * unit * 120) / 100;
+      rest.x += (e.deltaX * unit * 120) / 100;
+      const dy = Math.trunc(rest.y),
+        dx = Math.trunc(rest.x);
+      rest.y -= dy;
+      rest.x -= dx;
+      const held = (e.shiftKey ? 4 : 0) | (e.ctrlKey ? 8 : 0);
+      if (dy) send({ type: 'mouse', kind: 'wheel', ...spot, delta: dy, keys: held });
+      if (dx) send({ type: 'mouse', kind: 'hwheel', ...spot, delta: dx, keys: held });
+    };
+    element.addEventListener('wheel', wheel, { passive: false });
+    return () => element.removeEventListener('wheel', wheel);
+  });
+  // Keys go to the app while it has the focus; typed text (input methods
+  // and dead keys too) comes from the hidden field as characters.
+  const composing = useRef(false);
+  const textKey = (e: KeyboardEvent<HTMLTextAreaElement>) =>
+    e.key.length === 1 && (!(e.ctrlKey || e.altKey || e.metaKey) || (e.ctrlKey && e.altKey));
+  const modifiers = (e: KeyboardEvent<HTMLTextAreaElement>) =>
+    (e.shiftKey ? 1 : 0) | (e.ctrlKey ? 2 : 0) | (e.altKey ? 4 : 0);
+  const keyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    e.stopPropagation();
+    if (e.nativeEvent.isComposing || composing.current || e.key === 'Process' || e.key === 'Dead')
+      return;
+    if (textKey(e)) return;
+    e.preventDefault();
+    if (e.keyCode)
+      send({
+        type: 'key',
+        vk: e.keyCode,
+        extended: extendedKeys.has(e.code),
+        down: true,
+        mods: modifiers(e),
+      });
+  };
+  const keyUp = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    e.stopPropagation();
+    if (composing.current || textKey(e)) return;
+    e.preventDefault();
+    if (e.keyCode)
+      send({
+        type: 'key',
+        vk: e.keyCode,
+        extended: extendedKeys.has(e.code),
+        down: false,
+        mods: modifiers(e),
+      });
+  };
+  const typed = (field: HTMLTextAreaElement) => {
+    if (field.value) send({ type: 'text', text: field.value });
+    field.value = '';
+  };
+
+  // The board's own double-click (see Whiteboard activate) gives it the keys.
   useEffect(() => {
     const request = (event: Event) => {
-      if ((event as CustomEvent<string>).detail === o.id) use(null);
+      if ((event as CustomEvent<string>).detail === o.id && win && !live) focusApp();
     };
     window.addEventListener('terra-use-app', request);
     return () => window.removeEventListener('terra-use-app', request);
@@ -292,7 +509,7 @@ export function AppFrame({
             <AppIcon exe={win.exe} size={56} zoom={camera.zoom} />
             <p>
               {win.minimized
-                ? `${name} is minimized. Click to show it here.`
+                ? `${name} is minimized. Click to bring it back here.`
                 : captureError
                   ? `Windows didn’t share a picture of ${name} (${captureError}).`
                   : name}
@@ -305,10 +522,12 @@ export function AppFrame({
   const origin = localToWorld(o, { x: 0, y: 0 });
   return (
     <section
+      ref={section}
       className="canvas-app"
       data-file-id={o.id}
       data-selected={active || undefined}
       data-live={live ? true : undefined}
+      data-focused={focused || undefined}
       data-running={win ? true : undefined}
       aria-label={name}
       style={{
@@ -321,25 +540,16 @@ export function AppFrame({
       onPointerDown={(event) => {
         const target = event.target as HTMLElement;
         if (event.button !== 0 || target.closest('button')) return;
-        if (target.closest('.ca-label')) {
-          forward(event);
-          return;
-        }
-        // A press on a running app selects it, and the click starts using it.
-        if (win) {
-          event.stopPropagation();
-          select(o.id);
-          return;
-        }
-        forward(event);
-      }}
-      onClick={(event) => {
-        const target = event.target as HTMLElement;
-        if (!win || target.closest('button') || !target.closest('.ca-body')) return;
-        use(event.isTrusted ? { x: event.screenX, y: event.screenY } : null);
+        // The name moves and selects the frame; a running app takes its own presses.
+        if (target.closest('.ca-label') || !win) forward(event);
       }}
       onContextMenu={(event) => {
         event.preventDefault();
+        // Inside a running app, the app's own menu (sent as a right-click).
+        if (win && (event.target as HTMLElement).closest('.ca-body')) {
+          event.stopPropagation();
+          return;
+        }
         select(o.id);
         host?.dispatchEvent(
           new MouseEvent('contextmenu', {
@@ -368,11 +578,11 @@ export function AppFrame({
               </button>
             ) : (
               <button
-                title="Use the app (or click it)"
-                aria-label="Use the app"
+                title="Open as a window (for apps that don't respond in the board)"
+                aria-label="Open as a window"
                 onClick={() => use(null)}
               >
-                <MousePointerClick size={14} />
+                <ExternalLink size={14} />
               </button>
             )}
             <button
@@ -386,8 +596,42 @@ export function AppFrame({
           </span>
         )}
       </div>
-      <div ref={body} className="ca-body">
+      <div
+        ref={body}
+        className="ca-body"
+        onPointerDown={pointerDown}
+        onPointerMove={pointerMove}
+        onPointerUp={pointerUp}
+        onPointerCancel={pointerUp}
+        onPointerLeave={(e) => {
+          if (inPlace && !e.buttons) {
+            flushMove();
+            send({ type: 'mouse', kind: 'leave', x: 0, y: 0 });
+          }
+        }}
+        onDoubleClick={(e) => win && e.stopPropagation()}
+      >
         {content}
+        {win && (
+          <textarea
+            ref={keys}
+            className="ca-keys"
+            aria-label={`Type into ${name}`}
+            tabIndex={-1}
+            onKeyDown={keyDown}
+            onKeyUp={keyUp}
+            onInput={(e) => {
+              if (!composing.current && !(e.nativeEvent as InputEvent).isComposing)
+                typed(e.currentTarget);
+            }}
+            onCompositionStart={() => (composing.current = true)}
+            onCompositionEnd={(e) => {
+              composing.current = false;
+              typed(e.currentTarget);
+            }}
+            onBlur={blurApp}
+          />
+        )}
       </div>
     </section>
   );
