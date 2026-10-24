@@ -296,10 +296,25 @@ function ready() {
   for (const u of users) emit({ '@type': 'updateUser', user: u });
   for (const c of chats) emit({ '@type': 'updateNewChat', chat: chatObject(c) });
   emit({ '@type': 'updateConnectionState', state: { '@type': 'connectionStateReady' } });
+  emit({
+    '@type': 'updateChatFolders',
+    chat_folders: [{ '@type': 'chatFolderInfo', id: 1, name: { text: { text: 'Work' } } }],
+    main_chat_list_position: 0,
+  });
   setAuth('authorizationStateReady');
 }
 
-let chatsLoaded = false;
+// Chat lists: where each chat is (main, archive, the Work folder).
+const listed = new Map(); // chat id -> { main, archive }
+const position = (chatId, list, order, pinned = false) =>
+  emit({
+    '@type': 'updateChatPosition',
+    chat_id: chatId,
+    position: { '@type': 'chatPosition', list, order: String(order), is_pinned: pinned },
+  });
+const findMessage = (chatId, id) => (histories.get(chatId) || []).find((m) => m.id === id);
+
+const loadedLists = new Set();
 function handle(query) {
   const type = query['@type'];
   switch (type) {
@@ -344,21 +359,171 @@ function handle(query) {
       reply(query, { '@type': 'ok' });
       ready();
       return;
-    case 'loadChats':
-      if (chatsLoaded) return fail(query, 404, 'Not Found');
-      chatsLoaded = true;
-      for (const c of chats)
-        emit({
-          '@type': 'updateChatPosition',
-          chat_id: c.id,
-          position: {
+    case 'loadChats': {
+      const list = query.chat_list || { '@type': 'chatListMain' };
+      const key = list['@type'] + (list.chat_folder_id || '');
+      if (loadedLists.has(key)) return fail(query, 404, 'Not Found');
+      loadedLists.add(key);
+      if (list['@type'] === 'chatListMain')
+        for (const c of chats) position(c.id, list, c.order, !!c.pinned);
+      if (list['@type'] === 'chatListFolder')
+        for (const c of chats.filter((c) => c.id === 1 || c.id === -1003))
+          position(c.id, list, c.order);
+      return reply(query, { '@type': 'ok' });
+    }
+    case 'toggleChatIsPinned': {
+      const c = chats.find((c) => c.id === query.chat_id);
+      position(query.chat_id, query.chat_list, c?.order || 1, query.is_pinned);
+      if (c) c.pinned = query.is_pinned;
+      return reply(query, { '@type': 'ok' });
+    }
+    case 'addChatToList': {
+      const c = chats.find((c) => c.id === query.chat_id);
+      const toArchive = query.chat_list['@type'] === 'chatListArchive';
+      position(query.chat_id, { '@type': toArchive ? 'chatListMain' : 'chatListArchive' }, 0);
+      position(query.chat_id, query.chat_list, c?.order || 1);
+      return reply(query, { '@type': 'ok' });
+    }
+    case 'setChatNotificationSettings':
+      emit({
+        '@type': 'updateChatNotificationSettings',
+        chat_id: query.chat_id,
+        notification_settings: query.notification_settings,
+      });
+      return reply(query, { '@type': 'ok' });
+    case 'getMessageProperties': {
+      const m = findMessage(query.chat_id, query.message_id);
+      if (!m) return fail(query, 404, 'Message not found');
+      return reply(query, {
+        '@type': 'messageProperties',
+        can_be_edited: m.is_outgoing && m.content['@type'] === 'messageText',
+        can_be_forwarded: true,
+        can_be_pinned: true,
+        can_be_replied: true,
+        can_get_link: query.chat_id === -1003,
+        can_be_deleted_only_for_self: true,
+        can_be_deleted_for_all_users: m.is_outgoing,
+      });
+    }
+    case 'getMessageAvailableReactions':
+      return reply(query, {
+        '@type': 'availableReactions',
+        top_reactions: ['👍', '❤', '🔥', '🎉', '😁', '😢'].map((emoji) => ({
+          '@type': 'availableReaction',
+          type: { '@type': 'reactionTypeEmoji', emoji },
+          needs_premium: false,
+        })),
+        recent_reactions: [],
+        popular_reactions: [],
+        allow_custom_emoji: false,
+        are_tags: false,
+      });
+    case 'addMessageReaction':
+    case 'removeMessageReaction': {
+      const m = findMessage(query.chat_id, query.message_id);
+      if (!m) return fail(query, 404, 'Message not found');
+      const emoji = query.reaction_type.emoji;
+      const reactions = (m.interaction_info?.reactions?.reactions || []).filter(
+        (r) => r.type.emoji !== emoji,
+      );
+      if (type === 'addMessageReaction')
+        reactions.push({
+          '@type': 'messageReaction',
+          type: { '@type': 'reactionTypeEmoji', emoji },
+          total_count: 1,
+          is_chosen: true,
+          recent_sender_ids: [],
+        });
+      m.interaction_info = {
+        '@type': 'messageInteractionInfo',
+        view_count: 0,
+        forward_count: 0,
+        reactions: { '@type': 'messageReactions', reactions, are_tags: false, paid_reactors: [] },
+      };
+      emit({
+        '@type': 'updateMessageInteractionInfo',
+        chat_id: m.chat_id,
+        message_id: m.id,
+        interaction_info: m.interaction_info,
+      });
+      return reply(query, { '@type': 'ok' });
+    }
+    case 'editMessageText': {
+      const m = findMessage(query.chat_id, query.message_id);
+      if (!m) return fail(query, 404, 'Message not found');
+      m.content = { '@type': 'messageText', text: query.input_message_content.text };
+      m.edit_date = Math.floor(Date.now() / 1000);
+      emit({
+        '@type': 'updateMessageContent',
+        chat_id: m.chat_id,
+        message_id: m.id,
+        new_content: m.content,
+      });
+      emit({
+        '@type': 'updateMessageEdited',
+        chat_id: m.chat_id,
+        message_id: m.id,
+        edit_date: m.edit_date,
+      });
+      return reply(query, m);
+    }
+    case 'pinChatMessage':
+    case 'unpinChatMessage': {
+      const m = findMessage(query.chat_id, query.message_id);
+      if (!m) return fail(query, 404, 'Message not found');
+      m.is_pinned = type === 'pinChatMessage';
+      emit({
+        '@type': 'updateMessageIsPinned',
+        chat_id: m.chat_id,
+        message_id: m.id,
+        is_pinned: m.is_pinned,
+      });
+      return reply(query, { '@type': 'ok' });
+    }
+    case 'getChatPinnedMessage': {
+      const m = (histories.get(query.chat_id) || []).filter((m) => m.is_pinned).pop();
+      return m ? reply(query, m) : fail(query, 404, 'Not Found');
+    }
+    case 'deleteMessages': {
+      const history = histories.get(query.chat_id) || [];
+      histories.set(
+        query.chat_id,
+        history.filter((m) => !query.message_ids.includes(m.id)),
+      );
+      emit({
+        '@type': 'updateDeleteMessages',
+        chat_id: query.chat_id,
+        message_ids: query.message_ids,
+        is_permanent: true,
+        from_cache: false,
+      });
+      return reply(query, { '@type': 'ok' });
+    }
+    case 'forwardMessages': {
+      const source = findMessage(query.from_chat_id, query.message_ids[0]);
+      if (!source) return fail(query, 404, 'Message not found');
+      const copy = {
+        ...message(query.chat_id, me, 0, source.content),
+        forward_info: { '@type': 'messageForwardInfo', date: source.date },
+      };
+      if (!histories.has(query.chat_id)) histories.set(query.chat_id, []);
+      histories.get(query.chat_id).push(copy);
+      emit({ '@type': 'updateNewMessage', message: copy });
+      emit({
+        '@type': 'updateChatLastMessage',
+        chat_id: query.chat_id,
+        last_message: copy,
+        positions: [
+          {
             '@type': 'chatPosition',
             list: { '@type': 'chatListMain' },
-            order: c.order,
-            is_pinned: !!c.pinned,
+            order: '1000',
+            is_pinned: false,
           },
-        });
-      return reply(query, { '@type': 'ok' });
+        ],
+      });
+      return reply(query, { '@type': 'messages', total_count: 1, messages: [copy] });
+    }
     case 'getChatHistory': {
       const history = histories.get(query.chat_id) || [];
       const from = query.from_message_id || Infinity;
@@ -561,7 +726,7 @@ function handle(query) {
     case 'logOut':
     case 'close':
       if (query['@extra']) reply(query, { '@type': 'ok' });
-      chatsLoaded = false;
+      loadedLists.clear();
       histories.clear();
       setAuth('authorizationStateClosed');
       return;

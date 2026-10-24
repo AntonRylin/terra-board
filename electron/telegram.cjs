@@ -59,6 +59,25 @@ const REQUESTS = new Set([
   'getCountryCode',
   'setChatDraftMessage',
   'openMessageContent',
+  // Chat menu: pin, archive, mute, read state, clear, delete or leave, block.
+  'toggleChatIsPinned',
+  'addChatToList',
+  'setChatNotificationSettings',
+  'readChatList',
+  'deleteChatHistory',
+  'leaveChat',
+  'deleteChat',
+  'setMessageSenderBlockList',
+  // Message menu: what a message allows, reactions, edit, forward, pin.
+  'getMessageProperties',
+  'getMessageAvailableReactions',
+  'addMessageReaction',
+  'removeMessageReaction',
+  'editMessageCaption',
+  'forwardMessages',
+  'pinChatMessage',
+  'unpinChatMessage',
+  'getChatPinnedMessage',
 ]);
 // Message contents a frame may send. Files must have been prepared with
 // stage(), so a frame can only send what someone dropped or picked.
@@ -149,7 +168,7 @@ function credentialsValue(input) {
 function createState() {
   const chats = new Map();
   const users = new Map();
-  const state = { auth: null, connection: null, myId: 0, chats, users };
+  const state = { auth: null, connection: null, myId: 0, chats, users, folders: [] };
   // Returns what changed: { chat } / { user } / { auth } / { connection } or null.
   state.apply = (update) => {
     const chat = (id, change) => {
@@ -165,6 +184,7 @@ function createState() {
         if (state.auth?.['@type'] === 'authorizationStateClosed') {
           chats.clear();
           users.clear();
+          state.folders = [];
           state.myId = 0;
         }
         return { auth: state.auth };
@@ -230,6 +250,14 @@ function createState() {
           draft_message: update.draft_message,
           positions: mergePositions(c.positions, update.positions, true),
         }));
+      case 'updateChatFolders':
+        state.folders = (update.chat_folders || []).map((f) => ({
+          id: f.id,
+          name: f.name?.text?.text ?? f.title ?? '',
+        }));
+        return { folders: state.folders };
+      case 'updateChatBlockList':
+        return chat(update.chat_id, () => ({ block_list: update.block_list }));
       case 'updateChatPermissions':
         return chat(update.chat_id, () => ({ permissions: update.permissions }));
       default:
@@ -240,6 +268,7 @@ function createState() {
     auth: state.auth,
     connection: state.connection,
     myId: state.myId,
+    folders: state.folders,
     chats: [...chats.values()],
     users: [...users.values()],
   });
@@ -297,6 +326,7 @@ function createTelegram({
       ...(b.auth !== undefined && { auth: b.auth }),
       ...(b.connection !== undefined && { connection: b.connection }),
       ...(b.myId !== undefined && { myId: b.myId }),
+      ...(b.folders !== undefined && { folders: b.folders }),
       ...(b.status && { status: status() }),
       chats: [...b.chats.values()],
       users: [...b.users.values()],
@@ -441,6 +471,7 @@ function createTelegram({
       if ('auth' in change) b.auth = change.auth;
       if ('connection' in change) b.connection = change.connection;
       if ('myId' in change) b.myId = change.myId;
+      if ('folders' in change) b.folders = change.folders;
     }
     if (type === 'updateFile') queue().files.set(event.file.id, event);
     else if (FORWARDED.has(type)) queue().events.push(event);

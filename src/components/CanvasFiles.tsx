@@ -233,7 +233,7 @@ function RenameField({
   );
 }
 
-type Menu = { x: number; y: number; items: (MenuItem | null)[] };
+type Menu = { x: number; y: number; items: (MenuItem | null)[]; header?: ReactNode };
 
 function FolderCard({
   object: o,
@@ -1803,6 +1803,7 @@ export default function CanvasFiles({
             x={menu.x}
             y={menu.y}
             items={menu.items}
+            header={menu.header}
             placement="pointer"
             onClose={() => setMenu(null)}
           />,

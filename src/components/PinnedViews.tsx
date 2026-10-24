@@ -33,6 +33,7 @@ import {
 import { ContextMenu, type MenuItem, type MenuPlacement } from './Dialogs';
 import { ListCard } from './CanvasLists';
 import { PaperName, PinnedPaperPages } from './CanvasPapers';
+import { PinnedTelegram } from './telegram/TelegramCard';
 import './pinned-views.css';
 
 type Board = { name: string; objects: CanvasObject[] | null; revision: number };
@@ -442,6 +443,17 @@ function Pin({
           fit={(next) => canEdit && fit(next)}
           editing={canEdit && editing}
           setEditing={(next) => canEdit && setEditing(next)}
+        />
+      ) : o?.type === 'file' && o.file?.kind === 'telegram' ? (
+        <PinnedTelegram
+          object={o}
+          width={pin.width}
+          height={body}
+          actions={{
+            onError,
+            openLink: (url) =>
+              void (window.canvas?.openExternal(url) ?? Promise.resolve()).catch(() => {}),
+          }}
         />
       ) : o?.type === 'list' ? (
         <PinnedList

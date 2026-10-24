@@ -464,6 +464,127 @@ try {
     'group photos',
   );
 
+  // The message menu: reactions, edit, pin, forward — what TDLib allows.
+  const own = async () =>
+    read(
+      `(()=>{const e=[...document.querySelectorAll('.tg-row[data-out] .tg-bubble')].find(e=>e.innerText.includes('pin it'));if(!e)return null;e.scrollIntoView({block:'center'});const r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`,
+    );
+  const rightClick = async ({ x, y }) => {
+    await mouse('mouseMoved', x, y);
+    await mouse('mousePressed', x, y, 2, 1, 'right');
+    await mouse('mouseReleased', x, y, 0, 1, 'right');
+  };
+  await rightClick(await until(own, 'own message'));
+  await until(() => rect('.tg-menu-reactions'), 'reactions in the menu');
+  const items = await read(
+    `[...document.querySelectorAll('.context-menu button[role=menuitem]')].map(b=>b.innerText)`,
+  );
+  for (const label of ['Reply', 'Edit', 'Copy text', 'Forward', 'Pin', 'Delete'])
+    assert.ok(items.includes(label), `menu has ${label}: ${items}`);
+  assert.equal(
+    await read(`document.querySelectorAll('.context-menu hr').length`),
+    2,
+    'dividers only between groups',
+  );
+  {
+    const m = await rect('.context-menu');
+    await sleep(200);
+    const shot = await send('Page.captureScreenshot', {
+      format: 'png',
+      clip: { x: m.x - 8, y: m.y - 8, width: m.width + 16, height: m.height + 16, scale: 2 },
+    });
+    fs.writeFileSync(join(root, 'closeup-7-message-menu.png'), Buffer.from(shot.data, 'base64'));
+  }
+  await click('.tg-menu-reactions button');
+  await until(() => rect('.tg-reactions button[data-chosen]'), 'reaction under the message');
+  // Edit.
+  await rightClick(await own());
+  await clickText('.context-menu button', 'Edit');
+  await until(async () => (await textOf('.tg-composer')).includes('Edit message'), 'edit bar');
+  await click('.tg-composer textarea');
+  await key('End', 'End', 35);
+  await send('Input.insertText', { text: ' (edited here)' });
+  await key('Enter', 'Enter', 13);
+  await until(async () => (await textOf('.tg-messages')).includes('(edited here)'), 'edited');
+  // Pin: the pinned bar shows it.
+  await rightClick(await own());
+  await clickText('.context-menu button', 'Pin');
+  await until(async () => (await textOf('.tg-pinned-bar')).includes('edited here'), 'pinned bar');
+  await closeUp('.canvas-telegram[data-file-id="tg"]', 'closeup-8-reaction-edit-pin.png');
+  // Forward to Dana: that chat opens with it.
+  await rightClick(await own());
+  await clickText('.context-menu button', 'Forward');
+  await until(() => rect('.tg-forward'), 'forward dialog');
+  await clickText('.tg-forward-chat', 'Dana Wu');
+  await until(async () => (await textOf('.tg-chat-head')).includes('Dana Wu'), 'forwarded chat');
+  await until(async () => (await textOf('.tg-messages')).includes('Forwarded'), 'forwarded');
+
+  // The chat menu: archive a chat, then find it under Archived; the Work folder.
+  const row = (name) =>
+    read(
+      `(()=>{const e=[...document.querySelectorAll('.tg-chat')].find(e=>e.innerText.includes(${JSON.stringify(name)}));if(!e)return null;const r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`,
+    );
+  await rightClick(await until(() => row('Family'), 'Family'));
+  const chatItems = await read(
+    `[...document.querySelectorAll('.context-menu button[role=menuitem]')].map(b=>b.innerText)`,
+  );
+  for (const label of ['Pin', 'Archive', 'Unmute', 'Mark as read', 'Clear history', 'Leave group'])
+    assert.ok(chatItems.includes(label), `chat menu has ${label}: ${chatItems}`);
+  {
+    const m = await rect('.context-menu');
+    const shot = await send('Page.captureScreenshot', {
+      format: 'png',
+      clip: { x: m.x - 8, y: m.y - 8, width: m.width + 16, height: m.height + 16, scale: 2 },
+    });
+    fs.writeFileSync(join(root, 'closeup-9-chat-menu.png'), Buffer.from(shot.data, 'base64'));
+  }
+  await clickText('.context-menu button', 'Archive');
+  await until(async () => !(await row('Family')), 'archived away');
+  await clickText('.tg-tabs button', 'Archived');
+  await until(() => row('Family'), 'in the archive');
+  await clickText('.tg-tabs button', 'Work');
+  await until(async () => (await row('Design team')) && !(await row('Maria Lopez')), 'Work folder');
+  await clickText('.tg-tabs button', 'All chats');
+  await until(() => row('Maria Lopez'), 'all chats again');
+
+  // Text size from the frame menu.
+  await click('.canvas-telegram[data-file-id="tg"] .cf-header .cf-button');
+  await clickText('.context-menu button', 'Text: Larger');
+  await until(
+    () => read(`getComputedStyle(document.querySelector('.tg-text')).fontSize === '20px'`),
+    'larger text',
+  );
+  await click('.canvas-telegram[data-file-id="tg"] .cf-header .cf-button');
+  await clickText('.context-menu button', 'Text: Medium');
+
+  // Pinned to the screen: the chats run in the pin; the frame says so.
+  await clickText('.canvas-telegram[data-file-id="tg"] .tg-chat', 'Design team');
+  await click('.canvas-telegram .cf-header .cf-title');
+  {
+    const title = await rect('.canvas-telegram .cf-header .cf-title');
+    await rightClick({ x: title.x + 30, y: title.y + title.height / 2 });
+    await clickText('.context-menu button', 'Pin to screen');
+  }
+  await until(
+    () => read(`document.querySelectorAll('.screen-pin .tg-pinned .tg-chat').length >= 5`),
+    'chats in the pinned window',
+  );
+  assert.match(await textOf('.canvas-folder.canvas-telegram'), /pinned to the screen/);
+  await screenshot('11-pinned.png');
+  await click('.screen-pin [aria-label="Unpin from screen"]');
+  await until(
+    () =>
+      read(
+        `!document.querySelector('.screen-pin') && document.querySelectorAll('.canvas-folder.canvas-telegram[data-file-id="tg"] .tg-chat').length >= 5`,
+      ),
+    'back on the board',
+  );
+  await clickText('.canvas-telegram[data-file-id="tg"] .tg-chat', 'Design team');
+  await until(
+    () => read(`[...document.querySelectorAll('.tg-photo')].some(i=>i.naturalWidth>0)`),
+    'group photos again',
+  );
+
   // 8. A Telegram photo added to the board from its menu.
   const before = (await objects()).filter((o) => o.type === 'image').length;
   // The newest photo, in view at the bottom of the chat.

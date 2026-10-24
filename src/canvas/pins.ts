@@ -12,16 +12,26 @@ export interface ScreenPin {
   width: number;
   height: number;
 }
-export type PinKind = 'paper' | 'list' | 'picture';
+export type PinKind = 'paper' | 'list' | 'telegram' | 'picture';
 type Size = { width: number; height: number };
 
-// Documents and checklists stay editable; everything else is a live picture.
-export const pinKind = (o: Pick<CanvasObject, 'type'>): PinKind =>
-  o.type === 'paper' ? 'paper' : o.type === 'list' ? 'list' : 'picture';
+// Documents and checklists stay editable and Telegram frames keep running;
+// everything else is a live picture.
+export const pinKind = (
+  o: Pick<CanvasObject, 'type'> & { file?: CanvasObject['file'] },
+): PinKind =>
+  o.type === 'paper'
+    ? 'paper'
+    : o.type === 'list'
+      ? 'list'
+      : o.type === 'file' && o.file?.kind === 'telegram'
+        ? 'telegram'
+        : 'picture';
 export const pinBar = 34;
 export const pinMinimum: Record<PinKind, Size> = {
   paper: { width: 260, height: 180 },
   list: { width: 200, height: 120 },
+  telegram: { width: 320, height: 300 },
   picture: { width: 80, height: pinBar + 48 },
 };
 export const pinKey = (pin: Pick<ScreenPin, 'boardId' | 'objectId'>) =>
@@ -84,7 +94,8 @@ export function dragPin(
   minimum: Size,
   aspect?: number,
 ): ScreenPin {
-  if (!handle) return clampPin({ ...from, left: from.left + dx, top: from.top + dy }, view, minimum);
+  if (!handle)
+    return clampPin({ ...from, left: from.left + dx, top: from.top + dy }, view, minimum);
   let next = { ...from };
   if (handle.includes('e')) next.width = from.width + dx;
   if (handle.includes('w')) next.width = from.width - dx;
@@ -94,9 +105,7 @@ export function dragPin(
   if (aspect) {
     // Follow whichever edge moved further; the opposite one stays put.
     const byWidth =
-      handle === 'e' ||
-      handle === 'w' ||
-      (handle !== 's' && Math.abs(dx) >= Math.abs(dy) * aspect);
+      handle === 'e' || handle === 'w' || (handle !== 's' && Math.abs(dx) >= Math.abs(dy) * aspect);
     next = fitAspect(next, aspect, byWidth);
     const fits = Math.min(
       1,
@@ -104,7 +113,8 @@ export function dragPin(
       (view.height - 16 - pinBar) / (next.height - pinBar),
     );
     if (fits < 1) next = fitAspect({ ...next, width: next.width * fits }, aspect, true);
-    if (next.width < minimum.width) next = fitAspect({ ...next, width: minimum.width }, aspect, true);
+    if (next.width < minimum.width)
+      next = fitAspect({ ...next, width: minimum.width }, aspect, true);
   }
   if (handle.includes('w')) next.left = from.left + from.width - next.width;
   return clampPin(next, view, minimum);
@@ -120,10 +130,24 @@ export function placePin(
   aspect?: number,
 ): ScreenPin {
   const minimum = pinMinimum[kind];
-  let pin: ScreenPin = { boardId, objectId, left: screen.left, top: screen.top - pinBar, width: 0, height: 0 };
+  let pin: ScreenPin = {
+    boardId,
+    objectId,
+    left: screen.left,
+    top: screen.top - pinBar,
+    width: 0,
+    height: 0,
+  };
   if (kind === 'paper') {
     pin.width = Math.max(minimum.width, Math.min(view.width * 0.6, 720, screen.width));
     pin.height = Math.min(view.height - 16, screen.height + pinBar, view.height * 0.85);
+  } else if (kind === 'telegram') {
+    // Big enough for the chat list beside the chat, however far out the
+    // board is zoomed; a little aside, so the frame's own note shows.
+    pin.width = Math.min(view.width - 32, Math.max(screen.width, 760));
+    pin.height = Math.min(view.height - 32, Math.max(screen.height + pinBar, 560));
+    pin.left += 40;
+    pin.top += 40;
   } else if (kind === 'list') {
     pin.width = Math.max(minimum.width, Math.min(view.width * 0.4, 480, screen.width));
     pin.height = Math.min(view.height * 0.7, screen.height * (pin.width / screen.width) + pinBar);

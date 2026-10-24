@@ -97,6 +97,7 @@ export function ContextMenu({
   onClose,
   className = '',
   placement = 'below',
+  header,
 }: {
   x: number;
   y: number;
@@ -104,8 +105,14 @@ export function ContextMenu({
   onClose: () => void;
   className?: string;
   placement?: MenuPlacement;
+  /** Shown above the items (Telegram's reactions). */
+  header?: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  // Dividers only between items: none first, last or twice in a row.
+  const shown = items.filter(
+    (item, i) => item || (i > 0 && items[i - 1] && items.slice(i + 1).some(Boolean)),
+  );
   useLayoutEffect(() => {
     const el = ref.current!;
     el.style.maxHeight = '';
@@ -154,7 +161,8 @@ export function ContextMenu({
       tabIndex={-1}
       style={{ left: x, top: y }}
     >
-      {items.map((item, i) =>
+      {header}
+      {shown.map((item, i) =>
         item ? (
           <button
             key={i}

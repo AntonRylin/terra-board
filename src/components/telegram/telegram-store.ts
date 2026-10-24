@@ -4,6 +4,7 @@
 import { useSyncExternalStore } from 'react';
 import type {
   Td,
+  TdFolder,
   TdChat,
   TdFile,
   TdMessage,
@@ -34,6 +35,9 @@ let status: TelegramStatus | null = null;
 let auth: Td | null = null;
 let connection: string | null = null;
 let myId = 0;
+let folders: TdFolder[] = [];
+// Counts changes to each chat's pinned messages, for its pinned bar.
+const pinChanges = new Map<number, number>();
 let version = 0;
 let started: Promise<void> | null = null;
 const listeners = new Set<() => void>();
@@ -88,6 +92,7 @@ function apply(batch: TelegramBatch) {
   }
   if (batch.connection !== undefined) connection = batch.connection;
   if (batch.myId !== undefined) myId = batch.myId;
+  if (batch.folders !== undefined) folders = batch.folders;
   for (const chat of batch.chats) chats.set(chat.id, chat);
   for (const user of batch.users) users.set(user.id, user);
   for (const event of batch.events) {
@@ -124,6 +129,7 @@ function apply(batch: TelegramBatch) {
         }));
         break;
       case 'updateMessageIsPinned':
+        pinChanges.set(event.chat_id, (pinChanges.get(event.chat_id) || 0) + 1);
         patchMessage(event.chat_id, event.message_id, (m) => ({
           ...m,
           is_pinned: event.is_pinned,
@@ -189,12 +195,13 @@ const subscribe = (listener: () => void) => {
 /** Re-renders a frame whenever anything Telegram changes. */
 export function useTelegram() {
   useSyncExternalStore(subscribe, () => version);
-  return { status, auth, connection, myId, chats, users };
+  return { status, auth, connection, myId, chats, users, folders };
 }
 
 export const chatOf = (id: number) => chats.get(id);
 export const userOf = (id: number) => users.get(id);
 export const myUserId = () => myId;
+export const pinnedVersion = (chatId: number) => pinChanges.get(chatId) || 0;
 /** The newest known state of a file. */
 export const fileOf = (file: TdFile): TdFile => files.get(file.id) ?? file;
 

@@ -142,7 +142,7 @@
 }
 .tg-chat-date {
   flex: none;
-  font-size: 12px;
+  font-size: 0.8em;
   color: var(--tg-muted);
 }
 .tg-tick {
@@ -170,7 +170,7 @@
   border-radius: 10px;
   background: #4fae4e;
   color: #fff;
-  font-size: 12px;
+  font-size: 0.8em;
   font-weight: 600;
   line-height: 20px;
   text-align: center;
@@ -222,7 +222,7 @@
   white-space: nowrap;
 }
 .tg-chat-head-sub {
-  font-size: 12px;
+  font-size: 0.8em;
   color: var(--tg-muted);
 }
 .tg-messages {
@@ -244,7 +244,7 @@
   border-radius: 12px;
   background: rgb(0 0 0 / 0.18);
   color: #fff;
-  font-size: 12px;
+  font-size: 0.8em;
   text-align: center;
 }
 .tg-start {
@@ -293,12 +293,12 @@
   cursor: grab;
 }
 .tg-sender {
-  font-size: 13px;
+  font-size: 0.87em;
   font-weight: 600;
   color: var(--tg-accent);
 }
 .tg-forwarded {
-  font-size: 12px;
+  font-size: 0.8em;
   color: var(--tg-muted);
 }
 .tg-reply {
@@ -310,19 +310,19 @@
   margin: 0 6px;
 }
 .tg-reply-name {
-  font-size: 12px;
+  font-size: 0.8em;
   font-weight: 600;
   color: var(--tg-accent);
 }
 .tg-reply-text {
-  font-size: 12px;
+  font-size: 0.8em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .tg-text {
   white-space: pre-wrap;
-  line-height: 19px;
+  line-height: 1.38;
 }
 .tg-text a {
   color: var(--tg-accent);
@@ -330,7 +330,7 @@
 .tg-text code,
 .tg-text pre {
   font-family: Consolas, monospace;
-  font-size: 12px;
+  font-size: 0.8em;
   background: rgb(0 0 0 / 0.06);
   border-radius: 4px;
   padding: 0 3px;
@@ -354,7 +354,7 @@
   align-items: center;
   gap: 3px;
   margin-top: -2px;
-  font-size: 11px;
+  font-size: 0.74em;
   color: var(--tg-muted);
   user-select: none;
 }
@@ -490,7 +490,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 12px;
+  font-size: 0.8em;
   color: var(--tg-muted);
 }
 .tg-poll {
@@ -557,7 +557,7 @@
   outline: none;
   padding: 7px 4px;
   font: inherit;
-  font-size: 14px;
+  font-size: 0.94em;
   line-height: 18px;
   color: inherit;
   background: transparent;
@@ -1014,4 +1014,207 @@
 .tg-dialog .tg-dialog-caption input:focus-visible {
   outline: none;
   box-shadow: none;
+}
+
+/* Chat text size (the frame menu's Text: Small…Larger). */
+.tg-chats {
+  font-size: var(--tg-size, 15px);
+  line-height: 1.35;
+}
+.tg-chat-text {
+  gap: 2px;
+}
+.tg-composer textarea {
+  font-size: 1em;
+  line-height: 1.3;
+}
+
+/* Folder tabs over the chat list. */
+.tg-tabs {
+  flex: none;
+  height: 36px;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  padding: 0 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  border-bottom: 1px solid var(--tg-line);
+}
+.tg-tabs button {
+  flex: none;
+  padding: 8px 10px 7px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  font: inherit;
+  font-size: 0.87em;
+  font-weight: 600;
+  color: var(--tg-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tg-tabs button[data-active] {
+  color: var(--tg-accent);
+  border-bottom-color: var(--tg-accent);
+}
+.tg-muted-icon {
+  flex: none;
+  color: var(--tg-muted);
+}
+
+/* Reactions: in the message menu, and under messages. */
+.context-menu:has(.tg-menu-reactions) {
+  min-width: 260px;
+  overflow-x: hidden;
+}
+.tg-menu-reactions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 2px;
+  padding: 4px 6px 6px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid rgb(127 127 127 / 0.2);
+}
+.tg-menu-reactions button {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  font-size: 20px;
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+.tg-menu-reactions button:hover {
+  transform: scale(1.2);
+  background: rgb(127 127 127 / 0.15);
+}
+.tg-menu-reactions button[data-chosen] {
+  background: rgb(58 143 214 / 0.25);
+}
+.tg-reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 2px 0;
+}
+.tg-bubble[data-media] .tg-reactions {
+  padding: 2px 6px;
+}
+.tg-reactions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 0;
+  border-radius: 12px;
+  background: rgb(58 143 214 / 0.14);
+  font: inherit;
+  font-size: 0.87em;
+  color: inherit;
+  cursor: pointer;
+}
+.tg-reactions button[data-chosen] {
+  background: var(--tg-accent);
+  color: #fff;
+}
+
+/* The chat's pinned message, under its name. */
+.tg-pinned-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 4px 12px;
+  background: var(--tg-in);
+  border-bottom: 1px solid var(--tg-line);
+}
+.tg-pinned-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  border: 0;
+  border-left: 2px solid var(--tg-accent);
+  padding: 0 0 0 8px;
+  background: transparent;
+  font: inherit;
+  font-size: 0.9em;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.tg-pinned-text .tg-reply-text {
+  max-width: 100%;
+}
+.tg-call[data-missed] > svg {
+  color: #e5484d;
+}
+.tg-call {
+  cursor: default;
+}
+
+/* Forwarding: pick a chat. */
+.tg-forward {
+  max-height: 80%;
+}
+.tg-forward .tg-search {
+  margin: 0;
+}
+.tg-forward-list {
+  overflow-y: auto;
+  min-height: 120px;
+  scrollbar-width: thin;
+}
+.tg-forward-chat {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 4px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.tg-forward-chat:hover {
+  background: rgb(127 127 127 / 0.12);
+}
+.tg-dialog p {
+  margin: 0;
+}
+.tg-link.danger {
+  color: #e5484d;
+}
+
+/* A Telegram frame pinned to the screen. */
+.tg-pinned {
+  position: relative;
+  font-family: 'Segoe UI', sans-serif;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--text, #29313b);
+  background: #fff;
+  overflow: hidden;
+}
+[data-theme='dark'] .tg-pinned {
+  background: #17212b;
+  color: #e6ecf2;
+}
+.tg-pinned-menu {
+  position: absolute;
+  right: 4px;
+  top: 4px;
+  z-index: 3;
+}
+.tg-pinned .tg-chat-head {
+  padding-right: 40px;
 }

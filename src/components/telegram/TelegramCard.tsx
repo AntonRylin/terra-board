@@ -1,7 +1,16 @@
 // A Telegram frame (type 'file', kind 'telegram'): Terra's unofficial Telegram
 // client on the board. The board keeps only that the frame is there; sign-in,
 // chats and files stay in electron/telegram.cjs on this PC.
-import { useEffect, useState, type FormEvent, type PointerEvent, type ReactNode } from 'react';
+import {
+  useEffect,
+  useState,
+  useSyncExternalStore,
+  type CSSProperties,
+  type FormEvent,
+  type PointerEvent,
+  type ReactNode,
+} from 'react';
+import { createPortal } from 'react-dom';
 import {
   Download,
   Globe,
@@ -10,13 +19,16 @@ import {
   MessageCircle,
   MoreHorizontal,
   Phone,
+  PinOff,
   QrCode as QrIcon,
   ShieldCheck,
+  Type,
   X,
 } from 'lucide-react';
 import type { Camera, CanvasObject } from '../../model';
 import { localToWorld } from '../../canvas/transform';
-import type { MenuItem } from '../Dialogs';
+import { ContextMenu, type MenuItem } from '../Dialogs';
+import { screenPins, setScreenPins, subscribeScreenPins } from '../../canvas/pins';
 import { useExtensions } from '../../extensions';
 import { QrCode } from './qr';
 import {
@@ -27,6 +39,7 @@ import {
   useTelegram,
 } from './telegram-store';
 import { TelegramChats } from './TelegramChats';
+import { menuGroups } from './TelegramMenus';
 import type { Td } from './td';
 import './telegram.css';
 
@@ -35,15 +48,149 @@ export const telegramHeader = 48;
 
 export interface TelegramFrameActions {
   onError: (message: string) => void;
-  openMenu: (menu: { x: number; y: number; items: (MenuItem | null)[] } | null) => void;
+  openMenu: (
+    menu: { x: number; y: number; items: (MenuItem | null)[]; header?: ReactNode } | null,
+  ) => void;
   /** Adds downloaded Telegram files to the board beside the frame. */
-  addFiles: (items: { path: string; name: string }[]) => void;
+  addFiles?: (items: { path: string; name: string }[]) => void;
   /** Adds text from a message to the board beside the frame. */
-  addText: (text: string) => void;
+  addText?: (text: string) => void;
   openLink: (url: string) => void;
   /** Turns the frame into a browser frame with Telegram Web instead. */
   useWeb?: () => void;
 }
+
+// Chat text size, shared by every Telegram frame on this PC, as in Telegram's apps.
+const textSizes = [
+  { label: 'Small', size: 13 },
+  { label: 'Medium', size: 15 },
+  { label: 'Large', size: 17 },
+  { label: 'Larger', size: 20 },
+];
+const textSizeKey = 'terra-board.telegram-text-size';
+let textSize = (() => {
+  try {
+    return Number(localStorage.getItem(textSizeKey)) || 15;
+  } catch {
+    return 15;
+  }
+})();
+const textSizeListeners = new Set<() => void>();
+function setTextSize(size: number) {
+  textSize = size;
+  try {
+    localStorage.setItem(textSizeKey, String(size));
+  } catch {
+    /* Not remembered. */
+  }
+  textSizeListeners.forEach((listener) => listener());
+}
+const useTextSize = () =>
+  useSyncExternalStore(
+    (listener) => {
+      textSizeListeners.add(listener);
+      return () => textSizeListeners.delete(listener);
+    },
+    () => textSize,
+  );
+/** The CSS variables a Telegram view takes its text size from. */
+export const textStyle = (size: number) => ({ '--tg-size': `${size}px` }) as CSSProperties;
+
+/** The frame's menu: account, text size, the web app instead, about. */
+function frameMenu(actions: TelegramFrameActions, ready: boolean): (MenuItem | null)[] {
+  const bridge = telegramBridge();
+  const status = statusNow;
+  return menuGroups([
+    textSizes.map((t) => ({
+      label: `Text: ${t.label}${t.size === textSize ? ' ✓' : ''}`,
+      icon: <Type />,
+      action: () => setTextSize(t.size),
+    })),
+    [
+      ready
+        ? {
+            label: 'Sign out of Telegram',
+            icon: <LogOut />,
+            action: () =>
+              void bridge
+                ?.logOut()
+                .then(setTelegramStatus)
+                .catch((e) => actions.onError(message(e))),
+          }
+        : null,
+      status?.ownCredentials
+        ? {
+            label: 'Sign out and remove the API ID',
+            icon: <KeyRound />,
+            danger: true,
+            action: () =>
+              void bridge
+                ?.forget()
+                .then(setTelegramStatus)
+                .catch((e) => actions.onError(message(e))),
+          }
+        : null,
+      !ready && actions.useWeb
+        ? { label: 'Use Telegram Web instead', icon: <Globe />, action: actions.useWeb }
+        : null,
+      {
+        label: 'About this Telegram client',
+        icon: <ShieldCheck />,
+        action: () => actions.openLink('https://core.telegram.org/api/terms'),
+      },
+    ],
+  ]);
+}
+// The account's state, as the content last drew it; read by the menu.
+let statusNow: ReturnType<typeof useTelegram>['status'] = null;
+
+/** What a Telegram frame shows below its title: setup, sign-in or the chats. */
+function TelegramContent({
+  object: o,
+  camera,
+  tiny,
+  actions,
+}: {
+  object: CanvasObject;
+  camera: Camera;
+  tiny: boolean;
+  actions: TelegramFrameActions;
+}) {
+  const bridge = telegramBridge();
+  const { status, auth, chats } = useTelegram();
+  statusNow = status;
+  useEffect(() => {
+    startTelegram().catch((error) => actions.onError(message(error)));
+  }, []);
+  const authType = auth?.['@type'] as string | undefined;
+  const ready = authType === 'authorizationStateReady';
+  let unread = 0;
+  if (ready && tiny)
+    for (const chat of chats.values())
+      if (chat.positions?.some((p) => p.list?.['@type'] === 'chatListMain') && !muted(chat))
+        unread += chat.unread_count;
+  if (!bridge) return <Message icon>Telegram chats work in the Terra Board desktop app.</Message>;
+  if (!status) return <Message>Starting…</Message>;
+  if (!status.supported)
+    return <Message icon>Telegram chats aren’t available on this system yet.</Message>;
+  if (tiny) return <div className="cf-message cf-summary">{ready ? unread || '✓' : '…'}</div>;
+  if (!status.installed) return <Install onError={actions.onError} onWeb={actions.useWeb} />;
+  if (!status.credentials)
+    return <Credentials canRemember={status.canRemember} onLink={actions.openLink} />;
+  if (ready) return <TelegramChats object={o} camera={camera} actions={actions} />;
+  if (!authType || authType === 'authorizationStateWaitTdlibParameters')
+    return <Message>{status.error || 'Connecting to Telegram…'}</Message>;
+  if (
+    authType === 'authorizationStateLoggingOut' ||
+    authType === 'authorizationStateClosing' ||
+    authType === 'authorizationStateClosed'
+  )
+    return <Message>Signing out…</Message>;
+  return <Login auth={auth!} onLink={actions.openLink} />;
+}
+
+const usePinned = (id: string) =>
+  useSyncExternalStore(subscribeScreenPins, screenPins).some((pin) => pin.objectId === id);
 
 export function TelegramCard({
   object: o,
@@ -63,87 +210,17 @@ export function TelegramCard({
   actions: TelegramFrameActions;
 }) {
   const bridge = telegramBridge();
-  const { status, auth, connection, chats } = useTelegram();
-  useEffect(() => {
-    startTelegram().catch((error) => actions.onError(message(error)));
-  }, []);
-  const authType = auth?.['@type'] as string | undefined;
-  const ready = authType === 'authorizationStateReady';
+  const { status, auth, connection } = useTelegram();
+  const size = useTextSize();
+  const pinned = usePinned(o.id);
+  const ready = auth?.['@type'] === 'authorizationStateReady';
   const tiny = o.width * camera.zoom < 220 || o.height * camera.zoom < 160;
-
-  let unread = 0;
-  if (ready && tiny)
-    for (const chat of chats.values())
-      if (chat.positions?.some((p) => p.list?.['@type'] === 'chatListMain') && !muted(chat))
-        unread += chat.unread_count;
-
-  let content: ReactNode;
-  if (!bridge)
-    content = <Message icon>Telegram chats work in the Terra Board desktop app.</Message>;
-  else if (!status) content = <Message>Starting…</Message>;
-  else if (!status.supported)
-    content = <Message icon>Telegram chats aren’t available on this system yet.</Message>;
-  else if (tiny)
-    content = <div className="cf-message cf-summary">{ready ? unread || '✓' : '…'}</div>;
-  else if (!status.installed)
-    content = <Install onError={actions.onError} onWeb={actions.useWeb} />;
-  else if (!status.credentials)
-    content = <Credentials canRemember={status.canRemember} onLink={actions.openLink} />;
-  else if (ready) content = <TelegramChats object={o} camera={camera} actions={actions} />;
-  else if (!authType || authType === 'authorizationStateWaitTdlibParameters')
-    content = <Message>{status.error || 'Connecting to Telegram…'}</Message>;
-  else if (
-    authType === 'authorizationStateLoggingOut' ||
-    authType === 'authorizationStateClosing' ||
-    authType === 'authorizationStateClosed'
-  )
-    content = <Message>Signing out…</Message>;
-  else content = <Login auth={auth!} onLink={actions.openLink} />;
-
-  const menu = (x: number, y: number) =>
-    actions.openMenu({
-      x,
-      y,
-      items: [
-        ready
-          ? {
-              label: 'Sign out of Telegram',
-              icon: <LogOut />,
-              action: () =>
-                void bridge
-                  ?.logOut()
-                  .then(setTelegramStatus)
-                  .catch((e) => actions.onError(message(e))),
-            }
-          : null,
-        status?.ownCredentials
-          ? {
-              label: 'Sign out and remove the API ID',
-              icon: <KeyRound />,
-              danger: true,
-              action: () =>
-                void bridge
-                  ?.forget()
-                  .then(setTelegramStatus)
-                  .catch((e) => actions.onError(message(e))),
-            }
-          : null,
-        !ready && actions.useWeb
-          ? { label: 'Use Telegram Web instead', icon: <Globe />, action: actions.useWeb }
-          : null,
-        {
-          label: 'About this Telegram client',
-          icon: <ShieldCheck />,
-          action: () => actions.openLink('https://core.telegram.org/api/terms'),
-        },
-      ],
-    });
 
   const origin = localToWorld(o, { x: 0, y: 0 });
   return (
     <section
       className="canvas-folder canvas-telegram"
-      data-file-id={o.id}
+      data-file-id={pinned ? undefined : o.id}
       data-selected={active || undefined}
       aria-label="Telegram"
       style={{
@@ -152,6 +229,7 @@ export function TelegramCard({
         width: o.width,
         height: o.height,
         transform: `scale(${camera.zoom}) rotate(${o.rotation || 0}deg)`,
+        ...textStyle(size),
       }}
       onContextMenu={(event) => {
         if ((event.target as HTMLElement).closest('.tg-body')) return;
@@ -191,7 +269,7 @@ export function TelegramCard({
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {
               const r = event.currentTarget.getBoundingClientRect();
-              menu(r.left, r.bottom + 4);
+              actions.openMenu({ x: r.left, y: r.bottom + 4, items: frameMenu(actions, ready) });
             }}
           >
             <MoreHorizontal size={18} />
@@ -199,9 +277,90 @@ export function TelegramCard({
         )}
       </header>
       <div className="tg-body" style={{ height: o.height - telegramHeader }}>
-        {content}
+        {pinned ? (
+          // The chats run in the pinned window; one place at a time.
+          <div className="cf-message tg-setup">
+            <PinOff size={34} strokeWidth={1.5} />
+            <h3>This Telegram window is pinned to the screen</h3>
+            <p>Use it in its pinned window, or unpin it to bring it back here.</p>
+            <button
+              className="tg-button"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={() => setScreenPins((list) => list.filter((pin) => pin.objectId !== o.id))}
+            >
+              <PinOff size={15} /> Unpin
+            </button>
+          </div>
+        ) : (
+          <TelegramContent object={o} camera={camera} tiny={tiny} actions={actions} />
+        )}
       </div>
     </section>
+  );
+}
+
+/** A Telegram frame pinned to the screen: the same chats, at the pin's size. */
+export function PinnedTelegram({
+  object: o,
+  width,
+  height,
+  actions,
+}: {
+  object: CanvasObject;
+  width: number;
+  height: number;
+  actions: Omit<TelegramFrameActions, 'openMenu'>;
+}) {
+  const size = useTextSize();
+  const ready = useTelegram().auth?.['@type'] === 'authorizationStateReady';
+  const [menu, setMenu] = useState<{
+    x: number;
+    y: number;
+    items: (MenuItem | null)[];
+    header?: ReactNode;
+  } | null>(null);
+  const all: TelegramFrameActions = { ...actions, openMenu: setMenu };
+  return (
+    <div
+      className="canvas-telegram tg-pinned"
+      data-file-id={o.id}
+      style={{ height, ...textStyle(size) }}
+      onPointerDown={(e) => e.stopPropagation()}
+      // Right-clicks in the chats are Telegram's (or the text's), not the pin's.
+      onContextMenu={(e) => e.stopPropagation()}
+    >
+      <button
+        className="cf-button tg-pinned-menu"
+        aria-label="Telegram menu"
+        title="Telegram menu"
+        onClick={(event) => {
+          const r = event.currentTarget.getBoundingClientRect();
+          setMenu({ x: r.left, y: r.bottom + 4, items: frameMenu(all, ready) });
+        }}
+      >
+        <MoreHorizontal size={16} />
+      </button>
+      <div className="tg-body" style={{ height }}>
+        <TelegramContent
+          object={{ ...o, width, height: height + telegramHeader }}
+          camera={{ x: 0, y: 0, zoom: 1 }}
+          tiny={false}
+          actions={all}
+        />
+      </div>
+      {menu &&
+        createPortal(
+          <ContextMenu
+            x={menu.x}
+            y={menu.y}
+            items={menu.items}
+            header={menu.header}
+            placement="pointer"
+            onClose={() => setMenu(null)}
+          />,
+          document.body,
+        )}
+    </div>
   );
 }
 

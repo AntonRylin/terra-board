@@ -15,6 +15,7 @@ import {
   ArrowLeft,
   Check,
   CheckCheck,
+  BellOff as BellOffIcon,
   Download,
   File as FileIcon,
   Image as ImageIcon,
@@ -24,8 +25,11 @@ import {
   Mic,
   Paperclip,
   Pause,
+  Phone,
+  PhoneMissed,
   Pin,
   Play,
+  Video as VideoIcon,
   Search,
   SendHorizontal,
   Trash2,
@@ -33,14 +37,27 @@ import {
   X,
 } from 'lucide-react';
 import type { Camera, CanvasObject } from '../../model';
-import type { MenuItem } from '../Dialogs';
 import type { TelegramFrameActions } from './TelegramCard';
+import {
+  ConfirmDialog,
+  FolderTabs,
+  ForwardDialog,
+  chatMenu,
+  openMessageMenu,
+  reactionsOf,
+  shownEmoji,
+  toggleReaction,
+  type ChatTools,
+  type Confirm,
+} from './TelegramMenus';
 import {
   chatOf,
   downloadNow,
   fileOf,
   historyOf,
   loadOlder,
+  myUserId,
+  pinnedVersion,
   telegramBridge,
   useTelegram,
   userOf,
@@ -62,8 +79,10 @@ import {
   messageSummary,
   messageTime,
   privateUserId,
+  chatListOf,
   sortedChats,
   textParts,
+  type ListName,
   packWaveform,
   unpackWaveform,
   userName,
@@ -99,24 +118,31 @@ const saveChoice = (id: string, chat: number) => {
   }
 };
 
-// The main chat list loads in pages as it is scrolled.
-let listLoading: Promise<void> | null = null;
-let listComplete = false;
-function loadChats(limit = 100) {
+// Chat lists (all chats, folders, the archive) load in pages as they scroll.
+const listLoading = new Map<ListName, Promise<void>>();
+const listComplete = new Set<ListName>();
+function loadChats(list: ListName = 'main', limit = 100) {
   const bridge = telegramBridge();
-  if (!bridge || listComplete) return Promise.resolve();
-  listLoading ||= bridge
-    .invoke({ '@type': 'loadChats', chat_list: { '@type': 'chatListMain' }, limit })
-    .then(() => undefined)
-    .catch((error: { message?: string }) => {
-      // 404: every chat is loaded.
-      if (/404|not found/i.test(String(error?.message))) listComplete = true;
-    })
-    .finally(() => {
-      listLoading = null;
-    });
-  return listLoading;
+  if (!bridge || listComplete.has(list)) return Promise.resolve();
+  if (!listLoading.has(list))
+    listLoading.set(
+      list,
+      bridge
+        .invoke({ '@type': 'loadChats', chat_list: chatListOf(list), limit })
+        .then(() => undefined)
+        .catch((error: { message?: string }) => {
+          // 404: every chat is loaded.
+          if (/404|not found/i.test(String(error?.message))) listComplete.add(list);
+        })
+        .finally(() => listLoading.delete(list)),
+    );
+  return listLoading.get(list)!;
 }
+/** A chat's name; your own chat is Saved Messages, as in Telegram. */
+export const chatTitle = (chat: TdChat) =>
+  privateUserId(chat) && privateUserId(chat) === myUserId()
+    ? 'Saved Messages'
+    : chat.title || 'Deleted account';
 
 export function TelegramChats({
   object: o,
@@ -136,10 +162,18 @@ export function TelegramChats({
     key: number;
   } | null>(null);
   const openChat = useRef(0);
+  const [list, setList] = useState<ListName>('main');
+  const [confirm, setConfirm] = useState<Confirm | null>(null);
+  const [forwarding, setForwarding] = useState<TdMessage | null>(null);
+  const tools: ChatTools = {
+    actions,
+    confirm: setConfirm,
+    forward: setForwarding,
+  };
   useEffect(() => {
-    listComplete = false;
-    void loadChats();
-  }, []);
+    listComplete.delete(list);
+    void loadChats(list);
+  }, [list]);
   const choose = (id: number) => {
     setSelected(id);
     saveChoice(o.id, id);
@@ -178,6 +212,17 @@ export function TelegramChats({
           height={height}
           selected={open}
           zoom={camera.zoom}
+          list={list}
+          onList={setList}
+          onMenu={(chat, event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            actions.openMenu({
+              x: event.clientX,
+              y: event.clientY,
+              items: chatMenu(chat, list, tools),
+            });
+          }}
           onSelect={choose}
           onFiles={(chatId, paths) =>
             void deliver(
@@ -199,6 +244,7 @@ export function TelegramChats({
           incoming={incoming?.chatId === open ? incoming : null}
           onFiles={(sources) => void deliver(open, sources)}
           onIncomingTaken={() => setIncoming(null)}
+          tools={tools}
         />
       ) : (
         wide && (
@@ -206,6 +252,14 @@ export function TelegramChats({
             <p>Choose a chat</p>
           </div>
         )
+      )}
+      {confirm && <ConfirmDialog confirm={confirm} onClose={() => setConfirm(null)} />}
+      {forwarding && (
+        <ForwardDialog
+          message={forwarding}
+          onClose={() => setForwarding(null)}
+          onSent={(chatId) => choose(chatId)}
+        />
       )}
     </div>
   );
@@ -227,7 +281,7 @@ const draggingFiles = (event: DragEvent) =>
 const droppedPaths = (event: DragEvent) =>
   [...event.dataTransfer.files].map((file) => window.canvas?.filePath(file) || '').filter(Boolean);
 
-function Avatar({
+export function Avatar({
   id,
   title,
   photo,
@@ -272,12 +326,14 @@ const ChatRow = memo(function ChatRow({
   active,
   onSelect,
   onFiles,
+  onMenu,
 }: {
   chat: TdChat;
   pinned: boolean;
   active: boolean;
   onSelect: (id: number) => void;
   onFiles: (chatId: number, paths: string[]) => void;
+  onMenu: (chat: TdChat, event: React.MouseEvent) => void;
 }) {
   const [dropping, setDropping] = useState(false);
   const last = chat.last_message;
@@ -295,6 +351,7 @@ const ChatRow = memo(function ChatRow({
       data-dropping={dropping || undefined}
       style={{ height: rowHeight }}
       onClick={() => onSelect(chat.id)}
+      onContextMenu={(event) => onMenu(chat, event)}
       onDragOver={(event) => {
         if (!draggingFiles(event)) return;
         event.preventDefault();
@@ -310,10 +367,13 @@ const ChatRow = memo(function ChatRow({
         if (paths.length) onFiles(chat.id, paths);
       }}
     >
-      <Avatar id={chat.id} title={chat.title} photo={chat.photo} size={46} />
+      <Avatar id={chat.id} title={chatTitle(chat)} photo={chat.photo} size={46} />
       <span className="tg-chat-text">
         <span className="tg-chat-top">
-          <span className="tg-chat-title">{chat.title || 'Deleted account'}</span>
+          <span className="tg-chat-title">{chatTitle(chat)}</span>
+          {(chat.notification_settings?.mute_for ?? 0) > 0 && (
+            <BellOffIcon size={12} className="tg-muted-icon" />
+          )}
           {last?.is_outgoing &&
             (outgoingRead ? (
               <CheckCheck size={14} className="tg-tick" />
@@ -352,6 +412,9 @@ function ChatList({
   height,
   selected,
   zoom,
+  list: listName,
+  onList,
+  onMenu,
   onSelect,
   onFiles,
 }: {
@@ -359,6 +422,9 @@ function ChatList({
   height: number;
   selected: number;
   zoom: number;
+  list: ListName;
+  onList: (list: ListName) => void;
+  onMenu: (chat: TdChat, event: React.MouseEvent) => void;
   onSelect: (id: number) => void;
   onFiles: (chatId: number, paths: string[]) => void;
 }) {
@@ -366,14 +432,15 @@ function ChatList({
   const [query, setQuery] = useState('');
   const [scroll, setScroll] = useState(0);
   // Chats change in place, so this is worked out on every update (it is quick).
-  const all = sortedChats(chats.values());
+  const all = sortedChats(chats.values(), listName);
   const q = query.trim().toLowerCase();
-  const list = q ? all.filter(({ chat }) => chat.title.toLowerCase().includes(q)) : all;
-  const viewport = height - 52;
+  const list = q ? all.filter(({ chat }) => chatTitle(chat).toLowerCase().includes(q)) : all;
+  const viewport = height - 52 - 36;
   const first = Math.max(0, Math.floor(scroll / rowHeight) - 4);
   const last = Math.min(list.length, Math.ceil((scroll + viewport) / rowHeight) + 4);
   return (
     <div className="tg-list" style={{ width, height }}>
+      <FolderTabs list={listName} onList={onList} />
       <label className="tg-search" onPointerDown={(e) => e.stopPropagation()}>
         <Search size={15} />
         <input
@@ -394,7 +461,8 @@ function ChatList({
         onScroll={(e) => {
           const el = e.currentTarget;
           setScroll(el.scrollTop);
-          if (el.scrollTop + el.clientHeight > el.scrollHeight - rowHeight * 10) void loadChats();
+          if (el.scrollTop + el.clientHeight > el.scrollHeight - rowHeight * 10)
+            void loadChats(listName);
         }}
       >
         <div style={{ height: list.length * rowHeight, position: 'relative' }}>
@@ -407,12 +475,21 @@ function ChatList({
                 active={chat.id === selected}
                 onSelect={onSelect}
                 onFiles={onFiles}
+                onMenu={onMenu}
               />
             ))}
           </div>
         </div>
         {!list.length && (
-          <p className="tg-list-empty">{query ? 'No chats match.' : 'Loading chats…'}</p>
+          <p className="tg-list-empty">
+            {query
+              ? 'No chats match.'
+              : listComplete.has(listName)
+                ? listName === 'archive'
+                  ? 'No archived chats.'
+                  : 'No chats here.'
+                : 'Loading chats…'}
+          </p>
         )}
       </div>
       {zoom < 0.5 && <div className="tg-zoom-hint">Zoom in to read</div>}
@@ -439,6 +516,7 @@ function Conversation({
   incoming,
   onFiles,
   onIncomingTaken,
+  tools,
 }: {
   frameId: string;
   chatId: number;
@@ -449,6 +527,7 @@ function Conversation({
   incoming: { files: StagedFile[]; key: number } | null;
   onFiles: (sources: TelegramSource[]) => void;
   onIncomingTaken: () => void;
+  tools: ChatTools;
 }) {
   const bridge = telegramBridge()!;
   useTelegram();
@@ -461,6 +540,20 @@ function Conversation({
   const [sponsored, setSponsored] = useState<Td | null>(null);
   const [canPost, setCanPost] = useState(!isChannel(chat));
   const [replyTo, setReplyTo] = useState<TdMessage | null>(null);
+  const [editing, setEditing] = useState<TdMessage | null>(null);
+  // The chat's pinned message, in a bar under its name.
+  const [pinned, setPinned] = useState<TdMessage | null>(null);
+  const pins = pinnedVersion(chatId);
+  useEffect(() => {
+    let live = true;
+    void bridge
+      .invoke<TdMessage>({ '@type': 'getChatPinnedMessage', chat_id: chatId })
+      .then((m) => live && setPinned(m))
+      .catch(() => live && setPinned(null));
+    return () => {
+      live = false;
+    };
+  }, [chatId, pins]);
   // Files waiting in the send dialog.
   const [sending, setSending] = useState<StagedFile[] | null>(null);
   const [dropping, setDropping] = useState(false);
@@ -557,7 +650,7 @@ function Conversation({
   };
 
   const messages = ids.map((id) => history.messages.get(id)!).filter(Boolean);
-  const title = chat.title || 'Deleted account';
+  const title = chatTitle(chat);
   const user = privateUserId(chat) ? userOf(privateUserId(chat)) : undefined;
   const subtitle = isChannel(chat)
     ? 'Channel'
@@ -603,6 +696,33 @@ function Conversation({
           <span className="tg-chat-head-sub">{subtitle}</span>
         </span>
       </div>
+      {pinned && (
+        <div className="tg-pinned-bar" onPointerDown={(e) => e.stopPropagation()}>
+          <button
+            className="tg-pinned-text"
+            onClick={() =>
+              scroller.current
+                ?.querySelector(`[data-message-id="${pinned.id}"]`)
+                ?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+            }
+          >
+            <span className="tg-reply-name">Pinned message</span>
+            <span className="tg-reply-text">{messageSummary(pinned)}</span>
+          </button>
+          <button
+            className="cf-button"
+            aria-label="Unpin"
+            title="Unpin"
+            onClick={() =>
+              void bridge
+                .invoke({ '@type': 'unpinChatMessage', chat_id: chatId, message_id: pinned.id })
+                .catch((e) => actions.onError(message(e)))
+            }
+          >
+            <X size={15} />
+          </button>
+        </div>
+      )}
       <div
         ref={scroller}
         className="tg-messages"
@@ -632,14 +752,19 @@ function Conversation({
               sender(previous) === sender(m) &&
               m.date - previous.date < 300;
             return (
-              <div key={m.id}>
+              <div key={m.id} data-message-id={m.id}>
                 {newDay && <div className="tg-day">{dayLabel(m.date)}</div>}
                 <Bubble
                   message={m}
                   chat={chat}
                   showName={!sameSender && isGroup(chat) && !m.is_outgoing}
                   actions={actions}
+                  tools={tools}
                   onReply={canPost ? () => setReplyTo(m) : undefined}
+                  onEdit={() => {
+                    setReplyTo(null);
+                    setEditing(m);
+                  }}
                 />
               </div>
             );
@@ -649,7 +774,10 @@ function Conversation({
       </div>
       {canPost ? (
         <Composer
+          key={editing?.id || 0}
           chatId={chatId}
+          editing={editing}
+          clearEdit={() => setEditing(null)}
           replyTo={replyTo}
           clearReply={() => setReplyTo(null)}
           error={sendError}
@@ -845,6 +973,29 @@ function Media({ message: m, actions }: { message: TdMessage; actions: TelegramF
     );
   }
   if (type === 'messageSticker') return <Sticker sticker={c.sticker} />;
+  if (type === 'messageCall') {
+    const missed = ['callDiscardReasonMissed', 'callDiscardReasonDeclined'].includes(
+      c.discard_reason?.['@type'],
+    );
+    const Icon = missed ? PhoneMissed : c.is_video ? VideoIcon : Phone;
+    return (
+      <span className="tg-file tg-call" data-missed={missed || undefined}>
+        <Icon size={22} />
+        <span className="tg-file-text">
+          <span className="tg-file-name">
+            {missed
+              ? m.is_outgoing
+                ? 'Cancelled call'
+                : 'Missed call'
+              : m.is_outgoing
+                ? `Outgoing ${c.is_video ? 'video ' : ''}call`
+                : `Incoming ${c.is_video ? 'video ' : ''}call`}
+          </span>
+          {c.duration > 0 && <span className="tg-file-progress">{duration(c.duration)}</span>}
+        </span>
+      </span>
+    );
+  }
   if (type === 'messageVoiceNote') return <Voice message={m} />;
   if (type === 'messageAudio') return <Audio message={m} />;
   if (type === 'messageDocument') return <Document message={m} actions={actions} />;
@@ -1115,13 +1266,17 @@ const Bubble = memo(function Bubble({
   chat,
   showName,
   actions,
+  tools,
   onReply,
+  onEdit,
 }: {
   message: TdMessage;
   chat: TdChat;
   showName: boolean;
   actions: TelegramFrameActions;
+  tools: ChatTools;
   onReply?: () => void;
+  onEdit: () => void;
 }) {
   if (isService(m)) return <div className="tg-service">{serviceText(m)}</div>;
   const c = m.content;
@@ -1145,6 +1300,7 @@ const Bubble = memo(function Bubble({
     'messageVenue',
     'messageContact',
     'messagePoll',
+    'messageCall',
   ].includes(c['@type']);
   const reply =
     m.reply_to?.['@type'] === 'messageReplyToMessage'
@@ -1168,57 +1324,9 @@ const Bubble = memo(function Bubble({
     event.dataTransfer.setData('text/plain', info.name);
     event.dataTransfer.effectAllowed = 'copy';
   };
-  const menu = (event: React.MouseEvent) => {
-    event.preventDefault();
-    event.stopPropagation();
-    const plain = text?.text || '';
-    const items: (MenuItem | null)[] = [
-      onReply ? { label: 'Reply', action: onReply } : null,
-      plain
-        ? {
-            label: 'Copy text',
-            action: () => void navigator.clipboard.writeText(plain).catch(() => {}),
-          }
-        : null,
-      plain && !info
-        ? { label: 'Add text to the board', action: () => actions.addText(plain) }
-        : null,
-      info
-        ? {
-            label: 'Add to the board',
-            action: () =>
-              void downloadNow(info.file)
-                .then((path) => actions.addFiles([{ path, name: info.name }]))
-                .catch((e) => actions.onError(message(e))),
-          }
-        : null,
-      info
-        ? {
-            label: 'Show in folder',
-            action: () =>
-              void downloadNow(info.file)
-                .then((path) => window.canvas?.files?.reveal({ path }))
-                .catch((e) => actions.onError(message(e))),
-          }
-        : null,
-      m.can_be_deleted_for_all_users || m.can_be_deleted_only_for_self || m.is_outgoing
-        ? {
-            label: 'Delete',
-            danger: true,
-            action: () =>
-              void telegramBridge()
-                ?.invoke({
-                  '@type': 'deleteMessages',
-                  chat_id: m.chat_id,
-                  message_ids: [m.id],
-                  revoke: !!m.can_be_deleted_for_all_users,
-                })
-                .catch((e) => actions.onError(message(e))),
-          }
-        : null,
-    ];
-    actions.openMenu({ x: event.clientX, y: event.clientY, items });
-  };
+  const menu = (event: React.MouseEvent) =>
+    void openMessageMenu(m, event, { ...tools, reply: onReply, edit: onEdit });
+  const reactions = reactionsOf(m);
   const sticker = c['@type'] === 'messageSticker' || c['@type'] === 'messageVideoNote';
   return (
     <div className="tg-row" data-out={m.is_outgoing || undefined}>
@@ -1248,7 +1356,22 @@ const Bubble = memo(function Bubble({
           </span>
         )}
         <Text text={text} onLink={actions.openLink} />
+        {reactions.length > 0 && (
+          <span className="tg-reactions">
+            {reactions.map((r) => (
+              <button
+                key={r.emoji}
+                data-chosen={r.chosen || undefined}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={() => toggleReaction(m, r.emoji, tools)}
+              >
+                {shownEmoji(r.emoji)} {r.count}
+              </button>
+            ))}
+          </span>
+        )}
         <span className="tg-meta">
+          {m.is_pinned && <Pin size={11} />}
           {m.edit_date > 0 && 'edited '}
           {messageTime(m.date)}
           {m.is_outgoing &&
@@ -1622,6 +1745,8 @@ type Recording = {
 
 function Composer({
   chatId,
+  editing,
+  clearEdit,
   replyTo,
   clearReply,
   error,
@@ -1630,6 +1755,8 @@ function Composer({
   onPick,
 }: {
   chatId: number;
+  editing: TdMessage | null;
+  clearEdit: () => void;
   replyTo: TdMessage | null;
   clearReply: () => void;
   error: string;
@@ -1638,9 +1765,15 @@ function Composer({
   onPick: () => void;
 }) {
   const bridge = telegramBridge()!;
-  const [text, setText] = useState('');
+  const editText = (
+    editing?.content?.['@type'] === 'messageText' ? editing.content.text : editing?.content?.caption
+  ) as TdText | undefined;
+  const [text, setText] = useState(editText?.text || '');
   const [busy, setBusy] = useState(false);
   const field = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    if (editing) field.current?.focus();
+  }, []);
   const recording = useRef<Recording | null>(null);
   const [recordState, setRecordState] = useState<{ seconds: number; levels: number[] } | null>(
     null,
@@ -1659,10 +1792,31 @@ function Composer({
 
   const send = async () => {
     const value = text.trim();
-    if (busy || !value) return;
+    if (busy || (!value && !editing)) return;
     setBusy(true);
     setError('');
     try {
+      if (editing) {
+        const formatted = { '@type': 'formattedText', text: value, entities: [] };
+        await bridge.invoke(
+          editing.content['@type'] === 'messageText'
+            ? {
+                '@type': 'editMessageText',
+                chat_id: chatId,
+                message_id: editing.id,
+                input_message_content: { '@type': 'inputMessageText', text: formatted },
+              }
+            : {
+                '@type': 'editMessageCaption',
+                chat_id: chatId,
+                message_id: editing.id,
+                caption: formatted,
+              },
+        );
+        setText('');
+        clearEdit();
+        return;
+      }
       await bridge.invoke({
         '@type': 'sendMessage',
         chat_id: chatId,
@@ -1792,7 +1946,8 @@ function Composer({
       event.preventDefault();
       void send();
     } else if (event.key === 'Escape') {
-      if (replyTo) clearReply();
+      if (editing) clearEdit();
+      else if (replyTo) clearReply();
       else field.current?.blur();
     }
   };
@@ -1815,6 +1970,17 @@ function Composer({
             <span className="tg-reply-text">{messageSummary(replyTo)}</span>
           </span>
           <button className="cf-button" aria-label="Cancel reply" onClick={clearReply}>
+            <X size={15} />
+          </button>
+        </div>
+      )}
+      {editing && (
+        <div className="tg-composer-reply">
+          <span className="tg-reply">
+            <span className="tg-reply-name">Edit message</span>
+            <span className="tg-reply-text">{messageSummary(editing)}</span>
+          </span>
+          <button className="cf-button" aria-label="Cancel editing" onClick={clearEdit}>
             <X size={15} />
           </button>
         </div>
@@ -1865,7 +2031,7 @@ function Composer({
             onChange={(e) => setText(e.target.value)}
             onKeyDown={keyDown}
           />
-          {text.trim() || busy ? (
+          {text.trim() || busy || editing ? (
             <button
               className="cf-button tg-send"
               aria-label="Send"

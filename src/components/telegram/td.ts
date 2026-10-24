@@ -73,10 +73,16 @@ export interface TelegramStatus {
   running: boolean;
   error: string;
 }
+/** A chat folder the person made in Telegram. */
+export interface TdFolder {
+  id: number;
+  name: string;
+}
 export interface TelegramSnapshot {
   auth: Td | null;
   connection: string | null;
   myId: number;
+  folders?: TdFolder[];
   chats: TdChat[];
   users: TdUser[];
   status: TelegramStatus;
@@ -85,6 +91,7 @@ export interface TelegramBatch {
   auth?: Td | null;
   connection?: string | null;
   myId?: number;
+  folders?: TdFolder[];
   status?: TelegramStatus;
   chats: TdChat[];
   users: TdUser[];
@@ -115,15 +122,29 @@ export interface TelegramBridge {
 
 export const fileUrl = (file: TdFile) => `terra-telegram://file/${file.id}`;
 
-/** A chat's place in the main chat list, or null when it isn't there. */
-export function mainPosition(chat: TdChat) {
-  return chat.positions?.find((p) => p.list?.['@type'] === 'chatListMain') ?? null;
+/** A chat list by name: 'main', 'archive' or 'folder:<id>'. */
+export type ListName = string;
+export const chatListOf = (name: ListName): Td =>
+  name === 'archive'
+    ? { '@type': 'chatListArchive' }
+    : name.startsWith('folder:')
+      ? { '@type': 'chatListFolder', chat_folder_id: Number(name.slice(7)) }
+      : { '@type': 'chatListMain' };
+const listName = (list: Td | undefined): ListName =>
+  list?.['@type'] === 'chatListArchive'
+    ? 'archive'
+    : list?.['@type'] === 'chatListFolder'
+      ? `folder:${list.chat_folder_id}`
+      : 'main';
+/** A chat's place in a chat list (the main one by default), or null. */
+export function mainPosition(chat: TdChat, name: ListName = 'main') {
+  return chat.positions?.find((p) => listName(p.list) === name) ?? null;
 }
-/** Chats in the main list, pinned first, then newest first (TDLib's order). */
-export function sortedChats(chats: Iterable<TdChat>) {
+/** A list's chats, pinned first, then newest first (TDLib's order). */
+export function sortedChats(chats: Iterable<TdChat>, name: ListName = 'main') {
   const listed: [bigint, boolean, TdChat][] = [];
   for (const chat of chats) {
-    const p = mainPosition(chat);
+    const p = mainPosition(chat, name);
     if (p) listed.push([BigInt(p.order), p.is_pinned, chat]);
   }
   listed.sort((a, b) => (a[0] === b[0] ? 0 : a[0] > b[0] ? -1 : 1));
