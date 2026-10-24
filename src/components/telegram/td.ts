@@ -15,7 +15,7 @@ export interface TdFile extends Td {
     is_downloading_completed: boolean;
     downloaded_size: number;
   };
-  remote: { is_uploading_active: boolean; uploaded_size: number };
+  remote: { is_uploading_active: boolean; is_uploading_completed?: boolean; uploaded_size: number };
 }
 export interface TdText extends Td {
   text: string;

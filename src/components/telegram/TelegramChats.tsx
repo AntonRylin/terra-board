@@ -21,6 +21,7 @@ import {
   Check,
   CheckCheck,
   BellOff as BellOffIcon,
+  Bookmark,
   Download,
   File as FileIcon,
   Image as ImageIcon,
@@ -158,11 +159,12 @@ function loadChats(list: ListName = 'main', limit = 100) {
     );
   return listLoading.get(list)!;
 }
+/** Your own chat, Saved Messages in Telegram. */
+export const isSaved = (chat: TdChat) =>
+  !!privateUserId(chat) && privateUserId(chat) === myUserId();
 /** A chat's name; your own chat is Saved Messages, as in Telegram. */
 export const chatTitle = (chat: TdChat) =>
-  privateUserId(chat) && privateUserId(chat) === myUserId()
-    ? 'Saved Messages'
-    : chat.title || 'Deleted account';
+  isSaved(chat) ? 'Saved Messages' : chat.title || 'Deleted account';
 
 export function TelegramChats({
   object: o,
@@ -336,11 +338,14 @@ export function Avatar({
   title,
   photo,
   size,
+  saved,
 }: {
   id: number;
   title: string;
   photo?: { small: TdFile; minithumbnail?: { data: string } };
   size: number;
+  /** Saved Messages: a bookmark, as in Telegram, instead of your photo. */
+  saved?: boolean;
 }) {
   useTelegram();
   const file = photo ? fileOf(photo.small) : null;
@@ -354,6 +359,12 @@ export function Avatar({
       ? `data:image/jpeg;base64,${photo.minithumbnail.data}`
       : null;
   const src = picture && picture !== failed ? picture : null;
+  if (saved)
+    return (
+      <span className="tg-avatar tg-saved" style={{ width: size, height: size }}>
+        <Bookmark size={size * 0.5} fill="currentColor" />
+      </span>
+    );
   return (
     <span
       className="tg-avatar"
@@ -417,7 +428,13 @@ const ChatRow = memo(function ChatRow({
         if (paths.length) onFiles(chat.id, paths);
       }}
     >
-      <Avatar id={chat.id} title={chatTitle(chat)} photo={chat.photo} size={46} />
+      <Avatar
+        id={chat.id}
+        title={chatTitle(chat)}
+        photo={chat.photo}
+        size={46}
+        saved={isSaved(chat)}
+      />
       <span className="tg-chat-text">
         <span className="tg-chat-top">
           <span className="tg-chat-title">{chatTitle(chat)}</span>
@@ -799,7 +816,7 @@ function Conversation({
             <ArrowLeft size={18} />
           </button>
         )}
-        <Avatar id={chat.id} title={title} photo={chat.photo} size={36} />
+        <Avatar id={chat.id} title={title} photo={chat.photo} size={36} saved={isSaved(chat)} />
         <span className="tg-chat-head-text">
           <span className="tg-chat-head-title">{title}</span>
           <span className="tg-chat-head-sub">{subtitle}</span>
@@ -1517,6 +1534,7 @@ const Bubble = memo(function Bubble({
           </span>
         )}
         <Text text={text} onLink={actions.openLink} />
+        {sending && info && <Upload message={m} file={info.file} onError={onError} />}
         {m.reply_markup?.['@type'] === 'replyMarkupInlineKeyboard' && (
           <InlineKeyboard message={m} actions={actions} onNotice={tools.notice} />
         )}
@@ -2337,5 +2355,50 @@ function Composer({
         </div>
       )}
     </div>
+  );
+}
+
+// A file on its way to Telegram: how much has gone, and a way to stop it.
+function Upload({
+  message: m,
+  file: source,
+  onError,
+}: {
+  message: TdMessage;
+  file: TdFile;
+  onError: (e: string) => void;
+}) {
+  useTelegram();
+  const file = fileOf(source);
+  const total = file.size || file.expected_size;
+  const done = file.remote?.is_uploading_completed ? total : file.remote?.uploaded_size || 0;
+  const percent = total ? Math.min(100, Math.round((done * 100) / total)) : 0;
+  return (
+    <span className="tg-upload" onPointerDown={(e) => e.stopPropagation()}>
+      <span className="tg-upload-bar">
+        <span style={{ width: `${percent}%` }} />
+      </span>
+      <span className="tg-file-progress">
+        <Loader2 size={12} className="tg-spin" />
+        {done
+          ? `Uploading ${percent}% · ${formatBytes(done)} of ${formatBytes(total)}`
+          : 'Starting upload…'}
+      </span>
+      <button
+        className="tg-link"
+        onClick={() =>
+          void telegramBridge()!
+            .invoke({
+              '@type': 'deleteMessages',
+              chat_id: m.chat_id,
+              message_ids: [m.id],
+              revoke: true,
+            })
+            .catch((e) => onError(message(e)))
+        }
+      >
+        Cancel
+      </button>
+    </span>
   );
 }

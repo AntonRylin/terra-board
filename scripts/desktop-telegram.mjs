@@ -400,6 +400,13 @@ try {
     'profile photos',
   );
 
+  // Your own chat is Saved Messages, pinned, with a bookmark.
+  await until(
+    async () => (await textOf('.tg-chat .tg-chat-title')) === 'Saved Messages',
+    'Saved Messages first',
+  );
+  assert.ok(await rect('.tg-chat .tg-avatar.tg-saved'), 'bookmark picture');
+
   // 7. A board picture dragged onto another chat in the list: that chat opens
   // with the picture in its send dialog; sending puts it in the chat.
   const pic = await screenAt(160, 844);
@@ -423,6 +430,10 @@ try {
   await closeUp('.canvas-telegram[data-file-id="tg"]', 'closeup-5-send-dialog.png');
   await clickText('.tg-dialog-actions button', 'Send');
   await until(async () => !(await rect('.tg-dialog')), 'sent');
+  // The upload shows its progress, then the message is sent.
+  await until(async () => /Uploading \d+%/.test(await textOf('.tg-upload')), 'upload progress');
+  await closeUp('.canvas-telegram[data-file-id="tg"]', 'closeup-15-uploading.png');
+  await until(async () => !(await rect('.tg-upload')), 'upload done', 10000);
   await until(
     async () => (await textOf('.tg-messages')).includes('From the board'),
     'sent message shows',

@@ -518,7 +518,17 @@ function createTelegram({
   function onAuthorization(auth) {
     const type = auth?.['@type'];
     if (type === 'authorizationStateWaitTdlibParameters') void parameters();
-    if (type === 'authorizationStateReady') lastError = '';
+    if (type === 'authorizationStateReady') {
+      lastError = '';
+      // Frames call your own chat Saved Messages; they need to know who you are.
+      void request({ '@type': 'getMe' })
+        .then((me) => {
+          if (!me?.id || state.myId === me.id) return;
+          state.myId = me.id;
+          queue().myId = me.id;
+        })
+        .catch(() => {});
+    }
     if (type === 'authorizationStateClosed') {
       client = 0;
       for (const { reject } of pending.values()) reject(Error('Telegram closed.'));

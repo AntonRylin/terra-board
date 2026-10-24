@@ -1690,3 +1690,34 @@
   flex: 1;
   min-width: 0;
 }
+
+/* Saved Messages: a bookmark, as in Telegram. */
+.tg-avatar.tg-saved {
+  background: var(--tg-accent);
+  color: #fff;
+}
+
+/* A file on its way: progress and Cancel. */
+.tg-upload {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 2px 6px;
+}
+.tg-upload-bar {
+  flex: 1 0 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: rgb(127 127 127 / 0.25);
+  overflow: hidden;
+}
+.tg-upload-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--tg-accent);
+  transition: width 0.2s;
+}
+.tg-upload .tg-file-progress {
+  flex: 1;
+}

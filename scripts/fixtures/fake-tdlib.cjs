@@ -99,6 +99,14 @@ const text = (value, entities = []) => ({ '@type': 'formattedText', text: value,
 const private_ = (userId) => ({ '@type': 'chatTypePrivate', user_id: userId });
 const chats = [
   {
+    id: 100,
+    title: 'You',
+    type: private_(100),
+    order: '2000',
+    pinned: true,
+    unread: 0,
+  },
+  {
     id: 105,
     title: 'Weather Bot',
     type: private_(105),
@@ -189,6 +197,12 @@ function seed() {
     if (!histories.has(m.chat_id)) histories.set(m.chat_id, []);
     histories.get(m.chat_id).push(m);
   };
+  add(
+    message(100, me, 400, {
+      '@type': 'messageText',
+      text: text('Ideas for the board: folders, Telegram'),
+    }),
+  );
   add(
     message(1, 104, 200, {
       '@type': 'messagePoll',
@@ -1091,28 +1105,56 @@ function handle(query) {
       if (!histories.has(m.chat_id)) histories.set(m.chat_id, []);
       reply(query, m);
       emit({ '@type': 'updateNewMessage', message: m });
-      setTimeout(() => {
-        const done = { ...m, id: nextMessage++, sending_state: undefined };
-        histories.get(m.chat_id).push(done);
-        emit({ '@type': 'updateMessageSendSucceeded', message: done, old_message_id: m.id });
-        const chat = chats.find((c) => c.id === m.chat_id);
-        if (chat)
-          emit({
-            '@type': 'updateChatLastMessage',
-            chat_id: chat.id,
-            last_message: done,
-            positions: [
-              {
-                '@type': 'chatPosition',
-                list: { '@type': 'chatListMain' },
-                order: '999',
-                is_pinned: false,
-              },
-            ],
-          });
-      }, 300);
+      // Files go up in steps, as TDLib reports uploads.
+      const uploading = shown['@type'] === 'messageText' ? null : files.get(500 + sent.length - 1);
+      const steps = uploading ? [0.25, 0.6, 1] : [];
+      steps.forEach((part, i) =>
+        setTimeout(
+          () => {
+            const size = uploading.size;
+            emit({
+              '@type': 'updateFile',
+              file: pub({
+                ...uploading,
+                remote: {
+                  ...uploading.remote,
+                  is_uploading_active: part < 1,
+                  is_uploading_completed: part >= 1,
+                  uploaded_size: Math.round(size * part),
+                },
+              }),
+            });
+          },
+          500 * (i + 1),
+        ),
+      );
+      setTimeout(
+        () => {
+          const done = { ...m, id: nextMessage++, sending_state: undefined };
+          histories.get(m.chat_id).push(done);
+          emit({ '@type': 'updateMessageSendSucceeded', message: done, old_message_id: m.id });
+          const chat = chats.find((c) => c.id === m.chat_id);
+          if (chat)
+            emit({
+              '@type': 'updateChatLastMessage',
+              chat_id: chat.id,
+              last_message: done,
+              positions: [
+                {
+                  '@type': 'chatPosition',
+                  list: { '@type': 'chatListMain' },
+                  order: '999',
+                  is_pinned: false,
+                },
+              ],
+            });
+        },
+        uploading ? 2000 : 300,
+      );
       return;
     }
+    case 'getMe':
+      return reply(query, users.find((u) => u.id === me) || { '@type': 'user', id: me });
     case 'logOut':
     case 'close':
       if (query['@extra']) reply(query, { '@type': 'ok' });
