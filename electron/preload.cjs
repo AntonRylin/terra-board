@@ -130,6 +130,7 @@ contextBridge.exposeInMainWorld('canvas', {
       ipcRenderer.invoke('canvas:cloud-set-board-access', boardId, person, role),
     stopSharing: (share) => ipcRenderer.invoke('canvas:cloud-stop-sharing', share),
     removeFromCloud: (boardId) => ipcRenderer.invoke('canvas:cloud-remove-from-cloud', boardId),
+    upload: (kind, id, name) => ipcRenderer.invoke('canvas:cloud-upload', kind, id, name),
     leave: (share) => ipcRenderer.invoke('canvas:cloud-leave', share),
     profile: () => ipcRenderer.invoke('canvas:cloud-profile'),
     setAvatar: (asset) => ipcRenderer.invoke('canvas:cloud-set-avatar', asset),

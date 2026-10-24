@@ -295,7 +295,7 @@
 }
 
 /* Share dialog: who has access, then inviting, one step at a time. */
-.modal:has(.share-head, .share-roles, .share-code-big, .share-person) {
+.modal:has(.share-item, .share-roles, .share-code-big, .share-person) {
   width: 420px;
 }
 .share-head {
@@ -455,4 +455,9 @@
 }
 .button.danger:hover {
   background: #b53f3f;
+}
+
+.share-item + .share-text,
+.share-item + .share-person {
+  margin-top: 16px;
 }

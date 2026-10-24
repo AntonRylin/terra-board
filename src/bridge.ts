@@ -332,6 +332,8 @@ interface DesktopBridge {
     setBoardAccess(boardId: string, person: string, role: ShareRole | null): Promise<void>;
     stopSharing(share: string): Promise<void>;
     removeFromCloud(boardId: string): Promise<void>;
+    /** Puts a local board or folder in the cloud, for this account only until people are invited. */
+    upload(kind: 'folder' | 'board', id: string, name?: string): Promise<CloudStatus>;
     leave(share: string): Promise<void>;
     profile(): Promise<CloudProfile>;
     setAvatar(asset: string | null): Promise<CloudProfile>;

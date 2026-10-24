@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   Check,
   CloudOff,
+  CloudUpload,
   Copy,
   Eye,
   Folder as FolderIcon,
@@ -181,9 +182,11 @@ export function ShareDialog({
     library.sharing?.folders[board.folderId]?.shared === 'owner'
       ? library.folders.find((f) => f.id === board.folderId)
       : undefined;
+  const [uploaded, setUploaded] = useState(false);
   const inCloud =
-    !localOnly &&
-    (!!mark || !!sharedFolder || (!!status?.identity && !!status?.library && kind === 'board'));
+    uploaded ||
+    (!localOnly &&
+      (!!mark || !!sharedFolder || (!!status?.identity && !!status?.library && kind === 'board')));
 
   const load = useCallback(async () => {
     if (!cloud || !status?.identity || received) return setPeople([]);
@@ -307,6 +310,45 @@ export function ShareDialog({
   // Sharing needs an account; a computer that syncs without one can still leave shares.
   if (status.account.state !== 'signedIn')
     return <SignInFirst onSignIn={onSignIn} onClose={onClose} what="share" />;
+
+  // A local board or folder goes to the cloud first; people are invited after that.
+  if (!inCloud)
+    return (
+      <>
+        {heading}
+        <p className="share-text">
+          {kind === 'folder'
+            ? `Upload “${itemName}” and its boards to the cloud to reach them on your other devices and invite people. Only you can open them until you invite someone.`
+            : `Upload “${itemName}” to the cloud to reach it on your other devices and invite people. Only you can open it until you invite someone.`}
+        </p>
+        {error && (
+          <p className="live-error" role="alert">
+            {error}
+          </p>
+        )}
+        <div className="dialog-actions">
+          <button type="button" className="button" disabled={busy} onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="button primary"
+            disabled={busy}
+            onClick={() =>
+              void run(async () => {
+                await cloud.upload(kind, id);
+                setUploaded(true);
+                await load();
+                setStep('people');
+              })
+            }
+          >
+            <CloudUpload size={15} />
+            {busy ? 'Uploading…' : 'Upload to cloud'}
+          </button>
+        </div>
+      </>
+    );
 
   if (step === 'remove')
     return (

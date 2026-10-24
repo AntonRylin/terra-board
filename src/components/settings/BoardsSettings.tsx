@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   CloudOff,
+  CloudUpload,
   HardDrive,
   Cloud,
   LogOut,
@@ -323,19 +324,25 @@ function BoardDetails({
             ? 'Removed from the cloud. Only you can open it.'
             : 'Local board. Only you can open it, and it isn’t synced.'}
         </span>
-        {signedIn && onManageShare ? (
+        {signedIn && cloud ? (
           <button
             type="button"
             className="st-button primary"
-            onClick={() => onManageShare('board', item.board.id)}
+            disabled={busy}
+            onClick={() =>
+              void act(
+                () => cloud.upload('board', item.board.id),
+                `“${item.board.name || 'Untitled'}” is in the cloud.`,
+              )
+            }
           >
-            <UserPlus size={15} />
-            Share
+            <CloudUpload size={15} />
+            Upload to cloud
           </button>
         ) : (
           onSignIn && (
             <button type="button" className="st-button" onClick={onSignIn}>
-              Sign in to share
+              Sign in to upload
             </button>
           )
         )}

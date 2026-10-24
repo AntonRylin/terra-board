@@ -21,6 +21,7 @@ export const cloud: CloudBridge = {
   setBoardAccess: (boardId, person, role) => run('setBoardAccess', boardId, person, role),
   stopSharing: (share) => run('stopSharing', share),
   removeFromCloud: (boardId) => run('removeFromCloud', boardId),
+  upload: (kind, id, name) => run('uploadToCloud', kind, id, name),
   leave: (share) => run('leave', share),
   profile: () => run('profile'),
   setAvatar: (asset) => run('setAvatar', asset),

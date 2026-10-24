@@ -1130,32 +1130,55 @@ class CloudSync {
     if ((await this.auth.account()).state !== 'signedIn') throw Error(message);
   }
 
+  // A share for a folder or board, new or the one it has. Run inside exclusive(): no sync
+  // round may read a share list from before this share exists. Content that only this
+  // computer has is queued for upload (syncOwned).
+  async createShareLocked(kind, targetId) {
+    const known = this.shareFor(kind, targetId);
+    if (known) return known;
+    const { data, error } = await this.client.rpc('create_share', {
+      p_workspace: this.workspace,
+      p_kind: kind,
+      p_target: targetId,
+    });
+    fail(error, 'Could not put this in the cloud');
+    const created = { shareId: data, kind, targetId, people: 0 };
+    this.emit({ shared: [...this.status.shared.filter((s) => s.shareId !== data), created] });
+    await this.syncOwnedShares();
+    return created;
+  }
+
+  syncOwnedShares() {
+    return this.call('syncOwned', {
+      upload: true,
+      shares: this.status.shared.map((s) => ({
+        kind: s.kind,
+        targetId: s.targetId,
+        shareId: s.shareId,
+      })),
+    });
+  }
+
+  // Upload to cloud: the board or folder syncs to this account's devices, and only this
+  // account can open it until people are invited. On the server it is a share with nobody
+  // in it yet, so it syncs like any other share.
+  async uploadToCloud(kind, targetId, name) {
+    if (!['folder', 'board'].includes(kind)) throw Error('Choose a folder or a board');
+    await this.requireAccount('Sign in to upload boards to the cloud.');
+    await this.identify(name || this.status.name);
+    if (!this.shareFor(kind, targetId))
+      await this.exclusive(() => this.createShareLocked(kind, targetId));
+    await this.run();
+    return this.status;
+  }
+
   async invite(kind, targetId, role, name) {
     if (!['folder', 'board'].includes(kind)) throw Error('Choose a folder or a board');
     await this.requireAccount('Sign in to share boards.');
     await this.identify(name || this.status.name);
     let share = this.shareFor(kind, targetId);
     if (!share) {
-      // No sync round may read a share list from before this share exists.
-      share = await this.exclusive(async () => {
-        const { data, error } = await this.client.rpc('create_share', {
-          p_workspace: this.workspace,
-          p_kind: kind,
-          p_target: targetId,
-        });
-        fail(error, 'Could not share this');
-        const created = { shareId: data, kind, targetId, people: 0 };
-        this.emit({ shared: [...this.status.shared.filter((s) => s.shareId !== data), created] });
-        await this.call('syncOwned', {
-          upload: true,
-          shares: this.status.shared.map((s) => ({
-            kind: s.kind,
-            targetId: s.targetId,
-            shareId: s.shareId,
-          })),
-        });
-        return created;
-      });
+      share = await this.exclusive(() => this.createShareLocked(kind, targetId));
       // Upload the shared content before the invite is used.
       await this.run();
     }
@@ -1214,9 +1237,17 @@ class CloudSync {
     await this.run();
   }
 
+  // Everyone loses access and unused invite codes stop working. The board or folder stays
+  // in the cloud: the share is replaced by a new one with nobody in it.
   async stopSharing(shareId) {
-    const { error } = await this.client.rpc('delete_share', { p_share: shareId });
-    fail(error, 'Could not stop sharing');
+    const share = this.status.shared.find((s) => s.shareId === shareId);
+    await this.exclusive(async () => {
+      const { error } = await this.client.rpc('delete_share', { p_share: shareId });
+      fail(error, 'Could not stop sharing');
+      this.emit({ shared: this.status.shared.filter((s) => s.shareId !== shareId) });
+      if (share) await this.createShareLocked(share.kind, share.targetId);
+      else await this.syncOwnedShares();
+    });
     this.ping(this.workspace);
     await this.run();
   }

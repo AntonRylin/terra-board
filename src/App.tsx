@@ -37,6 +37,8 @@ import {
   Folder as FolderIcon,
   Radio,
   Users,
+  UserPlus,
+  CloudUpload,
   KeyRound,
   ArrowLeft,
 } from 'lucide-react';
@@ -56,6 +58,7 @@ import {
   invoke,
   onExternalSync,
   externalReady,
+  cloudApi,
 } from './bridge';
 import type { SaveState } from './canvas/save-queue';
 import Launcher, { AppIcon } from './components/Launcher';
@@ -618,11 +621,55 @@ export default function App() {
   const sharingOf = (b: Board) =>
     library.sharing?.boards[b.id] ||
     (b.folderId ? library.sharing?.folders[b.folderId] : undefined);
-  const shareItem = (shareKind: 'folder' | 'board', id: string, received: boolean): MenuItem => ({
-    label: received ? 'Shared with you…' : 'Share…',
-    icon: <Users />,
-    action: () => ask({ kind: 'share', shareKind, id }),
-  });
+  // Your own board or folder is in the cloud: shared by you (even with nobody yet), or a
+  // board synced with the whole library and not kept local.
+  const ownInCloud = (shareKind: 'folder' | 'board', id: string) => {
+    if (shareKind === 'folder') return library.sharing?.folders[id]?.shared === 'owner';
+    const b = library.boards.find((x) => x.id === id);
+    if (!b || library.sharing?.local?.includes(id)) return false;
+    if (sharingOf(b)?.shared === 'owner') return true;
+    return !!cloudStatus?.identity && !!cloudStatus.library;
+  };
+  const shareTitle = (shareKind: 'folder' | 'board', id: string) => {
+    const b = shareKind === 'board' ? library.boards.find((x) => x.id === id) : undefined;
+    const mark = shareKind === 'folder' ? library.sharing?.folders[id] : b && sharingOf(b);
+    if (mark && mark.shared !== 'owner') return 'Shared with you';
+    return ownInCloud(shareKind, id) ? 'Invite people' : 'Upload to cloud';
+  };
+  // Local first: Upload to cloud. Once it is there: Invite people…
+  const uploadToCloud = (shareKind: 'folder' | 'board', id: string) => {
+    // Signed out, the share dialog asks to sign in first.
+    if (!cloudApi || cloudStatus?.account.state !== 'signedIn')
+      return ask({ kind: 'share', shareKind, id });
+    const name =
+      (shareKind === 'folder'
+        ? library.folders.find((f) => f.id === id)?.name
+        : library.boards.find((b) => b.id === id)?.name) || 'It';
+    void run(async () => {
+      notify(`Uploading “${name}”…`);
+      await cloudApi!.upload(shareKind, id);
+      await refresh();
+      notify(`“${name}” is in the cloud`);
+    });
+  };
+  const shareItem = (shareKind: 'folder' | 'board', id: string, received: boolean): MenuItem =>
+    received
+      ? {
+          label: 'Shared with you…',
+          icon: <Users />,
+          action: () => ask({ kind: 'share', shareKind, id }),
+        }
+      : ownInCloud(shareKind, id)
+        ? {
+            label: 'Invite people…',
+            icon: <UserPlus />,
+            action: () => ask({ kind: 'share', shareKind, id }),
+          }
+        : {
+            label: 'Upload to cloud',
+            icon: <CloudUpload />,
+            action: () => uploadToCloud(shareKind, id),
+          };
   const boardMenu = (b: Board, x: number, y: number) => {
     const mark = sharingOf(b);
     if (desktop && mark && mark.shared !== 'owner')
@@ -1162,7 +1209,11 @@ export default function App() {
         <Presence show={!!modal && modal.kind !== 'settings'}>
           {modal && modal.kind !== 'settings' && (
             <Modal
-              title={modalTitle[modal.kind]}
+              title={
+                modal.kind === 'share' && modal.id
+                  ? shareTitle(modal.shareKind || 'board', modal.id)
+                  : modalTitle[modal.kind]
+              }
               onClose={() => {
                 if (!busy) setModal(null);
               }}

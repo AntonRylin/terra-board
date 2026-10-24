@@ -860,6 +860,9 @@ app
     );
     cloudAction('stop-sharing', (share) => cloud.stopSharing(share));
     cloudAction('remove-from-cloud', (boardId) => cloud.removeFromCloud(boardId));
+    cloudAction('upload', (kind, id, name) =>
+      cloud.uploadToCloud(kind === 'folder' ? 'folder' : 'board', String(id), name),
+    );
     cloudAction('leave', (share) => cloud.leave(share));
     cloudAction('profile', () => cloud.profile());
     cloudAction('set-avatar', (asset) => cloud.setAvatar(asset || null));

@@ -24,6 +24,7 @@ const methods = new Set([
   'setBoardAccess',
   'stopSharing',
   'removeFromCloud',
+  'uploadToCloud',
   'leave',
   'profile',
   'setAvatar',
