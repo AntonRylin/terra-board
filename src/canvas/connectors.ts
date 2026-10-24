@@ -1,5 +1,5 @@
-import type { ArrowEnd, CanvasObject } from '../model';
-import { arrowFromPoints, arrowPoints } from './arrows.ts';
+import type { ArrowEnd, ArrowStyle, CanvasObject } from '../model';
+import { arrowFromPoints, arrowPath, arrowPoints, arrowStyle } from './arrows.ts';
 import { localToWorld, worldToLocal, type Point } from './transform.ts';
 
 export type ConnectorSide = 'n' | 'e' | 's' | 'w';
@@ -85,6 +85,155 @@ export function arrowEnd(target: CanvasObject, w: Point): ArrowEnd {
 export const arrowEndPoint = (target: CanvasObject, end: ArrowEnd): Point =>
   localToWorld(target, { x: end.x * target.width, y: end.y * target.height });
 
+/** The unit direction pointing straight out of `side`, in world coordinates. */
+export function sideNormal(o: CanvasObject, side: ConnectorSide): Point {
+  const c = localToWorld(o, { x: o.width / 2, y: o.height / 2 }),
+    w = localToWorld(o, {
+      x: o.width / 2 + (side === 'e' ? 1 : side === 'w' ? -1 : 0),
+      y: o.height / 2 + (side === 's' ? 1 : side === 'n' ? -1 : 0),
+    }),
+    length = Math.hypot(w.x - c.x, w.y - c.y) || 1;
+  return { x: (w.x - c.x) / length, y: (w.y - c.y) / length };
+}
+
+/** The outward direction of the side a held end sits on, or none when it is not on a side. */
+export function endNormal(o: CanvasObject, end: { x: number; y: number }): Point | undefined {
+  const e = 1e-6,
+    side: ConnectorSide | undefined =
+      end.x <= e ? 'w' : end.x >= 1 - e ? 'e' : end.y <= e ? 'n' : end.y >= 1 - e ? 's' : undefined;
+  return side && sideNormal(o, side);
+}
+
+const dot = (p: Point, q: Point) => p.x * q.x + p.y * q.y;
+
+/**
+ * Ways from `a` to `b`, straight first: arcs bulging out past both ends, then
+ * paths that leave each end straight out of its side (`na`, `nb`).
+ */
+function routeCandidates(a: Point, b: Point, na?: Point, nb?: Point): Point[][] {
+  const list: Point[][] = [[a, b]];
+  if (!na && !nb) return list;
+  const chord = Math.hypot(b.x - a.x, b.y - a.y) || 1,
+    mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
+    sum = { x: (na?.x ?? 0) + (nb?.x ?? 0), y: (na?.y ?? 0) + (nb?.y ?? 0) },
+    sumLength = Math.hypot(sum.x, sum.y),
+    across = { x: -(b.y - a.y) / chord, y: (b.x - a.x) / chord },
+    directions = [
+      ...(sumLength > 0.2 ? [{ x: sum.x / sumLength, y: sum.y / sumLength }] : []),
+      across,
+      { x: -across.x, y: -across.y },
+    ];
+  for (const n of directions)
+    for (const f of [0.35, 0.7, 1.2]) {
+      const out = Math.max(dot(a, n), dot(b, n)) - dot(mid, n) + f * chord;
+      list.push([a, { x: mid.x + n.x * out, y: mid.y + n.y * out }, b]);
+    }
+  for (const f of [0.3, 0.6]) {
+    const k = f * chord;
+    list.push([
+      a,
+      ...(na ? [{ x: a.x + na.x * k, y: a.y + na.y * k }] : []),
+      ...(nb ? [{ x: b.x + nb.x * k, y: b.y + nb.y * k }] : []),
+      b,
+    ]);
+  }
+  return list;
+}
+
+/** Whether a line through `points` drawn as `line` passes inside any of `objects`. */
+function routeCrosses(points: Point[], line: ArrowStyle['line'], objects: CanvasObject[]) {
+  const arrow = arrowFromPoints(
+      {
+        id: '',
+        type: 'arrow',
+        x: 0,
+        y: 0,
+        width: 1,
+        height: 1,
+        z: 0,
+        arrow: { ...defaultStyle, line },
+      },
+      points,
+    ),
+    path = arrowPath(arrow).map((p) => localToWorld(arrow, p));
+  for (let i = 1; i < path.length; i++)
+    for (let t = 0; t <= 8; t++) {
+      const p = {
+        x: path[i - 1].x + ((path[i].x - path[i - 1].x) * t) / 8,
+        y: path[i - 1].y + ((path[i].y - path[i - 1].y) * t) / 8,
+      };
+      for (const o of objects) {
+        const q = worldToLocal(o, p),
+          m = Math.max(0.5, Math.min(o.width, o.height) * 0.01);
+        if (q.x > m && q.y > m && q.x < o.width - m && q.y < o.height - m) return true;
+      }
+    }
+  return false;
+}
+const defaultStyle: ArrowStyle = {
+  points: [],
+  line: 'curve',
+  start: 'none',
+  end: 'arrow',
+  dash: 'solid',
+  thickness: 1,
+};
+
+/**
+ * The points of an arrow from `a` to `b` whose ends leave sides facing `na` and
+ * `nb`: straight when that stays clear of `objects`, otherwise the first arc or
+ * detour around them.
+ */
+export function arrowRoute(
+  a: Point,
+  b: Point,
+  na: Point | undefined,
+  nb: Point | undefined,
+  objects: CanvasObject[],
+  line: ArrowStyle['line'] = 'curve',
+): Point[] {
+  const list = routeCandidates(a, b, na, nb);
+  return list.find((c) => !routeCrosses(c, line, objects)) ?? list[1] ?? list[0];
+}
+
+const heldBy = (arrow: CanvasObject, key: 'from' | 'to', find: Find) => {
+  const end = arrow.arrow?.[key],
+    o = end && find(end.id);
+  return o ? { o, normal: endNormal(o, end) } : undefined;
+};
+type Find = (id: string) => CanvasObject | undefined;
+
+/** Whether the arrow's bends are none, or ones `arrowRoute` made for its held ends. */
+export function hasAutoBends(arrow: CanvasObject, find: Find) {
+  const points = arrowPoints(arrow).map((p) => localToWorld(arrow, p));
+  if (points.length === 2) return true;
+  const na = heldBy(arrow, 'from', find)?.normal,
+    nb = heldBy(arrow, 'to', find)?.normal;
+  if (!na && !nb) return false;
+  const a = points[0],
+    b = points[points.length - 1],
+    tolerance = Math.max(1e-6, Math.hypot(b.x - a.x, b.y - a.y) * 1e-4);
+  return routeCandidates(a, b, na, nb).some(
+    (c) =>
+      c.length === points.length &&
+      c.every((p, i) => Math.hypot(p.x - points[i].x, p.y - points[i].y) <= tolerance),
+  );
+}
+
+/** Fresh points for `arrow` from `a` to `b`, around the objects its ends hold. */
+export function routedPoints(arrow: CanvasObject, a: Point, b: Point, find: Find): Point[] {
+  const from = heldBy(arrow, 'from', find),
+    to = heldBy(arrow, 'to', find);
+  return arrowRoute(
+    a,
+    b,
+    from?.normal,
+    to?.normal,
+    [from?.o, to?.o].filter((o): o is CanvasObject => !!o),
+    arrowStyle(arrow).line,
+  );
+}
+
 /** Whether `arrow` has an end held by one of `ids`. */
 export const arrowHeldBy = (arrow: CanvasObject, ids: Set<string>) =>
   arrow.type === 'arrow' &&
@@ -110,6 +259,8 @@ export function followArrow(
     da = { x: a.x - points[0].x, y: a.y - points[0].y },
     db = { x: b.x - points[last].x, y: b.y - points[last].y };
   if (Math.hypot(da.x, da.y) < 1e-6 && Math.hypot(db.x, db.y) < 1e-6) return arrow;
+  // Arcs made to get around the objects are made afresh for where they are now.
+  if (hasAutoBends(arrow, find)) return arrowFromPoints(arrow, routedPoints(arrow, a, b, find));
   const shift = { x: (da.x + db.x) / 2, y: (da.y + db.y) / 2 };
   return arrowFromPoints(
     arrow,

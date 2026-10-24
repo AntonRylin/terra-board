@@ -21,6 +21,8 @@ import {
   connectorDot,
   connectorSides,
   dropSide,
+  hasAutoBends,
+  routedPoints,
   sidePoint,
   type ConnectorSide,
 } from './connectors';
@@ -741,9 +743,13 @@ export class Engine {
     const anchor = g.mode === 'drawArrow' ? g.world : g.arrowPoints![index === 0 ? 1 : index - 1];
     if (ctrl) end.x = anchor.x;
     else if (shift) end.y = anchor.y;
+    const find = (id: string) => this.objects.get(id),
+      // An arc made to get around objects is redrawn as its end moves.
+      autoBends = g.mode === 'arrowPoint' && !!g.connectEnd && hasAutoBends(g.original[0], find),
+      facing = autoBends ? g.arrowPoints![index === 0 ? g.arrowPoints!.length - 1 : 0] : anchor;
     let target: CanvasObject | undefined;
     if (g.connectFrom || (g.connectEnd && !alt)) {
-      // Over another object, the arrow lands on the middle of its facing side.
+      // Over another object, the arrow lands on the side under the pointer.
       const pointer = this.screenPoint(g.arrowPointer);
       target = this.connectTargetAt(pointer, g);
       if (target)
@@ -751,7 +757,7 @@ export class Engine {
           end,
           connectionPoint(
             target,
-            dropSide(target, pointer, anchor),
+            dropSide(target, pointer, facing),
             pointer,
             48 / this.camera.zoom,
           ),
@@ -759,9 +765,10 @@ export class Engine {
     }
     g.connectTarget = target?.id;
     if (g.mode === 'drawArrow') {
-      const draft = arrowFromPoints(g.arrowDraft!, [anchor, end]),
-        source = g.connectFrom && this.objects.get(g.connectFrom.id);
-      // An arrow from a side dot holds that spot, and the object it lands on.
+      let draft = arrowFromPoints(g.arrowDraft!, [anchor, end]);
+      const source = g.connectFrom && this.objects.get(g.connectFrom.id);
+      // An arrow from a side dot holds that spot, and the object it lands on,
+      // and bends around them when a straight line would cut through one.
       if (source) {
         const { from: _from, to: _to, ...style } = draft.arrow!;
         draft.arrow = {
@@ -769,10 +776,11 @@ export class Engine {
           from: arrowEnd(source, anchor),
           ...(target ? { to: arrowEnd(target, end) } : {}),
         };
+        draft = arrowFromPoints(draft, routedPoints(draft, anchor, end, find));
       }
       this.preview(draft);
     } else {
-      const points = g.arrowPoints!.map((p) => ({ ...p }));
+      let points = g.arrowPoints!.map((p) => ({ ...p }));
       points[index] = end;
       const before = g.original[0],
         original = arrowPoints(before).map((p) => localToWorld(before, p));
@@ -783,6 +791,10 @@ export class Engine {
           ...next,
           arrow: { ...style, ...(target ? { [g.connectEnd]: arrowEnd(target, end) } : {}) },
         };
+        if (autoBends) {
+          points = routedPoints(next, points[0], points[points.length - 1], find);
+          next = arrowFromPoints(next, points);
+        }
       }
       const was = before.arrow?.[g.connectEnd ?? 'from'],
         now = next.arrow?.[g.connectEnd ?? 'from'];

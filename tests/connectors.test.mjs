@@ -50,6 +50,73 @@ test('arrow ends land level with the drop, snapping to the side middle nearby', 
   assert.deepEqual(connectionPoint(tall, 'n', { x: 900, y: 10 }, 48), { x: 420, y: 0 });
 });
 
+test('an arrow that would cut through its objects arcs around them instead', async () => {
+  const { arrowEnd, followArrow, hasAutoBends, routedPoints } =
+    await import('../src/canvas/connectors.ts');
+  const { arrowFromPoints, arrowPath, arrowPoints } = await import('../src/canvas/arrows.ts');
+  const { localToWorld } = await import('../src/canvas/transform.ts');
+  // A wide card above, a box below it: both arrow ends on their right sides.
+  const top = { id: 'top', type: 'rect', x: 314, y: 128, width: 521, height: 347, z: 1 },
+    bottom = { id: 'bottom', type: 'rect', x: 517, y: 628, width: 261, height: 216, z: 1 };
+  const objects = new Map([
+    ['top', top],
+    ['bottom', bottom],
+  ]);
+  const find = (id) => objects.get(id);
+  const a = { x: 835, y: 300 },
+    b = { x: 778, y: 735 };
+  let arrow = arrowFromPoints({ id: 'r', type: 'arrow', x: 0, y: 0, width: 1, height: 1, z: 2 }, [
+    a,
+    b,
+  ]);
+  arrow.arrow = { ...arrow.arrow, from: arrowEnd(top, a), to: arrowEnd(bottom, b) };
+  const points = routedPoints(arrow, a, b, find);
+  assert.equal(points.length, 3);
+  // The bend bulges out to the right, past both ends.
+  assert.ok(points[1].x > 835, JSON.stringify(points));
+  arrow = arrowFromPoints(arrow, points);
+  const inside = (o, p) =>
+    p.x > o.x + 1 && p.y > o.y + 1 && p.x < o.x + o.width - 1 && p.y < o.y + o.height - 1;
+  for (const p of arrowPath(arrow).map((q) => localToWorld(arrow, q)))
+    assert.ok(!inside(top, p) && !inside(bottom, p), JSON.stringify(p));
+  assert.ok(hasAutoBends(arrow, find));
+
+  // Moved, the arc is made afresh; once a straight line is clear, it straightens.
+  objects.set('bottom', { ...bottom, x: 517, y: 1028 });
+  const moved = followArrow(arrow, find);
+  assert.equal(arrowPoints(moved).length, 3);
+  assert.ok(hasAutoBends(moved, find));
+  const west = { x: 517, y: 735 };
+  let toWest = arrowFromPoints(arrow, [a, west]);
+  toWest.arrow = { ...toWest.arrow, to: arrowEnd(bottom, west) };
+  objects.set('bottom', bottom);
+  toWest = arrowFromPoints(toWest, routedPoints(toWest, a, west, find));
+  assert.equal(arrowPoints(toWest).length, 3);
+  objects.set('bottom', { ...bottom, x: 1100 });
+  assert.equal(arrowPoints(followArrow(toWest, find)).length, 2);
+
+  // A bend the user placed is kept as it is.
+  const bent = arrowFromPoints(arrow, [a, { x: 1200, y: 900 }, b]);
+  assert.ok(!hasAutoBends(bent, find));
+  assert.equal(arrowPoints(followArrow(bent, find)).length, 3);
+
+  // Arrows between objects that face each other stay straight.
+  const left = { ...top, id: 'left', x: 0, y: 0, width: 100, height: 100 },
+    right = { ...top, id: 'right', x: 300, y: 0, width: 100, height: 100 };
+  objects.set('left', left);
+  objects.set('right', right);
+  const across = arrowFromPoints(arrow, [
+    { x: 100, y: 50 },
+    { x: 300, y: 50 },
+  ]);
+  across.arrow = {
+    ...across.arrow,
+    from: arrowEnd(left, { x: 100, y: 50 }),
+    to: arrowEnd(right, { x: 300, y: 50 }),
+  };
+  assert.equal(routedPoints(across, { x: 100, y: 50 }, { x: 300, y: 50 }, find).length, 2);
+});
+
 test('held arrow ends follow their objects as they move, resize and turn', async () => {
   const { arrowEnd, followArrow, keepArrowEnds, copyArrowEnds } =
     await import('../src/canvas/connectors.ts');
