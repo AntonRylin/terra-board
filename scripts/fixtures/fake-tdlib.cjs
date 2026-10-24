@@ -445,11 +445,25 @@ function handle(query) {
     }
     case 'sendMessage': {
       const content = query.input_message_content;
+      // As strict as TDLib 1.8.67: each file sits in its input object.
+      const shape = {
+        inputMessagePhoto: ['photo', 'inputPhoto'],
+        inputMessageDocument: ['document', 'inputDocument'],
+        inputMessageVideo: ['video', 'inputVideo'],
+        inputMessageVoiceNote: ['voice_note', 'inputVoiceNote'],
+      }[content?.['@type']];
+      if (shape) {
+        const [field, inner] = shape;
+        const outer = content[field];
+        if (outer?.['@type'] !== inner || outer[field]?.['@type'] !== 'inputFileLocal')
+          return fail(query, 400, 'InputFile is not specified');
+      }
       let shown;
       if (content['@type'] === 'inputMessageText')
         shown = { '@type': 'messageText', text: content.text };
       else if (content['@type'] === 'inputMessageVoiceNote') {
-        const local = content.voice_note.path;
+        const note = content.voice_note;
+        const local = note.voice_note.path;
         const id = 500 + sent.length;
         files.set(id, {
           ...file(id, ''),
@@ -468,8 +482,8 @@ function handle(query) {
           '@type': 'messageVoiceNote',
           voice_note: {
             '@type': 'voiceNote',
-            duration: content.duration,
-            waveform: content.waveform,
+            duration: note.duration,
+            waveform: note.waveform,
             mime_type: 'audio/ogg',
             voice: pub(files.get(id)),
           },

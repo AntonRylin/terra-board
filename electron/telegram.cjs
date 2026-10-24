@@ -596,18 +596,23 @@ function createTelegram({
       if (!text.text.trim()) throw Error('Write a message first.');
       input = { '@type': kind, text, clear_draft: true };
     } else if (kind === 'inputMessageVoiceNote') {
-      // A recording made by voice(): its file, length and loudness bars.
-      const file = content.voice_note;
+      // A recording made by voice(): its file, length and loudness bars, in
+      // an inputVoiceNote as TDLib 1.8.6x takes them.
+      const note = content.voice_note;
+      const file = note?.voice_note;
       const local = file?.['@type'] === 'inputFileLocal' ? path.resolve(String(file.path)) : null;
       if (!local || !staged.has(local)) throw Error('Record the voice message again.');
-      const waveform = typeof content.waveform === 'string' ? content.waveform : '';
+      const waveform = typeof note.waveform === 'string' ? note.waveform : '';
       if (waveform.length > 200 || !/^[A-Za-z0-9+/]*={0,2}$/.test(waveform))
         throw Error('Invalid voice message');
       input = {
         '@type': kind,
-        voice_note: { '@type': 'inputFileLocal', path: local },
-        duration: Math.max(1, Math.min(3600, Math.round(Number(content.duration) || 1))),
-        waveform,
+        voice_note: {
+          '@type': 'inputVoiceNote',
+          voice_note: { '@type': 'inputFileLocal', path: local },
+          duration: Math.max(1, Math.min(3600, Math.round(Number(note.duration) || 1))),
+          waveform,
+        },
         caption: text,
       };
     } else {

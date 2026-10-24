@@ -1768,9 +1768,12 @@ function Composer({
         reply_to: replyTo ? { message_id: replyTo.id } : undefined,
         input_message_content: {
           '@type': 'inputMessageVoiceNote',
-          voice_note: { '@type': 'inputFileLocal', path: saved.path },
-          duration: Math.round(saved.seconds),
-          waveform: waveformOf(r.levels),
+          voice_note: {
+            '@type': 'inputVoiceNote',
+            voice_note: { '@type': 'inputFileLocal', path: saved.path },
+            duration: Math.round(saved.seconds),
+            waveform: waveformOf(r.levels),
+          },
           caption: { '@type': 'formattedText', text: '', entities: [] },
         },
       });

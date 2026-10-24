@@ -306,6 +306,33 @@ test('frames reach TDLib only through checked requests', async () => {
     }),
     /text and files only/,
   );
+  // A recorded voice message goes as TDLib 1.8.67 takes it: its file inside
+  // an inputVoiceNote, with length and waveform beside it.
+  const recorded = await telegram.voice(
+    webm(Array.from({ length: 50 }, () => Buffer.from([0xf8, 1, 2]))),
+  );
+  assert.equal(recorded.seconds, 1);
+  assert.match(recorded.path, /\.ogg$/);
+  await telegram.invoke({
+    '@type': 'sendMessage',
+    chat_id: 5,
+    input_message_content: {
+      '@type': 'inputMessageVoiceNote',
+      voice_note: {
+        '@type': 'inputVoiceNote',
+        voice_note: { '@type': 'inputFileLocal', path: recorded.path },
+        duration: 1,
+        waveform: 'AAAA',
+      },
+    },
+  });
+  const voice = sent.filter((q) => q['@type'] === 'sendMessage').pop().input_message_content;
+  assert.deepEqual(voice.voice_note, {
+    '@type': 'inputVoiceNote',
+    voice_note: { '@type': 'inputFileLocal', path: recorded.path },
+    duration: 1,
+    waveform: 'AAAA',
+  });
   // Only Telegram's own folders are served or dragged.
   assert.equal(telegram.draggable(secret), path.resolve(secret));
   assert.equal(telegram.draggable(path.join(dir, 'other.txt')), null);
