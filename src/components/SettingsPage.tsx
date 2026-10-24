@@ -20,6 +20,7 @@ import { AboutSettings, StorageSettings } from './settings/StorageSettings';
 import { CloudSettings } from './settings/CloudSettings';
 import { AccountSettings } from './settings/AccountSettings';
 import { BoardsSettings } from './settings/BoardsSettings';
+import type { PlaceGroup } from './settings/board-places';
 import { ProfileSettings } from './settings/ProfileSettings';
 import { ExtensionsSettings } from './settings/ExtensionsSettings';
 import './settings/settings.css';
@@ -58,6 +59,8 @@ export default function SettingsPage({
     return sectionVisible(wanted) ? wanted : sections[0].id;
   });
   const [query, setQuery] = useState('');
+  // The Boards page opens on the part chosen in Account's board summary.
+  const [boardsFilter, setBoardsFilter] = useState<'all' | PlaceGroup>('all');
   const [target, setTarget] = useState<string | null>(null);
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
@@ -253,11 +256,16 @@ export default function SettingsPage({
                   <AccountSettings
                     connectAddress={connectAddress}
                     library={library}
-                    onOpenBoards={() => open('boards')}
+                    onOpenBoards={(filter) => {
+                      setBoardsFilter(filter);
+                      open('boards');
+                    }}
                   />
                 ))}
               {section === 'boards' && (
                 <BoardsSettings
+                  key={boardsFilter}
+                  initialFilter={boardsFilter}
                   library={library}
                   onManageShare={onManageShare}
                   onSignIn={() => open('account')}

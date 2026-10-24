@@ -25,17 +25,26 @@ async function anonymousLibrary(server, boardId = 'b1') {
   return { computer, workspace };
 }
 
-// Someone else, with their own workspace, who gets a board shared with them.
+// A share made before accounts, when computers without one could still share (sharing needs
+// an account since 20261024130000): written directly, as it would be in the database.
+async function legacyShare(server, owner, workspace, boardId, memberWs, role) {
+  const [{ id }] = await server.admin(
+    `insert into public.shares (workspace_id, kind, target_id, created_by)
+     values ($1, 'board', $2, $3) returning id`,
+    [workspace, boardId, owner.id],
+  );
+  await server.admin(
+    'insert into public.share_members (share_id, member_workspace, role) values ($1, $2, $3)',
+    [id, memberWs, role],
+  );
+  return id;
+}
+
+// Someone else, with their own workspace, who got a board shared with them back then.
 async function guestOf(server, owner, workspace, boardId, role = 'edit') {
   const guest = await server.user({ anonymous: true });
   const guestWs = await guest.rpc('create_workspace', { p_name: 'My boards', p_device: 'Laptop' });
-  const share = await owner.rpc('create_share', {
-    p_workspace: workspace,
-    p_kind: 'board',
-    p_target: boardId,
-  });
-  const code = await owner.rpc('create_share_invite', { p_share: share, p_role: role });
-  await guest.rpc('redeem_share_invite', { p_code: code, p_workspace: guestWs });
+  const share = await legacyShare(server, owner, workspace, boardId, guestWs, role);
   return { guest, guestWs, share };
 }
 
@@ -125,13 +134,7 @@ test('two unpaired libraries combine, and the guest keeps the same board', async
   const { computer: second, workspace: old } = await anonymousLibrary(server, 'b2');
   const { guest, guestWs } = await guestOf(server, second, old, 'b2', 'view');
   // The guest also shared something with the second computer.
-  const guestShare = await guest.rpc('create_share', {
-    p_workspace: guestWs,
-    p_kind: 'board',
-    p_target: 'g1',
-  });
-  const invite = await guest.rpc('create_share_invite', { p_share: guestShare, p_role: 'edit' });
-  await second.rpc('redeem_share_invite', { p_code: invite, p_workspace: old });
+  await legacyShare(server, guest, guestWs, 'g1', old, 'edit');
 
   const result = await claim(second, account);
   assert.deepEqual(result, { result: 'combine', workspace: personal, retire: old });
@@ -322,13 +325,7 @@ test('deleting cloud data removes the library, its shares and the sign-in', asyn
   await account.rpc('register_device', { p_id: randomUUID(), p_name: 'PC', p_version: '1' });
   const { guest, guestWs } = await guestOf(server, account, workspace, 'b1');
   // The account is also a guest on someone's board.
-  const theirShare = await guest.rpc('create_share', {
-    p_workspace: guestWs,
-    p_kind: 'board',
-    p_target: 'g1',
-  });
-  const invite = await guest.rpc('create_share_invite', { p_share: theirShare, p_role: 'view' });
-  await account.rpc('redeem_share_invite', { p_code: invite, p_workspace: workspace });
+  const theirShare = await legacyShare(server, guest, guestWs, 'g1', workspace, 'view');
 
   assert.deepEqual(await account.rpc('my_deletable_workspaces'), [workspace]);
   assert.deepEqual(await account.rpc('delete_my_cloud_data'), { userDeleted: true });
@@ -520,4 +517,39 @@ test('devices keep where and when they signed in', async () => {
     pc,
   ]);
   assert.ok(again.signed_in_at >= first.signed_in_at);
+});
+
+test('sharing and joining need an account', async () => {
+  const server = await supabaseDb();
+  const owner = await server.user();
+  const { workspace } = await owner.rpc('ensure_personal_workspace', { p_name: 'Anton' });
+  const friend = await server.user();
+  const { workspace: friendWs } = await friend.rpc('ensure_personal_workspace', { p_name: 'Ana' });
+  const share = await owner.rpc('create_share', {
+    p_workspace: workspace,
+    p_kind: 'board',
+    p_target: 'b1',
+  });
+  const code = await owner.rpc('create_share_invite', { p_share: share, p_role: 'view' });
+  assert.equal(
+    (await friend.rpc('redeem_share_invite', { p_code: code, p_workspace: friendWs })).role,
+    'view',
+  );
+
+  // A computer that syncs without an account keeps its boards but cannot share or join.
+  const { computer, workspace: anonWs } = await anonymousLibrary(server);
+  await assert.rejects(
+    computer.rpc('create_share', { p_workspace: anonWs, p_kind: 'board', p_target: 'b1' }),
+    /Sign in to share/,
+  );
+  const old = await legacyShare(server, computer, anonWs, 'b1', friendWs, 'view');
+  await assert.rejects(
+    computer.rpc('create_share_invite', { p_share: old, p_role: 'edit' }),
+    /Sign in to share/,
+  );
+  const another = await owner.rpc('create_share_invite', { p_share: share, p_role: 'edit' });
+  await assert.rejects(
+    computer.rpc('redeem_share_invite', { p_code: another, p_workspace: anonWs }),
+    /Sign in to open/,
+  );
 });

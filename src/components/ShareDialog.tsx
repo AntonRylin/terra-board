@@ -206,6 +206,10 @@ export function ShareDialog({
     );
   }
 
+  // Sharing needs an account; a computer that syncs without one can still leave shares.
+  if (status.account.state !== 'signedIn')
+    return <SignInFirst onSignIn={onSignIn} onClose={onClose} what="share" />;
+
   if (removing)
     return (
       <>
@@ -402,7 +406,7 @@ function SignInFirst({
     <>
       <p className="quiet">
         {what === 'share'
-          ? 'Sign in to share. Only what you share is uploaded; your other boards stay on this computer.'
+          ? 'Sharing needs an account. Sign in to share; only what you share is uploaded, and your other boards stay on this computer.'
           : 'Sign in to open boards people share with you.'}
       </p>
       <div className="dialog-actions">
@@ -444,7 +448,7 @@ export function JoinDialog({
   const needsName = invite && !status?.identity && !status?.account.name;
   if (!cloud || !status?.configured)
     return <p className="quiet">Joining works in the desktop app with sync available.</p>;
-  if (!status.identity && status.account.state === 'signedOut')
+  if (status.account.state !== 'signedIn')
     return <SignInFirst onSignIn={onSignIn} onClose={onClose} what="join" />;
   return (
     <form

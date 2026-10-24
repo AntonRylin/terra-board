@@ -79,6 +79,7 @@ export function CloudSettings({
     );
   const identity = status.identity;
   const signedOut = status.account.state === 'signedOut';
+  const signedIn = status.account.state === 'signedIn';
 
   // Sync needs a sign-in; a 0.1.28 computer (anonymous) keeps syncing without one.
   if (!status.configured || (signedOut && !identity))
@@ -108,7 +109,7 @@ export function CloudSettings({
     (kind === 'folder'
       ? library?.folders.find((f) => f.id === id)?.name
       : library?.boards.find((b) => b.id === id)?.name) || 'Removed item';
-  const join = (
+  const join = signedIn ? (
     <Row id="cloudJoin">
       <span className="cloud-join">
         <input
@@ -132,6 +133,15 @@ export function CloudSettings({
           Join
         </button>
       </span>
+    </Row>
+  ) : (
+    <Row
+      id="cloudJoin"
+      description="Sign in to open boards people share with you. Sharing needs an account."
+    >
+      <button type="button" className="st-button" onClick={onSignIn}>
+        Sign in…
+      </button>
     </Row>
   );
   const nameRow = (

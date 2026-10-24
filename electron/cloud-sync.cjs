@@ -668,6 +668,7 @@ class CloudSync {
     if (typeof code !== 'string' || code.length > 40) throw Error('Enter the code you were given');
     const clean = code.replace(/[^0-9A-Za-z]/g, '').toUpperCase();
     if (clean.startsWith('S')) {
+      await this.requireAccount('Sign in to open boards people share with you.');
       await this.identify(name || this.status.name);
       const { error } = await this.client.rpc('redeem_share_invite', {
         p_code: clean,
@@ -1123,8 +1124,15 @@ class CloudSync {
   }
 
   // Share a folder or board (if not yet) and create a one-time invite code.
+  // Sharing and joining need an account (migration 20261024130000 enforces it too).
+  async requireAccount(message) {
+    this.requireClient();
+    if ((await this.auth.account()).state !== 'signedIn') throw Error(message);
+  }
+
   async invite(kind, targetId, role, name) {
     if (!['folder', 'board'].includes(kind)) throw Error('Choose a folder or a board');
+    await this.requireAccount('Sign in to share boards.');
     await this.identify(name || this.status.name);
     let share = this.shareFor(kind, targetId);
     if (!share) {

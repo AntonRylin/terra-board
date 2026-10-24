@@ -1,171 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ChevronRight, Laptop, Mail, Monitor, RefreshCw, Smartphone } from 'lucide-react';
+import { LogOut, Mail, RefreshCw } from 'lucide-react';
 import type { CloudDevice, CloudStatus, SignInProvider } from '../../bridge';
 import type { Library } from '../../model';
-import { relativeTime } from '../board-info-text';
 import { Group, Notice, Row, errorText, useNotice } from './controls';
 import { ServerSettings } from './ServerSettings';
 import { unsentText } from './server-text';
-import { countPlaces, placeBoards, plural, type PlacedBoard } from './board-places';
-
-const platformName: Record<string, string> = {
-  win32: 'Windows',
-  darwin: 'Mac',
-  linux: 'Linux',
-  android: 'Android',
-  ios: 'iPhone',
-};
-
-const dateText = (iso: string) =>
-  new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
-
-function DeviceIcon({ platform }: { platform: string | null }) {
-  if (platform === 'android' || platform === 'ios') return <Smartphone size={18} />;
-  if (platform === 'darwin') return <Laptop size={18} />;
-  return <Monitor size={18} />;
-}
-
-// Every device signed in to the account: what it is, where and when it signed in, and a
-// way to sign out the ones that shouldn't be there.
-function DeviceList({
-  devices,
-  busy,
-  onRetry,
-  onSignOut,
-}: {
-  devices: CloudDevice[];
-  busy: boolean;
-  onRetry: () => void;
-  onSignOut: (device: CloudDevice) => Promise<void>;
-}) {
-  const [confirm, setConfirm] = useState<string | null>(null);
-  const names = new Map<string, number>();
-  for (const d of devices) names.set(d.name, (names.get(d.name) || 0) + 1);
-  const repeated = [...names.values()].some((n) => n > 1);
-  return (
-    <Group title={devices.length ? `Your devices (${devices.length})` : 'Your devices'}>
-      {devices.length ? (
-        devices.map((d) => {
-          const kind = [
-            d.platform ? platformName[d.platform] || d.platform : null,
-            d.version ? `Terra Board ${d.version}` : null,
-          ].filter(Boolean);
-          const where = [d.location, d.ip].filter(Boolean);
-          const when = [
-            d.signedInAt ? `Signed in ${dateText(d.signedInAt)}` : null,
-            d.current ? 'Active now' : `Last active ${relativeTime(Date.parse(d.lastSeen))}`,
-          ].filter(Boolean);
-          return (
-            <Row
-              key={d.id}
-              title={
-                <span className="device-title">
-                  <span className="device-icon">
-                    <DeviceIcon platform={d.platform} />
-                  </span>
-                  {d.name}
-                  {d.current && <span className="cloud-tag">This device</span>}
-                </span>
-              }
-              description={
-                <>
-                  {kind.length > 0 && <span className="device-line">{kind.join(' · ')}</span>}
-                  <span className="device-line">
-                    {where.length ? where.join(' · ') : 'Location unknown'}
-                  </span>
-                  <span className="device-line">{when.join(' · ')}</span>
-                </>
-              }
-              below={
-                <>
-                  {d.problem && (
-                    <p className="st-row-problem">
-                      This device is not on your account: {d.problem}
-                    </p>
-                  )}
-                  {confirm === d.id && (
-                    <div className="server-panel">
-                      <p className="server-note">
-                        Sign out {d.name}? It stops syncing right away and has to sign in again to
-                        reach your cloud boards. Its own boards stay on it.
-                      </p>
-                      <div className="server-actions">
-                        <button
-                          type="button"
-                          className="st-button danger"
-                          disabled={busy}
-                          onClick={() => void onSignOut(d).then(() => setConfirm(null))}
-                        >
-                          Sign out {d.name}
-                        </button>
-                        <button
-                          type="button"
-                          className="st-button"
-                          disabled={busy}
-                          onClick={() => setConfirm(null)}
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </>
-              }
-            >
-              {d.problem ? (
-                <button type="button" className="st-button" disabled={busy} onClick={onRetry}>
-                  Try again
-                </button>
-              ) : (
-                !d.current &&
-                confirm !== d.id && (
-                  <button
-                    type="button"
-                    className="st-button"
-                    disabled={busy}
-                    onClick={() => setConfirm(d.id)}
-                  >
-                    Sign out
-                  </button>
-                )
-              )}
-            </Row>
-          );
-        })
-      ) : (
-        <Row id="accountDevices" />
-      )}
-      {repeated && (
-        <p className="st-hint device-hint">
-          A device is listed again each time the app is reinstalled on it. Sign out the entries that
-          are no longer active.
-        </p>
-      )}
-    </Group>
-  );
-}
-
-// How many boards are only here, in the cloud and shared, with a way to the full list.
-function BoardSummary({ boards, onOpen }: { boards: PlacedBoard[]; onOpen?: () => void }) {
-  const counts = countPlaces(boards);
-  const parts = [
-    `${plural(counts.local, 'board')} only on this computer`,
-    `${counts.cloud} in the cloud${counts.shared ? ` (${counts.shared} shared by you)` : ''}`,
-    `${counts.received} shared with you`,
-  ];
-  return (
-    <Group title="Your boards">
-      <Row title={parts[0]} description={parts.slice(1).join(' · ')}>
-        {onOpen && (
-          <button type="button" className="st-button" onClick={onOpen}>
-            See all boards
-            <ChevronRight size={14} />
-          </button>
-        )}
-      </Row>
-    </Group>
-  );
-}
+import { placeBoards, type PlaceGroup } from './board-places';
+import { BoardSummary, DeviceList } from './AccountLists';
+import { Avatar } from './list';
 
 type Act = (job: () => Promise<unknown>, done?: string) => Promise<void>;
 
@@ -414,7 +256,7 @@ export function AccountSettings({
 }: {
   connectAddress?: string;
   library?: Library;
-  onOpenBoards?: () => void;
+  onOpenBoards?: (filter: PlaceGroup) => void;
 }) {
   const bridge = window.canvas?.cloud;
   const [status, setStatus] = useState<CloudStatus | null>(null);
@@ -602,25 +444,29 @@ export function AccountSettings({
   return (
     <>
       <Group>
-        <Row
-          id="accountSignedIn"
-          title={account.name || account.email || 'Signed in'}
-          description={[account.name ? account.email : null, otherServer]
-            .filter(Boolean)
-            .join(' · ')}
-          below={signOutPanel}
-        >
-          {confirm !== 'signOut' && (
-            <button
-              type="button"
-              className="st-button"
-              disabled={busy}
-              onClick={() => setConfirm('signOut')}
-            >
-              Sign out
-            </button>
-          )}
-        </Row>
+        <div className="st-row st-profile" id="setting-accountSignedIn">
+          <div className="st-row-main">
+            <Avatar name={account.name || account.email || '?'} size={48} />
+            <div className="st-row-text st-profile-text">
+              <div className="st-profile-name">{account.name || account.email || 'Signed in'}</div>
+              <p className="st-profile-email">
+                {[account.name ? account.email : null, otherServer].filter(Boolean).join(', ')}
+              </p>
+            </div>
+            {confirm !== 'signOut' && (
+              <button
+                type="button"
+                className="st-button"
+                disabled={busy}
+                onClick={() => setConfirm('signOut')}
+              >
+                <LogOut size={14} />
+                Sign out
+              </button>
+            )}
+          </div>
+          {signOutPanel}
+        </div>
       </Group>
 
       {boards && <BoardSummary boards={boards} onOpen={onOpenBoards} />}
