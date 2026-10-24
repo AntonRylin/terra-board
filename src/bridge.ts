@@ -337,6 +337,15 @@ interface DesktopBridge {
   browserSnapshot(args: { url: string; width: number; height: number }): Promise<string>;
   // Captures a running browser frame by its <webview>'s WebContents ID.
   browserCapture(id: number): Promise<string>;
+  // Drops board assets into a running browser frame's page at a CSS point.
+  browserDrop?(args: {
+    id: number;
+    x: number;
+    y: number;
+    items: { assetId: string; name?: string }[];
+  }): Promise<void>;
+  // A file a browser frame downloaded into Downloads.
+  onBrowserDownload?(callback: (file: { path: string; name: string }) => void): () => void;
   dataDirectory(): Promise<string>;
   appInfo(): Promise<AppInfo>;
   setOpenAtLogin(enabled: boolean): Promise<boolean>;

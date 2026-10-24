@@ -230,3 +230,45 @@
   border-color: #344255;
   color: #dbe4ef;
 }
+
+/* Board files dragged over a running browser frame drop into its page. */
+.board-browser-live[data-board-drop] {
+  outline: 3px solid rgb(68 134 217 / 0.6);
+  outline-offset: 2px;
+}
+/* Files browser frames saved to Downloads, with a way onto the board. */
+.board-downloads {
+  position: absolute;
+  left: 50%;
+  bottom: 84px;
+  transform: translateX(-50%);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  pointer-events: none;
+}
+.board-download {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px 8px 14px;
+  border-radius: 12px;
+  background: var(--panel, #fff);
+  color: var(--text, #29313b);
+  box-shadow: 0 8px 28px rgb(20 30 45 / 0.18);
+  font-size: 13px;
+  pointer-events: auto;
+  max-width: min(640px, calc(100vw - 32px));
+}
+.board-download > span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.board-browser-live[data-board-dragging] webview {
+  pointer-events: none;
+}

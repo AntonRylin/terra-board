@@ -14,6 +14,7 @@ import {
   Globe,
   FolderOpen,
   Monitor,
+  MessageCircle,
   MousePointer2,
   MoveUpRight,
   Settings2,
@@ -95,6 +96,7 @@ const toolInfo: Record<ToolbarId, { label: string; icon: LucideIcon }> = {
   browser: { label: 'Browser', icon: Globe },
   folder: { label: 'Folder', icon: FolderOpen },
   desktops: { label: 'Desktops', icon: Monitor },
+  telegram: { label: 'Telegram', icon: MessageCircle },
   media: { label: 'Files', icon: ImagePlus },
   gallery: { label: 'Gallery', icon: Images },
 };

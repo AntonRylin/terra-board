@@ -1,6 +1,7 @@
 // Folder frames and file tiles (type 'file'): folders on this computer shown
 // live on the board, with the Windows actions done to them from here. The
 // board stores only which folder to show and how; see src/canvas/file-link.ts.
+import { TelegramCard } from './telegram/TelegramCard';
 import {
   useCallback,
   useEffect,
@@ -1672,6 +1673,9 @@ export default function CanvasFiles({
   update,
   addToBoard,
   addApp,
+  addText,
+  openLink,
+  telegramToWeb,
   onError,
 }: {
   view: FilesView;
@@ -1684,6 +1688,9 @@ export default function CanvasFiles({
   update: (o: CanvasObject) => void;
   addToBoard: (items: FileBoardItem[], asIcons: boolean, from: CanvasObject) => void;
   addApp: (w: DesktopWindow, from: CanvasObject) => void;
+  addText: (text: string, from: CanvasObject) => void;
+  openLink: (url: string) => void;
+  telegramToWeb: (o: CanvasObject) => void;
   onError: (message: string) => void;
 }) {
   const overlay = useRef<HTMLDivElement>(null);
@@ -1734,6 +1741,31 @@ export default function CanvasFiles({
               readOnly ? undefined : addToBoard([{ path: exe, name, folder: false }], true, o)
             }
             addAppFrame={(w) => (readOnly ? undefined : addApp(w, o))}
+          />
+        ) : o.file?.kind === 'telegram' ? (
+          <TelegramCard
+            key={o.id}
+            object={o}
+            camera={view.camera}
+            active={selected.includes(o.id)}
+            host={host}
+            select={select}
+            forward={shared.forward}
+            actions={{
+              onError,
+              openMenu: setMenu,
+              addFiles: (items) =>
+                readOnly
+                  ? undefined
+                  : addToBoard(
+                      items.map((item) => ({ ...item, folder: false })),
+                      false,
+                      o,
+                    ),
+              addText: (text) => (readOnly ? undefined : addText(text, o)),
+              openLink,
+              useWeb: readOnly ? undefined : () => telegramToWeb(o),
+            }}
           />
         ) : o.file?.kind === 'app' ? (
           <AppFrame

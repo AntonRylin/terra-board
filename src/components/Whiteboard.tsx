@@ -12,9 +12,19 @@ import CanvasFiles, {
   type FilesView,
 } from './CanvasFiles';
 import { requestAppUse } from './CanvasApps';
+import {
+  dropOnTelegram,
+  markTelegramDrop,
+  telegramDropAt,
+  telegramFileType,
+  type TelegramDragFile,
+} from './telegram/telegram-drop';
+import { telegramBridge } from './telegram/telegram-store';
+const telegramWeb = 'https://web.telegram.org/a/';
 import { bindAppWindow, releaseAllAppFrames, releaseAppFrames } from './desktop-windows';
 import {
   appFrameSize,
+  telegramSize,
   appLabelHeight,
   desktopsSize,
   fileTileSize,
@@ -145,6 +155,7 @@ import {
   Globe,
   FolderOpen,
   Monitor,
+  MessageCircle,
   MousePointerClick,
   Images,
   ArrowRight,
@@ -1550,6 +1561,175 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     e.setSelection([o.id]);
     selectTool('select');
   };
+  // A Telegram frame: Terra's own Telegram client (src/components/telegram).
+  // The board keeps only the frame; the account and chats stay on this PC.
+  const createTelegram = (point?: { x: number; y: number }) => {
+    finishEdit();
+    const e = engine.current;
+    if (!e || readOnlyRef.current) return;
+    const p = e.center();
+    const { width, height } = telegramSize;
+    const o: CanvasObject = {
+      id: uid(),
+      type: 'file',
+      text: 'Telegram',
+      file: { path: '', kind: 'telegram' },
+      x: point?.x ?? p.x - width / 2,
+      y: point?.y ?? p.y - height / 2,
+      width,
+      height,
+      z: e.topZ() + 1,
+    };
+    e.apply({ upserts: [o], deleted: [] });
+    e.setSelection([o.id]);
+    selectTool('select');
+  };
+  // Text from elsewhere (a Telegram message) as a text object at a point.
+  const addTextAt = (text: string, point: { x: number; y: number }) => {
+    const e = engine.current;
+    if (!e || readOnlyRef.current || !text.trim()) return;
+    const value = text.slice(0, 100000);
+    const url = pastedUrl(value.trim());
+    const o: CanvasObject = {
+      id: uid(),
+      type: url ? 'link' : 'text',
+      x: point.x,
+      y: point.y,
+      width: url ? 440 : 360,
+      height: url
+        ? compactLinkHeight
+        : Math.min(1500, Math.max(80, value.split('\n').length * 30)),
+      z: e.topZ() + 1,
+      text: url ? new URL(url).hostname : value,
+      color: url ? '#ffffff' : '#29313b',
+      fontSize: url ? 22 : lastTextSize.current!,
+      ...(url ? { url } : {}),
+    };
+    e.apply({ upserts: [o], deleted: [] });
+    e.setSelection([o.id]);
+    if (url) enrichLink(o, e);
+  };
+  // Telegram files dragged onto the board before they were downloaded.
+  const dropTelegramFile = async (drag: TelegramDragFile, point: { x: number; y: number }) => {
+    const telegram = telegramBridge(),
+      files = window.canvas?.files;
+    if (!telegram || !files || readOnlyRef.current) return;
+    try {
+      const path = await telegram.download(drag.fileId);
+      await performImport(
+        async () => {
+          const result = await files.import({ paths: [path] });
+          if (result.errors.length) error(result.errors.join('\n'));
+          return result.assets;
+        },
+        point,
+        null,
+      );
+    } catch (e) {
+      error(e);
+    }
+  };
+  const telegramDropAtWorld = (point: { x: number; y: number }) => {
+    const e = engine.current,
+      surface = host.current;
+    if (!e || !surface || !telegramBridge()) return null;
+    const r = surface.getBoundingClientRect(),
+      c = e.camera;
+    return telegramDropAt(r.left + point.x * c.zoom + c.x, r.top + point.y * c.zoom + c.y);
+  };
+  // Where a board point falls in the running browser frame's page, in the
+  // page's own pixels, for dropping board files into it (Telegram Web…).
+  const liveBrowserDropAt = (point: { x: number; y: number }) => {
+    const e = engine.current,
+      surface = host.current,
+      live = liveBrowserState.current,
+      page = liveBrowserRef.current?.querySelector<HTMLElement>('.browser-frame-page');
+    if (!e || !surface || !page || !live || live.closing || !window.canvas?.browserDrop) return null;
+    const r = surface.getBoundingClientRect(),
+      c = e.camera;
+    const x = r.left + point.x * c.zoom + c.x,
+      y = r.top + point.y * c.zoom + c.y;
+    const p = page.getBoundingClientRect();
+    if (x < p.left || y < p.top || x > p.right || y > p.bottom) return null;
+    return { x: (x - p.left) / c.zoom, y: (y - p.top) / c.zoom };
+  };
+  // Whether the main button is down on the board (a press may become a drag).
+  const pointerHeld = useRef(false);
+  useEffect(() => {
+    const down = (event: PointerEvent) => {
+      if (event.button === 0) pointerHeld.current = true;
+    };
+    const up = () => {
+      pointerHeld.current = false;
+    };
+    window.addEventListener('pointerdown', down, true);
+    window.addEventListener('pointerup', up, true);
+    window.addEventListener('pointercancel', up, true);
+    return () => {
+      window.removeEventListener('pointerdown', down, true);
+      window.removeEventListener('pointerup', up, true);
+      window.removeEventListener('pointercancel', up, true);
+    };
+  }, []);
+  const markBrowserDrop = (on: boolean) =>
+    liveBrowserRef.current?.toggleAttribute('data-board-drop', on);
+  // While board objects are dragged, the running page lets the pointer
+  // through, or it would take the drag over once the pointer reached it.
+  const boardDragging = (on: boolean) => {
+    const el = liveBrowserRef.current;
+    if (!el || el.hasAttribute('data-board-dragging') === on) return;
+    el.toggleAttribute('data-board-dragging', on);
+    if (on)
+      window.addEventListener('pointerup', () => boardDragging(false), {
+        once: true,
+        capture: true,
+      });
+  };
+  // Files browser frames download (to Downloads), offered for the board.
+  const [downloads, setDownloads] = useState<{ path: string; name: string }[]>([]);
+  useEffect(
+    () =>
+      window.canvas?.onBrowserDownload?.((file) =>
+        setDownloads((list) => [...list.filter((f) => f.path !== file.path), file].slice(-4)),
+      ),
+    [],
+  );
+  const addDownload = (file: { path: string; name: string }) => {
+    setDownloads((list) => list.filter((f) => f.path !== file.path));
+    const files = window.canvas?.files,
+      e = engine.current;
+    if (!files || !e || readOnlyRef.current) return;
+    const live = liveBrowserState.current && e.objects.get(liveBrowserState.current.id);
+    const point = live ? { x: live.x + live.width + 48, y: live.y } : e.center();
+    void performImport(
+      async () => {
+        const result = await files.import({ paths: [file.path] });
+        if (result.errors.length) error(result.errors.join('\n'));
+        return result.assets;
+      },
+      point,
+      null,
+    );
+  };
+  // A Telegram frame becomes a browser frame showing Telegram Web: nothing to
+  // install, signed in in the browser frames' session.
+  const telegramToWeb = (o: CanvasObject) => {
+    const e = engine.current;
+    if (!e || readOnlyRef.current) return;
+    const web: CanvasObject = {
+      id: uid(),
+      type: 'browser',
+      url: telegramWeb,
+      text: 'Telegram Web',
+      x: o.x,
+      y: o.y,
+      width: o.width,
+      height: o.height,
+      z: o.z,
+    };
+    e.apply({ upserts: [web], deleted: [o.id] });
+    void openBrowser(web);
+  };
   // Dropped or chosen items as board objects: folders as folder frames,
   // anything else (or everything, as icons) as file tiles, left to right.
   const addFileObjects = (
@@ -2376,8 +2556,20 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             ? folderDropAtWorld(point)
             : null;
         markFolderDrop(folder?.id ?? null);
+        // ...and over a Telegram frame's open chat, they wait there to be sent.
+        const chat =
+          !folder && point && objects.length && objects.every(savableToFolder)
+            ? telegramDropAtWorld(point)
+            : null;
+        markTelegramDrop(chat);
+        if (objects.length) boardDragging(true);
+        const page =
+          !folder && !chat && point && objects.length && objects.every(savableToFolder)
+            ? liveBrowserDropAt(point)
+            : null;
+        markBrowserDrop(!!page);
         const target =
-          !folder && point && objects.length && objects.every(isPdfComposerInput)
+          !folder && !chat && !page && point && objects.length && objects.every(isPdfComposerInput)
             ? pdfComposerTargetAt(e.all, point, new Set(objects.map((o) => o.id)))
             : null;
         setPdfDropTarget((previous) => (previous?.id === target?.id ? previous : target));
@@ -2385,6 +2577,50 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       live: (objects) => liveSender.current?.moving(objects),
       objectDrop: (objects, point) => {
         markFolderDrop(null);
+        markTelegramDrop(null);
+        const chat =
+          !external.current && objects.length && objects.every(savableToFolder)
+            ? telegramDropAtWorld(point)
+            : null;
+        if (chat) {
+          dropOnTelegram(
+            chat,
+            objects.map((o) => ({
+              assetId: o.assetId!,
+              name: (o.type === 'image' ? o.imageTitle : o.text) || undefined,
+            })),
+          );
+          return true;
+        }
+        markBrowserDrop(false);
+        boardDragging(false);
+        const page =
+          !external.current && objects.length && objects.every(savableToFolder)
+            ? liveBrowserDropAt(point)
+            : null;
+        if (page) {
+          let id = 0;
+          try {
+            id = browserView.current?.getWebContentsId() || 0;
+          } catch {
+            /* Still attaching. */
+          }
+          // The page has the files now: it stays running, selected.
+          const live = liveBrowserState.current;
+          if (live) e.setSelection([live.id]);
+          if (id)
+            void window
+              .canvas!.browserDrop!({
+                id,
+                ...page,
+                items: objects.map((o) => ({
+                  assetId: o.assetId!,
+                  name: (o.type === 'image' ? o.imageTitle : o.text) || undefined,
+                })),
+              })
+              .catch(error);
+          return true;
+        }
         const folder =
           !external.current && objects.length && objects.every(savableToFolder)
             ? folderDropAtWorld(point)
@@ -2501,8 +2737,22 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         // A hover embed gives way once selected, so it can be moved.
         if (objects.some((o) => o.id === hoverShownId.current)) showHover(null);
         const browser = liveBrowserState.current;
-        if (browser && !browser.closing && !(objects.length === 1 && objects[0].id === browser.id))
-          void endBrowser();
+        if (browser && !browser.closing && !(objects.length === 1 && objects[0].id === browser.id)) {
+          // Pressing another object may start dragging it into the page: the
+          // frame keeps running until the button is up and the drop is done.
+          if (pointerHeld.current)
+            window.addEventListener(
+              'pointerup',
+              () =>
+                setTimeout(() => {
+                  const b = liveBrowserState.current,
+                    chosen = engine.current?.selection;
+                  if (b && !b.closing && !(chosen?.size === 1 && chosen.has(b.id))) void endBrowser();
+                }, 0),
+              { once: true, capture: true },
+            );
+          else void endBrowser();
+        }
         const id = readingDocumentId.current,
           session = readingDocumentSession.current;
         if (id && !objects.some((o) => o.id === id)) {
@@ -3358,9 +3608,22 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     if (readOnlyRef.current) return;
     setPdfDropTarget(null);
     const files = [...e.dataTransfer.files];
-    if (!files.length) return;
     const r = host.current!.getBoundingClientRect(),
       point = engine.current!.screenPoint({ x: e.clientX - r.left, y: e.clientY - r.top });
+    if (!files.length) {
+      const telegramFile = e.dataTransfer.getData(telegramFileType);
+      if (telegramFile) {
+        try {
+          await dropTelegramFile(JSON.parse(telegramFile) as TelegramDragFile, point);
+        } catch {
+          /* Not a Telegram file. */
+        }
+        return;
+      }
+      const text = e.dataTransfer.getData('text/plain');
+      if (text) addTextAt(text, point);
+      return;
+    }
     const album = engine.current!.albumAt(point);
     if (album) {
       await addImagesToAlbum(album, files);
@@ -3482,6 +3745,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     ...(selected.length === 1 &&
     selected[0].type === 'file' &&
     selected[0].file?.kind !== 'desktops' &&
+    selected[0].file?.kind !== 'telegram' &&
     window.canvas?.files
       ? [
           ...(selected[0].file?.kind === 'file'
@@ -3954,6 +4218,17 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         className={'canvas-surface tool-' + tool}
         style={doc.board.backgroundAssetId ? { backgroundImage: 'none' } : undefined}
         onDragOver={(e) => {
+          // Files and text dragged out of a Telegram frame land on the board too.
+          if (
+            !readOnly &&
+            !e.dataTransfer.types.includes('Files') &&
+            (e.dataTransfer.types.includes(telegramFileType) ||
+              e.dataTransfer.types.includes('text/plain'))
+          ) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'copy';
+            return;
+          }
           if (e.dataTransfer.types.includes('Files')) {
             e.preventDefault();
             const r = e.currentTarget.getBoundingClientRect();
@@ -4116,8 +4391,40 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         }}
         addToBoard={(items, asIcons, from) => void addFromFolder(items, asIcons, from)}
         addApp={(w, from) => void addAppFrame(w, from)}
+        addText={(text, from) => addTextAt(text, { x: from.x + from.width + 48, y: from.y })}
+        openLink={(url) => void openLink(url).catch(error)}
+        telegramToWeb={telegramToWeb}
         onError={onError}
       />
+      {downloads.length > 0 && (
+        <div className="board-downloads" role="status">
+          {downloads.map((file) => (
+            <div key={file.path} className="board-download">
+              <span>
+                <strong>{file.name}</strong> saved to Downloads
+              </span>
+              {!readOnly && (
+                <button className="button primary" onClick={() => addDownload(file)}>
+                  Add to board
+                </button>
+              )}
+              <button
+                className="button"
+                onClick={() => void window.canvas?.files?.reveal({ path: file.path }).catch(error)}
+              >
+                Show
+              </button>
+              <button
+                className="icon-button"
+                aria-label="Dismiss"
+                onClick={() => setDownloads((list) => list.filter((f) => f.path !== file.path))}
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
       {pinning && (
         <PinnedViews
           boardId={doc.board.id}
@@ -5140,6 +5447,16 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
                   },
                 ]
               : []),
+            ...(window.canvas?.files
+              ? [
+                  {
+                    id: 'telegram' as const,
+                    label: 'Telegram',
+                    icon: MessageCircle,
+                    action: () => createTelegram(),
+                  },
+                ]
+              : []),
             { id: 'media', label: 'Files', icon: ImagePlus, action: importMedia },
             { id: 'gallery', label: 'Gallery', icon: Images, action: createGallery },
           ]}
@@ -5158,6 +5475,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             else if (id === 'browser') createBrowser(anchor);
             else if (id === 'folder') createFolder(anchor);
             else if (id === 'desktops') createDesktops(anchor);
+            else if (id === 'telegram') createTelegram(anchor);
             else if (id === 'gallery') createGallery(anchor);
             else if (id === 'media') void performImport(pickMedia, anchor);
             else if (id === 'select' || id === 'hand' || id === 'highlight' || id === 'pen')
@@ -5201,6 +5519,16 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
                     label: 'Add desktops',
                     icon: Monitor,
                     action: () => createDesktops(),
+                  },
+                ]
+              : []),
+            ...(window.canvas?.files
+              ? [
+                  {
+                    id: 'telegram' as const,
+                    label: 'Add Telegram',
+                    icon: MessageCircle,
+                    action: () => createTelegram(),
                   },
                 ]
               : []),

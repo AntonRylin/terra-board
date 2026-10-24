@@ -65,6 +65,25 @@ contextBridge.exposeInMainWorld('canvas', {
       return () => ipcRenderer.removeListener('canvas:files-changed', handler);
     },
   },
+  // Telegram frames (electron/telegram.cjs).
+  telegram: {
+    status: () => ipcRenderer.invoke('canvas:telegram-status'),
+    snapshot: () => ipcRenderer.invoke('canvas:telegram-snapshot'),
+    start: () => ipcRenderer.invoke('canvas:telegram-start'),
+    invoke: (query) => ipcRenderer.invoke('canvas:telegram-invoke', query),
+    stage: (sources) => ipcRenderer.invoke('canvas:telegram-stage', sources),
+    pick: () => ipcRenderer.invoke('canvas:telegram-pick'),
+    download: (id) => ipcRenderer.invoke('canvas:telegram-download', id),
+    setCredentials: (input) => ipcRenderer.invoke('canvas:telegram-credentials', input),
+    logOut: () => ipcRenderer.invoke('canvas:telegram-log-out'),
+    forget: () => ipcRenderer.invoke('canvas:telegram-forget'),
+    drag: (path, icon) => ipcRenderer.send('canvas:telegram-drag', { path, icon }),
+    onUpdate: (callback) => {
+      const handler = (_event, batch) => callback(batch);
+      ipcRenderer.on('canvas:telegram-update', handler);
+      return () => ipcRenderer.removeListener('canvas:telegram-update', handler);
+    },
+  },
   miro: {
     status: () => ipcRenderer.invoke('canvas:miro-status'),
     connect: (token, remember) => ipcRenderer.invoke('canvas:miro-connect', { token, remember }),
@@ -105,6 +124,12 @@ contextBridge.exposeInMainWorld('canvas', {
   htmlSnapshot: (args) => ipcRenderer.invoke('canvas:html-snapshot', args),
   browserSnapshot: (args) => ipcRenderer.invoke('canvas:browser-snapshot', args),
   browserCapture: (id) => ipcRenderer.invoke('canvas:browser-capture', id),
+  browserDrop: (args) => ipcRenderer.invoke('canvas:browser-drop', args),
+  onBrowserDownload: (callback) => {
+    const handler = (_event, file) => callback(file);
+    ipcRenderer.on('canvas:browser-downloaded', handler);
+    return () => ipcRenderer.removeListener('canvas:browser-downloaded', handler);
+  },
   mcpStatus: () => ipcRenderer.invoke('canvas:mcp-status'),
   mcpUpdate: (patch) => ipcRenderer.invoke('canvas:mcp-update', patch),
   onMcpSync: (callback) => {

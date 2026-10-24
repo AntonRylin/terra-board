@@ -42,7 +42,9 @@ export interface FileLink {
   // open on each (no root, path '').
   // 'app' is an app frame: a running program's window on the board; path is
   // its program file, found running (or started) on each computer.
-  kind: 'folder' | 'file' | 'desktops' | 'app';
+  // 'telegram' is a Telegram frame: Terra's own Telegram client (no root,
+  // path ''); the account and chats stay on each computer, never in the board.
+  kind: 'folder' | 'file' | 'desktops' | 'app' | 'telegram';
   view?: FileView;
   iconSize?: FileIconSize;
   sort?: FileSort;
@@ -63,8 +65,8 @@ export function fileLinkValue(input: unknown): FileLink {
     throw Error('Invalid file link folder');
   if (typeof path !== 'string' || path.length > 4096 || /[\x00-\x1f]/.test(path))
     throw Error('Invalid file link path');
-  if (kind === 'desktops') {
-    if (root !== undefined || path !== '') throw Error('Invalid desktops frame');
+  if (kind === 'desktops' || kind === 'telegram') {
+    if (root !== undefined || path !== '') throw Error(`Invalid ${kind} frame`);
     return { path: '', kind };
   }
   if (root !== undefined) {
@@ -262,6 +264,7 @@ export const folderSize = { width: 760, height: 500 };
 export const fileTileSize = { width: 112, height: 132 };
 export const desktopsSize = { width: 960, height: 460 };
 export const appFrameSize = { width: 800, height: 600 };
+export const telegramSize = { width: 940, height: 660 };
 // App frames: a strip for the app's icon and name above the app itself.
 export const appLabelHeight = 32;
 export const folderMinimum = { width: 240, height: 160 };
@@ -272,6 +275,7 @@ export const isFolderObject = (o: CanvasObject) => o.type === 'file' && o.file?.
 export function fileLinkLabel(link: FileLink, fallback?: string) {
   if (fallback) return fallback;
   if (link.kind === 'desktops') return 'Desktops';
+  if (link.kind === 'telegram') return 'Telegram';
   const parts = link.path.split(/[\\/]+/).filter(Boolean);
   if (link.root && !parts.length) return fileRootLabels[link.root];
   return parts[parts.length - 1] || link.path;
@@ -369,7 +373,11 @@ export function drawFilePlaceholder(o: CanvasObject, resolution: number, dark: b
     ctx.textBaseline = 'middle';
     ctx.fillText(name, 52, folderHeader / 2, Math.max(10, o.width - 70));
     const glyph =
-      o.file?.kind === 'desktops' || o.file?.kind === 'app' ? drawScreensGlyph : drawFolderGlyph;
+      o.file?.kind === 'telegram'
+        ? drawChatGlyph
+        : o.file?.kind === 'desktops' || o.file?.kind === 'app'
+          ? drawScreensGlyph
+          : drawFolderGlyph;
     glyph(ctx, 16, folderHeader / 2 - 11, 26);
     const size = Math.min(o.width, o.height - folderHeader) * 0.32;
     if (size > 24)
@@ -390,6 +398,27 @@ export function drawFilePlaceholder(o: CanvasObject, resolution: number, dark: b
     ctx.fillText(name, o.width / 2, size + 16, o.width - 8);
   }
   return canvas;
+}
+// A speech bubble: a Telegram frame's placeholder (never Telegram's logo).
+function drawChatGlyph(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  size: number,
+  alpha = 1,
+) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = '#3a8fd6';
+  ctx.beginPath();
+  ctx.ellipse(x + size / 2, y + size * 0.45, size / 2, size * 0.4, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(x + size * 0.18, y + size * 0.7);
+  ctx.lineTo(x + size * 0.08, y + size);
+  ctx.lineTo(x + size * 0.42, y + size * 0.82);
+  ctx.fill();
+  ctx.restore();
 }
 function drawFolderGlyph(
   ctx: CanvasRenderingContext2D,

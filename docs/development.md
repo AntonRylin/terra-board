@@ -38,13 +38,16 @@ See [verification notes](verification.md) for evidence and open release gates, a
 
 ## Extensions
 
-Background removal (the u2net model and onnxruntime), Song links (yt-dlp) and Office files (LibreOffice) are not in the app package. People install them from Settings → Extensions (`electron/extensions.cjs`).
+Background removal (the u2net model and onnxruntime), Song links (yt-dlp), Office files (LibreOffice) and the Telegram client (TDLib) are not in the app package. People install them from Settings → Extensions (`electron/extensions.cjs`).
 
 **Building them**
 - `scripts/build-extensions.mjs` runs as part of `npm run package`, `installer` and `release`.
 - It writes the payloads into `release/extensions` and the catalog the app embeds into `electron/generated/extensions.json`. The catalog holds each file's address, size and SHA-256.
 - The onnxruntime zip, with the Visual C++ runtime, comes out the same on every build, so its name changes only when its contents do.
 - The pinned third-party files are listed in `scripts/payloads.mjs`.
+- Telegram: TDLib comes from `prebuilt-tdlib` (a dev dependency pinned in `package.json`, so it never ships in the app). The build zips `tdjson.dll` with its license and the Visual C++ runtime (`libtdjson.so` on Linux) as `tdlib-<version>-<os>-x64-<hash>.zip`, which a release must upload like the onnxruntime zip.
+- A release can carry Terra's own Telegram API ID and hash: set `TERRA_TELEGRAM_API_ID` and `TERRA_TELEGRAM_API_HASH` in the environment of the build. The build writes them to `electron/generated/telegram-app.json` (ignored by Git) and the app uses them when nobody entered their own. Without them, each person enters an API ID in the frame. Either way they are kept out of the repository.
+- `scripts/desktop-telegram.mjs` checks Telegram frames from source (`npm run build` first) with a stand-in for TDLib (`scripts/fixtures/fake-tdlib.cjs`, used only from source with `TERRA_TELEGRAM_FAKE`), and saves screenshots to its scratch folder.
 
 **Where they install**
 - Repository builds, including `npm run dev`, install from `release/extensions` into `release/installed-extensions`. Nothing is downloaded.
@@ -113,7 +116,7 @@ To release a version:
    gh release create v0.1.29 release/installer/Terra-Board-Setup-x64.exe release/installer/Terra-Board-Setup-x64.exe.blockmap release/installer/latest.yml release/extensions/onnxruntime-1.30.0-win32-x64-<hash>.zip --title 0.1.29 --notes-file notes.md
    ```
 
-   `npm run release` with `GH_TOKEN` set publishes the first three through electron-builder. Add the zip afterwards with `gh release upload v<version> release/extensions/onnxruntime-*.zip`. Then run `node scripts/check-extension-downloads.mjs` (`npm run release` runs it last). It fails if any extension file cannot be downloaded.
+   `npm run release` with `GH_TOKEN` set publishes the first three through electron-builder. Add the zips afterwards with `gh release upload v<version> release/extensions/onnxruntime-*.zip release/extensions/tdlib-*.zip`. Then run `node scripts/check-extension-downloads.mjs` (`npm run release` runs it last). It fails if any extension file cannot be downloaded.
 
 Every packaged copy reads `latest.yml` from the newest release a few seconds after launch and every 4 hours. Installed copies download the new installer in the background and show a prompt with the new version: **Restart to update** installs it and reopens the app, closing the prompt leaves it to install when the app quits, and **What's new** opens the release. Builds from source show the same prompt with **Download**, which opens the installer link. A version is only announced once its release has `latest.yml`, so bumping `package.json` alone changes nothing for users.
 

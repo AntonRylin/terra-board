@@ -42,7 +42,16 @@ const { fetchPreview } = require('./link-preview.cjs');
 const { downloadSongLink, YT_DLP } = require('./song-link.cjs');
 const { createOcr, textRecognitionAvailable } = require('./ocr.cjs');
 const { createHtmlCards, embedRequest, fromEmbed } = require('./html-cards.cjs');
-const { browserSession, hardenWebviews, guestOf } = require('./browser-frames.cjs');
+const {
+  browserSession,
+  hardenWebviews,
+  guestOf,
+  privateSite,
+  saveDownloads,
+  dropFiles,
+  stageAssets,
+  sweepDrops,
+} = require('./browser-frames.cjs');
 const { createLocalFiles, registerLocalFiles } = require('./local-files.cjs');
 const { createAppPictures } = require('./app-pictures.cjs');
 const { createShellHelper } = require('./shell-helper.cjs');
@@ -62,12 +71,23 @@ const {
 const { createAppUpdater, installsUpdates } = require('./app-updater.cjs');
 const { collectLicenses } = require('./licenses.cjs');
 const { createExtensions } = require('./extensions.cjs');
+const {
+  createTelegram,
+  registerTelegram,
+  telegramResponse,
+  mimeOf: telegramMime,
+} = require('./telegram.cjs');
 const { createBackgroundRemoval, removeAssetBackground } = require('./background-removal.cjs');
 const { MiroClient, boardIdFrom, importBoard: importMiroBoard } = require('./miro-import.cjs');
 protocol.registerSchemesAsPrivileged([
   { scheme: 'canvas-app', privileges: { standard: true, secure: true, supportFetchAPI: true } },
   // HTML embeds: their own origin, framed with a sandbox (html-cards.cjs).
   { scheme: 'terra-html', privileges: { standard: true, secure: true } },
+  // Telegram frames' downloaded photos, videos and files (telegram.cjs).
+  {
+    scheme: 'terra-telegram',
+    privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
+  },
   {
     scheme: 'canvas-media',
     privileges: {
@@ -255,6 +275,7 @@ let win,
   documentPrint,
   officeConverter,
   extensions,
+  telegram,
   backgroundRemoval,
   worker,
   closed = false,
@@ -481,6 +502,7 @@ app
       systemInstalled: (id) => id === 'office-files' && officeLocation()?.system === true,
       beforeRemove: async (id) => {
         if (id === 'background-removal') await backgroundRemoval.stop();
+        if (id === 'telegram') await telegram?.unload();
       },
       onChange: (list) => {
         licenseList = null;
@@ -550,7 +572,12 @@ app
     );
     if (dictionaries.length) session.defaultSession.setSpellCheckerLanguages(dictionaries);
     // Before any <webview> opens, so frames never run on an unconfigured session.
-    browserSession(session, languages);
+    saveDownloads(browserSession(session, languages), {
+      folder: () => app.getPath('downloads'),
+      onSaved: (file) => {
+        if (win && !win.isDestroyed()) win.webContents.send('canvas:browser-downloaded', file);
+      },
+    });
     const htmlCards = createHtmlCards({
       BrowserWindow,
       session,
@@ -558,6 +585,11 @@ app
       browserSession: () => browserSession(session, languages),
     });
     protocol.handle('terra-html', htmlCards.handle);
+    const telegramFiles = (request) =>
+      telegram
+        ? telegramResponse(telegram, assetResponse, telegramMime)(request)
+        : new Response('Not found', { status: 404 });
+    protocol.handle('terra-telegram', telegramFiles);
     win = new BrowserWindow({
       width: 1380,
       height: 900,
@@ -691,8 +723,8 @@ app
         return;
       }
       const allowed =
-        ['canvas-app:', 'canvas-media:', 'data:', 'blob:', 'devtools:'].some((s) =>
-          details.url.startsWith(s),
+        ['canvas-app:', 'canvas-media:', 'terra-telegram:', 'data:', 'blob:', 'devtools:'].some(
+          (s) => details.url.startsWith(s),
         ) ||
         embedRequest(details) ||
         (details.url.startsWith('https:') && playerHost && details.resourceType !== 'mainFrame') ||
@@ -716,13 +748,30 @@ app
       trusted(e);
       return htmlCards.snapshot(args);
     });
+    // Private sites (Telegram Web) are never pictured: pictures go into boards.
     ipcMain.handle('canvas:browser-snapshot', (e, args) => {
       trusted(e);
+      if (privateSite(args?.url))
+        throw Error('This site is private; Terra keeps no picture of it.');
       return htmlCards.snapshotUrl(args);
     });
     ipcMain.handle('canvas:browser-capture', (e, id) => {
       trusted(e);
-      return htmlCards.captureContents(guestOf(win, webContents, id));
+      const contents = guestOf(win, webContents, id);
+      if (privateSite(contents.getURL()))
+        throw Error('This site is private; Terra keeps no picture of it.');
+      return htmlCards.captureContents(contents);
+    });
+    sweepDrops(path.join(app.getPath('temp'), 'browser-drops'));
+    ipcMain.handle('canvas:browser-drop', async (e, { id, x, y, items } = {}) => {
+      trusted(e);
+      const contents = guestOf(win, webContents, id);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) throw Error('Invalid drop');
+      const files = await stageAssets(items, {
+        readAsset: (args) => call('asset', args),
+        folder: path.join(app.getPath('temp'), 'browser-drops'),
+      });
+      await dropFiles(contents, { files, x: Math.round(x), y: Math.round(y) });
     });
     let previewActive = 0;
     const previewWaiters = [];
@@ -1444,6 +1493,43 @@ app
       win.on(event, reparkSoon);
     win.webContents.on('render-process-gone', () => void localFiles.releaseAll());
     registerLocalFiles({ ipcMain, trusted, files: localFiles });
+    // Telegram frames: Terra's unofficial Telegram client, from the Telegram
+    // extension. Its data stays in <Library>/telegram, never in boards or sync.
+    telegram = createTelegram({
+      dir: path.join(root, 'telegram'),
+      location: () => extensions.path('telegram'),
+      safeStorage,
+      send: (batch) => {
+        if (win && !win.isDestroyed()) win.webContents.send('canvas:telegram-update', batch);
+      },
+      // An API ID and hash built into a release (scripts/build-extensions.mjs);
+      // someone's own, entered in a frame, come first.
+      builtIn: () => {
+        try {
+          return JSON.parse(
+            fs.readFileSync(path.join(__dirname, 'generated', 'telegram-app.json'), 'utf8'),
+          );
+        } catch {
+          return null;
+        }
+      },
+      appVersion: app.getVersion(),
+      language: (app.getPreferredSystemLanguages()[0] || 'en').split('-')[0].toLowerCase(),
+      readAsset: (args) => call('asset', args),
+      // scripts/desktop-telegram.mjs: a stand-in account, only from source.
+      ...(!app.isPackaged &&
+        process.env.TERRA_TELEGRAM_FAKE && {
+          load: () => require(path.resolve(process.env.TERRA_TELEGRAM_FAKE)),
+        }),
+    });
+    registerTelegram({
+      ipcMain,
+      trusted,
+      telegram,
+      dialog,
+      getWindow: () => win,
+      dragIcon: (icon) => localFiles.dragIcon(icon),
+    });
     ipcMain.handle('canvas:open-folder', async (e, which) => {
       trusted(e);
       const folder = { library: root, backups: path.join(root, 'backups') }[which];
@@ -1603,7 +1689,8 @@ app.on('before-quit', (event) => {
     finish();
     return;
   }
-  call('close').finally(() => {
+  // TDLib writes its database out while the board library closes.
+  Promise.allSettled([call('close'), telegram?.stop(2500)]).finally(() => {
     worker.terminate();
     finish();
   });

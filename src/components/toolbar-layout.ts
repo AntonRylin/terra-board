@@ -16,6 +16,7 @@ export const toolbarIds = [
   'browser',
   'folder',
   'desktops',
+  'telegram',
   'media',
   'gallery',
 ] as const;
@@ -39,7 +40,17 @@ export const defaultToolbarLayout = (): ToolbarLayout => ({
     'link',
     'media',
   ],
-  inventory: ['gallery', 'list', 'table', 'paper', 'html', 'browser', 'folder', 'desktops'],
+  inventory: [
+    'gallery',
+    'list',
+    'table',
+    'paper',
+    'html',
+    'browser',
+    'folder',
+    'desktops',
+    'telegram',
+  ],
 });
 
 // The Android app's first layout: five tools, which leave room for + and … in one row on

@@ -97,9 +97,11 @@ export default function CanvasToolbar({
                   ? 'Folder'
                   : id === 'desktops'
                     ? 'Desktops'
-                    : id === 'media'
-                      ? 'Images and video'
-                      : item.label;
+                    : id === 'telegram'
+                      ? 'Telegram'
+                      : id === 'media'
+                        ? 'Images and video'
+                        : item.label;
     const Icon = item.icon;
     return (
       <div

@@ -1,0 +1,542 @@
+// A stand-in for TDLib's JSON interface, for scripts/desktop-telegram.mjs:
+// a signed-in account with a few chats, so the Telegram frame can be checked
+// without a real Telegram account. Electron's main process loads it in place
+// of koffi only when running from source with TERRA_TELEGRAM_FAKE set
+// (electron/main.cjs); packaged apps never do. Pictures come from
+// TERRA_TELEGRAM_FAKE_MEDIA (avatar-<n>.png, photo-<n>.png, brief.pdf).
+const fs = require('node:fs');
+const path = require('node:path');
+
+const source = process.env.TERRA_TELEGRAM_FAKE_MEDIA || '';
+// Copied into TDLib's files folder once the frame sets it, as real downloads are.
+let media = source;
+const now = Math.floor(Date.now() / 1000);
+const queue = [];
+let clientId = 0;
+let auth = 'authorizationStateWaitTdlibParameters';
+let nextMessage = 1000;
+const files = new Map();
+const histories = new Map();
+const sent = [];
+
+const emit = (event) => queue.push(JSON.stringify({ ...event, '@client_id': clientId }));
+const reply = (query, result) => emit({ ...result, '@extra': query['@extra'] });
+const fail = (query, code, message) =>
+  emit({ '@type': 'error', code, message, '@extra': query['@extra'] });
+const setAuth = (type, extra = {}) => {
+  auth = type;
+  emit({ '@type': 'updateAuthorizationState', authorization_state: { '@type': type, ...extra } });
+};
+
+function file(id, name, { downloaded = true, size } = {}) {
+  const local = name ? path.join(media, name) : '';
+  const exists = local && fs.existsSync(local);
+  const f = {
+    '@type': 'file',
+    id,
+    size: size ?? (exists ? fs.statSync(local).size : 48000),
+    expected_size: size ?? (exists ? fs.statSync(local).size : 48000),
+    local: {
+      '@type': 'localFile',
+      path: downloaded && exists ? local : '',
+      can_be_downloaded: true,
+      can_be_deleted: true,
+      is_downloading_active: false,
+      is_downloading_completed: downloaded && !!exists,
+      download_offset: 0,
+      downloaded_prefix_size: 0,
+      downloaded_size: downloaded && exists ? fs.statSync(local).size : 0,
+    },
+    remote: {
+      '@type': 'remoteFile',
+      id: `r${id}`,
+      unique_id: `u${id}`,
+      is_uploading_active: false,
+      is_uploading_completed: true,
+      uploaded_size: 0,
+    },
+    _name: name,
+  };
+  files.set(id, f);
+  return f;
+}
+const pub = (f) => {
+  const { _name, ...rest } = f;
+  return rest;
+};
+
+const me = 100;
+const makeUsers = () =>
+  [
+    { id: me, first_name: 'You', last_name: '' },
+    { id: 101, first_name: 'Maria', last_name: 'Lopez', photo: 1 },
+    { id: 102, first_name: 'Alex', last_name: 'Kim', photo: 2 },
+    { id: 103, first_name: 'Sam', last_name: 'Ortega', photo: 3 },
+    { id: 104, first_name: 'Dana', last_name: 'Wu' },
+  ].map((u) => ({
+    '@type': 'user',
+    id: u.id,
+    first_name: u.first_name,
+    last_name: u.last_name,
+    phone_number: '',
+    status: { '@type': u.id === 101 ? 'userStatusOnline' : 'userStatusRecently' },
+    type: { '@type': 'userTypeRegular' },
+    ...(u.photo && {
+      profile_photo: {
+        '@type': 'profilePhoto',
+        id: String(u.photo),
+        small: pub(file(10 + u.photo, `avatar-${u.photo}.png`)),
+        big: pub(file(20 + u.photo, `avatar-${u.photo}.png`)),
+      },
+    }),
+  }));
+let users = [];
+
+const text = (value, entities = []) => ({ '@type': 'formattedText', text: value, entities });
+const private_ = (userId) => ({ '@type': 'chatTypePrivate', user_id: userId });
+const chats = [
+  {
+    id: 1,
+    title: 'Design team',
+    type: { '@type': 'chatTypeBasicGroup', basic_group_id: 7 },
+    order: '900',
+    photo: 4,
+    unread: 3,
+  },
+  {
+    id: 101,
+    title: 'Maria Lopez',
+    type: private_(101),
+    order: '800',
+    photo: 1,
+    unread: 0,
+    pinned: true,
+  },
+  {
+    id: -1003,
+    title: 'Terra news',
+    type: { '@type': 'chatTypeSupergroup', supergroup_id: 3, is_channel: true },
+    order: '700',
+    photo: 5,
+    unread: 1,
+  },
+  { id: 102, title: 'Alex Kim', type: private_(102), order: '600', photo: 2, unread: 2 },
+  {
+    id: 2,
+    title: 'Family',
+    type: { '@type': 'chatTypeBasicGroup', basic_group_id: 8 },
+    order: '500',
+    unread: 12,
+    muted: true,
+  },
+  { id: 104, title: 'Dana Wu', type: private_(104), order: '400', unread: 0 },
+];
+
+function message(chatId, senderId, minutesAgo, content, extra = {}) {
+  return {
+    '@type': 'message',
+    id: nextMessage++,
+    sender_id:
+      senderId > 0
+        ? { '@type': 'messageSenderUser', user_id: senderId }
+        : { '@type': 'messageSenderChat', chat_id: chatId },
+    chat_id: chatId,
+    is_outgoing: senderId === me,
+    is_pinned: false,
+    is_channel_post: senderId < 0,
+    can_be_deleted_only_for_self: true,
+    can_be_deleted_for_all_users: senderId === me,
+    date: now - minutesAgo * 60,
+    edit_date: 0,
+    content,
+    ...extra,
+  };
+}
+const photo = (id, name, w, h, caption = '') => ({
+  '@type': 'messagePhoto',
+  photo: {
+    '@type': 'photo',
+    has_stickers: false,
+    sizes: [
+      {
+        '@type': 'photoSize',
+        type: 'x',
+        photo: pub(file(id, name)),
+        width: w,
+        height: h,
+        progressive_sizes: [],
+      },
+    ],
+  },
+  caption: text(caption),
+  show_caption_above_media: false,
+  has_spoiler: false,
+  is_secret: false,
+});
+
+function seed() {
+  const add = (m) => {
+    if (!histories.has(m.chat_id)) histories.set(m.chat_id, []);
+    histories.get(m.chat_id).push(m);
+  };
+  add(
+    message(1, 103, 300, {
+      '@type': 'messageText',
+      text: text('Morning! The new board layout is up.'),
+    }),
+  );
+  add(
+    message(1, me, 290, {
+      '@type': 'messageText',
+      text: text('Nice, I’ll pin it to the project board.'),
+    }),
+  );
+  add(message(1, 101, 120, photo(31, 'photo-1.png', 1200, 800, 'Moodboard for the landing page')));
+  add(
+    message(1, 102, 60, {
+      '@type': 'messageDocument',
+      document: {
+        '@type': 'document',
+        file_name: 'Brief.pdf',
+        mime_type: 'application/pdf',
+        document: pub(file(41, 'brief.pdf', { downloaded: false })),
+      },
+      caption: text(''),
+    }),
+  );
+  add(
+    message(1, 103, 12, {
+      '@type': 'messageText',
+      text: text('Details are on https://example.com/brief — comments welcome', [
+        { '@type': 'textEntity', offset: 15, length: 25, type: { '@type': 'textEntityTypeUrl' } },
+      ]),
+    }),
+  );
+  add(
+    message(101, 101, 1500, { '@type': 'messageText', text: text('Are we still on for Friday?') }),
+  );
+  add(message(101, me, 1490, { '@type': 'messageText', text: text('Yes! 3pm works.') }));
+  add(message(101, 101, 30, photo(32, 'photo-2.png', 900, 1200)));
+  add(message(101, 101, 29, { '@type': 'messageText', text: text('Look what I found 😄') }));
+  add(
+    message(
+      -1003,
+      -1,
+      200,
+      photo(
+        33,
+        'photo-3.png',
+        1280,
+        720,
+        'Terra Board 0.1.38 is out: folder frames, desktops and app frames.',
+      ),
+    ),
+  );
+  add(message(102, 102, 8, { '@type': 'messageText', text: text('Can you send me the sketch?') }));
+  add(
+    message(102, 102, 7, {
+      '@type': 'messageVoiceNote',
+      voice_note: {
+        '@type': 'voiceNote',
+        duration: 14,
+        waveform: '',
+        mime_type: 'audio/ogg',
+        voice: pub(file(51, '', { downloaded: false, size: 22000 })),
+      },
+      caption: text(''),
+      is_listened: false,
+    }),
+  );
+  add(message(2, 104, 45, { '@type': 'messageText', text: text('Dinner on Sunday?') }));
+  add(message(104, me, 3000, { '@type': 'messageText', text: text('Thanks for yesterday!') }));
+}
+
+function chatObject(c) {
+  const history = histories.get(c.id) || [];
+  return {
+    '@type': 'chat',
+    id: c.id,
+    type: c.type,
+    title: c.title,
+    ...(c.photo && {
+      photo: {
+        '@type': 'chatPhotoInfo',
+        small: pub(file(60 + c.photo, `avatar-${c.photo}.png`)),
+        big: pub(file(70 + c.photo, `avatar-${c.photo}.png`)),
+        has_animation: false,
+        is_personal: false,
+      },
+    }),
+    last_message: history[history.length - 1],
+    positions: [],
+    unread_count: c.unread,
+    unread_mention_count: 0,
+    last_read_inbox_message_id: c.unread
+      ? (history[history.length - 1 - c.unread]?.id ?? 0)
+      : (history[history.length - 1]?.id ?? 0),
+    last_read_outbox_message_id: history[history.length - 1]?.id ?? 0,
+    is_marked_as_unread: false,
+    notification_settings: {
+      '@type': 'chatNotificationSettings',
+      mute_for: c.muted ? 2147483647 : 0,
+    },
+    permissions: { '@type': 'chatPermissions', can_send_basic_messages: true },
+  };
+}
+
+function ready() {
+  users = makeUsers();
+  emit({
+    '@type': 'updateOption',
+    name: 'my_id',
+    value: { '@type': 'optionValueInteger', value: String(me) },
+  });
+  for (const u of users) emit({ '@type': 'updateUser', user: u });
+  for (const c of chats) emit({ '@type': 'updateNewChat', chat: chatObject(c) });
+  emit({ '@type': 'updateConnectionState', state: { '@type': 'connectionStateReady' } });
+  setAuth('authorizationStateReady');
+}
+
+let chatsLoaded = false;
+function handle(query) {
+  const type = query['@type'];
+  switch (type) {
+    case 'getOption':
+      reply(query, { '@type': 'optionValueString', value: '1.8.67' });
+      if (auth === 'authorizationStateWaitTdlibParameters') setAuth(auth);
+      return;
+    case 'setTdlibParameters':
+      media = path.join(query.files_directory, 'photos');
+      fs.mkdirSync(media, { recursive: true });
+      for (const name of source ? fs.readdirSync(source) : [])
+        fs.copyFileSync(path.join(source, name), path.join(media, name));
+      reply(query, { '@type': 'ok' });
+      seed();
+      setAuth('authorizationStateWaitPhoneNumber');
+      return;
+    case 'requestQrCodeAuthentication':
+      reply(query, { '@type': 'ok' });
+      setAuth('authorizationStateWaitOtherDeviceConfirmation', {
+        link: 'tg://login?token=VGVycmEgQm9hcmQgdGVzdCBsb2dpbiB0b2tlbg',
+      });
+      // "Scanned" a moment later (TERRA_TELEGRAM_FAKE_SCAN ms, default 4 s).
+      setTimeout(ready, Number(process.env.TERRA_TELEGRAM_FAKE_SCAN || 4000));
+      return;
+    case 'setAuthenticationPhoneNumber':
+      reply(query, { '@type': 'ok' });
+      setAuth('authorizationStateWaitCode', {
+        code_info: {
+          '@type': 'authenticationCodeInfo',
+          phone_number: query.phone_number,
+          type: { '@type': 'authenticationCodeTypeTelegramMessage', length: 5 },
+          timeout: 60,
+        },
+      });
+      return;
+    case 'checkAuthenticationCode':
+      reply(query, { '@type': 'ok' });
+      ready();
+      return;
+    case 'loadChats':
+      if (chatsLoaded) return fail(query, 404, 'Not Found');
+      chatsLoaded = true;
+      for (const c of chats)
+        emit({
+          '@type': 'updateChatPosition',
+          chat_id: c.id,
+          position: {
+            '@type': 'chatPosition',
+            list: { '@type': 'chatListMain' },
+            order: c.order,
+            is_pinned: !!c.pinned,
+          },
+        });
+      return reply(query, { '@type': 'ok' });
+    case 'getChatHistory': {
+      const history = histories.get(query.chat_id) || [];
+      const from = query.from_message_id || Infinity;
+      const older = history
+        .filter((m) => m.id < from)
+        .reverse()
+        .slice(0, query.limit || 50);
+      return reply(query, { '@type': 'messages', total_count: older.length, messages: older });
+    }
+    case 'openChat':
+    case 'closeChat':
+    case 'clickChatSponsoredMessage':
+      return reply(query, { '@type': 'ok' });
+    case 'viewMessages': {
+      const chat = chats.find((c) => c.id === query.chat_id);
+      if (chat && chat.unread && !String(query.message_ids?.[0]).startsWith('9')) {
+        chat.unread = 0;
+        const history = histories.get(chat.id) || [];
+        emit({
+          '@type': 'updateChatReadInbox',
+          chat_id: chat.id,
+          last_read_inbox_message_id: history[history.length - 1]?.id || 0,
+          unread_count: 0,
+        });
+      }
+      return reply(query, { '@type': 'ok' });
+    }
+    case 'getChatSponsoredMessages':
+      return reply(query, {
+        '@type': 'sponsoredMessages',
+        messages_between: 0,
+        messages:
+          query.chat_id === -1003
+            ? [
+                {
+                  '@type': 'sponsoredMessage',
+                  message_id: 9001,
+                  is_recommended: false,
+                  can_be_reported: true,
+                  content: {
+                    '@type': 'messageText',
+                    text: text(
+                      'An example of Telegram’s sponsored messages, which clients must show in channels.',
+                    ),
+                  },
+                  sponsor: {
+                    '@type': 'advertisementSponsor',
+                    url: 'https://example.com/',
+                    info: '',
+                  },
+                  title: 'Sponsored example',
+                  button_text: 'Open',
+                  accent_color_id: 0,
+                  background_custom_emoji_id: '0',
+                  additional_info: '',
+                },
+              ]
+            : [],
+      });
+    case 'getSupergroup':
+      return reply(query, {
+        '@type': 'supergroup',
+        id: query.supergroup_id,
+        status: { '@type': 'chatMemberStatusMember' },
+        is_channel: true,
+      });
+    case 'getFile':
+    case 'downloadFile': {
+      const f = files.get(query.file_id);
+      if (!f) return fail(query, 404, 'File not found');
+      if (type === 'downloadFile' && !f.local.is_downloading_completed) {
+        const source = f._name ? path.join(media, f._name) : '';
+        if (source && fs.existsSync(source)) {
+          f.local = {
+            ...f.local,
+            path: source,
+            is_downloading_completed: true,
+            downloaded_size: f.size,
+          };
+          emit({ '@type': 'updateFile', file: pub(f) });
+        }
+      }
+      return reply(query, pub(f));
+    }
+    case 'sendMessage': {
+      const content = query.input_message_content;
+      let shown;
+      if (content['@type'] === 'inputMessageText')
+        shown = { '@type': 'messageText', text: content.text };
+      else {
+        const field = {
+          inputMessagePhoto: 'photo',
+          inputMessageDocument: 'document',
+          inputMessageVideo: 'video',
+        }[content['@type']];
+        const local = content[field][field].path;
+        const id = 500 + sent.length;
+        const upload = () =>
+          files.set(id, {
+            ...file(id, ''),
+            local: {
+              path: local,
+              can_be_downloaded: false,
+              can_be_deleted: true,
+              is_downloading_active: false,
+              is_downloading_completed: true,
+              downloaded_size: fs.statSync(local).size,
+            },
+            size: fs.statSync(local).size,
+            _name: '',
+          });
+        upload();
+        shown =
+          field === 'photo'
+            ? photo(id, '', 800, 600, content.caption?.text || '')
+            : {
+                '@type': 'messageDocument',
+                document: {
+                  '@type': 'document',
+                  file_name: path.basename(local),
+                  mime_type: '',
+                  document: pub(files.get(id)),
+                },
+                caption: content.caption,
+              };
+        upload();
+        if (field === 'photo') shown.photo.sizes[0].photo = pub(files.get(id));
+      }
+      const m = message(query.chat_id, me, 0, shown, {
+        sending_state: { '@type': 'messageSendingStatePending' },
+      });
+      sent.push(query);
+      if (!histories.has(m.chat_id)) histories.set(m.chat_id, []);
+      reply(query, m);
+      emit({ '@type': 'updateNewMessage', message: m });
+      setTimeout(() => {
+        const done = { ...m, id: nextMessage++, sending_state: undefined };
+        histories.get(m.chat_id).push(done);
+        emit({ '@type': 'updateMessageSendSucceeded', message: done, old_message_id: m.id });
+        const chat = chats.find((c) => c.id === m.chat_id);
+        if (chat)
+          emit({
+            '@type': 'updateChatLastMessage',
+            chat_id: chat.id,
+            last_message: done,
+            positions: [
+              {
+                '@type': 'chatPosition',
+                list: { '@type': 'chatListMain' },
+                order: '999',
+                is_pinned: false,
+              },
+            ],
+          });
+      }, 300);
+      return;
+    }
+    case 'logOut':
+    case 'close':
+      if (query['@extra']) reply(query, { '@type': 'ok' });
+      chatsLoaded = false;
+      histories.clear();
+      setAuth('authorizationStateClosed');
+      return;
+    default:
+      return reply(query, { '@type': 'ok' });
+  }
+}
+
+// What electron/telegram.cjs asks of koffi.
+module.exports = {
+  load() {
+    return {
+      func(signature) {
+        if (signature.includes('td_create_client_id')) return () => ++clientId;
+        if (signature.includes('td_execute')) return () => '{"@type":"ok"}';
+        if (signature.includes('td_send')) return (_client, json) => handle(JSON.parse(json));
+        const receive = () => queue.shift() ?? null;
+        receive.async = (_timeout, callback) =>
+          setTimeout(() => callback(null, receive()), queue.length ? 0 : 20);
+        return receive;
+      },
+      unload() {},
+    };
+  },
+  // For the check script: what the frame asked Telegram to send.
+  sent,
+};

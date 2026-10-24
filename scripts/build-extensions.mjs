@@ -111,6 +111,62 @@ function songLinks() {
   };
 }
 
+// Telegram: TDLib, Telegram's client library, from prebuilt-tdlib (a dev
+// dependency, so it never ships inside the app), zipped with its license and,
+// on Windows, the Visual C++ runtime it needs. Named by content like the
+// onnxruntime zip; a release must upload it too.
+function telegram() {
+  let pkg;
+  try {
+    pkg = require.resolve(
+      `@prebuilt-tdlib/${linux ? 'linux-x64-glibc' : 'win32-x64'}/package.json`,
+    );
+  } catch {
+    return missing('prebuilt-tdlib (npm ci)');
+  }
+  const dir = pkg.slice(0, -'package.json'.length);
+  const library = join(dir, linux ? 'libtdjson.so' : 'tdjson.dll');
+  if (!existsSync(library)) return missing(library);
+  const vcRuntime = 'build/vc-runtime';
+  const runtime = ['vcruntime140.dll', 'vcruntime140_1.dll', 'msvcp140.dll'];
+  if (!linux && runtime.some((dll) => !existsSync(join(vcRuntime, dll)))) return missing(vcRuntime);
+  const { tdlib } = JSON.parse(readFileSync(pkg, 'utf8'));
+  const contents = {
+    [linux ? 'libtdjson.so' : 'tdjson.dll']: readFileSync(library),
+    'LICENSE-TDLib.txt': readFileSync('extensions/telegram/LICENSE-TDLib.txt'),
+  };
+  if (!linux) for (const dll of runtime) contents[dll] = readFileSync(join(vcRuntime, dll));
+  const zip = Buffer.from(zipSync(contents, { level: 9, mtime: new Date('2026-01-01T00:00:00Z') }));
+  const name = `tdlib-${tdlib.version}-${linux ? 'linux' : 'win32'}-x64-${sha256(zip).slice(0, 8)}.zip`;
+  for (const old of readdirSync(out).filter((f) => /^tdlib-.*\.zip$/.test(f) && f !== name))
+    rmSync(join(out, old));
+  const file = { ...place(name, zip), url: releaseUrl(name), unzip: true };
+  return {
+    ...manifest('telegram'),
+    version: `TDLib ${tdlib.version}`,
+    files: [file],
+    downloadSize: file.size,
+    installedSize: Object.values(contents).reduce((sum, f) => sum + f.length, 0),
+  };
+}
+
+// A Telegram API ID and hash for the release to carry, from the environment
+// of the machine that builds it (TERRA_TELEGRAM_API_ID, TERRA_TELEGRAM_API_HASH).
+// The file is generated, never committed (electron/generated is ignored).
+function telegramApp() {
+  const target = 'electron/generated/telegram-app.json';
+  const apiId = process.env.TERRA_TELEGRAM_API_ID,
+    apiHash = process.env.TERRA_TELEGRAM_API_HASH;
+  if (!apiId || !apiHash) {
+    rmSync(target, { force: true });
+    return;
+  }
+  if (!/^\d+$/.test(apiId) || !/^[a-f0-9]{32}$/i.test(apiHash))
+    throw Error('TERRA_TELEGRAM_API_ID or TERRA_TELEGRAM_API_HASH is not valid.');
+  writeFileSync(target, JSON.stringify({ apiId: Number(apiId), apiHash: apiHash.toLowerCase() }));
+  console.log('Telegram: this build carries an API ID.');
+}
+
 // LibreOffice comes from The Document Foundation; office-converter.cjs
 // downloads, verifies and extracts it (about 356 MB to download).
 // On Linux there is no download: the app uses the system's LibreOffice and
@@ -131,8 +187,9 @@ const officeFiles = () =>
         downloadSize: 356 * 1024 * 1024,
       };
 
-const extensions = [backgroundRemoval(), songLinks(), officeFiles()].filter(Boolean);
+const extensions = [backgroundRemoval(), songLinks(), officeFiles(), telegram()].filter(Boolean);
 mkdirSync('electron/generated', { recursive: true });
+telegramApp();
 writeFileSync('electron/generated/extensions.json', JSON.stringify({ extensions }, null, 2) + '\n');
 for (const e of extensions)
   console.log(

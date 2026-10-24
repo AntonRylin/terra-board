@@ -58,6 +58,23 @@ function extensionNotices(extensionsRoot) {
           license: 'Microsoft Software License Terms',
         },
       },
+      // The Telegram extension: TDLib and, on Windows, the Visual C++ runtime beside it.
+      {
+        file: at('telegram', 'tdjson.dll'),
+        notice: { name: 'TDLib (Telegram Database Library)', version: '', license: 'BSL-1.0' },
+      },
+      {
+        file: at('telegram', 'libtdjson.so'),
+        notice: { name: 'TDLib (Telegram Database Library)', version: '', license: 'BSL-1.0' },
+      },
+      {
+        file: at('telegram', 'vcruntime140.dll'),
+        notice: {
+          name: 'Microsoft Visual C++ Runtime (Telegram)',
+          version: '14',
+          license: 'Microsoft Software License Terms',
+        },
+      },
       {
         file: at('song-links', 'yt-dlp.exe'),
         notice: { name: 'yt-dlp', version: '', license: 'Unlicense' },

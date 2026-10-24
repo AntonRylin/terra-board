@@ -1,0 +1,5 @@
+{
+  "id": "telegram",
+  "name": "Unofficial Telegram client",
+  "description": "Chat in Telegram frames on your boards, and drag photos and files between chats and boards. Uses the Telegram API."
+}
