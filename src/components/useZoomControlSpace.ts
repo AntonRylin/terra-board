@@ -19,6 +19,8 @@ export function useZoomControlSpace(key?: unknown) {
     const gap = 8;
     const measure = () => {
       if (panel?.classList.contains('is-dragging')) return;
+      // The stylesheet can bring the bar closer to the edge (Android landscape, styles.css).
+      margin.bottom = parseFloat(getComputedStyle(element).getPropertyValue('--zoom-bottom')) || 25;
       const bounds = shell.getBoundingClientRect();
       const toolbar = shell.querySelector<HTMLElement>('.canvas-toolbar');
       const panelShown = !!panel && !shell.hasAttribute('data-panel-hidden');
