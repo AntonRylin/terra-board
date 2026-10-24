@@ -9,7 +9,7 @@ import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from '
 import { AppWindow, Check, MousePointerClick, Play, X } from 'lucide-react';
 import type { Camera, CanvasObject } from '../model';
 import { localToWorld } from '../canvas/transform';
-import { fileLinkLabel, folderHeader, type FileSource } from '../canvas/file-link';
+import { appLabelHeight, fileLinkLabel, type FileSource } from '../canvas/file-link';
 import { AppIcon } from './CanvasDesktops';
 import { appWindowFor, refreshDesktops, releaseAppWindow, useDesktops } from './desktop-windows';
 import { useFileIcons } from './file-icons';
@@ -157,7 +157,7 @@ export function AppFrame({
   }, [live]);
   // Not in use, the window keeps its frame's size (at 100% zoom), so the
   // picture is the window pixel for pixel rather than stretched.
-  const bodyHeight = Math.max(20, o.height - folderHeader);
+  const bodyHeight = Math.max(20, o.height - appLabelHeight);
   useEffect(() => {
     if (!files || !win || live || win.minimized) return;
     const scale = window.devicePixelRatio || 1;
@@ -250,7 +250,14 @@ export function AppFrame({
   else
     content = (
       <>
-        <video ref={video} className="ca-video" autoPlay muted playsInline />
+        <video
+          ref={video}
+          className="ca-video"
+          autoPlay
+          muted
+          playsInline
+          style={pictureCrop(win.width, win.height, win.border)}
+        />
         {(win.minimized || !shown || captureError || !capturing) && !live && (
           <div className="cf-message ca-cover">
             <AppIcon exe={win.exe} size={56} zoom={camera.zoom} />
@@ -263,19 +270,17 @@ export function AppFrame({
             </p>
           </div>
         )}
-        {live && (
-          <div className="cf-message ca-cover ca-live">Using {name}. Click the board to stop.</div>
-        )}
       </>
     );
 
   const origin = localToWorld(o, { x: 0, y: 0 });
   return (
     <section
-      className="canvas-folder canvas-app"
+      className="canvas-app"
       data-file-id={o.id}
       data-selected={active || undefined}
       data-live={live ? true : undefined}
+      data-running={win ? true : undefined}
       aria-label={name}
       style={{
         left: origin.x * camera.zoom + camera.x,
@@ -287,8 +292,12 @@ export function AppFrame({
       onPointerDown={(event) => {
         const target = event.target as HTMLElement;
         if (event.button !== 0 || target.closest('button')) return;
-        // The header moves the frame; a press on a running app starts using it.
-        if (win && target.closest('.ca-body')) {
+        if (target.closest('.ca-label')) {
+          forward(event);
+          return;
+        }
+        // A press on a running app selects it, and the click starts using it.
+        if (win) {
           event.stopPropagation();
           select(o.id);
           return;
@@ -313,50 +322,57 @@ export function AppFrame({
         );
       }}
     >
-      <header className="cf-header">
-        <span className="cf-title-icon">
-          {exe ? <AppIcon exe={exe} size={20} zoom={camera.zoom} /> : <AppWindow size={18} />}
-        </span>
-        <span className="cf-title" title={win?.title}>
-          {name}
-          {win && win.title !== name && <span className="cf-crumb"> · {win.title}</span>}
-        </span>
-        {win &&
-          (live ? (
-            <button
-              className="cf-button ca-keep ca-use"
-              title="Done: back to the board"
-              aria-label="Done"
-              onClick={stop}
-            >
-              <Check size={17} />
-            </button>
-          ) : (
-            <button
-              className="cf-button ca-use"
-              title="Use the app (or double-click it)"
-              aria-label="Use the app"
-              onClick={use}
-            >
-              <MousePointerClick size={17} />
-            </button>
-          ))}
+      <div className="ca-label" title={win?.title}>
+        {exe ? <AppIcon exe={exe} size={18} zoom={camera.zoom} /> : <AppWindow size={16} />}
+        <span className="ca-name">{name}</span>
+        {win && win.title !== name && <span className="ca-window-title">{win.title}</span>}
         {win && (
-          <button
-            className="cf-button ca-keep"
-            title={`Close ${name}`}
-            aria-label={`Close ${name}`}
-            onClick={closeApp}
-          >
-            <X size={17} />
-          </button>
+          <span className="ca-actions">
+            {live ? (
+              <button
+                className="ca-keep"
+                title="Done: back to the board"
+                aria-label="Done"
+                onClick={stop}
+              >
+                <Check size={14} />
+              </button>
+            ) : (
+              <button title="Use the app (or click it)" aria-label="Use the app" onClick={use}>
+                <MousePointerClick size={14} />
+              </button>
+            )}
+            <button
+              className="ca-keep"
+              title={`Close ${name}`}
+              aria-label={`Close ${name}`}
+              onClick={closeApp}
+            >
+              <X size={14} />
+            </button>
+          </span>
         )}
-      </header>
-      <div ref={body} className="ca-body" style={{ height: Math.max(20, o.height - folderHeader) }}>
+      </div>
+      <div ref={body} className="ca-body">
         {content}
       </div>
     </section>
   );
+}
+
+// A window's picture includes its invisible resize border; the video is
+// enlarged and shifted so only what you see of the window fills the frame.
+function pictureCrop(width: number, height: number, border?: [number, number, number, number]) {
+  if (!width || !height || !border) return undefined;
+  const [l, t, r, b] = border;
+  return {
+    left: `${(-l / width) * 100}%`,
+    top: `${(-t / height) * 100}%`,
+    width: `${((width + l + r) / width) * 100}%`,
+    height: `${((height + t + b) / height) * 100}%`,
+    inset: 'auto',
+    objectFit: 'fill' as const,
+  };
 }
 
 /** Asks an app frame to start being used (the board's double-click). */

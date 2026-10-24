@@ -159,6 +159,8 @@ export interface DesktopWindow {
   // What shows of the window, in real pixels.
   width: number;
   height: number;
+  // The invisible border around it (left, top, right, bottom), in its picture.
+  border: [number, number, number, number];
 }
 export type DesktopsState =
   | { supported: true; current: string; desktops: VirtualDesktop[]; windows: DesktopWindow[] }
@@ -220,6 +222,8 @@ export const folderSize = { width: 760, height: 500 };
 export const fileTileSize = { width: 112, height: 132 };
 export const desktopsSize = { width: 960, height: 460 };
 export const appFrameSize = { width: 800, height: 600 };
+// App frames: a strip for the app's icon and name above the app itself.
+export const appLabelHeight = 32;
 export const folderMinimum = { width: 240, height: 160 };
 
 export const isFileObject = (o: CanvasObject) => o.type === 'file' && !!o.file;

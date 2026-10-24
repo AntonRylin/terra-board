@@ -304,6 +304,7 @@ public static class TerraDesktops
                 { "focused", h == foreground },
                 { "width", VisibleSize(h, true) },
                 { "height", VisibleSize(h, false) },
+                { "border", InvisibleBorder(h) },
             });
             return true;
         }, IntPtr.Zero);
@@ -354,6 +355,18 @@ public static class TerraDesktops
             keybd_event(0x11, 0, 2, UIntPtr.Zero);
             System.Threading.Thread.Sleep(260);
         }
+    }
+
+    // The invisible resize border around a window (left, top, right, bottom),
+    // which a captured picture of it includes.
+    static int[] InvisibleBorder(IntPtr h)
+    {
+        RECT outer, visible;
+        if (!GetWindowRect(h, out outer) || DwmGetWindowAttribute(h, 9, out visible, Marshal.SizeOf(typeof(RECT))) != 0)
+            return new int[] { 0, 0, 0, 0 };
+        return new int[] {
+            Math.Max(0, visible.Left - outer.Left), Math.Max(0, visible.Top - outer.Top),
+            Math.Max(0, outer.Right - visible.Right), Math.Max(0, outer.Bottom - visible.Bottom) };
     }
 
     static int VisibleSize(IntPtr h, bool width)

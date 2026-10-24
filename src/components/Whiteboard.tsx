@@ -15,6 +15,7 @@ import { requestAppUse } from './CanvasApps';
 import { bindAppWindow } from './desktop-windows';
 import {
   appFrameSize,
+  appLabelHeight,
   desktopsSize,
   fileTileSize,
   folderHeader,
@@ -1492,7 +1493,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           ? Math.round(Math.min(1800, Math.max(320, w.width / scale)))
           : appFrameSize.width,
         height = w.height
-          ? Math.round(Math.min(1400, Math.max(200, w.height / scale)) + folderHeader)
+          ? Math.round(Math.min(1400, Math.max(200, w.height / scale)) + appLabelHeight)
           : appFrameSize.height;
       const o: CanvasObject = {
         id: uid(),

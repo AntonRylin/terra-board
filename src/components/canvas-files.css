@@ -623,12 +623,37 @@
   color: #9aa7b8;
 }
 
-/* App frames: a running program's window, pictured until it is used. */
+/* App frames: just the app, with its icon and name above it. */
+.canvas-files .canvas-app {
+  position: absolute;
+  transform-origin: 0 0;
+  pointer-events: auto;
+  font-family: 'Segoe UI', sans-serif;
+  color: var(--text, #29313b);
+}
+.canvas-files[data-interactive='false'] .canvas-app {
+  pointer-events: none;
+}
 .ca-body {
-  position: relative;
-  flex: none;
+  position: absolute;
+  inset: 32px 0 0;
+  border-radius: 10px;
   overflow: hidden;
-  background: #11161c;
+  box-shadow:
+    0 0 0 1px rgb(0 0 0 / 0.06),
+    0 10px 30px rgb(20 30 45 / 0.16);
+  transition: box-shadow 160ms;
+}
+.canvas-app[data-selected] .ca-body {
+  box-shadow:
+    0 0 0 2px #4486d9,
+    0 10px 30px rgb(20 30 45 / 0.16);
+}
+.canvas-app[data-live] .ca-body {
+  box-shadow:
+    0 0 0 2px #4486d9,
+    0 0 0 6px rgb(68 134 217 / 0.22),
+    0 10px 30px rgb(20 30 45 / 0.16);
 }
 .ca-video {
   position: absolute;
@@ -638,34 +663,84 @@
   object-fit: contain;
   pointer-events: none;
 }
-.ca-cover {
-  background: #f7f9fc;
+.canvas-app .cf-message {
+  background: rgb(247 249 252 / 0.92);
+  backdrop-filter: blur(20px);
 }
-.ca-live {
-  background: #e9f1fb;
-  color: #2f6fc0;
+.canvas-app[data-running] .ca-body {
+  cursor: pointer;
 }
-.canvas-app[data-live] {
-  border-color: #4486d9;
-  box-shadow:
-    0 0 0 3px rgb(68 134 217 / 0.35),
-    0 6px 24px rgb(37 59 90 / 0.08);
+.ca-label {
+  position: absolute;
+  left: 2px;
+  right: 0;
+  top: 0;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  font-size: 14px;
+  line-height: 20px;
+  white-space: nowrap;
+  cursor: grab;
+  user-select: none;
 }
-.canvas-app .cf-title-icon {
-  color: inherit;
+.ca-label .cd-app-icon {
+  flex: none;
 }
-.ca-use {
-  color: #2f6fc0;
+.ca-name {
+  flex: none;
+  font-weight: 600;
+}
+.ca-window-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #8592a3;
+}
+.ca-actions {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity 140ms;
+}
+.canvas-app:hover .ca-actions,
+.canvas-app[data-selected] .ca-actions,
+.canvas-app[data-live] .ca-actions {
+  opacity: 1;
+}
+.ca-actions button {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #6b7888;
+  cursor: pointer;
+}
+.ca-actions button:hover {
+  background: rgb(130 150 170 / 0.16);
+  color: #29313b;
 }
 .canvas-app .button {
   display: inline-flex;
   align-items: center;
   gap: 6px;
 }
-[data-theme='dark'] .ca-cover {
-  background: #1f2630;
+[data-theme='dark'] .canvas-app {
+  color: #e4ebf2;
 }
-[data-theme='dark'] .ca-live {
-  background: #1d2a3b;
-  color: #a9c8f0;
+[data-theme='dark'] .canvas-app .cf-message {
+  background: rgb(31 38 48 / 0.92);
+}
+[data-theme='dark'] .ca-window-title,
+[data-theme='dark'] .ca-actions button {
+  color: #9aa7b8;
+}
+[data-theme='dark'] .ca-actions button:hover {
+  color: #fff;
 }

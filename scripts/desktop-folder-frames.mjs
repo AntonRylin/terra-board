@@ -526,6 +526,28 @@ try {
       });
       await sleep(600);
       await screenshot('7-app-picture.png');
+      // The frame has no bar of its own: its label above it moves it.
+      const label = await rect(`${frameSel} .ca-name`);
+      const startX = label.x + label.width / 2,
+        startY = label.y + label.height / 2;
+      const beforeMove = (await objects()).find((o) => o.id === appFrame.id);
+      await mouse('mouseMoved', startX, startY);
+      await mouse('mousePressed', startX, startY, 1);
+      // Alt: no snapping to nearby edges, so the move is exact.
+      for (let i = 1; i <= 8; i++)
+        await mouse('mouseMoved', startX - i * 15, startY + i * 5, 1, 1, 1);
+      await mouse('mouseReleased', startX - 120, startY + 40, 0, 1, 1);
+      const afterMove = await until(async () => {
+        const o = (await objects()).find((o) => o.id === appFrame.id);
+        return o && o.x !== beforeMove.x ? o : null;
+      }, 'frame moved by its label');
+      console.log('label move', {
+        from: [beforeMove.x, beforeMove.y],
+        to: [afterMove.x, afterMove.y],
+        label,
+      });
+      assert.ok(Math.abs(afterMove.x - beforeMove.x + 120) < 3, 'moved 120 units left');
+      assert.ok(Math.abs(afterMove.y - beforeMove.y - 40) < 3, 'moved 40 units down');
       // Use it: the real window moves over the frame.
       // The window takes its frame's size (sharp picture), then a click in
       // the frame lays it exactly over the frame's app area.
