@@ -440,6 +440,9 @@
 [data-theme='dark'] .cf-row {
   color: #a9b5c3;
 }
+[data-theme='dark'] .cf-name {
+  color: #e4ebf2;
+}
 [data-theme='dark'] .cf-columns {
   background: #1f2630;
   border-color: #344050;

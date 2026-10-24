@@ -557,6 +557,17 @@ function FolderCard({
     if (item.folder) navigate(item.path);
     else void files?.open({ path: item.path }).catch((error) => onError(message(error)));
   };
+  // This PC frames reach any folder, so they get a quick jump to the Desktop.
+  const goDesktop = () => {
+    if (!files) return;
+    void files
+      .list({ source: { root: 'desktop', path: '' } })
+      .then((desk) => {
+        if (desk.state !== 'folder') throw Error('This computer has no Desktop folder');
+        if (!sub || !samePath(sub, desk.dir)) navigate(desk.dir);
+      })
+      .catch((error) => onError(message(error)));
+  };
   const openSelected = () => {
     const chosen = selectedItems();
     if (chosen.length === 1) open(chosen[0]);
@@ -1311,6 +1322,16 @@ function FolderCard({
         >
           <ArrowUp size={17} />
         </button>
+        {files && link.root === 'computer' && (
+          <button
+            className="cf-button"
+            aria-label="Desktop"
+            title="Go to Desktop"
+            onClick={goDesktop}
+          >
+            <Monitor size={17} />
+          </button>
+        )}
         <span className="cf-title-icon">
           {RootIcon ? <RootIcon size={18} /> : <Glyph size={22} />}
         </span>
