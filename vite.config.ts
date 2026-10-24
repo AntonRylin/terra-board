@@ -43,7 +43,8 @@ function androidBuild(): Plugin {
         )
         .replace(
           "connect-src 'self' canvas-media: ws://127.0.0.1:5173;",
-          "connect-src 'self' https://*.supabase.co wss://*.supabase.co;",
+          // get.geojs.io: the phone's town for Settings → Account (cloud-sync lookUpLocation).
+          "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://get.geojs.io;",
         );
     },
     generateBundle() {

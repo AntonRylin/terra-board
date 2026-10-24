@@ -19,6 +19,7 @@ import { ShortcutSettings } from './settings/ShortcutSettings';
 import { AboutSettings, StorageSettings } from './settings/StorageSettings';
 import { CloudSettings } from './settings/CloudSettings';
 import { AccountSettings } from './settings/AccountSettings';
+import { BoardsSettings } from './settings/BoardsSettings';
 import { ProfileSettings } from './settings/ProfileSettings';
 import { ExtensionsSettings } from './settings/ExtensionsSettings';
 import './settings/settings.css';
@@ -249,8 +250,19 @@ export default function SettingsPage({
                 (android ? (
                   <MobileAccountSettings />
                 ) : (
-                  <AccountSettings connectAddress={connectAddress} />
+                  <AccountSettings
+                    connectAddress={connectAddress}
+                    library={library}
+                    onOpenBoards={() => open('boards')}
+                  />
                 ))}
+              {section === 'boards' && (
+                <BoardsSettings
+                  library={library}
+                  onManageShare={onManageShare}
+                  onSignIn={() => open('account')}
+                />
+              )}
               {section === 'cloud' && (
                 <CloudSettings
                   library={library}

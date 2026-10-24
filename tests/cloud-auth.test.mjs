@@ -381,3 +381,84 @@ test('a password signs in accounts that have one (the store review account)', as
     { email: 'anton@example.com', password: 'review-pass' },
   ]);
 });
+
+test('devices carry their platform, town and sign-in time; older servers still work', async () => {
+  // A server without migration 20261024120000: the four-argument call is unknown.
+  const client = fakeClient({
+    session: sessionOf(user()),
+    rpc: (name, args) =>
+      'p_location' in args
+        ? { data: null, error: { code: 'PGRST202', message: 'Could not find the function' } }
+        : { data: { revoked: false }, error: null },
+  });
+  const auth = createCloudAuth({ client, openUrl: () => {} });
+  assert.deepEqual(
+    await auth.registerDevice({
+      id: 'd1',
+      name: 'rocketleague',
+      version: '0.1.39',
+      platform: 'win32',
+      location: 'Vienna, Austria',
+    }),
+    { revoked: false },
+  );
+  assert.deepEqual(
+    client.calls.map((c) => c[2]),
+    [
+      {
+        p_id: 'd1',
+        p_name: 'rocketleague',
+        p_version: '0.1.39 (win32)',
+        p_location: 'Vienna, Austria',
+      },
+      { p_id: 'd1', p_name: 'rocketleague', p_version: '0.1.39 (win32)' },
+    ],
+  );
+
+  // Reading the list: the newer columns, or the old ones when the server lacks them.
+  const rows = [
+    {
+      id: 'd1',
+      name: 'PC',
+      app_version: '0.1.39 (win32)',
+      last_seen: 't1',
+      location: 'Vienna, Austria',
+      ip: '203.0.113.7',
+      first_seen: 't0',
+      signed_in_at: 't0',
+    },
+    { id: 'd2', name: 'SM-S942B', app_version: '0.1.38', last_seen: 't2' },
+  ];
+  const asked = [];
+  const query = (columns) => ({
+    is: () => ({
+      order: async () => {
+        asked.push(columns);
+        return columns.includes('location')
+          ? { data: null, error: { code: '42703', message: 'column does not exist' } }
+          : { data: rows, error: null };
+      },
+    }),
+  });
+  const old = createCloudAuth({
+    client: fakeClient({ session: sessionOf(user()), from: () => ({ select: query }) }),
+    openUrl: () => {},
+  });
+  const list = await old.devices('d1');
+  assert.equal(asked.length, 2);
+  assert.deepEqual(list[0], {
+    id: 'd1',
+    name: 'PC',
+    version: '0.1.39',
+    platform: 'win32',
+    lastSeen: 't1',
+    ip: '203.0.113.7',
+    location: 'Vienna, Austria',
+    firstSeen: 't0',
+    signedInAt: 't0',
+    current: true,
+  });
+  assert.equal(list[1].version, '0.1.38');
+  assert.equal(list[1].platform, null);
+  assert.equal(list[1].current, false);
+});

@@ -355,34 +355,66 @@ function createCloudAuth({
 
     // Call after signing in and on every start. Returns { revoked: true } when this computer
     // was removed from the account; the app then signs out here and keeps its boards.
-    async registerDevice({ id, name, version }) {
-      return rpc(
-        client,
-        'register_device',
-        { p_id: id, p_name: String(name || 'Computer').slice(0, 80), p_version: version || null },
-        'Could not register this computer.',
-      );
+    // platform ('win32', 'darwin', 'linux', 'android') rides along in the version text,
+    // "0.1.39 (android)", so the list can tell phones from computers without a new column.
+    // location ("Vienna, Austria") needs migration 20261024120000; an older server is
+    // asked again without it.
+    async registerDevice({ id, name, version, platform, location }) {
+      const text = [version, platform && `(${platform})`].filter(Boolean).join(' ');
+      const args = {
+        p_id: id,
+        p_name: String(name || 'Computer').slice(0, 80),
+        p_version: text.slice(0, 40) || null,
+      };
+      const failed = 'Could not add this device to your account.';
+      if (!location) return rpc(client, 'register_device', args, failed);
+      try {
+        return await rpc(
+          client,
+          'register_device',
+          { ...args, p_location: String(location).slice(0, 120) },
+          failed,
+        );
+      } catch (e) {
+        if (e.code !== 'PGRST202') throw e;
+        return rpc(client, 'register_device', args, failed);
+      }
     },
 
     async devices(currentId) {
-      let result;
-      try {
-        result = await client
+      const load = (columns) =>
+        client
           .from('devices')
-          .select('id, name, app_version, last_seen')
+          .select(columns)
           .is('revoked_at', null)
           .order('last_seen', { ascending: false });
+      let result;
+      try {
+        result = await load(
+          'id, name, app_version, last_seen, ip, location, first_seen, signed_in_at',
+        );
+        // A server without migration 20261024120000 lacks the newer columns.
+        if (result.error?.code === '42703') result = await load('id, name, app_version, last_seen');
       } catch (e) {
-        throw friendly(e, 'Could not load your computers.');
+        throw friendly(e, 'Could not load your devices.');
       }
-      if (result.error) throw friendly(result.error, 'Could not load your computers.');
-      return result.data.map((d) => ({
-        id: d.id,
-        name: d.name,
-        version: d.app_version || null,
-        lastSeen: d.last_seen,
-        current: d.id === currentId,
-      }));
+      if (result.error) throw friendly(result.error, 'Could not load your devices.');
+      return result.data.map((d) => {
+        const [, version, platform] =
+          /^(.*?)\s*(?:\((win32|darwin|linux|android|ios)\))?$/.exec(d.app_version || '') || [];
+        return {
+          id: d.id,
+          name: d.name,
+          version: version || null,
+          platform: platform || null,
+          lastSeen: d.last_seen,
+          ip: d.ip || null,
+          location: d.location || null,
+          firstSeen: d.first_seen || null,
+          signedInAt: d.signed_in_at || null,
+          current: d.id === currentId,
+        };
+      });
     },
 
     async removeDevice(id) {

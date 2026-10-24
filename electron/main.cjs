@@ -15,7 +15,7 @@ const {
   utilityProcess,
   webContents,
 } = require('electron');
-const { CloudSync } = require('./cloud-sync.cjs');
+const { CloudSync, lookUpLocation } = require('./cloud-sync.cjs');
 const {
   resolveServer,
   discover,
@@ -772,6 +772,7 @@ app
       safeStorage,
       transaction: cloudTransaction,
       appVersion: app.getVersion(),
+      locate: lookUpLocation,
       // Google and Microsoft refuse sign-in inside an app window, so it happens in the
       // system browser, which comes back through terraboard://auth/callback.
       openUrl: (url) => {

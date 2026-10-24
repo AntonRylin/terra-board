@@ -2,6 +2,7 @@ import {
   Cable,
   Cloud,
   KeyRound,
+  LayoutGrid,
   CircleDot,
   CircleUserRound,
   HardDrive,
@@ -27,6 +28,7 @@ export type SectionId =
   | 'radial'
   | 'shortcuts'
   | 'account'
+  | 'boards'
   | 'cloud'
   | 'storage'
   | 'ai'
@@ -103,6 +105,14 @@ export const sections: Section[] = [
     group: 'Data',
     icon: KeyRound,
     subtitle: 'Sign in to reach your cloud boards from any computer.',
+  },
+  {
+    id: 'boards',
+    label: 'Boards',
+    group: 'Data',
+    icon: LayoutGrid,
+    subtitle:
+      'Which boards are only on this computer, which are in the cloud, and who can open them.',
   },
   {
     id: 'cloud',
@@ -296,9 +306,17 @@ export const rows = {
   },
   accountDevices: {
     section: 'account',
-    title: 'No computers listed yet',
-    description: 'Computers you sign in on appear here.',
-    keywords: 'devices computers remove sign out',
+    title: 'No devices listed yet',
+    description:
+      'Computers and phones you sign in on appear here, with where and when they signed in.',
+    keywords: 'devices computers phones sessions location town sign out remove',
+  },
+  boardsList: {
+    section: 'boards',
+    title: 'Your boards',
+    description:
+      'Every board, whether it is only on this computer or in the cloud, and who can open it.',
+    keywords: 'boards local cloud private shared people access revoke remove role edit view',
   },
   accountDelete: {
     section: 'account',

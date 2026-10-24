@@ -1,5 +1,19 @@
 const fs = require('node:fs');
 const os = require('node:os');
+
+// The device's approximate town from its public address, for the devices list. GeoJS is
+// free and needs no key; it only sees the device's own address, once per app start.
+async function lookUpLocation() {
+  const response = await fetch('https://get.geojs.io/v1/ip/geo.json', {
+    signal: AbortSignal.timeout(4000),
+  });
+  if (!response.ok) return null;
+  const geo = await response.json();
+  const parts = [geo.city, geo.city ? null : geo.region, geo.country]
+    .map((p) => (typeof p === 'string' ? p.trim() : ''))
+    .filter(Boolean);
+  return parts.length ? parts.join(', ').slice(0, 120) : null;
+}
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { createClient } = require('@supabase/supabase-js');
@@ -97,6 +111,7 @@ class CloudSync {
     appVersion,
     redirectTo,
     createSupabaseClient,
+    locate,
   }) {
     this.call = call;
     this.root = root;
@@ -110,6 +125,10 @@ class CloudSync {
     this.redirectTo = redirectTo;
     this.createSupabaseClient = createSupabaseClient || createClient;
     this.appVersion = appVersion || null;
+    // The town shown next to this device in Settings → Account: locate() → "Vienna, Austria".
+    this.locate = locate || null;
+    this.place = null;
+    this.deviceError = null;
     this.knownDevice = null;
     this.media = new Map();
     this.board = null;
@@ -378,15 +397,9 @@ class CloudSync {
     this.userId = account.userId;
     let revoked = false;
     try {
-      revoked = (
-        await this.auth.registerDevice({
-          id: this.deviceId,
-          name: os.hostname(),
-          version: this.appVersion,
-        })
-      )?.revoked;
+      revoked = (await this.registerHere())?.revoked;
     } catch {
-      // Offline or an older server: asked again on the next start.
+      // Offline or an older server: asked again on the next start (and by devices()).
     }
     if (!revoked) return account;
     await this.signOut();
@@ -775,11 +788,59 @@ class CloudSync {
     return result;
   }
 
-  // The computers signed in to this account.
+  // Adds or refreshes this device on the account. A failure is kept for the devices list.
+  async registerHere() {
+    if (this.locate && !this.place)
+      this.place = await Promise.resolve()
+        .then(() => this.locate())
+        .catch(() => null);
+    try {
+      const result = await this.auth.registerDevice({
+        id: this.deviceId,
+        name: os.hostname(),
+        version: this.appVersion,
+        platform: os.platform(),
+        location: this.place,
+      });
+      this.deviceError = null;
+      return result;
+    } catch (e) {
+      this.deviceError = String(e?.message || e);
+      throw e;
+    }
+  }
+
+  // The devices signed in to this account, this one first. If this device is missing (its
+  // registration failed at start), it is registered again; if that fails too, it is listed
+  // anyway with the reason.
   async devices() {
     this.requireClient();
     if ((await this.auth.account()).state !== 'signedIn') return [];
-    return this.auth.devices(this.deviceId);
+    let list = await this.auth.devices(this.deviceId);
+    if (!list.some((d) => d.current)) {
+      try {
+        if ((await this.registerHere())?.revoked) {
+          await this.signOut();
+          this.emit({ error: 'This device was removed from your account. Sign in to sync again.' });
+          return [];
+        }
+        list = await this.auth.devices(this.deviceId);
+      } catch {}
+    }
+    const here = list.find((d) => d.current) || {
+      id: this.deviceId,
+      name: os.hostname(),
+      version: this.appVersion,
+      platform: os.platform(),
+      lastSeen: new Date().toISOString(),
+      ip: null,
+      location: this.place,
+      firstSeen: null,
+      signedInAt: null,
+      current: true,
+      problem: this.deviceError || 'Not on your account yet.',
+    };
+    return [here, ...list.filter((d) => !d.current)];
   }
 
   async removeDevice(id) {
@@ -1606,4 +1667,4 @@ class CloudSync {
   }
 }
 
-module.exports = { CloudSync };
+module.exports = { CloudSync, lookUpLocation };

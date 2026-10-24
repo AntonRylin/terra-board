@@ -121,8 +121,18 @@ export interface CloudDevice {
   id: string;
   name: string;
   version: string | null;
+  /** 'win32' | 'darwin' | 'linux' | 'android'; null for devices from before 0.1.39. */
+  platform: string | null;
   lastSeen: string;
+  /** Approximate town, "Vienna, Austria", and the address the server saw. */
+  location: string | null;
+  ip: string | null;
+  firstSeen: string | null;
+  /** When its current session began. */
+  signedInAt: string | null;
   current: boolean;
+  /** This device is not on the account: why (only on this device's own entry). */
+  problem?: string;
 }
 export interface AppInfo {
   version: string;

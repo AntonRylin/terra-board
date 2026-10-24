@@ -132,6 +132,8 @@ class Person {
     this.anonymous = anonymous;
     this.email = email;
     this.session = session;
+    // HTTP headers PostgREST passes as request.headers (cf-connecting-ip, …).
+    this.headers = {};
   }
 
   // Runs one statement as this person through the API role, with their JWT claims,
@@ -146,6 +148,9 @@ class Person {
     });
     return this.server.db.transaction(async (tx) => {
       await tx.query(`select set_config('request.jwt.claims', $1, true)`, [claims]);
+      await tx.query(`select set_config('request.headers', $1, true)`, [
+        JSON.stringify(this.headers),
+      ]);
       await tx.exec('set local role authenticated');
       return (await tx.query(sql, params)).rows;
     });

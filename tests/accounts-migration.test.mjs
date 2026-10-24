@@ -484,3 +484,40 @@ test('check_retire refuses before any file is touched', async () => {
     /cannot combine/,
   );
 });
+
+test('devices keep where and when they signed in', async () => {
+  const server = await supabaseDb();
+  const account = await server.user();
+  const pc = randomUUID();
+  account.headers = { 'x-forwarded-for': '203.0.113.7, 10.0.0.1' };
+  await account.rpc('register_device', {
+    p_id: pc,
+    p_name: 'PC',
+    p_version: '0.1.39 (win32)',
+    p_location: 'Vienna, Austria',
+  });
+  const [first] = await account.query(
+    'select ip, location, first_seen, signed_in_at from public.devices where id = $1',
+    [pc],
+  );
+  assert.equal(first.ip, '203.0.113.7');
+  assert.equal(first.location, 'Vienna, Austria');
+  assert.ok(first.first_seen && first.signed_in_at);
+  // An app that sends only three arguments, offline lookup: the known place stays.
+  account.headers = { 'cf-connecting-ip': '198.51.100.2' };
+  await account.rpc('register_device', { p_id: pc, p_name: 'PC', p_version: '0.1.38' });
+  const [same] = await account.query(
+    'select ip, location, signed_in_at from public.devices where id = $1',
+    [pc],
+  );
+  assert.equal(same.ip, '198.51.100.2');
+  assert.equal(same.location, 'Vienna, Austria');
+  assert.deepEqual(same.signed_in_at, first.signed_in_at);
+  // A new session (signed in again) moves the sign-in time.
+  account.session = randomUUID();
+  await account.rpc('register_device', { p_id: pc, p_name: 'PC', p_version: '0.1.39' });
+  const [again] = await account.query('select signed_in_at from public.devices where id = $1', [
+    pc,
+  ]);
+  assert.ok(again.signed_in_at >= first.signed_in_at);
+});

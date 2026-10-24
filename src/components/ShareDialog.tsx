@@ -19,7 +19,7 @@ export function useCloudStatus() {
 const message = (e: unknown) =>
   String(e).replace(/^Error: (Error invoking remote method '[^']+': )?(Error: )?/, '');
 
-function RoleSwitch({
+export function RoleSwitch({
   value,
   onChange,
   label,
@@ -45,7 +45,7 @@ function RoleSwitch({
   );
 }
 
-function PeopleList({
+export function PeopleList({
   title,
   people,
   busy,

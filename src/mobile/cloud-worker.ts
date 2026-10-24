@@ -2,7 +2,7 @@
 // worker. This file does what electron/main.cjs does on desktop: it gives the
 // sync engine the store, asks the page to pause the board around changes from
 // the cloud (the "external transaction"), and forwards status and presence.
-import { CloudSync } from '../../electron/cloud-sync.cjs';
+import { CloudSync, lookUpLocation } from '../../electron/cloud-sync.cjs';
 import { terraCloud } from '../../electron/cloud-config.cjs';
 import { terraCloud as server, version } from '../../package.json';
 
@@ -113,6 +113,7 @@ export function startCloud({
     safeStorage: null,
     transaction,
     appVersion: version,
+    locate: lookUpLocation,
     redirectTo: 'terraboard://auth/callback',
     // supabase-js's own createClient (PKCE, the fs session file) works in the worker as it is.
     createSupabaseClient: undefined,
