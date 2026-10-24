@@ -12,7 +12,12 @@ import {
   type ReactNode,
 } from 'react';
 import {
+  ArrowDown,
   ArrowLeft,
+  CalendarClock,
+  Keyboard,
+  PenSquare,
+  Smile,
   Check,
   CheckCheck,
   BellOff as BellOffIcon,
@@ -39,6 +44,19 @@ import {
 import type { Camera, CanvasObject } from '../../model';
 import type { TelegramFrameActions } from './TelegramCard';
 import {
+  CallBanner,
+  InlineKeyboard,
+  NewChatDialog,
+  Picker,
+  PollView,
+  ReplyKeyboard,
+  ScheduleDialog,
+  ScheduledPanel,
+  SearchPanel,
+  StoriesBar,
+  StoryViewer,
+} from './TelegramExtras';
+import {
   ConfirmDialog,
   FolderTabs,
   ForwardDialog,
@@ -55,8 +73,10 @@ import {
   downloadNow,
   fileOf,
   historyOf,
+  loadNewer,
   loadOlder,
   myUserId,
+  showLatest,
   pinnedVersion,
   telegramBridge,
   useTelegram,
@@ -165,10 +185,19 @@ export function TelegramChats({
   const [list, setList] = useState<ListName>('main');
   const [confirm, setConfirm] = useState<Confirm | null>(null);
   const [forwarding, setForwarding] = useState<TdMessage | null>(null);
+  const [notice, setNotice] = useState('');
+  const [story, setStory] = useState(0);
+  const [creating, setCreating] = useState<'group' | 'channel' | null>(null);
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(''), 3500);
+    return () => clearTimeout(timer);
+  }, [notice]);
   const tools: ChatTools = {
     actions,
     confirm: setConfirm,
     forward: setForwarding,
+    notice: setNotice,
   };
   useEffect(() => {
     listComplete.delete(list);
@@ -214,6 +243,17 @@ export function TelegramChats({
           zoom={camera.zoom}
           list={list}
           onList={setList}
+          onStory={setStory}
+          onNew={(event) =>
+            actions.openMenu({
+              x: event.clientX,
+              y: event.clientY,
+              items: [
+                { label: 'New group', icon: <PenSquare />, action: () => setCreating('group') },
+                { label: 'New channel', icon: <PenSquare />, action: () => setCreating('channel') },
+              ],
+            })
+          }
           onMenu={(chat, event) => {
             event.preventDefault();
             event.stopPropagation();
@@ -252,6 +292,16 @@ export function TelegramChats({
             <p>Choose a chat</p>
           </div>
         )
+      )}
+      <CallBanner onError={actions.onError} />
+      {notice && <div className="tg-notice">{notice}</div>}
+      {story !== 0 && <StoryViewer key={story} chatId={story} onClose={() => setStory(0)} />}
+      {creating && (
+        <NewChatDialog
+          kind={creating}
+          onClose={() => setCreating(null)}
+          onCreated={(id) => choose(id)}
+        />
       )}
       {confirm && <ConfirmDialog confirm={confirm} onClose={() => setConfirm(null)} />}
       {forwarding && (
@@ -414,6 +464,8 @@ function ChatList({
   zoom,
   list: listName,
   onList,
+  onStory,
+  onNew,
   onMenu,
   onSelect,
   onFiles,
@@ -424,6 +476,8 @@ function ChatList({
   zoom: number;
   list: ListName;
   onList: (list: ListName) => void;
+  onStory: (chatId: number) => void;
+  onNew: (event: React.MouseEvent) => void;
   onMenu: (chat: TdChat, event: React.MouseEvent) => void;
   onSelect: (id: number) => void;
   onFiles: (chatId: number, paths: string[]) => void;
@@ -435,29 +489,41 @@ function ChatList({
   const all = sortedChats(chats.values(), listName);
   const q = query.trim().toLowerCase();
   const list = q ? all.filter(({ chat }) => chatTitle(chat).toLowerCase().includes(q)) : all;
-  const viewport = height - 52 - 36;
+  // The list scrolls in what is left below the stories, tabs and search.
+  const viewport = height;
   const first = Math.max(0, Math.floor(scroll / rowHeight) - 4);
   const last = Math.min(list.length, Math.ceil((scroll + viewport) / rowHeight) + 4);
   return (
     <div className="tg-list" style={{ width, height }}>
+      {listName === 'main' && <StoriesBar onOpen={onStory} />}
       <FolderTabs list={listName} onList={onList} />
-      <label className="tg-search" onPointerDown={(e) => e.stopPropagation()}>
-        <Search size={15} />
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search chats"
-          spellCheck={false}
-        />
-        {query && (
-          <button aria-label="Clear search" onClick={() => setQuery('')}>
-            <X size={14} />
-          </button>
-        )}
-      </label>
+      <div className="tg-search-row">
+        <label className="tg-search" onPointerDown={(e) => e.stopPropagation()}>
+          <Search size={15} />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search chats"
+            spellCheck={false}
+          />
+          {query && (
+            <button aria-label="Clear search" onClick={() => setQuery('')}>
+              <X size={14} />
+            </button>
+          )}
+        </label>
+        <button
+          className="cf-button"
+          aria-label="New group or channel"
+          title="New group or channel"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={onNew}
+        >
+          <PenSquare size={17} />
+        </button>
+      </div>
       <div
         className="tg-list-scroll"
-        style={{ height: viewport }}
         onScroll={(e) => {
           const el = e.currentTarget;
           setScroll(el.scrollTop);
@@ -541,6 +607,33 @@ function Conversation({
   const [canPost, setCanPost] = useState(!isChannel(chat));
   const [replyTo, setReplyTo] = useState<TdMessage | null>(null);
   const [editing, setEditing] = useState<TdMessage | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [showScheduled, setShowScheduled] = useState(false);
+  const [focusId, setFocusId] = useState(0);
+  // A bot's keyboard over the message box, from the message that set it.
+  const [keyboard, setKeyboard] = useState<Td | null>(null);
+  const [keyboardOpen, setKeyboardOpen] = useState(true);
+  useEffect(() => {
+    const id = chat.reply_markup_message_id;
+    if (!id) {
+      setKeyboard(null);
+      return;
+    }
+    let live = true;
+    void bridge
+      .invoke<TdMessage>({ '@type': 'getMessage', chat_id: chatId, message_id: id })
+      .then(
+        (m) =>
+          live &&
+          setKeyboard(
+            m.reply_markup?.['@type'] === 'replyMarkupShowKeyboard' ? m.reply_markup : null,
+          ),
+      )
+      .catch(() => live && setKeyboard(null));
+    return () => {
+      live = false;
+    };
+  }, [chatId, chat.reply_markup_message_id]);
   // The chat's pinned message, in a bar under its name.
   const [pinned, setPinned] = useState<TdMessage | null>(null);
   const pins = pinnedVersion(chatId);
@@ -621,6 +714,18 @@ function Conversation({
 
   // Older messages added above keep what was on screen in place; at the
   // bottom, the newest stays in view (also as pictures load).
+  // A search result: shown in the middle, highlighted for a moment.
+  useLayoutEffect(() => {
+    if (!focusId) return;
+    const el = scroller.current?.querySelector<HTMLElement>(`[data-message-id="${focusId}"]`);
+    if (!el) return;
+    stick.current = false;
+    el.scrollIntoView({ block: 'center' });
+    el.dataset.found = 'true';
+    const timer = setTimeout(() => delete el.dataset.found, 2000);
+    setFocusId(0);
+    return () => clearTimeout(timer);
+  });
   useLayoutEffect(() => {
     const el = scroller.current;
     if (!el) return;
@@ -647,7 +752,11 @@ function Conversation({
     if (!el) return;
     stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
     if (el.scrollTop < 400 && !history.loading && !history.complete) void loadOlder(chatId);
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 400 && !history.latest)
+      void loadNewer(chatId);
+    setAway(!stick.current || !history.latest);
   };
+  const [away, setAway] = useState(false);
 
   const messages = ids.map((id) => history.messages.get(id)!).filter(Boolean);
   const title = chatTitle(chat);
@@ -695,7 +804,31 @@ function Conversation({
           <span className="tg-chat-head-title">{title}</span>
           <span className="tg-chat-head-sub">{subtitle}</span>
         </span>
+        <span className="tg-tabs-space" />
+        <button
+          className="cf-button"
+          aria-label="Scheduled messages"
+          title="Scheduled messages"
+          onClick={() => setShowScheduled(true)}
+        >
+          <CalendarClock size={17} />
+        </button>
+        <button
+          className="cf-button"
+          aria-label="Search this chat"
+          title="Search this chat"
+          onClick={() => setSearching((v) => !v)}
+        >
+          <Search size={17} />
+        </button>
       </div>
+      {searching && (
+        <SearchPanel
+          chatId={chatId}
+          onShow={(id) => setFocusId(id)}
+          onClose={() => setSearching(false)}
+        />
+      )}
       {pinned && (
         <div className="tg-pinned-bar" onPointerDown={(e) => e.stopPropagation()}>
           <button
@@ -757,6 +890,7 @@ function Conversation({
                 <Bubble
                   message={m}
                   chat={chat}
+                  onError={actions.onError}
                   showName={!sameSender && isGroup(chat) && !m.is_outgoing}
                   actions={actions}
                   tools={tools}
@@ -772,8 +906,46 @@ function Conversation({
           {sponsored && <Sponsored chatId={chatId} message={sponsored} actions={actions} />}
         </div>
       </div>
+      {away && (
+        <button
+          className="tg-latest"
+          aria-label="Newest messages"
+          title="Newest messages"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={() => {
+            stick.current = true;
+            setAway(false);
+            if (!history.latest) void showLatest(chatId);
+            else if (scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight;
+          }}
+        >
+          <ArrowDown size={18} />
+        </button>
+      )}
+      {keyboard && keyboardOpen && canPost && (
+        <ReplyKeyboard
+          markup={keyboard}
+          onError={actions.onError}
+          onText={(text) => {
+            void bridge
+              .invoke({
+                '@type': 'sendMessage',
+                chat_id: chatId,
+                input_message_content: {
+                  '@type': 'inputMessageText',
+                  text: { '@type': 'formattedText', text, entities: [] },
+                },
+              })
+              .catch((e) => actions.onError(message(e)));
+            if (keyboard.one_time) setKeyboardOpen(false);
+          }}
+        />
+      )}
       {canPost ? (
         <Composer
+          hasKeyboard={!!keyboard}
+          toggleKeyboard={() => setKeyboardOpen((v) => !v)}
+          openMenu={actions.openMenu}
           key={editing?.id || 0}
           chatId={chatId}
           editing={editing}
@@ -784,6 +956,7 @@ function Conversation({
           setError={setSendError}
           onSent={() => {
             stick.current = true;
+            if (!history.latest) void showLatest(chatId);
           }}
           onPick={() => void pick()}
         />
@@ -799,6 +972,13 @@ function Conversation({
           <ImagePlus size={28} />
           Drop to send to {title}
         </div>
+      )}
+      {showScheduled && (
+        <ScheduledPanel
+          chatId={chatId}
+          onClose={() => setShowScheduled(false)}
+          onError={actions.onError}
+        />
       )}
       {sending && (
         <SendDialog
@@ -1030,28 +1210,7 @@ function Media({ message: m, actions }: { message: TdMessage; actions: TelegramF
         </span>
       </span>
     );
-  if (type === 'messagePoll') {
-    const poll = c.poll;
-    const total = poll.total_voter_count || 0;
-    return (
-      <span className="tg-poll">
-        <strong>{poll.question?.text}</strong>
-        {poll.options.map((option: Td, i: number) => (
-          <span key={i} className="tg-poll-option">
-            <span
-              className="tg-poll-bar"
-              style={{ width: `${total ? (option.voter_count * 100) / total : 0}%` }}
-            />
-            <span>{option.text?.text}</span>
-            <span>{total ? Math.round((option.voter_count * 100) / total) : 0}%</span>
-          </span>
-        ))}
-        <span className="tg-file-progress">
-          {total} {total === 1 ? 'vote' : 'votes'} · vote in the Telegram app
-        </span>
-      </span>
-    );
-  }
+  if (type === 'messagePoll') return <PollView message={m} onError={actions.onError} />;
   return null;
 }
 
@@ -1269,12 +1428,14 @@ const Bubble = memo(function Bubble({
   tools,
   onReply,
   onEdit,
+  onError,
 }: {
   message: TdMessage;
   chat: TdChat;
   showName: boolean;
   actions: TelegramFrameActions;
   tools: ChatTools;
+  onError: (e: string) => void;
   onReply?: () => void;
   onEdit: () => void;
 }) {
@@ -1356,6 +1517,9 @@ const Bubble = memo(function Bubble({
           </span>
         )}
         <Text text={text} onLink={actions.openLink} />
+        {m.reply_markup?.['@type'] === 'replyMarkupInlineKeyboard' && (
+          <InlineKeyboard message={m} actions={actions} onNotice={tools.notice} />
+        )}
         {reactions.length > 0 && (
           <span className="tg-reactions">
             {reactions.map((r) => (
@@ -1744,6 +1908,9 @@ type Recording = {
 };
 
 function Composer({
+  hasKeyboard,
+  toggleKeyboard,
+  openMenu,
   chatId,
   editing,
   clearEdit,
@@ -1754,6 +1921,9 @@ function Composer({
   onSent,
   onPick,
 }: {
+  hasKeyboard: boolean;
+  toggleKeyboard: () => void;
+  openMenu: TelegramFrameActions['openMenu'];
   chatId: number;
   editing: TdMessage | null;
   clearEdit: () => void;
@@ -1771,9 +1941,36 @@ function Composer({
   const [text, setText] = useState(editText?.text || '');
   const [busy, setBusy] = useState(false);
   const field = useRef<HTMLTextAreaElement>(null);
+  const [picker, setPicker] = useState(false);
+  const [scheduling, setScheduling] = useState(false);
   useEffect(() => {
     if (editing) field.current?.focus();
   }, []);
+  // Emoji go in at the caret; stickers and GIFs go at once.
+  const insert = (emoji: string) => {
+    const el = field.current;
+    const at = el?.selectionStart ?? text.length,
+      end = el?.selectionEnd ?? text.length;
+    setText(text.slice(0, at) + emoji + text.slice(end));
+    requestAnimationFrame(() => {
+      el?.focus();
+      el?.setSelectionRange(at + emoji.length, at + emoji.length);
+    });
+  };
+  const sendContent = async (content: Td) => {
+    try {
+      await bridge.invoke({
+        '@type': 'sendMessage',
+        chat_id: chatId,
+        reply_to: replyTo ? { message_id: replyTo.id } : undefined,
+        input_message_content: content,
+      });
+      clearReply();
+      onSent();
+    } catch (e) {
+      setError(message(e));
+    }
+  };
   const recording = useRef<Recording | null>(null);
   const [recordState, setRecordState] = useState<{ seconds: number; levels: number[] } | null>(
     null,
@@ -1790,7 +1987,7 @@ function Composer({
   // Leaving the chat drops a recording in progress.
   useEffect(() => () => stopRecording(false), []);
 
-  const send = async () => {
+  const send = async (sendAt?: number) => {
     const value = text.trim();
     if (busy || (!value && !editing)) return;
     setBusy(true);
@@ -1821,12 +2018,19 @@ function Composer({
         '@type': 'sendMessage',
         chat_id: chatId,
         reply_to: replyTo ? { message_id: replyTo.id } : undefined,
+        ...(sendAt && {
+          options: {
+            '@type': 'messageSendOptions',
+            scheduling_state: { '@type': 'messageSchedulingStateSendAtDate', send_date: sendAt },
+          },
+        }),
         input_message_content: {
           '@type': 'inputMessageText',
           text: { '@type': 'formattedText', text: value, entities: [] },
         },
       });
       setText('');
+      if (sendAt) setError('Scheduled. The clock button over the chat lists scheduled messages.');
       clearReply();
       onSent();
     } catch (e) {
@@ -1986,6 +2190,48 @@ function Composer({
         </div>
       )}
       {error && <div className="tg-error">{error}</div>}
+      {picker && (
+        <Picker
+          onEmoji={insert}
+          onClose={() => setPicker(false)}
+          onSticker={(sticker) => {
+            setPicker(false);
+            void sendContent({
+              '@type': 'inputMessageSticker',
+              sticker: {
+                '@type': 'inputSticker',
+                sticker: { '@type': 'inputFileId', id: sticker.sticker.id },
+                width: sticker.width,
+                height: sticker.height,
+              },
+              emoji: sticker.emoji,
+            });
+          }}
+          onGif={(animation) => {
+            setPicker(false);
+            void sendContent({
+              '@type': 'inputMessageAnimation',
+              animation: {
+                '@type': 'inputAnimation',
+                animation: { '@type': 'inputFileId', id: animation.animation.id },
+                duration: animation.duration,
+                width: animation.width,
+                height: animation.height,
+              },
+              caption: { '@type': 'formattedText', text: '', entities: [] },
+            });
+          }}
+        />
+      )}
+      {scheduling && (
+        <ScheduleDialog
+          onClose={() => setScheduling(false)}
+          onPick={(date) => {
+            setScheduling(false);
+            void send(date);
+          }}
+        />
+      )}
       {recordState ? (
         <div className="tg-composer-row tg-recording">
           <button
@@ -2023,6 +2269,15 @@ function Composer({
           >
             <Paperclip size={18} />
           </button>
+          <button
+            className="cf-button"
+            aria-label="Emoji, stickers and GIFs"
+            title="Emoji, stickers and GIFs"
+            data-open={picker || undefined}
+            onClick={() => setPicker((v) => !v)}
+          >
+            <Smile size={18} />
+          </button>
           <textarea
             ref={field}
             rows={1}
@@ -2038,18 +2293,46 @@ function Composer({
               title="Send (Enter)"
               disabled={busy}
               onClick={() => void send()}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                if (!editing && text.trim())
+                  openMenu({
+                    x: event.clientX,
+                    y: event.clientY,
+                    items: [
+                      {
+                        label: 'Schedule message',
+                        icon: <CalendarClock />,
+                        action: () => setScheduling(true),
+                      },
+                    ],
+                  });
+              }}
             >
               {busy ? <Loader2 size={18} className="tg-spin" /> : <SendHorizontal size={18} />}
             </button>
           ) : (
-            <button
-              className="cf-button tg-mic"
-              aria-label="Record a voice message"
-              title="Record a voice message"
-              onClick={() => void startRecording()}
-            >
-              <Mic size={18} />
-            </button>
+            <>
+              {hasKeyboard && (
+                <button
+                  className="cf-button"
+                  aria-label="Bot keyboard"
+                  title="Bot keyboard"
+                  onClick={toggleKeyboard}
+                >
+                  <Keyboard size={18} />
+                </button>
+              )}
+              <button
+                className="cf-button tg-mic"
+                aria-label="Record a voice message"
+                title="Record a voice message"
+                onClick={() => void startRecording()}
+              >
+                <Mic size={18} />
+              </button>
+            </>
           )}
         </div>
       )}

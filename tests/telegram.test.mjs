@@ -333,6 +333,74 @@ test('frames reach TDLib only through checked requests', async () => {
     duration: 1,
     waveform: 'AAAA',
   });
+  // Stickers and saved GIFs go by their Telegram file, never a path here.
+  await telegram.invoke({
+    '@type': 'sendMessage',
+    chat_id: 5,
+    input_message_content: {
+      '@type': 'inputMessageSticker',
+      sticker: {
+        '@type': 'inputSticker',
+        sticker: { '@type': 'inputFileId', id: 81 },
+        width: 512,
+        height: 512,
+      },
+      emoji: '👍',
+    },
+  });
+  assert.deepEqual(
+    sent.filter((q) => q['@type'] === 'sendMessage').pop().input_message_content.sticker.sticker,
+    { '@type': 'inputFileId', id: 81 },
+  );
+  await assert.rejects(
+    telegram.invoke({
+      '@type': 'sendMessage',
+      chat_id: 5,
+      input_message_content: {
+        '@type': 'inputMessageSticker',
+        sticker: { '@type': 'inputSticker', sticker: { '@type': 'inputFileLocal', path: secret } },
+      },
+    }),
+    /sticker or GIF again/,
+  );
+  await assert.rejects(
+    telegram.invoke({
+      '@type': 'sendMessage',
+      chat_id: 5,
+      input_message_content: {
+        '@type': 'inputMessageAnimation',
+        animation: {
+          '@type': 'inputAnimation',
+          animation: { '@type': 'inputFileLocal', path: path.join(dir, 'x.gif') },
+        },
+      },
+    }),
+    /again/,
+  );
+  // Scheduled messages: later today or within a year.
+  const text = {
+    '@type': 'inputMessageText',
+    text: { '@type': 'formattedText', text: 'later', entities: [] },
+  };
+  const at = (seconds) => ({
+    '@type': 'sendMessage',
+    chat_id: 5,
+    options: {
+      '@type': 'messageSendOptions',
+      scheduling_state: {
+        '@type': 'messageSchedulingStateSendAtDate',
+        send_date: Math.floor(Date.now() / 1000) + seconds,
+      },
+    },
+    input_message_content: text,
+  });
+  await telegram.invoke(at(3600));
+  assert.equal(
+    sent.filter((q) => q['@type'] === 'sendMessage').pop().options.scheduling_state['@type'],
+    'messageSchedulingStateSendAtDate',
+  );
+  await assert.rejects(telegram.invoke(at(-60)), /later today/);
+  await assert.rejects(telegram.invoke(at(400 * 86400)), /within a year/);
   // Only Telegram's own folders are served or dragged.
   assert.equal(telegram.draggable(secret), path.resolve(secret));
   assert.equal(telegram.draggable(path.join(dir, 'other.txt')), null);

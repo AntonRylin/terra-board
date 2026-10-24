@@ -65,6 +65,8 @@ export interface ChatTools {
   actions: TelegramFrameActions;
   confirm: (confirm: Confirm) => void;
   forward: (message: TdMessage) => void;
+  /** A short message over the frame (a bot's answer, "Copied"). */
+  notice: (text: string) => void;
 }
 
 const run = (tools: ChatTools, query: Td) =>

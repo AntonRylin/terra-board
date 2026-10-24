@@ -83,6 +83,7 @@ export interface TelegramSnapshot {
   connection: string | null;
   myId: number;
   folders?: TdFolder[];
+  stories?: Td[];
   chats: TdChat[];
   users: TdUser[];
   status: TelegramStatus;

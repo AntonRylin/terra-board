@@ -211,7 +211,7 @@ async function clickText(selector, text) {
   const r = await until(
     () =>
       read(
-        `(()=>{const e=[...document.querySelectorAll(${JSON.stringify(selector)})].find(e=>e.innerText.includes(${JSON.stringify(text)}));if(!e)return null;const r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}})()`,
+        `(()=>{const e=[...document.querySelectorAll(${JSON.stringify(selector)})].find(e=>e.innerText.includes(${JSON.stringify(text)}));if(!e)return null;e.scrollIntoView({block:'nearest'});const r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}})()`,
       ),
     `${selector} "${text}"`,
   );
@@ -220,6 +220,8 @@ async function clickText(selector, text) {
 async function drag(from, to, steps = 14) {
   await mouse('mouseMoved', from.x, from.y);
   await mouse('mousePressed', from.x, from.y, 1);
+  // A person holds the button a moment before moving.
+  await sleep(120);
   for (let i = 1; i <= steps; i++) {
     await mouse(
       'mouseMoved',
@@ -239,6 +241,16 @@ async function key(name, code, windowsVirtualKeyCode) {
 async function type(selector, value) {
   await click(selector);
   await send('Input.insertText', { text: value });
+  // A field that appeared a moment ago may not have taken focus yet: again.
+  if (
+    !(await read(
+      `(document.querySelector(${JSON.stringify(selector)})?.value || '').includes(${JSON.stringify(value)})`,
+    ))
+  ) {
+    await sleep(250);
+    await click(selector);
+    await send('Input.insertText', { text: value });
+  }
 }
 const objects = async () =>
   (await read(`window.canvas.invoke('loadBoard',{id:${JSON.stringify(board.id)}})`)).objects;
@@ -522,8 +534,13 @@ try {
   // The chat menu: archive a chat, then find it under Archived; the Work folder.
   const row = (name) =>
     read(
-      `(()=>{const e=[...document.querySelectorAll('.tg-chat')].find(e=>e.innerText.includes(${JSON.stringify(name)}));if(!e)return null;const r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`,
+      `(()=>{const e=[...document.querySelectorAll('.tg-chat')].find(e=>e.innerText.includes(${JSON.stringify(name)}));if(!e)return null;e.scrollIntoView({block:'nearest'});const r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`,
     );
+  {
+    // Nothing selected on the board, so no toolbar lies over the chats.
+    const empty = await screenAt(900, 1350);
+    await clickAt(empty.x, empty.y);
+  }
   await rightClick(await until(() => row('Family'), 'Family'));
   const chatItems = await read(
     `[...document.querySelectorAll('.context-menu button[role=menuitem]')].map(b=>b.innerText)`,
@@ -556,6 +573,111 @@ try {
   );
   await click('.canvas-telegram[data-file-id="tg"] .cf-header .cf-button');
   await clickText('.context-menu button', 'Text: Medium');
+
+  // Polls: a vote shows the results.
+  await clickText('.canvas-telegram[data-file-id="tg"] .tg-chat', 'Design team');
+  await until(() => rect('.tg-poll-choice'), 'poll choices');
+  await read(`document.querySelector('.tg-poll-choice').scrollIntoView({block:'center'})`);
+  await clickText('.tg-poll-choice', 'Wednesday');
+  await until(() => rect('.tg-poll-option[data-chosen]'), 'poll results');
+  assert.match(await textOf('.tg-poll-option[data-chosen]'), /Wednesday/);
+  await closeUp('.canvas-telegram[data-file-id="tg"]', 'closeup-10-poll.png');
+
+  // Searching the chat: a result is shown, highlighted.
+  await click('[aria-label="Search this chat"]');
+  await type('.tg-search-panel input', 'brief');
+  await until(() => rect('.tg-search-result'), 'search results');
+  await click('.tg-search-result');
+  await until(() => rect('[data-message-id][data-found]'), 'found message');
+  await click('[aria-label="Close search"]');
+
+  // Emoji go into the message; stickers and saved GIFs are sent.
+  await click('[aria-label="Emoji, stickers and GIFs"]');
+  await until(() => rect('.tg-picker'), 'picker');
+  await clickText('.tg-emoji-grid button', '😀');
+  assert.equal(await read(`document.querySelector('.tg-composer textarea').value`), '😀');
+  await clickText('.tg-picker .tg-tabs button', 'Stickers');
+  await clickText('.tg-sticker-sets button', 'Terra');
+  await until(
+    () => read(`[...document.querySelectorAll('.tg-sticker-cell img')].some(i=>i.naturalWidth>0)`),
+    'stickers',
+  );
+  await closeUp('.canvas-telegram[data-file-id="tg"]', 'closeup-11-stickers.png');
+  await click('.tg-sticker-cell');
+  await until(() => rect('.tg-row[data-out] .tg-sticker'), 'sticker sent');
+  await click('[aria-label="Emoji, stickers and GIFs"]');
+  await clickText('.tg-picker .tg-tabs button', 'GIFs');
+  await until(() => rect('.tg-gif-cell'), 'saved GIFs');
+  await click('.tg-gif-cell');
+  await until(
+    () =>
+      read(
+        `[...document.querySelectorAll('.tg-row[data-out]')].pop()?.querySelector('.tg-visual') != null`,
+      ),
+    'GIF sent',
+  );
+
+  // A scheduled message: right-click Send, pick a time, then send it now.
+  await click('.tg-composer textarea');
+  await key('End', 'End', 35);
+  await send('Input.insertText', { text: ' later' });
+  {
+    const sendButton = await rect('.tg-send');
+    await rightClick({ x: sendButton.x + 10, y: sendButton.y + 10 });
+  }
+  await clickText('.context-menu button', 'Schedule message');
+  await until(() => rect('input[type="datetime-local"]'), 'schedule dialog');
+  await clickText('.tg-dialog-actions button', 'Schedule');
+  await until(async () => (await textOf('.tg-composer')).includes('Scheduled'), 'scheduled');
+  assert.ok(!(await textOf('.tg-messages')).includes('😀 later'), 'not in the chat yet');
+  await click('[aria-label="Scheduled messages"]');
+  await until(async () => (await textOf('.tg-dialog')).includes('😀 later'), 'scheduled list');
+  await click('.tg-scheduled [aria-label="Send now"]');
+  await until(async () => (await textOf('.tg-messages')).includes('😀 later'), 'sent now');
+  await clickText('.tg-dialog-actions button', 'Close');
+
+  // A bot: its buttons answer, its keyboard sends.
+  await clickText('.canvas-telegram[data-file-id="tg"] .tg-chat', 'Weather Bot');
+  await until(() => rect('.tg-reply-keyboard'), 'bot keyboard');
+  await clickText('.tg-keyboard button', 'Refresh');
+  await until(async () => (await textOf('.tg-notice')).includes('15°C'), 'bot answer');
+  await closeUp('.canvas-telegram[data-file-id="tg"]', 'closeup-12-bot.png');
+  await clickText('.tg-reply-keyboard button', 'Today');
+  await until(
+    async () =>
+      (
+        await read(`[...document.querySelectorAll('.tg-row[data-out]')].pop()?.innerText || ''`)
+      ).includes('Today'),
+    'keyboard text sent',
+  );
+
+  // A new group with a contact.
+  await click('[aria-label="New group or channel"]');
+  await clickText('.context-menu button', 'New group');
+  await type('.tg-dialog-caption input', 'Board crew');
+  await until(() => rect('.tg-forward-chat input'), 'contacts');
+  await click('.tg-forward-chat input');
+  await clickText('.tg-dialog-actions button', 'Create');
+  await until(async () => (await textOf('.tg-chat-head')).includes('Board crew'), 'new group open');
+
+  // Stories: the bar over the chats, and watching them.
+  await until(() => rect('.tg-story'), 'stories bar');
+  await click('.tg-story');
+  await until(
+    () => read(`[...document.querySelectorAll('.tg-story-media img')].some(i=>i.naturalWidth>0)`),
+    'story shown',
+  );
+  await closeUp('.canvas-telegram[data-file-id="tg"]', 'closeup-13-story.png');
+  await click('[aria-label="Close stories"]');
+
+  // A call coming in: Terra can decline it.
+  await clickText('.canvas-telegram[data-file-id="tg"] .tg-chat', 'Maria Lopez');
+  await type('.tg-composer textarea', 'call me');
+  await key('Enter', 'Enter', 13);
+  await until(() => rect('.tg-call-banner'), 'incoming call');
+  await closeUp('.canvas-telegram[data-file-id="tg"]', 'closeup-14-call.png');
+  await clickText('.tg-call-banner button', 'Decline');
+  await until(async () => !(await rect('.tg-call-banner')), 'call declined');
 
   // Pinned to the screen: the chats run in the pin; the frame says so.
   await clickText('.canvas-telegram[data-file-id="tg"] .tg-chat', 'Design team');
@@ -591,7 +713,7 @@ try {
   const photo = await until(
     () =>
       read(
-        `(()=>{const e=[...document.querySelectorAll('.tg-photo')].pop();if(!e||!e.naturalWidth)return null;const r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}})()`,
+        `(()=>{const e=[...document.querySelectorAll('.tg-photo')].pop();if(!e||!e.naturalWidth)return null;e.scrollIntoView({block:'center'});const r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}})()`,
       ),
     'photo bubble',
   );

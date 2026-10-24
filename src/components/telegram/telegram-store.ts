@@ -24,6 +24,8 @@ export interface History {
   loading: boolean;
   /** The chat's first message is loaded. */
   complete: boolean;
+  /** The newest messages are loaded (false after jumping to an old one). */
+  latest: boolean;
 }
 
 const histories = new Map<number, History>();
@@ -36,6 +38,10 @@ let auth: Td | null = null;
 let connection: string | null = null;
 let myId = 0;
 let folders: TdFolder[] = [];
+// Chats with active stories, by chat (chatActiveStories).
+const stories = new Map<number, Td>();
+// A call to or from this account (Terra can only decline; Telegram's apps answer).
+let call: Td | null = null;
 // Counts changes to each chat's pinned messages, for its pinned bar.
 const pinChanges = new Map<number, number>();
 let version = 0;
@@ -58,8 +64,10 @@ function remember(file: TdFile | undefined) {
   if (file?.id) files.set(file.id, file);
 }
 
-function addMessage(message: TdMessage, history = histories.get(message.chat_id)) {
-  if (!history) return;
+function addMessage(message: TdMessage, history = histories.get(message.chat_id), loaded = false) {
+  // Scheduled messages wait in their own list; after a jump to an old message,
+  // new ones come when the newest are loaded again.
+  if (!history || message.scheduling_state || (!loaded && !history.latest)) return;
   if (!history.messages.has(message.id)) {
     const ids = history.ids;
     // Usually the newest; otherwise in order.
@@ -95,10 +103,25 @@ function apply(batch: TelegramBatch) {
   if (batch.folders !== undefined) folders = batch.folders;
   for (const chat of batch.chats) chats.set(chat.id, chat);
   for (const user of batch.users) users.set(user.id, user);
+  for (const active of (batch as { stories?: Td[] }).stories || [])
+    if (active.stories?.length) stories.set(active.chat_id, active);
   for (const event of batch.events) {
     switch (event['@type']) {
       case 'updateFile':
         remember(event.file);
+        break;
+      case 'updateChatActiveStories': {
+        const active = event.active_stories;
+        if (active?.stories?.length) stories.set(active.chat_id, active);
+        else stories.delete(active?.chat_id);
+        break;
+      }
+      case 'updateCall':
+        call = ['callStateDiscarded', 'callStateError', 'callStateHangingUp'].includes(
+          event.call?.state?.['@type'],
+        )
+          ? null
+          : event.call;
         break;
       case 'updateNewMessage':
         addMessage(event.message);
@@ -195,7 +218,7 @@ const subscribe = (listener: () => void) => {
 /** Re-renders a frame whenever anything Telegram changes. */
 export function useTelegram() {
   useSyncExternalStore(subscribe, () => version);
-  return { status, auth, connection, myId, chats, users, folders };
+  return { status, auth, connection, myId, chats, users, folders, stories, call };
 }
 
 export const chatOf = (id: number) => chats.get(id);
@@ -234,7 +257,7 @@ export async function downloadNow(file: TdFile) {
 export function historyOf(chatId: number): History {
   let history = histories.get(chatId);
   if (!history) {
-    history = { ids: [], messages: new Map(), loading: false, complete: false };
+    history = { ids: [], messages: new Map(), loading: false, complete: false, latest: true };
     histories.set(chatId, history);
   }
   return history;
@@ -265,7 +288,7 @@ export async function loadOlder(chatId: number, count = 40) {
         history.complete = true;
         break;
       }
-      for (const message of messages) addMessage(message, history);
+      for (const message of messages) addMessage(message, history, true);
       added += messages.length;
     }
   } finally {
@@ -287,3 +310,63 @@ export function viewMessages(chatId: number, ids: number[]) {
     })
     .catch(() => {});
 }
+
+/** Shows an older message (from search): the messages around it replace the loaded ones. */
+export async function jumpTo(chatId: number, messageId: number) {
+  const bridge = telegramBridge(),
+    history = historyOf(chatId);
+  if (!bridge) return;
+  if (history.messages.has(messageId)) return;
+  const result = await bridge.invoke<{ messages: TdMessage[] }>({
+    '@type': 'getChatHistory',
+    chat_id: chatId,
+    from_message_id: messageId,
+    offset: -20,
+    limit: 40,
+    only_local: false,
+  });
+  history.ids = [];
+  history.messages.clear();
+  history.complete = false;
+  history.latest = false;
+  for (const message of result.messages || []) addMessage(message, history, true);
+  // Asked for 20 newer than the message: fewer means the newest are here.
+  if ((result.messages || []).filter((m) => m.id > messageId).length < 20) history.latest = true;
+  changed();
+}
+/** Loads newer messages after a jump, until the newest are there again. */
+export async function loadNewer(chatId: number) {
+  const bridge = telegramBridge(),
+    history = historyOf(chatId);
+  if (!bridge || history.loading || history.latest || !history.ids.length) return;
+  history.loading = true;
+  changed();
+  try {
+    const newest = history.ids[history.ids.length - 1];
+    const result = await bridge.invoke<{ messages: TdMessage[] }>({
+      '@type': 'getChatHistory',
+      chat_id: chatId,
+      from_message_id: newest,
+      offset: -40,
+      limit: 41,
+      only_local: false,
+    });
+    const newer = (result.messages || []).filter((m) => m.id > newest);
+    for (const message of newer) addMessage(message, history, true);
+    if (newer.length < 40) history.latest = true;
+  } finally {
+    history.loading = false;
+    changed();
+  }
+}
+/** Back to the newest messages after a jump. */
+export async function showLatest(chatId: number) {
+  const history = historyOf(chatId);
+  history.ids = [];
+  history.messages.clear();
+  history.complete = false;
+  history.latest = true;
+  changed();
+  await loadOlder(chatId);
+}
+export const storiesOf = (chatId: number) => stories.get(chatId);

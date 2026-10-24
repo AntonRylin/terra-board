@@ -78,6 +78,27 @@ const REQUESTS = new Set([
   'pinChatMessage',
   'unpinChatMessage',
   'getChatPinnedMessage',
+  // Polls, search, stickers and GIFs, scheduled messages, bot buttons.
+  'setPollAnswer',
+  'searchChatMessages',
+  'getInstalledStickerSets',
+  'getStickerSet',
+  'getRecentStickers',
+  'getSavedAnimations',
+  'getChatScheduledMessages',
+  'editMessageSchedulingState',
+  'getCallbackQueryAnswer',
+  // New groups and channels, contacts.
+  'createNewBasicGroupChat',
+  'createNewSupergroupChat',
+  'getContacts',
+  // Stories, and declining calls (calls themselves need Telegram's call engine).
+  'loadActiveStories',
+  'getChatActiveStories',
+  'getStory',
+  'openStory',
+  'closeStory',
+  'discardCall',
 ]);
 // Message contents a frame may send. Files must have been prepared with
 // stage(), so a frame can only send what someone dropped or picked.
@@ -89,6 +110,7 @@ const SEND_CONTENTS = new Set([
   'inputMessageAudio',
   'inputMessageAnimation',
   'inputMessageVoiceNote',
+  'inputMessageSticker',
 ]);
 const FILE_FIELDS = {
   inputMessageDocument: 'document',
@@ -111,6 +133,9 @@ const FORWARDED = new Set([
   'updateMessageMentionRead',
   'updateDeleteMessages',
   'updateFile',
+  'updateCall',
+  'updateChatActiveStories',
+  'updateStoryDeleted',
 ]);
 // A sent file larger than Telegram takes (2 GB; Premium allows 4 GB).
 const MAX_FILE = 4 * 1024 ** 3;
@@ -168,7 +193,8 @@ function credentialsValue(input) {
 function createState() {
   const chats = new Map();
   const users = new Map();
-  const state = { auth: null, connection: null, myId: 0, chats, users, folders: [] };
+  const stories = new Map();
+  const state = { auth: null, connection: null, myId: 0, chats, users, folders: [], stories };
   // Returns what changed: { chat } / { user } / { auth } / { connection } or null.
   state.apply = (update) => {
     const chat = (id, change) => {
@@ -256,6 +282,12 @@ function createState() {
           name: f.name?.text?.text ?? f.title ?? '',
         }));
         return { folders: state.folders };
+      case 'updateChatActiveStories': {
+        const active = update.active_stories;
+        if (active?.stories?.length) stories.set(active.chat_id, active);
+        else stories.delete(active?.chat_id);
+        return null;
+      }
       case 'updateChatBlockList':
         return chat(update.chat_id, () => ({ block_list: update.block_list }));
       case 'updateChatPermissions':
@@ -269,6 +301,9 @@ function createState() {
     connection: state.connection,
     myId: state.myId,
     folders: state.folders,
+    // Active stories come to frames as events; a frame that loads later gets
+    // them here.
+    stories: [...stories.values()],
     chats: [...chats.values()],
     users: [...users.values()],
   });
@@ -646,21 +681,58 @@ function createTelegram({
         },
         caption: text,
       };
+    } else if (kind === 'inputMessageSticker') {
+      // A sticker from the picker: one already on Telegram, by its file.
+      const sticker = content.sticker;
+      input = {
+        '@type': kind,
+        sticker: {
+          '@type': 'inputSticker',
+          sticker: cloudFile(sticker?.sticker),
+          width: Math.max(0, Math.min(1024, Number(sticker?.width) || 512)),
+          height: Math.max(0, Math.min(1024, Number(sticker?.height) || 512)),
+        },
+        emoji: typeof content.emoji === 'string' ? content.emoji.slice(0, 16) : '',
+      };
     } else {
       const field = FILE_FIELDS[kind];
       const file = content[field]?.[field];
-      const local = file?.['@type'] === 'inputFileLocal' ? path.resolve(String(file.path)) : null;
-      if (!local || !staged.has(local)) throw Error('Drop or choose the file again.');
       const inner = `input${field[0].toUpperCase()}${field.slice(1)}`;
+      // A saved GIF goes by its Telegram file; anything else from this PC.
+      const source =
+        kind === 'inputMessageAnimation' && file?.['@type'] !== 'inputFileLocal'
+          ? cloudFile(file)
+          : null;
+      const local =
+        !source && file?.['@type'] === 'inputFileLocal' ? path.resolve(String(file.path)) : null;
+      if (!source && (!local || !staged.has(local)))
+        throw Error('Drop or choose the file again.');
       input = {
         '@type': kind,
-        [field]: { '@type': inner, [field]: { '@type': 'inputFileLocal', path: local } },
+        [field]: {
+          '@type': inner,
+          [field]: source || { '@type': 'inputFileLocal', path: local },
+          ...(source && {
+            duration: Number(content[field]?.duration) || 0,
+            width: Number(content[field]?.width) || 0,
+            height: Number(content[field]?.height) || 0,
+          }),
+        },
         caption: text,
       };
     }
     const chatId = Number(query.chat_id);
     const replyTo = Number(query.reply_to?.message_id);
     if (!Number.isSafeInteger(chatId)) throw Error('Invalid chat');
+    // A scheduled message: a time in the next year.
+    const sendAt = Number(query.options?.scheduling_state?.send_date);
+    const scheduled =
+      query.options?.scheduling_state?.['@type'] === 'messageSchedulingStateSendAtDate';
+    if (scheduled) {
+      const now = Date.now() / 1000;
+      if (!Number.isSafeInteger(sendAt) || sendAt < now + 10 || sendAt > now + 366 * 86400)
+        throw Error('Choose a time later today or within a year.');
+    }
     return request({
       '@type': 'sendMessage',
       chat_id: chatId,
@@ -668,6 +740,12 @@ function createTelegram({
         replyTo > 0 && {
           reply_to: { '@type': 'inputMessageReplyToMessage', message_id: replyTo },
         }),
+      ...(scheduled && {
+        options: {
+          '@type': 'messageSendOptions',
+          scheduling_state: { '@type': 'messageSchedulingStateSendAtDate', send_date: sendAt },
+        },
+      }),
       input_message_content: input,
     });
   }
@@ -851,6 +929,16 @@ function createTelegram({
     forget,
     paths: { dir, dbDir, filesDir, outgoingDir },
   };
+}
+
+// A file already on Telegram (a sticker, a saved GIF): by its TDLib file ID
+// or remote ID only, never a path on this PC.
+function cloudFile(file) {
+  if (file?.['@type'] === 'inputFileId' && Number.isSafeInteger(Number(file.id)) && file.id > 0)
+    return { '@type': 'inputFileId', id: Number(file.id) };
+  if (file?.['@type'] === 'inputFileRemote' && typeof file.id === 'string' && file.id.length < 512)
+    return { '@type': 'inputFileRemote', id: file.id };
+  throw Error('Pick the sticker or GIF again.');
 }
 
 // A message text as TDLib takes it: plain text and its formatting entities.

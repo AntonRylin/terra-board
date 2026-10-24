@@ -75,6 +75,7 @@ const makeUsers = () =>
     { id: 102, first_name: 'Alex', last_name: 'Kim', photo: 2 },
     { id: 103, first_name: 'Sam', last_name: 'Ortega', photo: 3 },
     { id: 104, first_name: 'Dana', last_name: 'Wu' },
+    { id: 105, first_name: 'Weather Bot', last_name: '', bot: true },
   ].map((u) => ({
     '@type': 'user',
     id: u.id,
@@ -82,7 +83,7 @@ const makeUsers = () =>
     last_name: u.last_name,
     phone_number: '',
     status: { '@type': u.id === 101 ? 'userStatusOnline' : 'userStatusRecently' },
-    type: { '@type': 'userTypeRegular' },
+    type: u.bot ? { '@type': 'userTypeBot' } : { '@type': 'userTypeRegular' },
     ...(u.photo && {
       profile_photo: {
         '@type': 'profilePhoto',
@@ -97,6 +98,13 @@ let users = [];
 const text = (value, entities = []) => ({ '@type': 'formattedText', text: value, entities });
 const private_ = (userId) => ({ '@type': 'chatTypePrivate', user_id: userId });
 const chats = [
+  {
+    id: 105,
+    title: 'Weather Bot',
+    type: private_(105),
+    order: '450',
+    unread: 0,
+  },
   {
     id: 1,
     title: 'Design team',
@@ -181,6 +189,90 @@ function seed() {
     if (!histories.has(m.chat_id)) histories.set(m.chat_id, []);
     histories.get(m.chat_id).push(m);
   };
+  add(
+    message(1, 104, 200, {
+      '@type': 'messagePoll',
+      poll: {
+        '@type': 'poll',
+        id: '77',
+        question: text('Team lunch day?'),
+        options: ['Tuesday', 'Wednesday', 'Friday'].map((o, i) => ({
+          '@type': 'pollOption',
+          id: String(i),
+          text: text(o),
+          voter_count: i === 0 ? 2 : 1,
+          vote_percentage: i === 0 ? 50 : 25,
+          is_chosen: false,
+          is_being_chosen: false,
+        })),
+        total_voter_count: 4,
+        is_anonymous: false,
+        allows_multiple_answers: false,
+        type: { '@type': 'pollTypeRegular', allow_adding_options: false },
+        is_closed: false,
+      },
+    }),
+  );
+  add(
+    message(
+      105,
+      105,
+      20,
+      { '@type': 'messageText', text: text('Vienna: 14°C, light rain.') },
+      {
+        reply_markup: {
+          '@type': 'replyMarkupInlineKeyboard',
+          rows: [
+            [
+              {
+                '@type': 'inlineKeyboardButton',
+                text: 'Refresh',
+                type: { '@type': 'inlineKeyboardButtonTypeCallback', data: 'cmVmcmVzaA==' },
+              },
+              {
+                '@type': 'inlineKeyboardButton',
+                text: 'Forecast',
+                type: {
+                  '@type': 'inlineKeyboardButtonTypeUrl',
+                  url: 'https://example.com/forecast',
+                },
+              },
+            ],
+          ],
+        },
+      },
+    ),
+  );
+  add(
+    message(
+      105,
+      105,
+      19,
+      { '@type': 'messageText', text: text('Choose a day:') },
+      {
+        reply_markup: {
+          '@type': 'replyMarkupShowKeyboard',
+          rows: [
+            [
+              {
+                '@type': 'keyboardButton',
+                text: 'Today',
+                type: { '@type': 'keyboardButtonTypeText' },
+              },
+              {
+                '@type': 'keyboardButton',
+                text: 'Tomorrow',
+                type: { '@type': 'keyboardButtonTypeText' },
+              },
+            ],
+          ],
+          is_persistent: true,
+          resize_keyboard: true,
+          one_time: false,
+        },
+      },
+    ),
+  );
   add(
     message(1, 103, 300, {
       '@type': 'messageText',
@@ -283,6 +375,9 @@ function chatObject(c) {
       mute_for: c.muted ? 2147483647 : 0,
     },
     permissions: { '@type': 'chatPermissions', can_send_basic_messages: true },
+    // The bot's keyboard comes from its newest message that set one.
+    reply_markup_message_id:
+      history.filter((m) => m.reply_markup?.['@type'] === 'replyMarkupShowKeyboard').pop()?.id || 0,
   };
 }
 
@@ -315,6 +410,19 @@ const position = (chatId, list, order, pinned = false) =>
 const findMessage = (chatId, id) => (histories.get(chatId) || []).find((m) => m.id === id);
 
 const loadedLists = new Set();
+const scheduled = new Map();
+// Stickers from the Terra set: pictures from the media folder.
+const stickerOf = (id) => ({
+  '@type': 'sticker',
+  id: String(id),
+  set_id: '5001',
+  width: 512,
+  height: 512,
+  emoji: id === 81 ? '👍' : '🎨',
+  format: { '@type': 'stickerFormatWebp' },
+  full_type: { '@type': 'stickerFullTypeRegular' },
+  sticker: pub(files.get(id) || file(id, id === 81 ? 'avatar-2.png' : 'avatar-3.png')),
+});
 function handle(query) {
   const type = query['@type'];
   switch (type) {
@@ -389,6 +497,212 @@ function handle(query) {
         '@type': 'updateChatNotificationSettings',
         chat_id: query.chat_id,
         notification_settings: query.notification_settings,
+      });
+      return reply(query, { '@type': 'ok' });
+    case 'getMessage': {
+      const m = findMessage(query.chat_id, query.message_id);
+      return m ? reply(query, m) : fail(query, 404, 'Message not found');
+    }
+    case 'setPollAnswer': {
+      const m = findMessage(query.chat_id, query.message_id);
+      if (!m) return fail(query, 404, 'Message not found');
+      const poll = m.content.poll;
+      poll.options = poll.options.map((o, i) => ({
+        ...o,
+        is_chosen: query.option_ids.includes(i),
+        voter_count: o.voter_count + (query.option_ids.includes(i) ? 1 : 0),
+      }));
+      poll.total_voter_count += query.option_ids.length ? 1 : 0;
+      poll.options = poll.options.map((o) => ({
+        ...o,
+        vote_percentage: Math.round((o.voter_count * 100) / poll.total_voter_count),
+      }));
+      emit({
+        '@type': 'updateMessageContent',
+        chat_id: m.chat_id,
+        message_id: m.id,
+        new_content: m.content,
+      });
+      return reply(query, { '@type': 'ok' });
+    }
+    case 'searchChatMessages': {
+      const q = String(query.query || '').toLowerCase();
+      const found = (histories.get(query.chat_id) || [])
+        .filter((m) => JSON.stringify(m.content).toLowerCase().includes(q))
+        .reverse();
+      return reply(query, {
+        '@type': 'foundChatMessages',
+        total_count: found.length,
+        messages: found,
+        next_from_message_id: 0,
+      });
+    }
+    case 'getInstalledStickerSets':
+      return reply(query, {
+        '@type': 'stickerSets',
+        total_count: 1,
+        sets: [
+          {
+            '@type': 'stickerSetInfo',
+            id: '5001',
+            title: 'Terra',
+            name: 'terra',
+            covers: [],
+            size: 2,
+          },
+        ],
+      });
+    case 'getStickerSet':
+      return reply(query, {
+        '@type': 'stickerSet',
+        id: '5001',
+        title: 'Terra',
+        name: 'terra',
+        stickers: [stickerOf(81), stickerOf(82)],
+      });
+    case 'getRecentStickers':
+      return reply(query, { '@type': 'stickers', stickers: [] });
+    case 'getSavedAnimations':
+      return reply(query, {
+        '@type': 'animations',
+        animations: [
+          {
+            '@type': 'animation',
+            duration: 2,
+            width: 320,
+            height: 200,
+            file_name: 'gif.mp4',
+            mime_type: 'video/mp4',
+            thumbnail: {
+              '@type': 'thumbnail',
+              format: { '@type': 'thumbnailFormatJpeg' },
+              width: 320,
+              height: 200,
+              file: pub(file(91, 'photo-1.png')),
+            },
+            animation: pub(file(92, '', { downloaded: false, size: 90000 })),
+          },
+        ],
+      });
+    case 'getChatScheduledMessages':
+      return reply(query, {
+        '@type': 'messages',
+        total_count: 0,
+        messages: (scheduled.get(query.chat_id) || []).slice().reverse(),
+      });
+    case 'editMessageSchedulingState': {
+      const list = scheduled.get(query.chat_id) || [];
+      const m = list.find((x) => x.id === query.message_id);
+      if (!m) return fail(query, 404, 'Message not found');
+      scheduled.set(
+        query.chat_id,
+        list.filter((x) => x !== m),
+      );
+      emit({
+        '@type': 'updateDeleteMessages',
+        chat_id: query.chat_id,
+        message_ids: [m.id],
+        is_permanent: true,
+        from_cache: false,
+      });
+      const now = {
+        ...m,
+        id: nextMessage++,
+        scheduling_state: undefined,
+        date: Math.floor(Date.now() / 1000),
+      };
+      histories.get(query.chat_id)?.push(now);
+      emit({ '@type': 'updateNewMessage', message: now });
+      return reply(query, { '@type': 'ok' });
+    }
+    case 'getCallbackQueryAnswer':
+      return reply(query, {
+        '@type': 'callbackQueryAnswer',
+        text: 'Updated: 15°C',
+        show_alert: false,
+        url: '',
+      });
+    case 'getContacts':
+      return reply(query, { '@type': 'users', total_count: 4, user_ids: [101, 102, 103, 104] });
+    case 'createNewBasicGroupChat': {
+      const c = {
+        id: 9,
+        title: query.title,
+        type: { '@type': 'chatTypeBasicGroup', basic_group_id: 9 },
+        order: '1200',
+        unread: 0,
+      };
+      chats.push(c);
+      histories.set(9, [
+        message(9, me, 0, {
+          '@type': 'messageBasicGroupChatCreate',
+          title: query.title,
+          member_user_ids: query.user_ids,
+        }),
+      ]);
+      emit({ '@type': 'updateNewChat', chat: chatObject(c) });
+      position(9, { '@type': 'chatListMain' }, 1200);
+      return reply(query, {
+        '@type': 'createdBasicGroupChat',
+        chat_id: 9,
+        failed_to_add_members: { '@type': 'failedToAddMembers', failed_to_add_members: [] },
+      });
+    }
+    case 'loadActiveStories':
+      emit({
+        '@type': 'updateChatActiveStories',
+        active_stories: {
+          '@type': 'chatActiveStories',
+          chat_id: 101,
+          list: { '@type': 'storyListMain' },
+          order: 10,
+          max_read_story_id: 0,
+          stories: [
+            { '@type': 'storyInfo', story_id: 1, date: now - 3600, is_for_close_friends: false },
+            { '@type': 'storyInfo', story_id: 2, date: now - 600, is_for_close_friends: false },
+          ],
+        },
+      });
+      return fail(query, 404, 'Not Found');
+    case 'getStory':
+      return reply(query, {
+        '@type': 'story',
+        id: query.story_id,
+        poster_chat_id: query.story_poster_chat_id,
+        date: now - 600,
+        content: {
+          '@type': 'storyContentPhoto',
+          photo: {
+            '@type': 'photo',
+            sizes: [
+              {
+                '@type': 'photoSize',
+                type: 'x',
+                photo: pub(
+                  file(95 + query.story_id, query.story_id === 1 ? 'photo-2.png' : 'photo-3.png'),
+                ),
+                width: 900,
+                height: 1200,
+              },
+            ],
+          },
+        },
+        caption: text(query.story_id === 1 ? 'Morning in Vienna' : 'Board day'),
+      });
+    case 'discardCall':
+      emit({
+        '@type': 'updateCall',
+        call: {
+          '@type': 'call',
+          id: query.call_id,
+          user_id: 101,
+          is_outgoing: false,
+          is_video: false,
+          state: {
+            '@type': 'callStateDiscarded',
+            reason: { '@type': 'callDiscardReasonDeclined' },
+          },
+        },
       });
       return reply(query, { '@type': 'ok' });
     case 'getMessageProperties': {
@@ -616,13 +930,89 @@ function handle(query) {
         inputMessageDocument: ['document', 'inputDocument'],
         inputMessageVideo: ['video', 'inputVideo'],
         inputMessageVoiceNote: ['voice_note', 'inputVoiceNote'],
+        inputMessageSticker: ['sticker', 'inputSticker'],
+        inputMessageAnimation: ['animation', 'inputAnimation'],
       }[content?.['@type']];
       if (shape) {
         const [field, inner] = shape;
         const outer = content[field];
-        if (outer?.['@type'] !== inner || outer[field]?.['@type'] !== 'inputFileLocal')
+        if (
+          outer?.['@type'] !== inner ||
+          !['inputFileLocal', 'inputFileId', 'inputFileRemote'].includes(outer[field]?.['@type'])
+        )
           return fail(query, 400, 'InputFile is not specified');
       }
+      if (
+        content['@type'] === 'inputMessageSticker' ||
+        content['@type'] === 'inputMessageAnimation'
+      ) {
+        const id = content.sticker?.sticker?.id ?? content.animation?.animation?.id;
+        const f = files.get(id);
+        const shownCloud =
+          content['@type'] === 'inputMessageSticker'
+            ? {
+                '@type': 'messageSticker',
+                sticker: { ...stickerOf(id), sticker: pub(f) },
+                is_premium: false,
+              }
+            : {
+                '@type': 'messageAnimation',
+                animation: {
+                  '@type': 'animation',
+                  duration: 2,
+                  width: 320,
+                  height: 200,
+                  file_name: 'gif.mp4',
+                  mime_type: 'video/mp4',
+                  thumbnail: {
+                    '@type': 'thumbnail',
+                    format: { '@type': 'thumbnailFormatJpeg' },
+                    width: 320,
+                    height: 200,
+                    file: pub(files.get(91)),
+                  },
+                  animation: pub(f),
+                },
+                caption: text(''),
+                show_caption_above_media: false,
+                has_spoiler: false,
+                is_secret: false,
+              };
+        const sentCloud = message(query.chat_id, me, 0, shownCloud);
+        histories.get(query.chat_id)?.push(sentCloud);
+        reply(query, sentCloud);
+        emit({ '@type': 'updateNewMessage', message: sentCloud });
+        return;
+      }
+      const sendAt = query.options?.scheduling_state?.send_date;
+      if (sendAt && content['@type'] === 'inputMessageText') {
+        const later = {
+          ...message(query.chat_id, me, 0, { '@type': 'messageText', text: content.text }),
+          scheduling_state: { '@type': 'messageSchedulingStateSendAtDate', send_date: sendAt },
+        };
+        if (!scheduled.has(query.chat_id)) scheduled.set(query.chat_id, []);
+        scheduled.get(query.chat_id).push(later);
+        reply(query, later);
+        // TDLib announces scheduled messages too; frames keep them out of the chat.
+        emit({ '@type': 'updateNewMessage', message: later });
+        return;
+      }
+      if (content['@type'] === 'inputMessageText' && content.text?.text === 'call me')
+        setTimeout(
+          () =>
+            emit({
+              '@type': 'updateCall',
+              call: {
+                '@type': 'call',
+                id: 31,
+                user_id: 101,
+                is_outgoing: false,
+                is_video: false,
+                state: { '@type': 'callStatePending', is_created: true, is_received: true },
+              },
+            }),
+          600,
+        );
       let shown;
       if (content['@type'] === 'inputMessageText')
         shown = { '@type': 'messageText', text: content.text };
