@@ -1505,8 +1505,9 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     const o: CanvasObject = {
       id: uid(),
       type: 'file',
-      text: 'Desktop',
-      file: { root: 'desktop', path: '', kind: 'folder' },
+      // Starts like Windows Explorer: This PC, where a drive is picked.
+      text: 'This PC',
+      file: { root: 'computer', path: '', kind: 'folder' },
       x: point?.x ?? p.x - width / 2,
       y: point?.y ?? p.y - height / 2,
       width,
@@ -1608,9 +1609,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       x: point.x,
       y: point.y,
       width: url ? 440 : 360,
-      height: url
-        ? compactLinkHeight
-        : Math.min(1500, Math.max(80, value.split('\n').length * 30)),
+      height: url ? compactLinkHeight : Math.min(1500, Math.max(80, value.split('\n').length * 30)),
       z: e.topZ() + 1,
       text: url ? new URL(url).hostname : value,
       color: url ? '#ffffff' : '#29313b',
@@ -1659,7 +1658,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       surface = host.current,
       live = liveBrowserState.current,
       page = liveBrowserRef.current?.querySelector<HTMLElement>('.browser-frame-page');
-    if (!e || !surface || !page || !live || live.closing || !window.canvas?.browserDrop) return null;
+    if (!e || !surface || !page || !live || live.closing || !window.canvas?.browserDrop)
+      return null;
     const r = surface.getBoundingClientRect(),
       c = e.camera;
     const x = r.left + point.x * c.zoom + c.x,
@@ -2646,16 +2646,14 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           const live = liveBrowserState.current;
           if (live) e.setSelection([live.id]);
           if (id)
-            void window
-              .canvas!.browserDrop!({
-                id,
-                ...page,
-                items: objects.map((o) => ({
-                  assetId: o.assetId!,
-                  name: (o.type === 'image' ? o.imageTitle : o.text) || undefined,
-                })),
-              })
-              .catch(error);
+            void window.canvas!.browserDrop!({
+              id,
+              ...page,
+              items: objects.map((o) => ({
+                assetId: o.assetId!,
+                name: (o.type === 'image' ? o.imageTitle : o.text) || undefined,
+              })),
+            }).catch(error);
           return true;
         }
         const folder =
@@ -2774,7 +2772,11 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         // A hover embed gives way once selected, so it can be moved.
         if (objects.some((o) => o.id === hoverShownId.current)) showHover(null);
         const browser = liveBrowserState.current;
-        if (browser && !browser.closing && !(objects.length === 1 && objects[0].id === browser.id)) {
+        if (
+          browser &&
+          !browser.closing &&
+          !(objects.length === 1 && objects[0].id === browser.id)
+        ) {
           // Pressing another object may start dragging it into the page: the
           // frame keeps running until the button is up and the drop is done.
           if (pointerHeld.current)
@@ -2784,7 +2786,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
                 setTimeout(() => {
                   const b = liveBrowserState.current,
                     chosen = engine.current?.selection;
-                  if (b && !b.closing && !(chosen?.size === 1 && chosen.has(b.id))) void endBrowser();
+                  if (b && !b.closing && !(chosen?.size === 1 && chosen.has(b.id)))
+                    void endBrowser();
                 }, 0),
               { once: true, capture: true },
             );
@@ -5478,7 +5481,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
               ? [
                   {
                     id: 'folder' as const,
-                    label: 'Folder',
+                    label: 'Explorer',
                     icon: FolderOpen,
                     action: () => createFolder(),
                   },

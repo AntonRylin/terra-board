@@ -234,6 +234,38 @@ test('known folders are stored relative to themselves, everything else by full p
   }
 });
 
+test('This PC lists the drives; a drive leads back to it and is never renamed or trashed', async (t) => {
+  if (process.platform !== 'win32') return t.skip('drive letters are a Windows thing');
+  const { dirs, files, cleanup } = fixture();
+  try {
+    const source = { root: 'computer', path: '' };
+    const top = await files.list({ source });
+    assert.equal(top.state, 'folder');
+    assert.equal(top.label, 'This PC');
+    assert.equal(top.parent, null);
+    const drive = path.parse(dirs.home).root;
+    const item = top.items.find((i) => i.path.toLowerCase() === drive.toLowerCase());
+    assert.ok(item, 'the drive holding the test folder is listed');
+    assert.equal(item.drive, true);
+    assert.equal(item.folder, true);
+    assert.match(item.name, /\([A-Z]:\)$/);
+    const inDrive = await files.list({ source, sub: drive });
+    assert.equal(inDrive.parent, top.base);
+    const deeper = await files.list({ source, sub: dirs.home });
+    assert.equal(deeper.state, 'folder');
+    await assert.rejects(files.rename({ path: drive, name: 'X' }));
+    const trashed = await files.trash({ paths: [drive] });
+    assert.equal(trashed.done, 0);
+    assert.equal(trashed.errors.length, 1);
+    const thisPc = { root: 'computer', path: '', kind: 'folder' };
+    assert.deepEqual(fileLinkValue(thisPc), storeFileLinkValue(thisPc));
+    for (const check of [fileLinkValue, storeFileLinkValue])
+      assert.throws(() => check({ root: 'computer', path: 'Users', kind: 'folder' }));
+  } finally {
+    cleanup();
+  }
+});
+
 test('a folder lists its items live, hides system files and reports missing folders', async () => {
   const { dirs, files, cleanup } = fixture();
   try {

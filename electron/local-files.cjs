@@ -6,8 +6,20 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 
-const roots = ['desktop', 'downloads', 'documents', 'pictures', 'music', 'videos', 'home'];
+// 'computer' is This PC: the drives, like Explorer's start page (no path).
+const roots = [
+  'computer',
+  'desktop',
+  'downloads',
+  'documents',
+  'pictures',
+  'music',
+  'videos',
+  'home',
+];
+const COMPUTER = '::computer';
 const rootLabels = {
+  computer: 'This PC',
   desktop: 'Desktop',
   downloads: 'Downloads',
   documents: 'Documents',
@@ -196,6 +208,7 @@ function createLocalFiles({
     const rel = typeof source.path === 'string' ? source.path : '';
     if (source.root) {
       if (!roots.includes(source.root)) throw Error('Invalid folder');
+      if (source.root === 'computer') return COMPUTER;
       const base = knownPath(source.root);
       if (!base) throw Error(`This computer has no ${rootLabels[source.root]} folder`);
       const parts = rel.split(/[\\/]+/).filter(Boolean);
@@ -210,6 +223,7 @@ function createLocalFiles({
     file = absolute(file);
     let best = null;
     for (const root of roots) {
+      if (root === 'computer') continue;
       const base = knownPath(root);
       if (!base || !within(file, base)) continue;
       if (!best || base.length > best.base.length) best = { root, base };
@@ -330,8 +344,10 @@ function createLocalFiles({
   // What a folder reference shows on this computer.
   async function list({ source, sub, hidden = false } = {}) {
     const base = sourcePath(source);
+    const computer = base === COMPUTER;
+    if (computer && (!sub || sub === COMPUTER)) return listDrives();
     const dir = sub ? absolute(sub) : base;
-    if (sub && !within(dir, base) && !within(dir, publicDesktop() || '\0'))
+    if (sub && !computer && !within(dir, base) && !within(dir, publicDesktop() || '\0'))
       throw Error('Invalid folder');
     let stat;
     try {
@@ -381,8 +397,15 @@ function createLocalFiles({
       dir,
       base,
       dirs,
-      label: same(dir, base) ? label(source, base) : pathApi.basename(dir),
-      parent: same(dir, base) ? null : pathApi.dirname(dir),
+      label: same(dir, base) ? label(source, base) : pathApi.basename(dir) || dir,
+      // In This PC a drive's parent is the list of drives.
+      parent: same(dir, base)
+        ? null
+        : isDrive(dir)
+          ? computer
+            ? COMPUTER
+            : null
+          : pathApi.dirname(dir),
       state: 'folder',
       items,
       total,
@@ -390,6 +413,50 @@ function createLocalFiles({
       hideExtensions: hide,
     };
   }
+
+  // This PC: the drives, named as Explorer names them. The helper asks
+  // Windows (labels, kinds); without it, drive letters that exist.
+  async function listDrives() {
+    let drives = null;
+    if (windows && helper?.available && helper.drives) {
+      try {
+        drives = await helper.drives();
+      } catch {}
+    }
+    if (!drives) {
+      drives = [];
+      if (windows)
+        for (let code = 67; code <= 90; code++) {
+          const root = String.fromCharCode(code) + ':\\';
+          if (fs.existsSync(root))
+            drives.push({ path: root, name: `Local Disk (${root.slice(0, 2)})` });
+        }
+      else drives.push({ path: '/', name: 'Computer' });
+    }
+    const items = drives.map((d) => ({
+      name: d.name,
+      path: d.path,
+      folder: true,
+      size: null,
+      modified: 0,
+      hidden: false,
+      drive: true,
+      ...(d.total ? { total: d.total, free: d.free } : {}),
+    }));
+    return {
+      dir: COMPUTER,
+      base: COMPUTER,
+      dirs: [],
+      label: rootLabels.computer,
+      parent: null,
+      state: 'folder',
+      items,
+      total: items.length,
+      hiddenCount: 0,
+      hideExtensions: await readHideExtensions(),
+    };
+  }
+  const isDrive = (file) => pathApi.dirname(file) === file;
 
   // One watcher per folder, shared by every frame showing it. Network and
   // removable drives that can't be watched are compared every few seconds.
@@ -571,6 +638,10 @@ function createLocalFiles({
     const ops = [],
       errors = [];
     for (const from of paths(input)) {
+      if (isDrive(from)) {
+        errors.push(`${from}: a whole drive can’t be moved or copied here.`);
+        continue;
+      }
       const name = pathApi.basename(from);
       try {
         const stat = await fs.promises.lstat(from);
@@ -605,6 +676,7 @@ function createLocalFiles({
 
   async function rename({ path: input, name } = {}) {
     const from = absolute(input);
+    if (isDrive(from)) throw Error('Drives are renamed in Windows’ own settings.');
     const problem = nameProblem(name);
     if (problem) throw Error(problem);
     const to = pathApi.join(pathApi.dirname(from), name);
@@ -636,6 +708,10 @@ function createLocalFiles({
     const errors = [];
     let done = 0;
     for (const file of paths(input)) {
+      if (isDrive(file)) {
+        errors.push(`${file}: a drive can’t go to the Recycle Bin.`);
+        continue;
+      }
       try {
         await shell.trashItem(file);
         done++;

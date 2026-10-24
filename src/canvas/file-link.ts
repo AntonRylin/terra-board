@@ -5,7 +5,10 @@
 // exported or synced.
 import type { Asset, CanvasObject } from '../model';
 
+// 'computer' is This PC: the computer's drives, like Explorer's start page
+// (always with path '').
 export const fileRoots = [
+  'computer',
   'desktop',
   'downloads',
   'documents',
@@ -16,6 +19,7 @@ export const fileRoots = [
 ] as const;
 export type FileRoot = (typeof fileRoots)[number];
 export const fileRootLabels: Record<FileRoot, string> = {
+  computer: 'This PC',
   desktop: 'Desktop',
   downloads: 'Downloads',
   documents: 'Documents',
@@ -69,6 +73,7 @@ export function fileLinkValue(input: unknown): FileLink {
     if (root !== undefined || path !== '') throw Error(`Invalid ${kind} frame`);
     return { path: '', kind };
   }
+  if (root === 'computer' && path !== '') throw Error('Invalid file link path');
   if (root !== undefined) {
     if (/^([a-z]:|[\\/])/i.test(path) || path.split(/[\\/]+/).some((p) => p === '..' || p === '.'))
       throw Error('Invalid file link path');
@@ -105,6 +110,10 @@ export interface FileItem {
   app?: boolean;
   // From the Desktop every user of this computer shares.
   shared?: boolean;
+  // A drive in This PC (path like 'C:\'), with its size in bytes when known.
+  drive?: boolean;
+  total?: number;
+  free?: number;
 }
 export type FileListing =
   | {
@@ -296,6 +305,7 @@ export function extensionOf(name: string) {
   return dot > 0 ? name.slice(dot + 1).toLowerCase() : '';
 }
 export function typeLabel(item: FileItem) {
+  if (item.drive) return 'Drive';
   if (item.folder) return 'File folder';
   if (item.shortcut) return 'Shortcut';
   if (item.app) return 'Application';

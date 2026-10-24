@@ -98,7 +98,7 @@ export default function CanvasToolbar({
               : id === 'browser'
                 ? 'Browser'
                 : id === 'folder'
-                  ? 'Folder'
+                  ? 'Explorer'
                   : id === 'desktops'
                     ? 'Desktops'
                     : id === 'telegram'

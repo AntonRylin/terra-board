@@ -94,7 +94,7 @@ const toolInfo: Record<ToolbarId, { label: string; icon: LucideIcon }> = {
   paper: { label: 'Document', icon: NotebookPen },
   html: { label: 'HTML embed', icon: CodeXml },
   browser: { label: 'Browser', icon: Globe },
-  folder: { label: 'Folder', icon: FolderOpen },
+  folder: { label: 'Explorer', icon: FolderOpen },
   desktops: { label: 'Desktops', icon: Monitor },
   telegram: { label: 'Telegram', icon: MessageCircle },
   media: { label: 'Files', icon: ImagePlus },

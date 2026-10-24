@@ -79,6 +79,7 @@ public static class TerraShell
                 case "text": TerraInput.Text(long.Parse(parts[2]), Arg(parts[3])); return id + "\tok\t";
                 case "appfocus": TerraInput.Focus(long.Parse(parts[2]), parts[3] == "1"); return id + "\tok\t";
                 case "popup": return id + "\tok\t" + (TerraInput.HasPopup(long.Parse(parts[2])) ? "1" : "0");
+                case "drives": return id + "\tok\t" + Out(Drives());
                 case "ping": return id + "\tok\t";
             }
             return id + "\terr\t" + Out("Unknown operation");
@@ -87,6 +88,37 @@ public static class TerraShell
         {
             return id + "\terr\t" + Out(e.Message);
         }
+    }
+
+    // The drives for This PC, one per line: root, name, total bytes, free bytes.
+    // Network drives are not asked whether they are ready (a disconnected one
+    // can take many seconds to answer).
+    static string Drives()
+    {
+        var sb = new StringBuilder();
+        foreach (var d in System.IO.DriveInfo.GetDrives())
+        {
+            string letter = d.Name.TrimEnd('\\'), label = "";
+            long total = 0, free = 0;
+            bool network = d.DriveType == System.IO.DriveType.Network;
+            try
+            {
+                if (!network && d.IsReady)
+                {
+                    label = d.VolumeLabel;
+                    total = d.TotalSize;
+                    free = d.AvailableFreeSpace;
+                }
+            }
+            catch { }
+            if (string.IsNullOrEmpty(label))
+                label = d.DriveType == System.IO.DriveType.Removable ? "USB Drive"
+                    : d.DriveType == System.IO.DriveType.CDRom ? "DVD Drive"
+                    : network ? "Network Drive" : "Local Disk";
+            sb.Append(d.Name).Append('\t').Append(label.Replace('\t', ' ').Replace('\n', ' ')).Append(" (").Append(letter).Append(")\t")
+              .Append(total).Append('\t').Append(free).Append('\n');
+        }
+        return sb.ToString();
     }
 
     // flags 0: a thumbnail when Windows has one, otherwise the icon (as Explorer shows).
@@ -987,6 +1019,15 @@ function createShellHelper({
     // Virtual desktops in order, the current one, and the windows open on each.
     async desktops() {
       return JSON.parse(unb64(await request('desktops', true)));
+    },
+    async drives() {
+      return unb64(await request('drives', true))
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => {
+          const [root, name, total, free] = line.split('\t');
+          return { path: root, name, total: Number(total) || 0, free: Number(free) || 0 };
+        });
     },
     async focusWindow(id, steps) {
       await request(`focus\t${id}\t${steps | 0}`, true);

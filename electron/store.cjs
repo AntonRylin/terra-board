@@ -233,7 +233,16 @@ function tableCellValue(column, value) {
 }
 // Folder frames and file tiles: keep equal to fileLinkValue in
 // src/canvas/file-link.ts (a test compares them).
-const fileRoots = ['desktop', 'downloads', 'documents', 'pictures', 'music', 'videos', 'home'];
+const fileRoots = [
+  'computer',
+  'desktop',
+  'downloads',
+  'documents',
+  'pictures',
+  'music',
+  'videos',
+  'home',
+];
 const fileViews = ['icons', 'list'];
 const fileIconSizes = ['small', 'medium', 'large', 'huge'];
 const fileSorts = ['name', 'modified', 'type', 'size'];
@@ -247,13 +256,13 @@ function fileLinkValue(value) {
     if (root !== undefined || link !== '') throw Error(`Invalid ${kind} frame`);
     return { path: '', kind };
   }
+  if (root === 'computer' && link !== '') throw Error('Invalid file link path');
   if (root !== undefined) {
     if (/^([a-z]:|[\\/])/i.test(link) || link.split(/[\\/]+/).some((p) => p === '..' || p === '.'))
       throw Error('Invalid file link path');
   } else if (!/^([a-z]:[\\/]|\\\\[^\\/]+[\\/][^\\/]+|\/)/i.test(link))
     throw Error('Invalid file link path');
-  if (kind !== 'folder' && kind !== 'file' && kind !== 'app')
-    throw Error('Invalid file link kind');
+  if (kind !== 'folder' && kind !== 'file' && kind !== 'app') throw Error('Invalid file link kind');
   const result = { path: link, kind };
   if (root !== undefined) result.root = root;
   if (fileViews.includes(view)) result.view = view;

@@ -32,6 +32,7 @@ import {
   FolderOpen,
   FolderPlus,
   FolderSearch,
+  HardDrive,
   House,
   Image,
   LayoutGrid,
@@ -114,6 +115,7 @@ const driveOf = (file: string) =>
     ? file.slice(0, 2).toLowerCase()
     : file.split(/[\\/]/).slice(0, 4).join('/').toLowerCase();
 const rootIcons: Record<FileRoot, typeof Monitor> = {
+  computer: HardDrive,
   desktop: Monitor,
   downloads: Download,
   documents: FileText,
@@ -393,6 +395,8 @@ function FolderCard({
   }, [byPath]);
 
   const hideExtensions = listing?.state === 'folder' ? listing.hideExtensions : true;
+  // This PC: the list of drives (electron/local-files.cjs), where nothing can be created.
+  const drivesView = listing?.state === 'folder' && listing.dir === '::computer';
   const view = link.view || 'icons';
   const layout = iconLayouts[link.iconSize || 'medium'];
   const bodyWidth = Math.max(40, o.width - 2);
@@ -598,7 +602,7 @@ function FolderCard({
     });
   };
   const newFolder = () => {
-    if (!files || listing?.state !== 'folder') return;
+    if (!files || listing?.state !== 'folder' || drivesView) return;
     void run('Creating a folder…', async () => {
       const result = await files.newFolder({ dir: listing.dir });
       const created = result.ops[0]?.to;
@@ -1163,7 +1167,9 @@ function FolderCard({
           'data-hidden': item.hidden || undefined,
           'data-folder': item.folder,
           draggable: !renaming,
-          title: `${item.name}\n${typeLabel(item)}${item.size !== null ? `\n${formatSize(item.size)}` : ''}\nModified ${formatDate(item.modified)}${item.cloud ? '\nOnline only' : ''}`,
+          title: item.drive
+            ? `${item.name}${item.total ? `\n${formatSize(item.free ?? 0)} free of ${formatSize(item.total)}` : ''}`
+            : `${item.name}\n${typeLabel(item)}${item.size !== null ? `\n${formatSize(item.size)}` : ''}\nModified ${formatDate(item.modified)}${item.cloud ? '\nOnline only' : ''}`,
           style: { left: cell.x, top: cell.y, width: cell.width, height: cell.height },
           onPointerDown: (event: PointerEvent) => pressItem(event, item),
           onDoubleClick: (event: React.MouseEvent) => {
@@ -1195,9 +1201,15 @@ function FolderCard({
                 <ItemIcon item={item} size={20} tier={tier} />
                 {label}
               </span>
-              <span>{formatDate(item.modified)}</span>
+              <span>{item.drive ? '' : formatDate(item.modified)}</span>
               <span>{typeLabel(item)}</span>
-              <span className="cf-size">{formatSize(item.size)}</span>
+              <span className="cf-size">
+                {item.drive
+                  ? item.total
+                    ? `${formatSize(item.free ?? 0)} free`
+                    : ''
+                  : formatSize(item.size)}
+              </span>
             </div>
           ),
         );
@@ -1322,6 +1334,7 @@ function FolderCard({
               className="cf-button"
               aria-label="New folder"
               title="New folder (Ctrl+Shift+N)"
+              disabled={drivesView}
               onClick={newFolder}
             >
               <FolderPlus size={17} />
