@@ -155,6 +155,27 @@ export function AppFrame({
       window.removeEventListener('pointerdown', press, true);
     };
   }, [live]);
+  // Not in use, the window keeps its frame's size (at 100% zoom), so the
+  // picture is the window pixel for pixel rather than stretched.
+  const bodyHeight = Math.max(20, o.height - folderHeader);
+  useEffect(() => {
+    if (!files || !win || live || win.minimized) return;
+    const scale = window.devicePixelRatio || 1;
+    if (
+      Math.abs(win.width - o.width * scale) <= 2 &&
+      Math.abs(win.height - bodyHeight * scale) <= 2
+    )
+      return;
+    const timer = window.setTimeout(
+      () =>
+        void files
+          .sizeWindow({ id: win.id, width: o.width, height: bodyHeight })
+          .then(() => refreshDesktops(300))
+          .catch(() => {}),
+      400,
+    );
+    return () => window.clearTimeout(timer);
+  }, [win?.id, win?.width, win?.height, win?.minimized, live, o.width, bodyHeight]);
   // The frame moved, resized or the board zoomed while in use: follow it.
   useEffect(() => {
     if (!live) return;
@@ -264,12 +285,19 @@ export function AppFrame({
         transform: `scale(${camera.zoom}) rotate(${o.rotation || 0}deg)`,
       }}
       onPointerDown={(event) => {
-        if (event.button !== 0 || (event.target as HTMLElement).closest('button')) return;
+        const target = event.target as HTMLElement;
+        if (event.button !== 0 || target.closest('button')) return;
+        // The header moves the frame; a press on a running app starts using it.
+        if (win && target.closest('.ca-body')) {
+          event.stopPropagation();
+          select(o.id);
+          return;
+        }
         forward(event);
       }}
-      onDoubleClick={(event) => {
-        if ((event.target as HTMLElement).closest('button')) return;
-        event.stopPropagation();
+      onClick={(event) => {
+        const target = event.target as HTMLElement;
+        if (!win || target.closest('button') || !target.closest('.ca-body')) return;
         use();
       }}
       onContextMenu={(event) => {

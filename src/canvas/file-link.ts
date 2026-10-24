@@ -156,6 +156,9 @@ export interface DesktopWindow {
   desktop: string;
   minimized: boolean;
   focused: boolean;
+  // What shows of the window, in real pixels.
+  width: number;
+  height: number;
 }
 export type DesktopsState =
   | { supported: true; current: string; desktops: VirtualDesktop[]; windows: DesktopWindow[] }
@@ -193,6 +196,7 @@ export interface FilesBridge {
     activate?: boolean;
   }): Promise<void>;
   undockWindow(args: { id: string }): Promise<void>;
+  sizeWindow(args: { id: string; width: number; height: number }): Promise<void>;
   onUndocked(callback: (id: string) => void): () => void;
   source(args: { path: string }): Promise<FileSource>;
   watch(args: { key: string; dirs: string[] }): Promise<void>;

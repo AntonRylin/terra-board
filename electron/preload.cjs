@@ -44,6 +44,7 @@ contextBridge.exposeInMainWorld('canvas', {
     closeWindow: (args) => ipcRenderer.invoke('canvas:files-close-window', args),
     dockWindow: (args) => ipcRenderer.invoke('canvas:files-dock-window', args),
     undockWindow: (args) => ipcRenderer.invoke('canvas:files-undock-window', args),
+    sizeWindow: (args) => ipcRenderer.invoke('canvas:files-size-window', args),
     onUndocked: (callback) => {
       const handler = (_event, id) => callback(id);
       ipcRenderer.on('canvas:files-undocked', handler);

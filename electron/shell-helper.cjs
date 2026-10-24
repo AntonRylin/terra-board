@@ -59,6 +59,7 @@ public static class TerraShell
                 case "close": TerraDesktops.Close(long.Parse(parts[2])); return id + "\tok\t";
                 case "dock": TerraDesktops.Dock(long.Parse(parts[2]), long.Parse(parts[3]), int.Parse(parts[4]), int.Parse(parts[5]), int.Parse(parts[6]), int.Parse(parts[7]), parts[8] == "1"); return id + "\tok\t";
                 case "undock": TerraDesktops.Undock(long.Parse(parts[2])); return id + "\tok\t";
+                case "size": TerraDesktops.Size(long.Parse(parts[2]), int.Parse(parts[3]), int.Parse(parts[4])); return id + "\tok\t";
                 case "ping": return id + "\tok\t";
             }
             return id + "\terr\t" + Out("Unknown operation");
@@ -247,6 +248,7 @@ public static class TerraDesktops
 
     public static string List()
     {
+        PerMonitor();
         var manager = (IVirtualDesktopManager)new VirtualDesktopManagerClass();
         var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(Key);
         var ids = DesktopIds(key);
@@ -300,6 +302,8 @@ public static class TerraDesktops
                 { "desktop", desktop == Guid.Empty ? "" : desktop.ToString() },
                 { "minimized", IsIconic(h) },
                 { "focused", h == foreground },
+                { "width", VisibleSize(h, true) },
+                { "height", VisibleSize(h, false) },
             });
             return true;
         }, IntPtr.Zero);
@@ -352,6 +356,13 @@ public static class TerraDesktops
         }
     }
 
+    static int VisibleSize(IntPtr h, bool width)
+    {
+        RECT r;
+        if (DwmGetWindowAttribute(h, 9, out r, Marshal.SizeOf(typeof(RECT))) != 0 && !GetWindowRect(h, out r)) return 0;
+        return width ? r.Right - r.Left : r.Bottom - r.Top;
+    }
+
     // Brings a window to the front (restored if minimized), after moving to its desktop.
     public static void Focus(long id, int steps)
     {
@@ -374,20 +385,31 @@ public static class TerraDesktops
     [DllImport("user32.dll")] static extern bool IsZoomed(IntPtr h);
     [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags);
     [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] static extern IntPtr SetWindowLongPtr(IntPtr h, int index, IntPtr value);
-    [DllImport("user32.dll")] static extern IntPtr SetProcessDpiAwarenessContext(IntPtr value);
+    [DllImport("user32.dll")] static extern IntPtr SetThreadDpiAwarenessContext(IntPtr value);
+    [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr h, int attr, out RECT value, int size);
     struct Home { public RECT Rect; public bool Maximized; }
     static readonly System.Collections.Generic.Dictionary<long, Home> homes = new System.Collections.Generic.Dictionary<long, Home>();
-    static bool dpiAware;
+
+    // Real pixels on every screen, whatever this process was started as.
+    static void PerMonitor() { SetThreadDpiAwarenessContext(new IntPtr(-4)); }
+
+    // Places a window so what you see of it (without the invisible resize
+    // borders Windows adds around most windows) fills the rectangle exactly.
+    static void PlaceVisible(IntPtr h, int x, int y, int width, int height, uint flags)
+    {
+        SetWindowPos(h, IntPtr.Zero, x, y, width, height, flags);
+        RECT outer, visible;
+        if (!GetWindowRect(h, out outer) || DwmGetWindowAttribute(h, 9, out visible, Marshal.SizeOf(typeof(RECT))) != 0) return;
+        int left = visible.Left - outer.Left, top = visible.Top - outer.Top;
+        int right = outer.Right - visible.Right, bottom = outer.Bottom - visible.Bottom;
+        if (left == 0 && top == 0 && right == 0 && bottom == 0 && outer.Left == x && outer.Top == y) return;
+        SetWindowPos(h, IntPtr.Zero, x - left, y - top, width + left + right, height + top + bottom, flags | 0x0010);
+    }
 
     // x, y, width and height are physical screen pixels.
     public static void Dock(long id, long owner, int x, int y, int width, int height, bool activate)
     {
-        if (!dpiAware)
-        {
-            // Per-monitor aware (v2), so positions are real pixels on every screen.
-            SetProcessDpiAwarenessContext(new IntPtr(-4));
-            dpiAware = true;
-        }
+        PerMonitor();
         IntPtr h = new IntPtr(id);
         if (!IsWindow(h)) throw new Exception("That window has closed.");
         if (!homes.ContainsKey(id))
@@ -399,9 +421,9 @@ public static class TerraDesktops
             homes[id] = new Home { Rect = r, Maximized = maximized };
             SetWindowLongPtr(h, -8, new IntPtr(owner));
         }
-        // SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW, plus SWP_NOOWNERZORDER.
+        // SWP_NOZORDER | SWP_SHOWWINDOW | SWP_NOOWNERZORDER, and SWP_NOACTIVATE unless asked.
         uint flags = 0x0004 | 0x0040 | 0x0200 | (activate ? 0u : 0x0010u);
-        SetWindowPos(h, IntPtr.Zero, x, y, Math.Max(120, width), Math.Max(80, height), flags);
+        PlaceVisible(h, x, y, Math.Max(120, width), Math.Max(80, height), flags);
         if (activate)
         {
             keybd_event(0x12, 0, 0, UIntPtr.Zero);
@@ -412,6 +434,7 @@ public static class TerraDesktops
 
     public static void Undock(long id)
     {
+        PerMonitor();
         IntPtr h = new IntPtr(id);
         if (!IsWindow(h)) { homes.Remove(id); return; }
         SetWindowLongPtr(h, -8, IntPtr.Zero);
@@ -421,6 +444,20 @@ public static class TerraDesktops
         // SWP_NOZORDER | SWP_NOACTIVATE.
         SetWindowPos(h, IntPtr.Zero, home.Rect.Left, home.Rect.Top, home.Rect.Right - home.Rect.Left, home.Rect.Bottom - home.Rect.Top, 0x0004 | 0x0010);
         if (home.Maximized) ShowWindow(h, 3);
+    }
+
+    // Gives a window (not in use on the board) the size of its frame, so its
+    // picture shows sharp, pixel for pixel. Where it is stays as it was.
+    public static void Size(long id, int width, int height)
+    {
+        PerMonitor();
+        IntPtr h = new IntPtr(id);
+        if (!IsWindow(h) || homes.ContainsKey(id)) return;
+        if (IsZoomed(h) || IsIconic(h)) ShowWindow(h, 9);
+        RECT outer;
+        GetWindowRect(h, out outer);
+        // SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOOWNERZORDER.
+        PlaceVisible(h, outer.Left, outer.Top, Math.Max(120, width), Math.Max(80, height), 0x0004 | 0x0010 | 0x0200);
     }
 
     // Asks a window to close, as its X button does; the app may ask to save first.
@@ -620,6 +657,9 @@ function createShellHelper({
         `dock\t${id}\t${owner}\t${x | 0}\t${y | 0}\t${width | 0}\t${height | 0}\t${activate ? 1 : 0}`,
         true,
       );
+    },
+    async sizeWindow(id, width, height) {
+      await request(`size\t${id}\t${width | 0}\t${height | 0}`, true);
     },
     async undockWindow(id) {
       await request(`undock\t${id}`, true);

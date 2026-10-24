@@ -9,6 +9,7 @@ public static class TestAppWin32 {
   [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
   [DllImport("user32.dll")] public static extern bool GetWindowRect(System.IntPtr h, out RECT r);
   [DllImport("user32.dll")] public static extern System.IntPtr SetProcessDpiAwarenessContext(System.IntPtr v);
+  [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(System.IntPtr h, int attr, out RECT r, int size);
 }
 '@
 [TestAppWin32]::SetProcessDpiAwarenessContext([IntPtr]::new(-4)) | Out-Null
@@ -30,7 +31,11 @@ $timer.Interval = 150
 $timer.Add_Tick({
   $r = New-Object TestAppWin32+RECT
   [TestAppWin32]::GetWindowRect($form.Handle, [ref]$r) | Out-Null
-  $json = '{"x":' + $r.Left + ',"y":' + $r.Top + ',"width":' + ($r.Right - $r.Left) + ',"height":' + ($r.Bottom - $r.Top) + ',"handle":"' + $form.Handle.ToInt64() + '"}'
+  $v = New-Object TestAppWin32+RECT
+  [TestAppWin32]::DwmGetWindowAttribute($form.Handle, 9, [ref]$v, 16) | Out-Null
+  $json = '{"x":' + $r.Left + ',"y":' + $r.Top + ',"width":' + ($r.Right - $r.Left) + ',"height":' + ($r.Bottom - $r.Top) +
+    ',"visible":{"x":' + $v.Left + ',"y":' + $v.Top + ',"width":' + ($v.Right - $v.Left) + ',"height":' + ($v.Bottom - $v.Top) + '}' +
+    ',"handle":"' + $form.Handle.ToInt64() + '"}'
   [IO.File]::WriteAllText($Report, $json)
 })
 $timer.Start()

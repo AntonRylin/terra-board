@@ -386,7 +386,11 @@ try {
   await drop(cellAt, [join(folder, 'a.txt')]);
   await until(async () => {
     const r = await rect(item('a.txt'));
-    return r && Math.abs(r.x + r.width / 2 - cellAt.x) < r.width && Math.abs(r.y + r.height / 2 - cellAt.y) < r.height;
+    return (
+      r &&
+      Math.abs(r.x + r.width / 2 - cellAt.x) < r.width &&
+      Math.abs(r.y + r.height / 2 - cellAt.y) < r.height
+    );
   }, 'icon moved to the drop spot');
   assert.ok(fs.existsSync(join(folder, 'a.txt')), 'still in its folder');
   fs.writeFileSync(join(outside, 'placed.txt'), 'P');
@@ -395,7 +399,11 @@ try {
   await until(() => fs.existsSync(join(folder, 'placed.txt')), 'outside file moved in');
   await until(async () => {
     const r = await rect(item('placed.txt'));
-    return r && Math.abs(r.x + r.width / 2 - placeAtSpot.x) < r.width && Math.abs(r.y + r.height / 2 - placeAtSpot.y) < r.height;
+    return (
+      r &&
+      Math.abs(r.x + r.width / 2 - placeAtSpot.x) < r.width &&
+      Math.abs(r.y + r.height / 2 - placeAtSpot.y) < r.height
+    );
   }, 'new file at the drop spot');
   await sleep(400);
   await screenshot('3b-free.png');
@@ -519,12 +527,30 @@ try {
       await sleep(600);
       await screenshot('7-app-picture.png');
       // Use it: the real window moves over the frame.
-      // The new frame lies partly off screen here: press its button directly.
-      await read(`document.querySelector('${frameSel} [aria-label="Use the app"]').click()`);
+      // The window takes its frame's size (sharp picture), then a click in
+      // the frame lays it exactly over the frame's app area.
+      await sleep(1500);
+      const before = where();
+      const dpr = await read('window.devicePixelRatio');
+      const area = await rect(`${frameSel} .ca-body`);
+      await read(
+        `document.querySelector('${frameSel} .ca-body').dispatchEvent(new MouseEvent('click', { bubbles: true }))`,
+      );
       const docked = await until(() => {
         const w = where();
-        return w && (Math.abs(w.x - home.x) > 20 || Math.abs(w.width - home.width) > 20) ? w : null;
-      }, 'window docked over the frame');
+        const moved =
+          Math.abs(w?.visible.x - before.visible.x) > 20 ||
+          Math.abs(w?.visible.y - before.visible.y) > 20;
+        return w &&
+          moved &&
+          Math.abs(w.visible.width - area.width * dpr) <= 3 &&
+          Math.abs(w.visible.height - area.height * dpr) <= 3
+          ? w
+          : null;
+      }, 'window docked exactly over the frame').catch((error) => {
+        console.error('Frame area', area, 'dpr', dpr, 'window', where());
+        throw error;
+      });
       assert.ok(await read(`!!document.querySelector('${frameSel}[data-live]')`));
       // A click on the board gives it back where it was.
       const s = await rect('.canvas-surface');
@@ -532,9 +558,9 @@ try {
       const back = await until(() => {
         const w = where();
         return w &&
-          Math.abs(w.x - home.x) <= 2 &&
-          Math.abs(w.y - home.y) <= 2 &&
-          Math.abs(w.width - home.width) <= 2
+          Math.abs(w.x - before.x) <= 2 &&
+          Math.abs(w.y - before.y) <= 2 &&
+          Math.abs(w.width - before.width) <= 2
           ? w
           : null;
       }, 'window given back');
@@ -542,7 +568,7 @@ try {
       // Close it from the frame.
       await read(`document.querySelector('${frameSel} [aria-label^="Close "]').click()`);
       await until(() => app.exitCode !== null, 'test app closed', 15000);
-      console.log('app frame', { home, docked, back });
+      console.log('app frame', { home, before, docked, back });
     } finally {
       if (app.exitCode === null) app.kill();
     }

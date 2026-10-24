@@ -866,6 +866,17 @@ function createLocalFiles({
       throw Error(friendly(error));
     }
   }
+  // A window not in use gets its frame's size (CSS pixels at zoom 1), so its
+  // picture is sharp.
+  async function sizeWindow({ id, width, height } = {}) {
+    if (!windows || !helper?.available || !dockGeometry) return;
+    windowId(id);
+    if (![width, height].every((v) => Number.isFinite(v) && v >= 1 && v <= 20000))
+      throw Error('Invalid size');
+    if (docked.has(id)) return;
+    const geometry = dockGeometry({ x: 0, y: 0, width, height });
+    await helper.sizeWindow(id, geometry.width, geometry.height);
+  }
   async function undockWindow({ id } = {}) {
     windowId(id);
     if (!docked.has(id)) return;
@@ -932,6 +943,7 @@ function createLocalFiles({
     closeWindow,
     dockWindow,
     undockWindow,
+    sizeWindow,
     undockAll,
     dragIcon,
     absolute,
@@ -965,6 +977,7 @@ function registerLocalFiles({ ipcMain, trusted, files }) {
     'close-window': files.closeWindow,
     'dock-window': files.dockWindow,
     'undock-window': files.undockWindow,
+    'size-window': files.sizeWindow,
     source: ({ path: file } = {}) => files.sourceFor(file),
     watch: ({ key, dirs } = {}) => files.watch(key, dirs),
     unwatch: ({ key } = {}) => files.unwatch(key),

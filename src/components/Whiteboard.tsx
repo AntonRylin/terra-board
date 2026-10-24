@@ -17,6 +17,7 @@ import {
   appFrameSize,
   desktopsSize,
   fileTileSize,
+  folderHeader,
   folderSize,
   type DesktopWindow,
   type DroppedPath,
@@ -1485,7 +1486,14 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     if (!e || !files || readOnlyRef.current || !w.exe) return;
     try {
       const source = await files.source({ path: w.exe });
-      const { width, height } = appFrameSize;
+      // As big as the window is (so its picture is sharp at 100%), within reason.
+      const scale = window.devicePixelRatio || 1;
+      const width = w.width
+          ? Math.round(Math.min(1800, Math.max(320, w.width / scale)))
+          : appFrameSize.width,
+        height = w.height
+          ? Math.round(Math.min(1400, Math.max(200, w.height / scale)) + folderHeader)
+          : appFrameSize.height;
       const o: CanvasObject = {
         id: uid(),
         type: 'file',
