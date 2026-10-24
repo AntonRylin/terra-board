@@ -137,6 +137,6 @@ Admins see **Server admin** in Settings → Account:
 
 ### Teams
 
-In the Share dialog, members choose **Share with a team…**. Everyone in the team gets access, and so does anyone added to the team later; people removed from the team lose it (unless they were also invited directly).
+In the Share dialog, members choose **Share with a team…**. Everyone in the team gets access, and so does anyone added to the team later; people removed from the team lose it (unless they were also invited directly). Anyone can leave a board or folder a team gave them, and the owner can remove one person from it; either way the team doesn't give it back until the owner invites them again.
 
 A server is free for up to 10 people (accounts that can sign in). Above that, an admin pastes the license key into Server admin → License. Nothing stops working without one: the app tells the people on the server that it's over the free limit.

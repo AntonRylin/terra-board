@@ -379,10 +379,11 @@ test('direct access and team access: the strongest wins and the direct role come
   await owner.rpc('unshare_team', { p_share: share, p_team: editors });
   assert.deepEqual(await sharedWith(ana), { [share]: 'edit' });
 
-  // Removing the person directly keeps their team access, and the team going then removes it.
+  // Removing the person directly takes their team access too (20261027090000: it stays
+  // removed until they are invited again).
   await owner.rpc('share_with_team', { p_share: share, p_team: viewers, p_role: 'view' });
   await owner.rpc('remove_share_member', { p_share: share, p_member: ana.ws });
-  assert.deepEqual(await sharedWith(ana), { [share]: 'view' });
+  assert.deepEqual(await sharedWith(ana), {});
   await owner.rpc('unshare_team', { p_share: share, p_team: viewers });
   assert.deepEqual(await sharedWith(ana), {});
 
