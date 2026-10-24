@@ -42,6 +42,18 @@ export function facingSide(target: CanvasObject, from: Point): ConnectorSide {
 }
 
 /**
+ * The side an arrow dropped at `pointer` lands on: the edge the pointer is near,
+ * so any side can be picked; in the middle, the side facing `from`.
+ */
+export function dropSide(target: CanvasObject, pointer: Point, from: Point): ConnectorSide {
+  const q = worldToLocal(target, pointer),
+    dx = (q.x - target.width / 2) / Math.max(target.width / 2, 1e-9),
+    dy = (q.y - target.height / 2) / Math.max(target.height / 2, 1e-9);
+  if (Math.max(Math.abs(dx), Math.abs(dy)) < 0.5) return facingSide(target, from);
+  return facingSide(target, pointer);
+}
+
+/**
  * Where an arrow dropped at `pointer` meets `side` of `target`: level with the
  * pointer along that side, pulled to its middle when within `snap` of it.
  */

@@ -20,7 +20,7 @@ import {
   connectionPoint,
   connectorDot,
   connectorSides,
-  facingSide,
+  dropSide,
   sidePoint,
   type ConnectorSide,
 } from './connectors';
@@ -749,7 +749,12 @@ export class Engine {
       if (target)
         Object.assign(
           end,
-          connectionPoint(target, facingSide(target, anchor), pointer, 48 / this.camera.zoom),
+          connectionPoint(
+            target,
+            dropSide(target, pointer, anchor),
+            pointer,
+            48 / this.camera.zoom,
+          ),
         );
     }
     g.connectTarget = target?.id;

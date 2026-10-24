@@ -1,6 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { connectionPoint, connectorDot, facingSide, sidePoint } from '../src/canvas/connectors.ts';
+import {
+  connectionPoint,
+  connectorDot,
+  dropSide,
+  facingSide,
+  sidePoint,
+} from '../src/canvas/connectors.ts';
 
 const box = { id: 'b', type: 'rect', x: 100, y: 50, width: 200, height: 100, z: 1 };
 
@@ -24,6 +30,17 @@ test('connections land on the side facing where the arrow comes from', () => {
   const turned = { ...box, rotation: 90 };
   const top = sidePoint(turned, 'n');
   assert.ok(Math.abs(top.x - 250) < 1e-9 && Math.abs(top.y - 100) < 1e-9);
+});
+
+test('an arrow dropped near an edge lands on that side, in the middle on the facing side', () => {
+  // The arrow comes from below right, so the bottom faces it…
+  const from = { x: 700, y: 400 };
+  assert.equal(dropSide(box, { x: 200, y: 100 }, from), 's');
+  // …but a drop on the right part, or on the top, goes there.
+  assert.equal(dropSide(box, { x: 290, y: 95 }, from), 'e');
+  assert.equal(dropSide(box, { x: 285, y: 65 }, from), 'e');
+  assert.equal(dropSide(box, { x: 200, y: 55 }, from), 'n');
+  assert.equal(dropSide(box, { x: 110, y: 100 }, from), 'w');
 });
 
 test('arrow ends land level with the drop, snapping to the side middle nearby', () => {
