@@ -1,0 +1,8 @@
+# Written by setup.mjs / created by Docker; never commit them.
+/supabase/
+/supabase.download/
+/.env
+/.env.*
+/data/
+/volumes/
+/backup/

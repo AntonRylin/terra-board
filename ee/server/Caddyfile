@@ -1,0 +1,40 @@
+# Terra Board server front door. Part of ee/ (Terra Board Enterprise License, see ee/LICENSE).
+# TERRA_URL is https://<host> (automatic certificates from Let's Encrypt / ZeroSSL; for
+# "localhost" Caddy uses its own local CA), or http://localhost when set up with --http.
+{
+	admin off
+}
+
+{$TERRA_URL} {
+	# The description file the app reads when someone types this server's address.
+	# Written by caddy-start.sh from .env; it only ever holds the public anon key.
+	handle /.well-known/terra-board.json {
+		root * /srv/public
+		header Content-Type application/json
+		header Cache-Control "no-cache"
+		header Access-Control-Allow-Origin *
+		file_server
+	}
+
+	@supabase_api path /auth/v1/* /rest/v1/* /graphql/v1 /realtime/v1/* /storage/v1/* /functions/v1/* /.well-known/oauth-authorization-server/auth/v1
+	handle @supabase_api {
+		reverse_proxy api-gw:8000
+	}
+
+	# Everything else is the Supabase dashboard (Studio), behind DASHBOARD_USERNAME/PASSWORD.
+	handle {
+		basic_auth {
+			{$PROXY_AUTH_USERNAME} {$PROXY_AUTH_PASSWORD}
+		}
+		reverse_proxy studio:3000
+	}
+
+	header -server
+}
+
+# Email templates for GoTrue (auth). Only reachable inside the Docker network: port 8088 is not
+# published.
+:8088 {
+	root * /srv/templates
+	file_server
+}

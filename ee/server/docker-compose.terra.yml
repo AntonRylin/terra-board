@@ -1,0 +1,116 @@
+# Terra Board server: layered on top of Supabase's official supabase/docker-compose.yml.
+# Part of ee/ (Terra Board Enterprise License, see ee/LICENSE).
+#
+# .env sets COMPOSE_FILE=supabase/docker-compose.yml:docker-compose.terra.yml, so plain
+# `docker compose ...` in ee/server uses both files.
+#
+# Compose resolves relative paths against the folder of the FIRST file (ee/server/supabase), so
+# here ".." is ee/server and "../../.." is the repository root.
+#
+# Needs Docker Compose 2.24.4 or newer (!reset / !override).
+
+services:
+  # Only Caddy is reachable from outside: the gateway's own port 8000 is closed.
+  api-gw:
+    ports: !reset []
+
+  # Postgres through the pooler, for psql/pg_dump from the host itself only.
+  supavisor:
+    ports: !override
+      - 127.0.0.1:${POSTGRES_PORT}:5432
+      - 127.0.0.1:${POOLER_PROXY_PORT_TRANSACTION}:6543
+
+  # Data lives in ee/server/data, outside the downloaded supabase/ folder, so updating Supabase
+  # never touches it. (Compose merges volumes by their path inside the container.)
+  db:
+    volumes:
+      - ../data/db:/var/lib/postgresql/data:Z
+
+  storage:
+    environment:
+      FILE_SIZE_LIMIT: ${TERRA_FILE_SIZE_LIMIT:-268435456}
+    volumes:
+      - ../data/storage:/var/lib/storage:z
+
+  imgproxy:
+    volumes:
+      - ../data/storage:/var/lib/storage:z
+
+  auth:
+    environment:
+      # Email codes: the "Magic Link" and "Confirm signup" emails show {{ .Token }}.
+      # GoTrue fetches the template over http from the caddy service (port 8088 is not published).
+      GOTRUE_MAILER_TEMPLATES_MAGIC_LINK: http://caddy:8088/email-code.html
+      GOTRUE_MAILER_TEMPLATES_CONFIRMATION: http://caddy:8088/email-code.html
+      GOTRUE_MAILER_SUBJECTS_MAGIC_LINK: ${TERRA_EMAIL_SUBJECT}
+      GOTRUE_MAILER_SUBJECTS_CONFIRMATION: ${TERRA_EMAIL_SUBJECT}
+      GOTRUE_MAILER_OTP_LENGTH: "6"
+      GOTRUE_MAILER_OTP_EXP: "3600"
+      GOTRUE_EXTERNAL_PHONE_ENABLED: "false"
+      GOTRUE_SMS_AUTOCONFIRM: "false"
+
+      # SAML 2.0 company sign-in. Entity ID https://<host>/auth/v1/sso/saml/metadata,
+      # ACS https://<host>/auth/v1/sso/saml/acs (both from API_EXTERNAL_URL).
+      GOTRUE_SAML_ENABLED: ${SAML_ENABLED:-false}
+      GOTRUE_SAML_PRIVATE_KEY: ${SAML_PRIVATE_KEY:-}
+
+  caddy:
+    container_name: terra-caddy
+    image: caddy:2.11.7-alpine
+    restart: unless-stopped
+    ports:
+      - ${TERRA_HTTP_PORT:-80}:80
+      - ${TERRA_HTTPS_PORT:-443}:443
+      - ${TERRA_HTTPS_PORT:-443}:443/udp
+    depends_on:
+      api-gw:
+        condition: service_healthy
+    environment:
+      TERRA_URL: ${TERRA_URL}
+      TERRA_NAME: ${TERRA_NAME}
+      SAML_ENABLED: ${SAML_ENABLED:-false}
+      # Public by design (it is in every app). The service role key is never given to Caddy.
+      ANON_KEY: ${ANON_KEY}
+      PROXY_AUTH_USERNAME: ${DASHBOARD_USERNAME}
+      PROXY_AUTH_PASSWORD: ${DASHBOARD_PASSWORD}
+    entrypoint: ["/bin/sh", "/etc/caddy/caddy-start.sh"]
+    volumes:
+      - ../Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../caddy-start.sh:/etc/caddy/caddy-start.sh:ro
+      - ../../../supabase/templates/email-code.html:/srv/templates/email-code.html:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+  # One-shot: applies supabase/migrations then ee/supabase/migrations (each file once, tracked in
+  # terra_server.migrations) and adds TERRA_ADMIN_EMAIL as server admin. Runs on every
+  # `docker compose up -d`; run it by hand with `docker compose run --rm terra-migrate`.
+  terra-migrate:
+    container_name: terra-migrate
+    image: ${TERRA_MIGRATE_IMAGE}
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+      auth:
+        condition: service_healthy
+      storage:
+        condition: service_healthy
+      realtime:
+        condition: service_started
+    environment:
+      PGHOST: ${POSTGRES_HOST}
+      PGPORT: ${POSTGRES_PORT}
+      PGDATABASE: ${POSTGRES_DB}
+      PGUSER: postgres
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      TERRA_ADMIN_EMAIL: ${TERRA_ADMIN_EMAIL:-}
+      TERRA_NAME: ${TERRA_NAME:-}
+    entrypoint: ["/bin/sh", "/terra/migrate.sh"]
+    volumes:
+      - ../migrate.sh:/terra/migrate.sh:ro
+      - ../../../supabase/migrations:/terra/migrations/core:ro
+      - ../../supabase/migrations:/terra/migrations/ee:ro
+
+volumes:
+  caddy-data:
+  caddy-config:
