@@ -943,6 +943,7 @@ app
         if (page.length < 500) break;
         before = page.at(-1).id;
       }
+      // The byte-order mark lets Excel read the file as UTF-8.
       await fs.promises.writeFile(r.filePath, '﻿' + auditCsv(events), 'utf8');
       return events.length;
     });
