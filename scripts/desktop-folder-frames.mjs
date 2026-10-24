@@ -385,6 +385,37 @@ try {
   );
   await sleep(1500);
   await screenshot('4-desktop.png');
+
+  // 11. More tools → Desktops lists the virtual desktops and their windows
+  // (read only: nothing is clicked, so no window of this computer moves).
+  if (process.platform === 'win32') {
+    await click('.toolbar-insert');
+    await click('[aria-label="More tools"] [aria-label="Add desktops"]');
+    const frame = await until(
+      async () => (await objects()).find((o) => o.type === 'file' && o.file.kind === 'desktops'),
+      'desktops frame',
+    );
+    assert.deepEqual(frame.file, { path: '', kind: 'desktops' });
+    const shown = await until(
+      () =>
+        read(`(()=>{
+          const f = document.querySelector('.canvas-desktops[data-file-id="${frame.id}"]');
+          const columns = f ? f.querySelectorAll('.cd-column') : [];
+          if (!columns.length) return null;
+          return {
+            desktops: [...columns].map((c) => c.querySelector('.cd-name').textContent),
+            current: f.querySelectorAll('.cd-column[data-current]').length,
+            windows: f.querySelectorAll('.cd-window').length,
+          };
+        })()`),
+      'desktops listed',
+    );
+    assert.ok(shown.desktops.length >= 1);
+    assert.equal(shown.current, 1);
+    assert.ok(shown.windows >= 1, 'at least one window is open');
+    await sleep(1500);
+    await screenshot('6-desktops.png');
+  }
   // Zoomed far out, a frame shows a summary instead of tiny icons.
   await read(`window.dispatchEvent(new Event('resize'))`);
   for (let i = 0; i < 14; i++) {

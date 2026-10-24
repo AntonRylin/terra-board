@@ -12,6 +12,7 @@ import CanvasFiles, {
   type FilesView,
 } from './CanvasFiles';
 import {
+  desktopsSize,
   fileTileSize,
   folderSize,
   type DroppedPath,
@@ -137,6 +138,7 @@ import {
   CodeXml,
   Globe,
   FolderOpen,
+  Monitor,
   MousePointerClick,
   Images,
   ArrowRight,
@@ -1461,6 +1463,28 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       type: 'file',
       text: 'Desktop',
       file: { root: 'desktop', path: '', kind: 'folder' },
+      x: point?.x ?? p.x - width / 2,
+      y: point?.y ?? p.y - height / 2,
+      width,
+      height,
+      z: e.topZ() + 1,
+    };
+    e.apply({ upserts: [o], deleted: [] });
+    e.setSelection([o.id]);
+    selectTool('select');
+  };
+  // A Desktops frame: Windows' virtual desktops and the windows open on each.
+  const createDesktops = (point?: { x: number; y: number }) => {
+    finishEdit();
+    const e = engine.current;
+    if (!e || readOnlyRef.current) return;
+    const p = e.center();
+    const { width, height } = desktopsSize;
+    const o: CanvasObject = {
+      id: uid(),
+      type: 'file',
+      text: 'Desktops',
+      file: { path: '', kind: 'desktops' },
       x: point?.x ?? p.x - width / 2,
       y: point?.y ?? p.y - height / 2,
       width,
@@ -3354,7 +3378,10 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     />
   );
   const contextItems: (MenuItem | null)[] = [
-    ...(selected.length === 1 && selected[0].type === 'file' && window.canvas?.files
+    ...(selected.length === 1 &&
+    selected[0].type === 'file' &&
+    selected[0].file?.kind !== 'desktops' &&
+    window.canvas?.files
       ? [
           ...(selected[0].file?.kind === 'file'
             ? [
@@ -4994,6 +5021,16 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             ...(window.canvas?.files
               ? [{ id: 'folder' as const, label: 'Folder', icon: FolderOpen, action: () => createFolder() }]
               : []),
+            ...(window.canvas?.files && window.canvas.platform === 'win32'
+              ? [
+                  {
+                    id: 'desktops' as const,
+                    label: 'Desktops',
+                    icon: Monitor,
+                    action: () => createDesktops(),
+                  },
+                ]
+              : []),
             { id: 'media', label: 'Files', icon: ImagePlus, action: importMedia },
             { id: 'gallery', label: 'Gallery', icon: Images, action: createGallery },
           ]}
@@ -5011,6 +5048,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             else if (id === 'html') createHtml(anchor);
             else if (id === 'browser') createBrowser(anchor);
             else if (id === 'folder') createFolder(anchor);
+            else if (id === 'desktops') createDesktops(anchor);
             else if (id === 'gallery') createGallery(anchor);
             else if (id === 'media') void performImport(pickMedia, anchor);
             else if (id === 'select' || id === 'hand' || id === 'highlight' || id === 'pen')
@@ -5044,6 +5082,16 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
                     label: 'Add folder',
                     icon: FolderOpen,
                     action: () => createFolder(),
+                  },
+                ]
+              : []),
+            ...(window.canvas?.files && window.canvas.platform === 'win32'
+              ? [
+                  {
+                    id: 'desktops' as const,
+                    label: 'Add desktops',
+                    icon: Monitor,
+                    action: () => createDesktops(),
                   },
                 ]
               : []),

@@ -28,7 +28,7 @@ const fileLink = z
       .enum(['desktop', 'downloads', 'documents', 'pictures', 'music', 'videos', 'home'])
       .optional(),
     path: z.string().max(4096),
-    kind: z.enum(['folder', 'file']),
+    kind: z.enum(['folder', 'file', 'desktops']),
     view: z.enum(['icons', 'list']).optional(),
     iconSize: z.enum(['small', 'medium', 'large', 'huge']).optional(),
     sort: z.enum(['name', 'modified', 'type', 'size']).optional(),
@@ -36,7 +36,7 @@ const fileLink = z
     hidden: z.boolean().optional(),
   })
   .describe(
-    'A folder or file on this computer (type file). With root, path is relative to that folder ("" for the folder itself, "Projects/Notes" below it), so the board shows it on each of the person\'s computers; without root, path is a full path. kind folder shows a live window of the folder; kind file an icon that opens it.',
+    'A folder or file on this computer (type file). With root, path is relative to that folder ("" for the folder itself, "Projects/Notes" below it), so the board shows it on each of the person\'s computers; without root, path is a full path. kind folder shows a live window of the folder; kind file an icon that opens it; kind desktops (path "", no root) shows Windows\' virtual desktops and the windows open on each.',
   );
 const table = z
   .object({

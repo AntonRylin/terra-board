@@ -53,6 +53,10 @@ public static class TerraShell
                 case "attributes": return id + "\tok\t" + Out(Attributes(Arg(parts[2])));
                 case "clip-set": SetClip(Arg(parts[2]), parts[3] == "1"); return id + "\tok\t";
                 case "clip-get": return id + "\tok\t" + Out(GetClip());
+                case "desktops": return id + "\tok\t" + Out(TerraDesktops.List());
+                case "focus": TerraDesktops.Focus(long.Parse(parts[2]), int.Parse(parts[3])); return id + "\tok\t";
+                case "switch": TerraDesktops.Switch(int.Parse(parts[2])); return id + "\tok\t";
+                case "close": TerraDesktops.Close(long.Parse(parts[2])); return id + "\tok\t";
                 case "ping": return id + "\tok\t";
             }
             return id + "\terr\t" + Out("Unknown operation");
@@ -145,13 +149,236 @@ public static class TerraShell
         return (cut ? "1|" : "0|") + string.Join("|", paths);
     }
 }
+
+// Virtual desktops and the windows open on each, as Task View shows them.
+// Which desktop a window is on comes from the documented IVirtualDesktopManager;
+// the desktops, their order and names from the registry. Switching uses the
+// Ctrl+Win+Left/Right keys, since Windows has no public way to switch.
+public static class TerraDesktops
+{
+    [ComImport, Guid("a5cd92ff-29be-454c-8d04-d82879fb3f1b"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    interface IVirtualDesktopManager
+    {
+        [PreserveSig] int IsWindowOnCurrentVirtualDesktop(IntPtr hwnd, out int onCurrent);
+        [PreserveSig] int GetWindowDesktopId(IntPtr hwnd, out Guid id);
+        [PreserveSig] int MoveWindowToDesktop(IntPtr hwnd, ref Guid id);
+    }
+    [ComImport, Guid("aa509086-5ca9-4c25-8f95-589d3c07b48a")]
+    class VirtualDesktopManagerClass { }
+
+    delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr lParam);
+    [DllImport("user32.dll")] static extern bool EnumWindows(EnumWindowsProc cb, IntPtr l);
+    [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
+    [DllImport("user32.dll")] static extern bool IsWindow(IntPtr h);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
+    [DllImport("user32.dll")] static extern int GetWindowTextLength(IntPtr h);
+    [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr h, uint cmd);
+    [DllImport("user32.dll")] static extern int GetWindowLong(IntPtr h, int idx);
+    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+    [DllImport("user32.dll")] static extern bool IsIconic(IntPtr h);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr h, StringBuilder s, int n);
+    [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
+    [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h, int cmd);
+    [DllImport("user32.dll")] static extern void SwitchToThisWindow(IntPtr h, bool altTab);
+    [DllImport("user32.dll")] static extern bool PostMessage(IntPtr h, uint msg, IntPtr w, IntPtr l);
+    [DllImport("user32.dll")] static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string cls, string title);
+    [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr h, int attr, out int value, int size);
+    [DllImport("kernel32.dll")] static extern IntPtr OpenProcess(uint access, bool inherit, uint pid);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern bool QueryFullProcessImageName(IntPtr h, int flags, StringBuilder s, ref int size);
+    [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
+
+    const string Key = @"Software\Microsoft\Windows\CurrentVersion\Explorer\VirtualDesktops";
+
+    static string ProcessPath(uint pid)
+    {
+        IntPtr h = OpenProcess(0x1000, false, pid);
+        if (h == IntPtr.Zero) return "";
+        try
+        {
+            var sb = new StringBuilder(1024);
+            int size = sb.Capacity;
+            return QueryFullProcessImageName(h, 0, sb, ref size) ? sb.ToString() : "";
+        }
+        finally { CloseHandle(h); }
+    }
+
+    // An app's own name ("Google Chrome"), from its file's version information.
+    static readonly System.Collections.Generic.Dictionary<string, string> appNames =
+        new System.Collections.Generic.Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    static string AppName(string exe)
+    {
+        if (exe.Length == 0) return "";
+        string name;
+        if (appNames.TryGetValue(exe, out name)) return name;
+        try { name = System.Diagnostics.FileVersionInfo.GetVersionInfo(exe).FileDescription; } catch { name = null; }
+        if (string.IsNullOrWhiteSpace(name)) name = Path.GetFileNameWithoutExtension(exe);
+        appNames[exe] = name.Trim();
+        return name.Trim();
+    }
+
+    static System.Collections.Generic.List<Guid> DesktopIds(Microsoft.Win32.RegistryKey key)
+    {
+        var ids = new System.Collections.Generic.List<Guid>();
+        var bytes = key == null ? null : key.GetValue("VirtualDesktopIDs") as byte[];
+        if (bytes != null)
+            for (int i = 0; i + 16 <= bytes.Length; i += 16)
+            {
+                var b = new byte[16];
+                Array.Copy(bytes, i, b, 0, 16);
+                ids.Add(new Guid(b));
+            }
+        return ids;
+    }
+
+    static Guid CurrentId(Microsoft.Win32.RegistryKey key)
+    {
+        var bytes = key == null ? null : key.GetValue("CurrentVirtualDesktop") as byte[];
+        if (bytes == null)
+        {
+            var session = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Explorer\SessionInfo\" + System.Diagnostics.Process.GetCurrentProcess().SessionId + @"\VirtualDesktops");
+            if (session != null) bytes = session.GetValue("CurrentVirtualDesktop") as byte[];
+        }
+        return bytes != null && bytes.Length == 16 ? new Guid(bytes) : Guid.Empty;
+    }
+
+    public static string List()
+    {
+        var manager = (IVirtualDesktopManager)new VirtualDesktopManagerClass();
+        var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(Key);
+        var ids = DesktopIds(key);
+        var current = CurrentId(key);
+        var foreground = GetForegroundWindow();
+        var windows = new System.Collections.Generic.List<System.Collections.Generic.Dictionary<string, object>>();
+        EnumWindows((h, l) =>
+        {
+            if (!IsWindowVisible(h)) return true;
+            int length = GetWindowTextLength(h);
+            if (length == 0) return true;
+            // The windows Alt+Tab lists: no tool windows or owned popups.
+            int ex = GetWindowLong(h, -20);
+            bool app = (ex & 0x40000) != 0;
+            if (!app && ((ex & 0x80) != 0 || GetWindow(h, 4) != IntPtr.Zero)) return true;
+            var cls = new StringBuilder(256);
+            GetClassName(h, cls, cls.Capacity);
+            string className = cls.ToString();
+            if (className == "Progman" || className == "WorkerW" || className == "Shell_TrayWnd") return true;
+            int cloaked = 0;
+            DwmGetWindowAttribute(h, 14, out cloaked, 4);
+            int onCurrent = 1;
+            manager.IsWindowOnCurrentVirtualDesktop(h, out onCurrent);
+            // Windows on other desktops are hidden by the shell; anything else hidden
+            // (by an app, or a suspended app on this desktop) is not a window you can see.
+            if (cloaked != 0 && (cloaked != 2 || onCurrent != 0)) return true;
+            Guid desktop;
+            if (manager.GetWindowDesktopId(h, out desktop) != 0) desktop = Guid.Empty;
+            var title = new StringBuilder(length + 1);
+            GetWindowText(h, title, title.Capacity);
+            uint pid;
+            GetWindowThreadProcessId(h, out pid);
+            string exe = ProcessPath(pid);
+            // Store apps run inside ApplicationFrameHost; their own process draws the content.
+            if (exe.EndsWith("ApplicationFrameHost.exe", StringComparison.OrdinalIgnoreCase))
+            {
+                IntPtr core = FindWindowEx(h, IntPtr.Zero, "Windows.UI.Core.CoreWindow", null);
+                if (core != IntPtr.Zero)
+                {
+                    uint corePid;
+                    GetWindowThreadProcessId(core, out corePid);
+                    var corePath = ProcessPath(corePid);
+                    if (corePath.Length > 0) exe = corePath;
+                }
+            }
+            windows.Add(new System.Collections.Generic.Dictionary<string, object> {
+                { "id", h.ToInt64().ToString() },
+                { "title", title.ToString() },
+                { "exe", exe },
+                { "app", AppName(exe) },
+                { "desktop", desktop == Guid.Empty ? "" : desktop.ToString() },
+                { "minimized", IsIconic(h) },
+                { "focused", h == foreground },
+            });
+            return true;
+        }, IntPtr.Zero);
+        // Windows lists no desktops until a second one was made: take them from the windows.
+        if (ids.Count == 0)
+        {
+            if (current != Guid.Empty) ids.Add(current);
+            foreach (var w in windows)
+            {
+                Guid g;
+                if (Guid.TryParse((string)w["desktop"], out g) && !ids.Contains(g)) ids.Add(g);
+            }
+        }
+        string fallbackWallpaper = "";
+        var desk = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Control Panel\Desktop");
+        if (desk != null) fallbackWallpaper = desk.GetValue("WallPaper") as string ?? "";
+        var desktops = new System.Collections.Generic.List<System.Collections.Generic.Dictionary<string, object>>();
+        for (int i = 0; i < ids.Count; i++)
+        {
+            var sub = key == null ? null : key.OpenSubKey(@"Desktops\{" + ids[i].ToString() + "}");
+            string name = sub == null ? null : sub.GetValue("Name") as string;
+            string wallpaper = sub == null ? null : sub.GetValue("Wallpaper") as string;
+            desktops.Add(new System.Collections.Generic.Dictionary<string, object> {
+                { "id", ids[i].ToString() },
+                { "name", string.IsNullOrEmpty(name) ? "Desktop " + (i + 1) : name },
+                { "wallpaper", string.IsNullOrEmpty(wallpaper) ? fallbackWallpaper : wallpaper },
+            });
+        }
+        var result = new System.Collections.Generic.Dictionary<string, object> {
+            { "current", current == Guid.Empty ? "" : current.ToString() },
+            { "desktops", desktops },
+            { "windows", windows },
+        };
+        return new System.Web.Script.Serialization.JavaScriptSerializer { MaxJsonLength = 16 * 1024 * 1024 }.Serialize(result);
+    }
+
+    // Ctrl+Win+Right (or Left), steps times: the next or previous desktop.
+    public static void Switch(int steps)
+    {
+        byte arrow = steps > 0 ? (byte)0x27 : (byte)0x25;
+        for (int i = 0; i < Math.Min(20, Math.Abs(steps)); i++)
+        {
+            keybd_event(0x11, 0, 0, UIntPtr.Zero);
+            keybd_event(0x5B, 0, 0, UIntPtr.Zero);
+            keybd_event(arrow, 0, 1, UIntPtr.Zero);
+            keybd_event(arrow, 0, 1 | 2, UIntPtr.Zero);
+            keybd_event(0x5B, 0, 2, UIntPtr.Zero);
+            keybd_event(0x11, 0, 2, UIntPtr.Zero);
+            System.Threading.Thread.Sleep(260);
+        }
+    }
+
+    // Brings a window to the front (restored if minimized), after moving to its desktop.
+    public static void Focus(long id, int steps)
+    {
+        IntPtr h = new IntPtr(id);
+        if (!IsWindow(h)) throw new Exception("That window has closed.");
+        if (steps != 0) Switch(steps);
+        if (IsIconic(h)) ShowWindow(h, 9);
+        // Windows lets the process that just pressed a key bring a window forward.
+        keybd_event(0x12, 0, 0, UIntPtr.Zero);
+        keybd_event(0x12, 0, 2, UIntPtr.Zero);
+        if (!SetForegroundWindow(h)) SwitchToThisWindow(h, true);
+    }
+
+    // Asks a window to close, as its X button does; the app may ask to save first.
+    public static void Close(long id)
+    {
+        IntPtr h = new IntPtr(id);
+        if (!IsWindow(h)) throw new Exception("That window has closed.");
+        PostMessage(h, 0x0010, IntPtr.Zero, IntPtr.Zero);
+    }
+}
 `;
 
+// The C# arrives as the first line on stdin (base64): a command line is
+// limited to 32767 characters, which the source outgrew.
 const script = `
 $ErrorActionPreference = 'Stop'
-Add-Type -TypeDefinition @'
-${csharp}
-'@ -ReferencedAssemblies System.Drawing,System.Windows.Forms
+$source = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String([Console]::In.ReadLine()))
+Add-Type -TypeDefinition $source -ReferencedAssemblies System.Drawing,System.Windows.Forms,System.Web.Extensions
 [Console]::Out.WriteLine('ready')
 while ($true) {
   $line = [Console]::In.ReadLine()
@@ -209,6 +436,8 @@ function createShellHelper({
       );
       child = c;
       buffer = '';
+      c.stdin.on('error', () => {});
+      c.stdin.write(Buffer.from(csharp, 'utf8').toString('base64') + '\n');
       let started = false;
       const startTimer = setTimeout(() => {
         if (!started) {
@@ -310,6 +539,19 @@ function createShellHelper({
     },
     async setClipboard(paths, cut) {
       await request(`clip-set\t${b64(paths.join('|'))}\t${cut ? 1 : 0}`, true);
+    },
+    // Virtual desktops in order, the current one, and the windows open on each.
+    async desktops() {
+      return JSON.parse(unb64(await request('desktops', true)));
+    },
+    async focusWindow(id, steps) {
+      await request(`focus\t${id}\t${steps | 0}`, true);
+    },
+    async switchDesktop(steps) {
+      await request(`switch\t${steps | 0}`, true);
+    },
+    async closeWindow(id) {
+      await request(`close\t${id}`, true);
     },
     async readClipboard() {
       const text = unb64(await request('clip-get', true));

@@ -807,6 +807,36 @@ function createLocalFiles({
     clipboard = null;
   }
 
+  // Desktops frames: Windows' virtual desktops and the windows open on each.
+  // Only shown live; nothing about them is stored in a board.
+  const windowId = (value) => {
+    if (typeof value !== 'string' || !/^\d{1,20}$/.test(value)) throw Error('Invalid window');
+    return value;
+  };
+  const steps = (value) => (Number.isInteger(value) ? Math.max(-20, Math.min(20, value)) : 0);
+  async function desktops() {
+    if (!windows) return { supported: false, message: 'Virtual desktops are a Windows feature.' };
+    if (!helper?.available)
+      return { supported: false, message: 'Windows didn’t let Terra read the desktops.' };
+    try {
+      return { supported: true, ...(await helper.desktops()) };
+    } catch (error) {
+      return { supported: false, message: friendly(error) };
+    }
+  }
+  async function focusWindow({ id, steps: count } = {}) {
+    if (!windows || !helper?.available) throw Error('Virtual desktops are a Windows feature.');
+    await helper.focusWindow(windowId(id), steps(count));
+  }
+  async function switchDesktop({ steps: count } = {}) {
+    if (!windows || !helper?.available) throw Error('Virtual desktops are a Windows feature.');
+    await helper.switchDesktop(steps(count));
+  }
+  async function closeWindow({ id } = {}) {
+    if (!windows || !helper?.available) throw Error('Virtual desktops are a Windows feature.');
+    await helper.closeWindow(windowId(id));
+  }
+
   async function choose({ defaultPath } = {}) {
     const start = typeof defaultPath === 'string' && defaultPath ? defaultPath : knownPath('home');
     const chosen = await pickFolder(start);
@@ -852,6 +882,10 @@ function createLocalFiles({
     readClipboard,
     clearClipboard,
     choose,
+    desktops,
+    focusWindow,
+    switchDesktop,
+    closeWindow,
     dragIcon,
     absolute,
     paths,
@@ -878,6 +912,10 @@ function registerLocalFiles({ ipcMain, trusted, files }) {
     'clipboard-read': files.readClipboard,
     'clipboard-clear': files.clearClipboard,
     choose: files.choose,
+    desktops: files.desktops,
+    'focus-window': files.focusWindow,
+    'switch-desktop': files.switchDesktop,
+    'close-window': files.closeWindow,
     source: ({ path: file } = {}) => files.sourceFor(file),
     watch: ({ key, dirs } = {}) => files.watch(key, dirs),
     unwatch: ({ key } = {}) => files.unwatch(key),

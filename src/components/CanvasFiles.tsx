@@ -72,6 +72,7 @@ import {
   type FileSort,
 } from '../canvas/file-link';
 import { ContextMenu, type MenuItem } from './Dialogs';
+import { DesktopsCard } from './CanvasDesktops';
 import { fileIcon, loadedIcon, useFileIcons } from './file-icons';
 import { forwardWheel } from './forward-wheel';
 import './canvas-files.css';
@@ -1441,12 +1442,14 @@ function FileTile({
             hidden: false,
           }
         : null;
-  const label = item
-    ? displayName(
-        item,
-        listing?.state === 'file' || listing?.state === 'folder' ? listing.hideExtensions : true,
-      )
-    : fileLinkLabel(link, o.text);
+  // A program keeps the name it was added with ("Google Chrome", not chrome.exe).
+  const label =
+    item && !(item.app && o.text)
+      ? displayName(
+          item,
+          listing?.state === 'file' || listing?.state === 'folder' ? listing.hideExtensions : true,
+        )
+      : fileLinkLabel(link, o.text);
   const iconSize = Math.max(16, Math.min(o.width * 0.72, o.height - 34));
   const tier = iconTier(iconSize * camera.zoom * (window.devicePixelRatio || 1));
   const origin = localToWorld(o, { x: 0, y: 0 });
@@ -1588,7 +1591,22 @@ export default function CanvasFiles({
       onWheel={(event) => forwardWheel(host, event.nativeEvent, { overlay: event.currentTarget })}
     >
       {view.objects.map((o) =>
-        o.file?.kind === 'file' ? (
+        o.file?.kind === 'desktops' ? (
+          <DesktopsCard
+            key={o.id}
+            object={o}
+            camera={view.camera}
+            active={selected.includes(o.id)}
+            host={host}
+            select={select}
+            forward={shared.forward}
+            onError={onError}
+            openMenu={setMenu}
+            addAppIcon={(exe, name) =>
+              readOnly ? undefined : addToBoard([{ path: exe, name, folder: false }], true, o)
+            }
+          />
+        ) : o.file?.kind === 'file' ? (
           <FileTile
             key={o.id}
             object={o}

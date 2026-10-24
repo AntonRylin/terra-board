@@ -56,7 +56,15 @@ Deleting the frame from the board never touches the folder.
 
 Explorer's own icons and thumbnails (256 px, with transparency) come from the Windows shell (`IShellItemImageFactory`) through one long-running PowerShell helper, compiled on first use (about 0.2 s, then 10–30 ms per icon). If PowerShell is blocked, Electron's 32 px file icons are used. On Linux, Electron's file icons and Sharp thumbnails for pictures. Icons are requested at the size they appear on screen (64, 128 or 256 px).
 
+## Desktops frames (added the same day)
+
+The same object type with `file.kind: 'desktops'` (no root, empty path): Windows' virtual desktops in columns, each with its wallpaper, name and the windows open on it, polled every 1.5 s while visible.
+
+- Desktops, their order, names and wallpapers come from the registry (`Explorer\VirtualDesktops`); before a second desktop was ever made Windows lists none there, so they are taken from the windows. Which desktop a window is on comes from the documented `IVirtualDesktopManager.GetWindowDesktopId`. Windows are the ones Alt+Tab lists (visible, titled, not tool windows or owned popups; cloaked only by the shell for another desktop). Store apps report their real process, not ApplicationFrameHost. App names come from the file's version information.
+- Clicking a window switches desktop with Ctrl+Win+Left/Right (Windows has no public call for it), restores it if minimized and brings it forward. Clicking a desktop switches to it. Right-click: close the window (as its X does), show the app in Explorer, put the app's icon on the board.
+- Moving a window to another desktop needs undocumented interfaces that change between Windows builds; it is left out.
+- Titles are shown, never stored. The Android app and other systems show a placeholder.
+
 ## Later
 
-- A "Desktops" frame listing the windows open on each virtual desktop (window titles and app icons, grouped by desktop name from the registry; clicking one focuses it, which switches desktop). Window-to-desktop mapping uses the documented `IVirtualDesktopManager`; moving windows between desktops needs undocumented interfaces and is out.
 - Free icon placement remembered per frame, like the desktop's own arrangement.

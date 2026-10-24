@@ -38,7 +38,9 @@ export interface FileLink {
   // Otherwise the full path on the computer where it was added.
   path: string;
   // What it was when added; decides the placeholder where it can't be read.
-  kind: 'folder' | 'file';
+  // 'desktops' is a Desktops frame: Windows' virtual desktops and the windows
+  // open on each (no root, path '').
+  kind: 'folder' | 'file' | 'desktops';
   view?: FileView;
   iconSize?: FileIconSize;
   sort?: FileSort;
@@ -56,6 +58,10 @@ export function fileLinkValue(input: unknown): FileLink {
     throw Error('Invalid file link folder');
   if (typeof path !== 'string' || path.length > 4096 || /[\x00-\x1f]/.test(path))
     throw Error('Invalid file link path');
+  if (kind === 'desktops') {
+    if (root !== undefined || path !== '') throw Error('Invalid desktops frame');
+    return { path: '', kind };
+  }
   if (root !== undefined) {
     if (/^([a-z]:|[\\/])/i.test(path) || path.split(/[\\/]+/).some((p) => p === '..' || p === '.'))
       throw Error('Invalid file link path');
@@ -127,6 +133,27 @@ export interface DroppedPath {
   kind: 'folder' | 'shortcut' | 'app' | 'file';
   source: FileSource;
 }
+// Windows' virtual desktops in order and the windows open on each, as the
+// Windows helper reads them (electron/shell-helper.cjs). Never stored.
+export interface VirtualDesktop {
+  id: string;
+  name: string;
+  wallpaper: string;
+}
+export interface DesktopWindow {
+  // The window's handle, as a decimal string.
+  id: string;
+  title: string;
+  exe: string;
+  app: string;
+  // '' when Windows doesn't say: shown on every desktop.
+  desktop: string;
+  minimized: boolean;
+  focused: boolean;
+}
+export type DesktopsState =
+  | { supported: true; current: string; desktops: VirtualDesktop[]; windows: DesktopWindow[] }
+  | { supported: false; message: string };
 export interface FilesBridge {
   list(args: { source: FileSource; sub?: string; hidden?: boolean }): Promise<FileListing>;
   icons(requests: { path: string; size: number; modified: number }[]): Promise<(string | null)[]>;
@@ -149,6 +176,10 @@ export interface FilesBridge {
   readClipboard(): Promise<{ paths: string[]; cut: boolean } | null>;
   clearClipboard(): Promise<void>;
   choose(args: { defaultPath?: string }): Promise<{ path: string; source: FileSource } | null>;
+  desktops(): Promise<DesktopsState>;
+  focusWindow(args: { id: string; steps: number }): Promise<void>;
+  switchDesktop(args: { steps: number }): Promise<void>;
+  closeWindow(args: { id: string }): Promise<void>;
   source(args: { path: string }): Promise<FileSource>;
   watch(args: { key: string; dirs: string[] }): Promise<void>;
   unwatch(args: { key: string }): Promise<void>;
@@ -169,6 +200,7 @@ export const folderHeader = 48;
 export const folderFooter = 26;
 export const folderSize = { width: 760, height: 500 };
 export const fileTileSize = { width: 112, height: 132 };
+export const desktopsSize = { width: 960, height: 460 };
 export const folderMinimum = { width: 240, height: 160 };
 
 export const isFileObject = (o: CanvasObject) => o.type === 'file' && !!o.file;
@@ -176,6 +208,7 @@ export const isFolderObject = (o: CanvasObject) => o.type === 'file' && o.file?.
 
 export function fileLinkLabel(link: FileLink, fallback?: string) {
   if (fallback) return fallback;
+  if (link.kind === 'desktops') return 'Desktops';
   const parts = link.path.split(/[\\/]+/).filter(Boolean);
   if (link.root && !parts.length) return fileRootLabels[link.root];
   return parts[parts.length - 1] || link.path;
@@ -272,10 +305,11 @@ export function drawFilePlaceholder(o: CanvasObject, resolution: number, dark: b
     ctx.font = `600 16px 'Segoe UI', sans-serif`;
     ctx.textBaseline = 'middle';
     ctx.fillText(name, 52, folderHeader / 2, Math.max(10, o.width - 70));
-    drawFolderGlyph(ctx, 16, folderHeader / 2 - 11, 26);
+    const glyph = o.file?.kind === 'desktops' ? drawScreensGlyph : drawFolderGlyph;
+    glyph(ctx, 16, folderHeader / 2 - 11, 26);
     const size = Math.min(o.width, o.height - folderHeader) * 0.32;
     if (size > 24)
-      drawFolderGlyph(
+      glyph(
         ctx,
         (o.width - size) / 2,
         folderHeader + (o.height - folderHeader - size) / 2,
@@ -310,6 +344,25 @@ function drawFolderGlyph(
   ctx.beginPath();
   ctx.roundRect(x, y + size * 0.22, size, size * 0.68, size * 0.08);
   ctx.fill();
+  ctx.restore();
+}
+// Two screens side by side, for Desktops frames.
+function drawScreensGlyph(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  size: number,
+  alpha = 1,
+) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = '#5b8fd6';
+  for (const dx of [0, 0.54]) {
+    ctx.beginPath();
+    ctx.roundRect(x + dx * size, y + size * 0.25, size * 0.46, size * 0.34, size * 0.05);
+    ctx.fill();
+  }
+  ctx.fillRect(x + size * 0.15, y + size * 0.66, size * 0.7, size * 0.06);
   ctx.restore();
 }
 function drawFileGlyph(ctx: CanvasRenderingContext2D, x: number, y: number, size: number) {

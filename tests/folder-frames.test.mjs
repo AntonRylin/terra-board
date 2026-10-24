@@ -402,3 +402,67 @@ test('folders are watched, and a change is reported once', async () => {
     cleanup();
   }
 });
+
+test('desktops frames hold nothing but their kind', () => {
+  const desktops = { path: '', kind: 'desktops', view: 'list', root: undefined };
+  assert.deepEqual(fileLinkValue(desktops), { path: '', kind: 'desktops' });
+  assert.deepEqual(storeFileLinkValue(desktops), { path: '', kind: 'desktops' });
+  for (const bad of [
+    { path: 'C:\\x', kind: 'desktops' },
+    { root: 'desktop', path: '', kind: 'desktops' },
+  ]) {
+    assert.throws(() => fileLinkValue(bad));
+    assert.throws(() => storeFileLinkValue(bad));
+  }
+});
+
+test('desktops come from the Windows helper, and only Windows has them', async () => {
+  const calls = [];
+  const helper = {
+    available: true,
+    desktops: async () => ({
+      current: 'a',
+      desktops: [{ id: 'a', name: 'Desktop 1', wallpaper: '' }],
+      windows: [
+        {
+          id: '42',
+          title: 'Notes',
+          exe: 'C:\\n.exe',
+          app: 'Notes',
+          desktop: 'a',
+          minimized: false,
+          focused: true,
+        },
+      ],
+    }),
+    focusWindow: async (id, steps) => calls.push(['focus', id, steps]),
+    switchDesktop: async (steps) => calls.push(['switch', steps]),
+    closeWindow: async (id) => calls.push(['close', id]),
+  };
+  const win = createLocalFiles({ platform: 'win32', getPath: () => tmpdir(), helper });
+  const state = await win.desktops();
+  assert.equal(state.supported, true);
+  assert.equal(state.windows[0].title, 'Notes');
+  await win.focusWindow({ id: '42', steps: 99 });
+  await win.switchDesktop({ steps: -1 });
+  await win.closeWindow({ id: '42' });
+  assert.deepEqual(calls, [
+    ['focus', '42', 20],
+    ['switch', -1],
+    ['close', '42'],
+  ]);
+  await assert.rejects(win.focusWindow({ id: '42; rm', steps: 0 }), /Invalid window/);
+  await assert.rejects(win.closeWindow({ id: 42 }), /Invalid window/);
+  const linux = createLocalFiles({ platform: 'linux', getPath: () => tmpdir(), helper });
+  assert.equal((await linux.desktops()).supported, false);
+  await assert.rejects(linux.switchDesktop({ steps: 1 }));
+  const broken = createLocalFiles({
+    platform: 'win32',
+    getPath: () => tmpdir(),
+    helper: { available: false },
+  });
+  assert.deepEqual(await broken.desktops(), {
+    supported: false,
+    message: 'Windows didn’t let Terra read the desktops.',
+  });
+});

@@ -93,6 +93,8 @@ export default function CanvasToolbar({
                 ? 'Browser'
                 : id === 'folder'
                   ? 'Folder'
+                  : id === 'desktops'
+                    ? 'Desktops'
                 : id === 'media'
                   ? 'Images and video'
                   : item.label;

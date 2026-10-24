@@ -243,6 +243,10 @@ function fileLinkValue(value) {
   if (root !== undefined && !fileRoots.includes(root)) throw Error('Invalid file link folder');
   if (typeof link !== 'string' || link.length > 4096 || /[\x00-\x1f]/.test(link))
     throw Error('Invalid file link path');
+  if (kind === 'desktops') {
+    if (root !== undefined || link !== '') throw Error('Invalid desktops frame');
+    return { path: '', kind };
+  }
   if (root !== undefined) {
     if (/^([a-z]:|[\\/])/i.test(link) || link.split(/[\\/]+/).some((p) => p === '..' || p === '.'))
       throw Error('Invalid file link path');

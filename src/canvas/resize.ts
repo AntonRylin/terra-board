@@ -83,7 +83,7 @@ export function resizeObject(
     width = Math.min(layout.maximumWidth, Math.max(240, width));
     height = Math.max(layout.minimumHeight * (edge ? 1 : width / o.width), height);
   }
-  if (o.type === 'file' && o.file?.kind === 'folder') {
+  if (o.type === 'file' && o.file?.kind !== 'file') {
     // A folder frame keeps room for its header and a row of icons.
     width = Math.max(240, width);
     height = Math.max(160, height);

@@ -13,6 +13,7 @@ import {
   CodeXml,
   Globe,
   FolderOpen,
+  Monitor,
   MousePointer2,
   MoveUpRight,
   Settings2,
@@ -93,6 +94,7 @@ const toolInfo: Record<ToolbarId, { label: string; icon: LucideIcon }> = {
   html: { label: 'HTML embed', icon: CodeXml },
   browser: { label: 'Browser', icon: Globe },
   folder: { label: 'Folder', icon: FolderOpen },
+  desktops: { label: 'Desktops', icon: Monitor },
   media: { label: 'Files', icon: ImagePlus },
   gallery: { label: 'Gallery', icon: Images },
 };
