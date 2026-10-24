@@ -234,6 +234,11 @@ contextBridge.exposeInMainWorld('canvas', {
     companyStatus: () => ipcRenderer.invoke('canvas:cloud-company-status'),
     company: (action, ...args) => ipcRenderer.invoke('canvas:cloud-company', action, ...args),
     companyExportAudit: () => ipcRenderer.invoke('canvas:cloud-company-export-audit'),
+    shareTeams: (kind, id) => ipcRenderer.invoke('canvas:cloud-share-teams', kind, id),
+    shareWithTeam: (kind, id, team, role, name) =>
+      ipcRenderer.invoke('canvas:cloud-share-with-team', kind, id, team, role, name),
+    unshareTeam: (kind, id, team) =>
+      ipcRenderer.invoke('canvas:cloud-unshare-team', kind, id, team),
     serverTest: (input) => ipcRenderer.invoke('canvas:cloud-server-test', input),
     serverSet: (input, options) => ipcRenderer.invoke('canvas:cloud-server-set', input, options),
     onDeepLink: (callback) => {

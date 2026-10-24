@@ -455,8 +455,20 @@ class CloudSync {
   // Changes reload the status, so the panel and the license note stay current.
   async companyAction(name, ...args) {
     this.requireClient();
-    const reads = new Set(['people', 'audit']);
-    const changes = new Set(['setDisabled', 'setAdmin', 'setLicense', 'setAudit']);
+    const reads = new Set(['people', 'audit', 'teams', 'teamMembers']);
+    const changes = new Set([
+      'setDisabled',
+      'setAdmin',
+      'setLicense',
+      'setAudit',
+      'setRole',
+      'setDefaultRole',
+      'setSso',
+      'createTeam',
+      'renameTeam',
+      'deleteTeam',
+      'setTeamMember',
+    ]);
     if (!this.company || (!reads.has(name) && !changes.has(name)))
       throw Error('This server has no admin settings.');
     const result = await this.company[name](...args);
@@ -1339,6 +1351,49 @@ class CloudSync {
     });
     fail(error, 'Could not create an invite');
     return data;
+  }
+
+  // --- Teams (company servers, ee/) ------------------------------------------------
+
+  requireCompany() {
+    this.requireClient();
+    if (!this.company || !this.status.company?.teams)
+      throw Error('Teams are only on company servers.');
+  }
+
+  // The teams with access to a folder or board of this person: { team, name, role, members }.
+  async shareTeams(kind, targetId) {
+    this.requireCompany();
+    const share = this.workspace && this.shareFor(kind, targetId);
+    return share ? this.company.shareTeams(share.shareId) : [];
+  }
+
+  // Shares a folder or board with a team: everyone in it, and people added to it later, can
+  // open it. Creates the share first, like an invite.
+  async shareWithTeam(kind, targetId, team, role, name) {
+    if (!['folder', 'board'].includes(kind)) throw Error('Choose a folder or a board');
+    this.requireCompany();
+    await this.requireAccount('Sign in to share boards.');
+    await this.identify(name || this.status.name);
+    let share = this.shareFor(kind, targetId);
+    if (!share) {
+      share = await this.exclusive(() => this.createShareLocked(kind, targetId));
+      await this.run();
+    }
+    await this.company.shareWithTeam(share.shareId, team, role);
+    this.ping(this.workspace);
+    await this.run().catch(() => {});
+    return this.status;
+  }
+
+  async unshareTeam(kind, targetId, team) {
+    this.requireCompany();
+    const share = this.shareFor(kind, targetId);
+    if (!share) return this.status;
+    await this.company.unshareTeam(share.shareId, team);
+    this.ping(this.workspace);
+    await this.run().catch(() => {});
+    return this.status;
   }
 
   async setPersonRole(shareId, person, role) {

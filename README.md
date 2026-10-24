@@ -60,4 +60,4 @@ Questions, ideas or bugs? Open an [issue](https://github.com/AntonRylin/terra-bo
 
 ## License
 
-[MIT](LICENSE) © 2026 AntonRylin, except the [`ee/`](ee/) folder (the company server: admin panel database, audit log, Docker package), which is under the [Terra Board Enterprise License](ee/LICENSE): free for servers with up to 10 people, a license key above that. Bundled third-party packages keep their own licenses; the app lists them under Settings → About → Open-source licenses.
+[MIT](LICENSE) © 2026 AntonRylin, except the [`ee/`](ee/) folder (the company edition: company sign-in, roles and teams, server admin, audit log, Docker package), which is under the [Terra Board Enterprise License](ee/LICENSE): free for servers with up to 10 people, a license key above that. Bundled third-party packages keep their own licenses; the app lists them under Settings → About → Open-source licenses.

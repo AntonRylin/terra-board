@@ -91,6 +91,8 @@ On Linux the managed file is `/etc/terra-board/server.json` instead. A missing o
 
 ## Company sign-in (SSO)
 
+Company sign-in is part of the company edition: the server needs the migrations in `ee/supabase/migrations` (the app asks the server's `company_info()` and shows the button only when it answers). Admins can turn it off in Server admin → Server settings.
+
 People can sign in with their company account through SAML 2.0: Microsoft Entra ID, Okta, Google Workspace, Keycloak, JumpCloud or any other SAML identity provider. In the app they choose **Continue with company sign-in** and type their work email; its domain picks your identity provider, and the sign-in page opens in the browser.
 
 1. Turn SAML on in Supabase Auth:
@@ -107,7 +109,7 @@ People can sign in with their company account through SAML 2.0: Microsoft Entra 
    ```
 
    On a self-hosted server use the auth admin API instead (see [`ee/server/README.md`](../ee/server/README.md)).
-4. Add `"sso": true` to `signIn` in `terra-board.json`. The app also checks that the server has SAML on.
+4. Add `"sso": true` to `signIn` in `terra-board.json`. The app also checks that the server has SAML on and the company edition.
 
 Accounts made through SSO are ordinary accounts: the same person's email code and SSO sign-ins reach the same account. To make SSO the only way in, turn off the email provider (and Google/Microsoft) in Supabase and set them to `false` in the description file.
 
@@ -119,6 +121,22 @@ Apply the company migrations in `ee/supabase/migrations` after the core ones (th
 insert into public.server_admins (email) values ('it@acme.eu') on conflict do nothing;
 ```
 
-Admins see **Server admin** in Settings → Account: the people on the server (disable or enable a sign-in, make someone an admin), the audit log (who shared, unshared, created or deleted which board, and every admin action), and the license.
+Admins see **Server admin** in Settings → Account:
+
+- **License**: the key, and how many people are on the server.
+- **Server settings**: whether new people join as members or guests, and company sign-in on or off.
+- **People**: disable or enable a sign-in, make someone an admin, a member or a guest.
+- **Teams**: create teams and choose who is in them.
+- **Audit log**: who shared, unshared, created or deleted which board, devices, and every admin action, with CSV export.
+
+### Roles
+
+- **Admin**: everything below, plus Server admin.
+- **Member**: shares boards and folders with people and teams.
+- **Guest**: only views what is shared with them. Guests can't invite anyone or share with teams, and edit access given to a guest becomes view access. The server enforces this, not only the app.
+
+### Teams
+
+In the Share dialog, members choose **Share with a team…**. Everyone in the team gets access, and so does anyone added to the team later; people removed from the team lose it (unless they were also invited directly).
 
 A server is free for up to 10 people (accounts that can sign in). Above that, an admin pastes the license key into Server admin → License. Nothing stops working without one: the app tells the people on the server that it's over the free limit.

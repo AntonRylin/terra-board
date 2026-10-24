@@ -1450,3 +1450,7 @@ span.st-icon-button:hover {
     transition: none;
   }
 }
+.team-member .server-note {
+  flex: 1;
+  margin: 0;
+}

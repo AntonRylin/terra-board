@@ -44,6 +44,10 @@ test('the first admin is set up by email before the account exists', async () =>
     people: 1,
     freePeople: 10,
     audit: true,
+    // From 20261026090000_roles_teams.sql.
+    role: 'admin',
+    defaultRole: 'member',
+    sso: true,
   });
 });
 

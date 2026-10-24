@@ -57,6 +57,7 @@ function person(row) {
     lastSignIn: pick(row, 'lastSignIn', 'last_sign_in_at', 'lastSignInAt'),
     disabled: pick(row, 'disabled') === true,
     admin: pick(row, 'admin', 'is_admin') === true,
+    role: pick(row, 'role') || (pick(row, 'admin', 'is_admin') === true ? 'admin' : 'member'),
     devices: Number(pick(row, 'devices') ?? 0),
     storageBytes: Number(pick(row, 'storageBytes', 'storage_bytes', 'storage') ?? 0),
   };
@@ -72,6 +73,11 @@ function event(row) {
     details: pick(row, 'details') || {},
   };
 }
+
+const cleanEmail = (email) =>
+  String(email || '')
+    .trim()
+    .toLowerCase();
 
 function createCompany({ client, hosts = [] }) {
   if (!client) throw new Error('createCompany needs a Supabase client');
@@ -93,8 +99,19 @@ function createCompany({ client, hosts = [] }) {
       const license = key ? await verifyLicense(key, { hosts }) : null;
       const people = Number(data.people ?? 0);
       const freePeople = Number(data.freePeople ?? FREE_PEOPLE);
+      const role = ['admin', 'member', 'guest'].includes(data.role)
+        ? data.role
+        : data.admin === true
+          ? 'admin'
+          : 'member';
       return {
         admin: data.admin === true,
+        // This person's role on the server: guests may only view what is shared with them.
+        role,
+        defaultRole: data.defaultRole === 'guest' ? 'guest' : 'member',
+        sso: data.sso !== false,
+        // Servers from before roles and teams (20261026090000) have neither.
+        teams: data.role !== undefined,
         people,
         freePeople,
         audit: data.audit !== false,
@@ -155,6 +172,128 @@ function createCompany({ client, hosts = [] }) {
 
     async setAudit(on) {
       await call(client, 'admin_set_audit', { p_on: !!on }, 'Could not change the audit log.');
+    },
+
+    // --- Roles (member or guest; admins are listed separately) ------------------------
+
+    async setRole(email, role) {
+      await call(
+        client,
+        'admin_set_role',
+        { p_email: cleanEmail(email), p_role: role === 'guest' ? 'guest' : 'member' },
+        'Could not change this role.',
+      );
+    },
+
+    async setDefaultRole(role) {
+      await call(
+        client,
+        'admin_set_default_role',
+        { p_role: role === 'guest' ? 'guest' : 'member' },
+        'Could not change the role for new people.',
+      );
+    },
+
+    async setSso(on) {
+      await call(client, 'admin_set_sso', { p_on: !!on }, 'Could not change company sign-in.');
+    },
+
+    // --- Teams ---------------------------------------------------------------------
+
+    // Every team on the server: { id, name, members, mine }.
+    async teams() {
+      const data = await call(client, 'company_teams', {}, 'Could not load the teams.');
+      return list(data).map((t) => ({
+        id: pick(t, 'id'),
+        name: pick(t, 'name'),
+        members: Number(pick(t, 'members') ?? 0),
+        mine: pick(t, 'mine') === true,
+      }));
+    },
+
+    async createTeam(name) {
+      return call(
+        client,
+        'admin_create_team',
+        {
+          p_name: String(name || '')
+            .trim()
+            .slice(0, 80),
+        },
+        'Could not create the team.',
+      );
+    },
+
+    async renameTeam(team, name) {
+      await call(
+        client,
+        'admin_rename_team',
+        {
+          p_team: team,
+          p_name: String(name || '')
+            .trim()
+            .slice(0, 80),
+        },
+        'Could not rename the team.',
+      );
+    },
+
+    async deleteTeam(team) {
+      await call(client, 'admin_delete_team', { p_team: team }, 'Could not delete the team.');
+    },
+
+    // { id, email } of each member.
+    async teamMembers(team) {
+      const data = await call(
+        client,
+        'admin_team_members',
+        { p_team: team },
+        'Could not load the team.',
+      );
+      return list(data).map((m) => ({ id: pick(m, 'id', 'user_id'), email: pick(m, 'email') }));
+    },
+
+    async setTeamMember(team, userId, member) {
+      await call(
+        client,
+        'admin_set_team_member',
+        { p_team: team, p_user: userId, p_in: !!member },
+        member ? 'Could not add this person to the team.' : 'Could not remove this person.',
+      );
+    },
+
+    // Teams with access to one of this person's shares: { team, name, role, members }.
+    async shareTeams(shareId) {
+      const data = await call(
+        client,
+        'share_teams',
+        { p_share: shareId },
+        'Could not load which teams have access.',
+      );
+      return list(data).map((t) => ({
+        team: pick(t, 'team', 'id'),
+        name: pick(t, 'name'),
+        role: pick(t, 'role') === 'edit' ? 'edit' : 'view',
+        members: Number(pick(t, 'members') ?? 0),
+      }));
+    },
+
+    async shareWithTeam(shareId, team, role) {
+      await call(
+        client,
+        'share_with_team',
+        { p_share: shareId, p_team: team, p_role: role === 'edit' ? 'edit' : 'view' },
+        'Could not share with this team.',
+      );
+    },
+
+    async unshareTeam(shareId, team) {
+      await call(
+        client,
+        'unshare_team',
+        { p_share: shareId, p_team: team },
+        'Could not take access away from this team.',
+      );
     },
 
     // Newest first; before: the id of the oldest event already shown.

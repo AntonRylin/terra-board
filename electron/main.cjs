@@ -979,10 +979,34 @@ app
     // Server admin (company servers, ee/): only these actions, with plain arguments.
     cloudAction('company-status', () => cloud.loadCompany().then(() => cloud.status));
     cloudAction('company', (action, ...args) => {
-      const allowed = ['people', 'audit', 'setDisabled', 'setAdmin', 'setLicense', 'setAudit'];
+      const allowed = [
+        'people',
+        'audit',
+        'teams',
+        'teamMembers',
+        'setDisabled',
+        'setAdmin',
+        'setLicense',
+        'setAudit',
+        'setRole',
+        'setDefaultRole',
+        'setSso',
+        'createTeam',
+        'renameTeam',
+        'deleteTeam',
+        'setTeamMember',
+      ];
       if (!allowed.includes(action)) throw Error('Unknown server admin action.');
       return cloud.companyAction(action, ...args);
     });
+    const shareKind = (kind) => (kind === 'folder' ? 'folder' : 'board');
+    cloudAction('share-teams', (kind, id) => cloud.shareTeams(shareKind(kind), text(id, 200)));
+    cloudAction('share-with-team', (kind, id, team, role, name) =>
+      cloud.shareWithTeam(shareKind(kind), text(id, 200), text(team, 64), role, text(name, 60)),
+    );
+    cloudAction('unshare-team', (kind, id, team) =>
+      cloud.unshareTeam(shareKind(kind), text(id, 200), text(team, 64)),
+    );
     // Saves the whole audit log as CSV, page by page.
     cloudAction('company-export-audit', async () => {
       const r = await dialog.showSaveDialog(win, {

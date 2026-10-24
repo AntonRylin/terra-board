@@ -10,9 +10,10 @@ import {
   Pencil,
   UserMinus,
   UserPlus,
+  Users,
   UserX,
 } from 'lucide-react';
-import type { CloudStatus, SharePerson, ShareRole } from '../bridge';
+import type { CloudStatus, CompanyTeam, SharePerson, ShareRole, TeamAccess } from '../bridge';
 import { cloudApi } from '../bridge';
 import type { Library } from '../model';
 import { AppIcon } from './Launcher';
@@ -92,6 +93,115 @@ function PersonRow({
         ]}
       />
     </div>
+  );
+}
+
+// Company servers: the teams with access, and sharing with another team. Everyone in a team,
+// and anyone added to it later, gets access.
+function TeamsSection({
+  kind,
+  id,
+  busy,
+  run,
+  onChange,
+}: {
+  kind: 'folder' | 'board';
+  id: string;
+  busy: boolean;
+  run: (job: () => Promise<unknown>) => Promise<boolean>;
+  onChange: () => void;
+}) {
+  const cloud = cloudApi!;
+  const [teams, setTeams] = useState<CompanyTeam[]>([]);
+  const [access, setAccess] = useState<TeamAccess[] | null>(null);
+  const [pick, setPick] = useState('');
+  const [role, setRole] = useState<ShareRole>('edit');
+  const load = useCallback(async () => {
+    const [all, current] = await Promise.all([
+      cloud.company!('teams').catch(() => []),
+      cloud.shareTeams!(kind, id).catch(() => []),
+    ]);
+    setTeams(all);
+    setAccess(current);
+  }, [cloud, kind, id]);
+  useEffect(() => {
+    void load();
+  }, [load]);
+  const others = teams.filter((t) => !access?.some((a) => a.team === t.id));
+  const change = (job: () => Promise<unknown>) =>
+    void run(async () => {
+      await job();
+      await load();
+      onChange();
+    });
+  if (!teams.length && !access?.length) return null;
+  return (
+    <>
+      <h3 className="share-section">Teams with access</h3>
+      {access?.length === 0 && <p className="share-empty">No team yet.</p>}
+      {access?.map((t) => (
+        <div className="share-person" key={t.team}>
+          <span className="share-team-icon" aria-hidden="true">
+            <Users size={16} />
+          </span>
+          <span className="share-person-name">
+            {t.name}
+            <small>
+              {t.members} {t.members === 1 ? 'person' : 'people'}
+            </small>
+          </span>
+          <RoleSwitch
+            value={t.role}
+            label={`${t.name} can`}
+            onChange={(next) => change(() => cloud.shareWithTeam!(kind, id, t.team, next))}
+          />
+          <MoreMenu
+            label={`More for ${t.name}`}
+            buttonClass="icon-button"
+            items={[
+              {
+                label: 'Remove access',
+                icon: <UserMinus />,
+                danger: true,
+                disabled: busy,
+                action: () => change(() => cloud.unshareTeam!(kind, id, t.team)),
+              },
+            ]}
+          />
+        </div>
+      ))}
+      {others.length > 0 && (
+        <div className="share-team-add">
+          <select
+            aria-label="Team"
+            value={pick}
+            disabled={busy}
+            onChange={(e) => setPick(e.target.value)}
+          >
+            <option value="">Share with a team…</option>
+            {others.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name} ({t.members})
+              </option>
+            ))}
+          </select>
+          <RoleSwitch value={role} label="The team can" onChange={setRole} />
+          <button
+            type="button"
+            className="button"
+            disabled={busy || !pick}
+            onClick={() =>
+              change(async () => {
+                await cloud.shareWithTeam!(kind, id, pick, role);
+                setPick('');
+              })
+            }
+          >
+            Share
+          </button>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -509,6 +619,8 @@ export function ShareDialog({
       await load();
     });
   const nobody = people !== null && !people.length && !folderAccess.people.length;
+  const company = status.company;
+  const guest = company?.role === 'guest';
   return (
     <>
       <div className="share-head">
@@ -561,6 +673,14 @@ export function ShareDialog({
           )}
         </>
       )}
+      {company?.teams && !guest && cloud.shareTeams && (
+        <TeamsSection kind={kind} id={id} busy={busy} run={run} onChange={() => void load()} />
+      )}
+      {guest && (
+        <p className="share-hint">
+          On this server you can view what people share with you, but not share yourself.
+        </p>
+      )}
       {error && (
         <p className="live-error" role="alert">
           {error}
@@ -570,10 +690,12 @@ export function ShareDialog({
         <button type="button" className="button" onClick={onClose}>
           Done
         </button>
-        <button type="button" className="button primary" onClick={() => go('invite')}>
-          <UserPlus size={15} />
-          Invite
-        </button>
+        {!guest && (
+          <button type="button" className="button primary" onClick={() => go('invite')}>
+            <UserPlus size={15} />
+            Invite
+          </button>
+        )}
       </div>
     </>
   );

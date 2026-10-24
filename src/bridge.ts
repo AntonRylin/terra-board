@@ -69,8 +69,16 @@ export interface LicenseCheck {
   daysLeft?: number;
   message: string;
 }
+export type ServerRole = 'admin' | 'member' | 'guest';
 export interface CompanyStatus {
   admin: boolean;
+  /** Guests may only view what is shared with them. */
+  role: ServerRole;
+  defaultRole: 'member' | 'guest';
+  /** Company sign-in is on (admins can turn it off). */
+  sso: boolean;
+  /** The server has roles and teams (ee migration 20261026090000). */
+  teams: boolean;
   people: number;
   freePeople: number;
   audit: boolean;
@@ -84,6 +92,7 @@ export interface CompanyPerson {
   lastSignIn: string | null;
   disabled: boolean;
   admin: boolean;
+  role: ServerRole;
   devices: number;
   storageBytes: number;
 }
@@ -95,7 +104,29 @@ export interface AuditEvent {
   target: string | null;
   details: Record<string, unknown>;
 }
+export interface CompanyTeam {
+  id: string;
+  name: string;
+  members: number;
+  /** The signed-in person is in it. */
+  mine: boolean;
+}
+export interface TeamAccess {
+  team: string;
+  name: string;
+  role: ShareRole;
+  members: number;
+}
 export interface CompanyActions {
+  (action: 'teams'): Promise<CompanyTeam[]>;
+  (action: 'teamMembers', team: string): Promise<{ id: string; email: string | null }[]>;
+  (action: 'setRole', email: string, role: 'member' | 'guest'): Promise<void>;
+  (action: 'setDefaultRole', role: 'member' | 'guest'): Promise<void>;
+  (action: 'setSso', on: boolean): Promise<void>;
+  (action: 'createTeam', name: string): Promise<string>;
+  (action: 'renameTeam', team: string, name: string): Promise<void>;
+  (action: 'deleteTeam', team: string): Promise<void>;
+  (action: 'setTeamMember', team: string, userId: string, member: boolean): Promise<void>;
   (
     action: 'people',
     options?: { search?: string; limit?: number; offset?: number },
@@ -435,6 +466,16 @@ interface DesktopBridge {
     company?: CompanyActions;
     /** Saves the audit log as CSV; resolves to the number of events, or false if cancelled. */
     companyExportAudit?(): Promise<number | false>;
+    /** Teams with access to a folder or board of this person (company servers). */
+    shareTeams?(kind: 'folder' | 'board', id: string): Promise<TeamAccess[]>;
+    shareWithTeam?(
+      kind: 'folder' | 'board',
+      id: string,
+      team: string,
+      role: ShareRole,
+      name?: string,
+    ): Promise<CloudStatus>;
+    unshareTeam?(kind: 'folder' | 'board', id: string, team: string): Promise<CloudStatus>;
     serverTest(input: ServerInput): Promise<ServerPreview>;
     serverSet(
       input: ServerInput | { terra: true },

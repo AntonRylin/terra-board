@@ -168,6 +168,28 @@ function createCloudAuth({
     }
   };
 
+  // What company_info() says ({ edition: 'company', sso }), or null on a server without the
+  // company edition (ee/), or when it can't be asked.
+  const companyEdition = async (url, key) => {
+    try {
+      const response = await fetch(`${url}/rest/v1/rpc/company_info`, {
+        method: 'POST',
+        headers: {
+          apikey: key,
+          Authorization: 'Bearer ' + key,
+          'Content-Type': 'application/json',
+        },
+        body: '{}',
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!response.ok) return null;
+      const info = await response.json();
+      return info && typeof info === 'object' ? info : null;
+    } catch {
+      return null;
+    }
+  };
+
   // Opens a sign-in page in the browser; resolves when finishOAuth() gets its callback.
   const browserSignIn = async (provider, url) => {
     const done = new Promise((resolve, reject) => {
@@ -200,7 +222,8 @@ function createCloudAuth({
     // The sign-in methods this server offers: { email, google, microsoft, sso }. allowed is what
     // the server description (terra-board.json) enables; the server's own settings decide
     // the rest. If they can't be read, the description alone counts.
-    // sso is company sign-in (SAML): off unless the description turns it on.
+    // sso is company sign-in (SAML), part of the company edition (ee/): on only when the
+    // description turns it on, the server has SAML on and company_info() says so.
     async methods({ url, key, allowed = { email: true, google: true, microsoft: true } }) {
       const wanted = {
         email: !!allowed.email,
@@ -208,22 +231,25 @@ function createCloudAuth({
         microsoft: !!allowed.microsoft,
         sso: !!allowed.sso,
       };
+      const company = wanted.sso ? companyEdition(url, key) : Promise.resolve(null);
       try {
         const response = await fetch(`${url}/auth/v1/settings`, {
           headers: { apikey: key },
           signal: AbortSignal.timeout(8000),
         });
-        if (!response.ok) return wanted;
+        const edition = await company;
+        const sso = wanted.sso && edition?.edition === 'company' && edition.sso !== false;
+        if (!response.ok) return { ...wanted, sso };
         const settings = await response.json();
         const on = settings?.external || {};
         return {
           email: wanted.email && on.email !== false,
           google: wanted.google && on.google === true,
           microsoft: wanted.microsoft && on.azure === true,
-          sso: wanted.sso && settings?.saml_enabled !== false,
+          sso: sso && settings?.saml_enabled !== false,
         };
       } catch {
-        return wanted;
+        return { ...wanted, sso: false };
       }
     },
 

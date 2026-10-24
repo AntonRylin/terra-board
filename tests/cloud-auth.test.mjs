@@ -499,13 +499,20 @@ test('company sign-in explains a domain without a provider and a bad email', asy
   assert.equal(auth.waiting(), null);
 });
 
-test('company sign-in shows only when the description and the server both allow it', async () => {
-  const settings = (saml) => async () =>
-    Response.json({ external: { email: true }, saml_enabled: saml });
-  const on = createCloudAuth({ client: fakeClient(), fetch: settings(true) });
-  const allowed = { email: true, sso: true };
-  assert.equal((await on.methods({ url: 'u', key: 'k', allowed })).sso, true);
-  const off = createCloudAuth({ client: fakeClient(), fetch: settings(false) });
-  assert.equal((await off.methods({ url: 'u', key: 'k', allowed })).sso, false);
-  assert.equal((await on.methods({ url: 'u', key: 'k', allowed: { email: true } })).sso, false);
+test('company sign-in shows only on company-edition servers that allow it', async () => {
+  // company: what company_info() answers (null: the function doesn't exist, 404).
+  const server = (saml, company) => async (url) =>
+    url.endsWith('/rpc/company_info')
+      ? company
+        ? Response.json(company)
+        : new Response('{"code":"PGRST202"}', { status: 404 })
+      : Response.json({ external: { email: true }, saml_enabled: saml });
+  const methods = (fetch, allowed = { email: true, sso: true }) =>
+    createCloudAuth({ client: fakeClient(), fetch }).methods({ url: 'u', key: 'k', allowed });
+  const edition = { edition: 'company', sso: true };
+  assert.equal((await methods(server(true, edition))).sso, true);
+  assert.equal((await methods(server(false, edition))).sso, false, 'SAML off');
+  assert.equal((await methods(server(true, null))).sso, false, 'no company edition');
+  assert.equal((await methods(server(true, { ...edition, sso: false }))).sso, false, 'admin off');
+  assert.equal((await methods(server(true, edition), { email: true })).sso, false, 'description');
 });

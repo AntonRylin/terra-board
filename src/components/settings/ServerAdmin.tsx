@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Download, KeyRound, ScrollText, ShieldCheck, UserRound } from 'lucide-react';
-import type { AuditEvent, CloudStatus, CompanyPerson, CompanyStatus } from '../../bridge';
-import { Group, Row, Switch } from './controls';
+import { Download, KeyRound, ScrollText, ShieldCheck, UserRound, Users } from 'lucide-react';
+import type {
+  AuditEvent,
+  CloudStatus,
+  CompanyPerson,
+  CompanyStatus,
+  CompanyTeam,
+} from '../../bridge';
+import { Group, Row, Select, Switch } from './controls';
 import { ListRow } from './list';
 
 type Act = (job: () => Promise<unknown>, done?: string) => Promise<void>;
@@ -47,6 +53,18 @@ export function auditText(e: AuditEvent) {
     'admin.removed': `removed admin rights from ${e.target || 'someone'}`,
     'license.set': `added a license key${d.customer ? ` for ${d.customer}, ${d.seats} people` : ''}`,
     'license.cleared': 'removed the license key',
+    'role.set': `made ${person} a ${d.role === 'guest' ? 'guest' : 'member'}`,
+    'role.default': `set new people to join as ${d.role === 'guest' ? 'guests' : 'members'}`,
+    'sso.on': 'turned company sign-in on',
+    'sso.off': 'turned company sign-in off',
+    'team.created': `created the team ${d.name || ''}`,
+    'team.renamed': `renamed a team to ${d.name || ''}`,
+    'team.deleted': `deleted the team ${d.name || ''}`,
+    'team.member_added': `added ${person} to ${d.team || 'a team'}`,
+    'team.member_removed': `removed ${person} from ${d.team || 'a team'}`,
+    'share.team_added': `shared ${thing} with ${d.teamName || 'a team'}`,
+    'share.team_removed': `took ${thing} away from ${d.teamName || 'a team'}`,
+    'share.team_role_changed': `changed what ${d.teamName || 'a team'} can do on ${thing}`,
     'audit.on': 'turned the audit log on',
     'audit.off': 'turned the audit log off',
   };
@@ -136,7 +154,17 @@ function License({ status, busy, act }: { status: CompanyStatus; busy: boolean; 
   );
 }
 
-function People({ me, busy, act }: { me?: string | null; busy: boolean; act: Act }) {
+function People({
+  me,
+  teams,
+  busy,
+  act,
+}: {
+  me?: string | null;
+  teams: boolean;
+  busy: boolean;
+  act: Act;
+}) {
   const [people, setPeople] = useState<CompanyPerson[] | null>(null);
   const [search, setSearch] = useState('');
   const [adminEmail, setAdminEmail] = useState('');
@@ -180,7 +208,7 @@ function People({ me, busy, act }: { me?: string | null; busy: boolean; act: Act
       {people?.map((p) => {
         const self = !!me && p.email?.toLowerCase() === me.toLowerCase();
         const facts = [
-          p.admin ? 'Admin' : null,
+          p.admin ? 'Admin' : p.role === 'guest' ? 'Guest' : 'Member',
           p.disabled ? 'Disabled' : null,
           p.lastSignIn ? `Last sign-in ${when(p.lastSignIn)}` : 'Never signed in',
           p.devices ? `${p.devices} device${p.devices === 1 ? '' : 's'}` : null,
@@ -201,6 +229,22 @@ function People({ me, busy, act }: { me?: string | null; busy: boolean; act: Act
                       void change(
                         () => company()('setAdmin', p.email!, !p.admin),
                         p.admin ? `${p.email} is no longer an admin.` : `${p.email} is an admin.`,
+                      ),
+                  }
+                : null,
+              p.email && !p.admin && teams
+                ? {
+                    label: p.role === 'guest' ? 'Make member' : 'Make guest',
+                    disabled: busy,
+                    hint:
+                      p.role === 'guest'
+                        ? undefined
+                        : 'Guests can only view what is shared with them, and cannot share.',
+                    action: () =>
+                      void change(
+                        () =>
+                          company()('setRole', p.email!, p.role === 'guest' ? 'member' : 'guest'),
+                        p.role === 'guest' ? `${p.email} is a member.` : `${p.email} is a guest.`,
                       ),
                   }
                 : null,
@@ -331,6 +375,221 @@ function AuditLog({ status, busy, act }: { status: CompanyStatus; busy: boolean;
   );
 }
 
+// Server-wide choices: the role new people get, and company sign-in.
+function ServerChoices({ status, busy, act }: { status: CompanyStatus; busy: boolean; act: Act }) {
+  return (
+    <Group title="Server settings">
+      <Row
+        title="New people join as"
+        description="Members can share boards. Guests can only view what is shared with them."
+      >
+        <Select
+          label="New people join as"
+          value={status.defaultRole}
+          options={[
+            { value: 'member', label: 'Member' },
+            { value: 'guest', label: 'Guest' },
+          ]}
+          onChange={(role) =>
+            void act(
+              () => company()('setDefaultRole', role),
+              role === 'guest' ? 'New people join as guests.' : 'New people join as members.',
+            )
+          }
+        />
+      </Row>
+      <Row
+        title="Company sign-in"
+        description="Sign in through your identity provider (SAML). SAML must also be set up on the server."
+      >
+        <Switch
+          label="Company sign-in"
+          checked={status.sso}
+          disabled={busy}
+          onChange={(on) =>
+            void act(
+              () => company()('setSso', on),
+              on ? 'Company sign-in is on.' : 'Company sign-in is off.',
+            )
+          }
+        />
+      </Row>
+    </Group>
+  );
+}
+
+// One team, opened: its members, adding someone, renaming and deleting it.
+function TeamDetail({
+  team,
+  busy,
+  act,
+  onChanged,
+}: {
+  team: CompanyTeam;
+  busy: boolean;
+  act: Act;
+  onChanged: () => void;
+}) {
+  const [members, setMembers] = useState<{ id: string; email: string | null }[] | null>(null);
+  const [people, setPeople] = useState<CompanyPerson[]>([]);
+  const [add, setAdd] = useState('');
+  const [name, setName] = useState(team.name);
+  const load = useCallback(() => {
+    void company()('teamMembers', team.id)
+      .then(setMembers)
+      .catch(() => setMembers([]));
+    void company()('people', { limit: 500 })
+      .then(setPeople)
+      .catch(() => {});
+  }, [team.id]);
+  useEffect(load, [load]);
+  const change = (job: () => Promise<unknown>, done: string) =>
+    act(async () => {
+      await job();
+      load();
+      onChanged();
+    }, done);
+  const outside = people.filter((p) => !p.disabled && !members?.some((m) => m.id === p.id));
+  return (
+    <div className="server-panel">
+      {members?.length === 0 && <p className="server-note">Nobody in this team yet.</p>}
+      {members?.map((m) => (
+        <div className="server-actions team-member" key={m.id}>
+          <span className="server-note">{m.email || m.id}</span>
+          <button
+            type="button"
+            className="st-button"
+            disabled={busy}
+            onClick={() =>
+              void change(
+                () => company()('setTeamMember', team.id, m.id, false),
+                `${m.email || 'They'} left ${team.name}.`,
+              )
+            }
+          >
+            Remove
+          </button>
+        </div>
+      ))}
+      {outside.length > 0 && (
+        <div className="server-actions">
+          <Select
+            label="Add to the team"
+            value={add}
+            options={[
+              { value: '', label: 'Add someone…' },
+              ...outside.map((p) => ({ value: p.id, label: p.email || p.id })),
+            ]}
+            onChange={setAdd}
+          />
+          <button
+            type="button"
+            className="st-button primary"
+            disabled={busy || !add}
+            onClick={() =>
+              void change(async () => {
+                await company()('setTeamMember', team.id, add, true);
+                setAdd('');
+              }, 'Added to the team.')
+            }
+          >
+            Add
+          </button>
+        </div>
+      )}
+      <input
+        aria-label="Team name"
+        value={name}
+        maxLength={80}
+        onChange={(e) => setName(e.target.value)}
+      />
+      <div className="server-actions">
+        <button
+          type="button"
+          className="st-button"
+          disabled={busy || !name.trim() || name.trim() === team.name}
+          onClick={() => void change(() => company()('renameTeam', team.id, name), 'Team renamed.')}
+        >
+          Rename
+        </button>
+        <button
+          type="button"
+          className="st-button danger"
+          disabled={busy}
+          onClick={() =>
+            void change(
+              () => company()('deleteTeam', team.id),
+              `${team.name} is deleted. Its members lose the access the team gave them.`,
+            )
+          }
+        >
+          Delete team
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Teams: share a board with a team once; people added to the team later get it too.
+function Teams({ busy, act }: { busy: boolean; act: Act }) {
+  const [teams, setTeams] = useState<CompanyTeam[] | null>(null);
+  const [open, setOpen] = useState<string | null>(null);
+  const [name, setName] = useState('');
+  const load = useCallback(() => {
+    void company()('teams')
+      .then(setTeams)
+      .catch(() => setTeams([]));
+  }, []);
+  useEffect(load, [load]);
+  return (
+    <Group title="Teams">
+      {teams?.length === 0 && (
+        <Row
+          title="No teams yet"
+          description="Share a board with a team once; people you add to the team later get it too."
+        />
+      )}
+      {teams?.map((t) => (
+        <ListRow
+          key={t.id}
+          icon={<Users size={18} />}
+          title={t.name}
+          subtitle={`${t.members} ${t.members === 1 ? 'person' : 'people'}`}
+          open={open === t.id}
+          onToggle={() => setOpen((o) => (o === t.id ? null : t.id))}
+        >
+          {open === t.id && <TeamDetail team={t} busy={busy} act={act} onChanged={load} />}
+        </ListRow>
+      ))}
+      <div className="server-panel">
+        <input
+          aria-label="New team name"
+          placeholder="New team, like Marketing"
+          value={name}
+          maxLength={80}
+          onChange={(e) => setName(e.target.value)}
+        />
+        <div className="server-actions">
+          <button
+            type="button"
+            className="st-button"
+            disabled={busy || !name.trim()}
+            onClick={() =>
+              void act(async () => {
+                await company()('createTeam', name);
+                setName('');
+                load();
+              }, `${name.trim()} is created.`)
+            }
+          >
+            Create team
+          </button>
+        </div>
+      </div>
+    </Group>
+  );
+}
+
 // Settings → Account → Server admin, for admins of a company server (ee/).
 export function ServerAdmin({
   status,
@@ -346,7 +605,9 @@ export function ServerAdmin({
   return (
     <>
       <License status={info} busy={busy} act={act} />
-      <People me={status.account.email} busy={busy} act={act} />
+      {info.teams && <ServerChoices status={info} busy={busy} act={act} />}
+      <People me={status.account.email} teams={info.teams} busy={busy} act={act} />
+      {info.teams && <Teams busy={busy} act={act} />}
       <AuditLog status={info} busy={busy} act={act} />
     </>
   );
