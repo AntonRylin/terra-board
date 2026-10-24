@@ -70,9 +70,9 @@ public static class TerraShell
                 case "focus": TerraDesktops.Focus(long.Parse(parts[2]), int.Parse(parts[3])); return id + "\tok\t";
                 case "switch": TerraDesktops.Switch(int.Parse(parts[2])); return id + "\tok\t";
                 case "close": TerraDesktops.Close(long.Parse(parts[2])); return id + "\tok\t";
-                case "dock": TerraDesktops.Dock(long.Parse(parts[2]), long.Parse(parts[3]), int.Parse(parts[4]), int.Parse(parts[5]), int.Parse(parts[6]), int.Parse(parts[7]), parts[8] == "1", parts[9] == "1", int.Parse(parts[10]), int.Parse(parts[11])); return id + "\tok\t";
-                case "park": TerraDesktops.Park(long.Parse(parts[2]), long.Parse(parts[3]), int.Parse(parts[4]), int.Parse(parts[5]), int.Parse(parts[6]), int.Parse(parts[7])); return id + "\tok\t";
-                case "release": TerraDesktops.Release(long.Parse(parts[2])); return id + "\tok\t";
+                case "dock": return id + "\tok\t" + Out(TerraDesktops.Dock(long.Parse(parts[2]), long.Parse(parts[3]), int.Parse(parts[4]), int.Parse(parts[5]), int.Parse(parts[6]), int.Parse(parts[7]), parts[8] == "1", parts[9] == "1", int.Parse(parts[10]), int.Parse(parts[11])));
+                case "park": return id + "\tok\t" + Out(TerraDesktops.Park(long.Parse(parts[2]), long.Parse(parts[3]), int.Parse(parts[4]), int.Parse(parts[5]), int.Parse(parts[6]), int.Parse(parts[7])));
+                case "release": TerraDesktops.Release(long.Parse(parts[2]), parts.Length > 3 ? Arg(parts[3]) : ""); return id + "\tok\t";
                 case "hide": TerraDesktops.Hide(long.Parse(parts[2])); return id + "\tok\t";
                 case "mouse": TerraInput.Mouse(long.Parse(parts[2]), parts[3], int.Parse(parts[4]), int.Parse(parts[5]), int.Parse(parts[6]), int.Parse(parts[7]), int.Parse(parts[8])); return id + "\tok\t";
                 case "key": TerraInput.Key(long.Parse(parts[2]), int.Parse(parts[3]), int.Parse(parts[4]), parts[5] == "1", parts[6] == "1", int.Parse(parts[7])); return id + "\tok\t";
@@ -477,24 +477,43 @@ public static class TerraDesktops
         SetWindowPos(h, after, x - left, y - top, width + left + right, height + top + bottom, flags | NOACTIVATE);
     }
 
-    // Parked: just behind Terra's window, at this place and size (physical pixels).
-    public static void Park(long id, long terra, int x, int y, int width, int height)
+    // Parked: just behind Terra's window, at this place and size (physical
+    // pixels). On a screen, so it keeps drawing itself for its picture.
+    public static string Park(long id, long terra, int x, int y, int width, int height)
     {
         IntPtr h = Prepare(id, terra);
         SetWindowLongPtr(h, -8, IntPtr.Zero);
         PlaceVisible(h, new IntPtr(terra), x, y, Math.Max(120, width), Math.Max(80, height), NOACTIVATE | NOOWNERZORDER);
+        return Saved(id);
+    }
+
+    // Where and how a window was before it joined the board, as text Terra
+    // keeps (so a restarted helper can still put it back).
+    static string Saved(long id)
+    {
+        WINDOWPLACEMENT wp;
+        if (!homes.TryGetValue(id, out wp)) return "";
+        return string.Join(",", new int[] { wp.flags, wp.showCmd, wp.minPosition.X, wp.minPosition.Y, wp.maxPosition.X, wp.maxPosition.Y,
+            wp.normalPosition.Left, wp.normalPosition.Top, wp.normalPosition.Right, wp.normalPosition.Bottom });
+    }
+
+    // Terra's helper is ending (Terra closed or crashed): every window on a
+    // board goes back where and as it was.
+    public static void ReleaseAll()
+    {
+        foreach (var id in new System.Collections.Generic.List<long>(homes.Keys)) Release(id);
     }
 
     // In use: over its frame and above Terra, optionally passing on the click
     // that started it (the window is now exactly where its picture was).
     [DllImport("user32.dll")] static extern bool GetCursorPos(out POINT p);
 
-    public static void Dock(long id, long terra, int x, int y, int width, int height, bool activate, bool click, int clickX, int clickY)
+    public static string Dock(long id, long terra, int x, int y, int width, int height, bool activate, bool click, int clickX, int clickY)
     {
         IntPtr h = Prepare(id, terra);
         SetWindowLongPtr(h, -8, new IntPtr(terra));
         PlaceVisible(h, IntPtr.Zero, x, y, Math.Max(120, width), Math.Max(80, height), SHOWWINDOW | NOOWNERZORDER | (activate ? 0u : NOACTIVATE));
-        if (!activate) return;
+        if (!activate) return Saved(id);
         // Windows lets the process that just pressed a key bring a window forward.
         keybd_event(0x12, 0, 0, UIntPtr.Zero);
         keybd_event(0x12, 0, 2, UIntPtr.Zero);
@@ -507,15 +526,33 @@ public static class TerraDesktops
             mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero);
             mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero);
         }
+        return Saved(id);
     }
 
     // Back where and as it was before it joined the board.
-    public static void Release(long id)
+    public static void Release(long id) { Release(id, ""); }
+    public static void Release(long id, string saved)
     {
         PerMonitor();
         IntPtr h = new IntPtr(id);
         WINDOWPLACEMENT home;
         bool known = homes.TryGetValue(id, out home);
+        if (!known && saved.Length > 0)
+        {
+            // Kept by Terra from an earlier run of this helper.
+            var v = Array.ConvertAll(saved.Split(','), int.Parse);
+            if (v.Length == 10)
+            {
+                home = new WINDOWPLACEMENT();
+                home.length = Marshal.SizeOf(typeof(WINDOWPLACEMENT));
+                home.flags = v[0];
+                home.showCmd = v[1];
+                home.minPosition = new POINT { X = v[2], Y = v[3] };
+                home.maxPosition = new POINT { X = v[4], Y = v[5] };
+                home.normalPosition = new RECT { Left = v[6], Top = v[7], Right = v[8], Bottom = v[9] };
+                known = true;
+            }
+        }
         homes.Remove(id);
         if (!IsWindow(h)) return;
         SetWindowLongPtr(h, -8, IntPtr.Zero);
@@ -766,7 +803,7 @@ Add-Type -TypeDefinition $source -ReferencedAssemblies System.Drawing,System.Win
 [Console]::Out.WriteLine('ready')
 while ($true) {
   $line = [Console]::In.ReadLine()
-  if ($null -eq $line) { break }
+  if ($null -eq $line) { [TerraDesktops]::ReleaseAll(); break }
   [Console]::Out.WriteLine([TerraShell]::Handle($line))
 }
 `;
@@ -789,12 +826,20 @@ function createShellHelper({
     buffer = '',
     held = false;
   const queue = [];
+  // Its input ends first, so it puts back any app window still on a board
+  // before it exits (it does the same if Terra itself goes away).
   const stop = () => {
     clearTimeout(idleTimer);
     const c = child;
     child = null;
     ready = null;
-    if (c && !c.killed) c.kill();
+    if (!c || c.killed) return;
+    try {
+      c.stdin.end();
+    } catch {}
+    setTimeout(() => {
+      if (c.exitCode === null && !c.killed) c.kill();
+    }, 3000).unref?.();
   };
   const fail = (error) => {
     const pending = [...queue.splice(0), ...(busy ? [busy] : [])];
@@ -954,16 +999,25 @@ function createShellHelper({
     },
     // click: a point (physical pixels) where a real click started using it.
     async dockWindow(id, owner, { x, y, width, height }, activate, click) {
-      await request(
+      const saved = await request(
         `dock\t${id}\t${owner}\t${x | 0}\t${y | 0}\t${width | 0}\t${height | 0}\t${activate ? 1 : 0}\t${click ? 1 : 0}\t${click ? click.x | 0 : 0}\t${click ? click.y | 0 : 0}`,
         true,
       );
+      return unb64(saved);
     },
+    // Each answers with the window's saved place (see release).
     async parkWindow(id, owner, { x, y, width, height }) {
-      await request(`park\t${id}\t${owner}\t${x | 0}\t${y | 0}\t${width | 0}\t${height | 0}`, true);
+      return unb64(
+        await request(
+          `park\t${id}\t${owner}\t${x | 0}\t${y | 0}\t${width | 0}\t${height | 0}`,
+          true,
+        ),
+      );
     },
-    async releaseWindow(id) {
-      await request(`release\t${id}`, true);
+    // saved: the place parkWindow or dockWindow reported, for a helper that
+    // has since restarted.
+    async releaseWindow(id, saved = '') {
+      await request(`release\t${id}\t${b64(saved)}`, true);
     },
     async hideWindow(id) {
       await request(`hide\t${id}`, true);

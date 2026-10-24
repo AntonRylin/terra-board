@@ -155,6 +155,9 @@ function createLocalFiles({
   dockGeometry = null,
   // A screen point in CSS pixels to physical pixels.
   screenPoint = null,
+  // App frames' pictures (app-pictures.cjs), and Terra's window handle for them.
+  pictures = null,
+  pictureTarget = null,
   send = () => {},
   pollMs = 5000,
 } = {}) {
@@ -842,12 +845,18 @@ function createLocalFiles({
     await helper.closeWindow(windowId(id));
   }
 
-  // App frames. A program's window on the board is "parked" while nobody uses
-  // it (just behind Terra's window, restored, so Windows keeps capturing it
-  // for the frame's picture), laid over its frame while used, and released
+  // App frames. A program's window on the board is "parked" while it is
+  // used in place (just behind Terra's window, restored and on a screen, so
+  // it keeps drawing itself for the frame's picture), laid over its frame
+  // when opened as a window, and released
   // (back as it was) when its frame is deleted, the board closes or Terra
   // closes. Which windows are on the board, and how, is kept here.
   const managed = new Map();
+  // Where each window was before it joined a board, as the helper reported.
+  const saved = new Map();
+  const remember = (id, place) => {
+    if (place && !saved.has(id)) saved.set(id, place);
+  };
   const validRect = (rect) =>
     !!rect &&
     ['x', 'y', 'width', 'height'].every((k) => Number.isFinite(rect[k])) &&
@@ -864,27 +873,29 @@ function createLocalFiles({
     else managed.delete(id);
     helper.hold(managed.size > 0);
   };
-  // rect: the frame's app area on screen; size: its size at 100% zoom (CSS
-  // pixels). Parked at that size, kept inside Terra's window so it stays hidden.
-  async function parkWindow({ id, rect, size } = {}) {
+  // rect: the frame's app area in the page (CSS pixels); pixels: the size
+  // the window gets, in screen pixels (the frame's size on screen, so its
+  // picture is pixel for pixel). Parked right behind the frame, kept inside
+  // Terra's window so it stays hidden.
+  async function parkWindow({ id, rect, pixels } = {}) {
     appFrames();
     windowId(id);
-    if (!validRect(rect) || !validRect({ x: 0, y: 0, ...size })) throw Error('Invalid frame');
+    if (!validRect(rect) || !validRect({ x: 0, y: 0, ...pixels })) throw Error('Invalid frame');
     const at = dockGeometry(rect);
-    const want = dockGeometry({ x: rect.x, y: rect.y, width: size.width, height: size.height });
     const area = at.content;
-    const fit = Math.min(1, area.width / want.width, area.height / want.height);
-    const width = Math.max(1, Math.round(want.width * fit)),
-      height = Math.max(1, Math.round(want.height * fit));
+    const fit = Math.min(1, area.width / pixels.width, area.height / pixels.height);
+    const width = Math.max(1, Math.round(pixels.width * fit)),
+      height = Math.max(1, Math.round(pixels.height * fit));
     const x = Math.min(Math.max(at.x, area.x), area.x + area.width - width),
       y = Math.min(Math.max(at.y, area.y), area.y + area.height - height);
     track(id, 'parked');
     try {
-      await helper.parkWindow(id, at.owner, { x, y, width, height });
+      remember(id, await helper.parkWindow(id, at.owner, { x, y, width, height }));
     } catch (error) {
       track(id, null);
       throw Error(friendly(error));
     }
+    pictures?.refresh(Number(id));
   }
   // click: where (screen, CSS pixels) a click started using it, passed on to
   // the app once its window lies there.
@@ -899,7 +910,7 @@ function createLocalFiles({
         : null;
     track(id, 'docked');
     try {
-      await helper.dockWindow(id, geometry.owner, geometry, activate === true, point);
+      remember(id, await helper.dockWindow(id, geometry.owner, geometry, activate === true, point));
     } catch (error) {
       track(id, null);
       throw Error(friendly(error));
@@ -909,10 +920,52 @@ function createLocalFiles({
     windowId(id);
     if (!managed.has(id)) return;
     track(id, null);
-    await helper.releaseWindow(id).catch(() => {});
+    pictures?.hideWindow(Number(id));
+    const place = saved.get(id) || '';
+    saved.delete(id);
+    await helper.releaseWindow(id, place).catch(() => {});
   }
   async function releaseAll() {
+    pictures?.hideAll();
     for (const id of [...managed.keys()]) await releaseWindow({ id });
+  }
+  // An app frame's picture: Windows' live preview of its window, drawn into
+  // Terra's window (see app-pictures.cjs). whole: the frame's picture area,
+  // screen pixels; parts: where each visible part goes in Terra's window
+  // (dest) and which part of the area it is (src). No parts: none shown.
+  const appPictures = () => !!(windows && pictures && pictureTarget);
+  function appPicture({ frame, id, whole, parts } = {}) {
+    if (!appPictures()) return false;
+    if (typeof frame !== 'string' || !frame || frame.length > 100) throw Error('Invalid frame');
+    if (!Array.isArray(parts) || !parts.length) {
+      pictures.hide(frame);
+      return true;
+    }
+    windowId(id);
+    const int = (v, lo, hi) => (Number.isFinite(v) && v >= lo && v <= hi ? Math.round(v) : NaN);
+    const box = (b, lo, hi) =>
+      Array.isArray(b) && b.length === 4 ? b.map((v) => int(v, lo, hi)) : [NaN];
+    const size =
+      Array.isArray(whole) && whole.length === 2 ? whole.map((v) => int(v, 1, 20000)) : [NaN];
+    if (size.some(Number.isNaN)) throw Error('Invalid picture');
+    const clean = [];
+    for (const part of parts.slice(0, 64)) {
+      const dest = box(part?.dest, -40000, 40000),
+        src = box(part?.src, 0, 20000);
+      if ([...dest, ...src].some(Number.isNaN)) throw Error('Invalid picture');
+      if (dest[2] > dest[0] && dest[3] > dest[1] && src[2] > src[0] && src[3] > src[1])
+        clean.push({ dest, src });
+    }
+    if (!clean.length) {
+      pictures.hide(frame);
+      return true;
+    }
+    return pictures.show(frame, {
+      target: pictureTarget(),
+      source: Number(id),
+      whole: size,
+      parts: clean,
+    });
   }
   // Terra minimized: its app windows go with it, and come back when it does.
   async function hideAll() {
@@ -1021,6 +1074,8 @@ function createLocalFiles({
     isDocked,
     appInput,
     appPopup,
+    appPicture,
+    appPictures,
     dragIcon,
     absolute,
     paths,
@@ -1055,6 +1110,7 @@ function registerLocalFiles({ ipcMain, trusted, files }) {
     'dock-window': files.dockWindow,
     'release-window': files.releaseWindow,
     'app-popup': files.appPopup,
+    'app-pictures': files.appPictures,
     source: ({ path: file } = {}) => files.sourceFor(file),
     watch: ({ key, dirs } = {}) => files.watch(key, dirs),
     unwatch: ({ key } = {}) => files.unwatch(key),
@@ -1074,6 +1130,14 @@ function registerLocalFiles({ ipcMain, trusted, files }) {
     try {
       trusted(event);
       files.appInput(args || {});
+    } catch {}
+  });
+  // An app frame's picture moved, changed size or was partly covered: sent
+  // as often as every screen refresh, not awaited.
+  ipcMain.on('canvas:files-app-picture', (event, args) => {
+    try {
+      trusted(event);
+      files.appPicture(args || {});
     } catch {}
   });
   // A real Windows drag of files, to Explorer, other apps or the board itself.

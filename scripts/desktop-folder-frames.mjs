@@ -4,7 +4,7 @@
 // from Explorer (moving them, as Windows does on one drive), turns a folder
 // dropped on the board into a new frame, and saves a board picture dragged onto
 // it. TERRA_SOURCE_CHECK=1 runs the built source; TERRA_TEST_EXE another build.
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import fs from 'node:fs';
 import { resolve, join } from 'node:path';
@@ -97,7 +97,8 @@ const child = spawn(
     '--disable-backgrounding-occluded-windows',
     '--disable-renderer-backgrounding',
   ],
-  { env, windowsHide: true, stdio: 'ignore' },
+  // Its window shows (a hidden one gets no app pictures drawn into it).
+  { env, stdio: 'ignore' },
 );
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function until(fn, label, timeout = 20000) {
@@ -185,6 +186,69 @@ const screenshot = async (name) =>
     join(root, name),
     Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64'),
   );
+// What the screen shows at a point (physical pixels).
+const screenColor = (x, y) =>
+  new Promise((done, fail) =>
+    execFile(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-File',
+        resolve('scripts/fixtures/screen-pixel.ps1'),
+        '-X',
+        String(Math.round(x)),
+        '-Y',
+        String(Math.round(y)),
+      ],
+      (error, out) => {
+        if (error) return fail(error);
+        const [r, g, b] = out.trim().split(',').map(Number);
+        done({ r, g, b });
+      },
+    ),
+  );
+// Keeps Terra's window (by its handle) above the others, which may be in
+// front of it on this computer.
+const raise = (handle, release = false) =>
+  new Promise((done, fail) =>
+    execFile(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-File',
+        resolve('scripts/fixtures/raise-window.ps1'),
+        '-Handle',
+        String(handle),
+        ...(release ? ['-Release'] : []),
+      ],
+      (error) => (error ? fail(error) : done()),
+    ),
+  );
+// Whether one window is in front of another.
+const inFront = (front, back) =>
+  new Promise((done, fail) =>
+    execFile(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-File',
+        resolve('scripts/fixtures/window-order.ps1'),
+        '-Front',
+        String(front),
+        '-Back',
+        String(back),
+      ],
+      (error, out) => (error ? fail(error) : done(out.trim() === 'true')),
+    ),
+  );
+// The test window's orange.
+const orange = (c) => !!c && c.r > 190 && c.g > 90 && c.g < 170 && c.b < 110;
 async function drop(selectorOrPoint, files, modifiers = 0) {
   const r = typeof selectorOrPoint === 'string' ? await rect(selectorOrPoint) : null;
   const x = r ? r.x + r.width / 2 : selectorOrPoint.x,
@@ -515,9 +579,9 @@ try {
       await until(
         () =>
           read(
-            `(()=>{const v=document.querySelector('${frameSel} video');return !!v && v.videoWidth > 0})()`,
+            `(()=>{const f=document.querySelector('${frameSel}');return !!f && f.hasAttribute('data-running') && !f.querySelector('.ca-cover')})()`,
           ),
-        'live picture of the window',
+        'the app shown in its frame',
       ).catch(async (error) => {
         console.error(
           'App frame shows:',
@@ -549,9 +613,8 @@ try {
       });
       assert.ok(Math.abs(afterMove.x - beforeMove.x + 120) < 3, 'moved 120 units left');
       assert.ok(Math.abs(afterMove.y - beforeMove.y - 40) < 3, 'moved 40 units down');
-      // Not in use, the real window is parked: not owned by Terra, restored,
-      // at the frame's size and hidden behind Terra's window, and the frame's
-      // picture keeps changing with it.
+      // The real window is parked right behind the frame: not owned by
+      // Terra, restored, at the frame's size on screen, under Terra's window.
       const dpr = await read('window.devicePixelRatio');
       const area = await rect(`${frameSel} .ca-body`);
       const parked = await until(() => {
@@ -565,25 +628,77 @@ try {
             Math.abs(w.visible.y - home.visible.y) > 20)
           ? w
           : null;
-      }, 'window parked behind Terra').catch((error) => {
+      }, 'window parked behind the frame').catch((error) => {
         console.error('Frame area', area, 'dpr', dpr, 'window', where());
         throw error;
       });
-      const picture = () =>
-        read(`(()=>{
-          const v = document.querySelector('${frameSel} video');
-          const c = document.createElement('canvas');
-          c.width = 48; c.height = 32;
-          c.getContext('2d').drawImage(v, 0, 0, 48, 32);
-          return c.toDataURL();
-        })()`);
-      const first = await picture();
-      await until(async () => (await picture()) !== first, 'picture follows the parked window');
+      // Windows draws its live picture into the frame (nothing is captured):
+      // the screen there shows the app, and keeps changing with it.
+      assert.ok(await read(`!document.querySelector('${frameSel} video')`), 'not a capture');
+      // Terra's window, as Windows lists it: the program this check started.
+      const program = (
+        source
+          ? require('electron')
+          : resolve(process.env.TERRA_TEST_EXE || 'release/win-unpacked/Terra Board.exe')
+      ).toLowerCase();
+      const terra = await read(
+        `window.canvas.files.desktops().then((s) => s.windows.find((w) => w.exe.toLowerCase() === ${JSON.stringify(program)})?.id || null)`,
+      );
+      assert.ok(terra, "Terra's window is listed");
+      await raise(terra);
+      await until(() => orange(where()?.screen), "the app's picture in the frame").catch(
+        (error) => {
+          console.error('window', where());
+          throw error;
+        },
+      );
+      const firstShot = where().shot;
+      await until(() => {
+        const w = where();
+        return w && orange(w.screen) && w.shot !== firstShot;
+      }, 'the picture follows the app');
+      // Terra's own menus stay over the picture: the board's menu, opened
+      // over the frame, is what the screen shows there, and the app around it.
+      const origin = {
+        x: parked.visible.x - area.x * dpr,
+        y: parked.visible.y - area.y * dpr,
+      };
+      const onScreen = (x, y) => screenColor(origin.x + x * dpr, origin.y + y * dpr);
+      const nameAt = await rect(`${frameSel} .ca-name`);
+      await read(`document.querySelector('${frameSel} .ca-name').dispatchEvent(new MouseEvent('contextmenu', {
+        bubbles: true, cancelable: true, clientX: ${nameAt.x + 8}, clientY: ${nameAt.y + 8} }))`);
+      const menu = await until(() => rect('.context-menu'), 'board menu over the frame');
+      // Low in the test window, where its button is orange.
+      const low = area.y + area.height * 0.85;
+      const overlap = { x: menu.x + menu.width / 2, y: low };
+      assert.ok(
+        overlap.y > menu.y + 4 &&
+          overlap.y < menu.y + menu.height - 4 &&
+          overlap.x > area.x + 4 &&
+          overlap.x < area.x + area.width - 4,
+        'menu over the frame',
+      );
+      await sleep(400);
+      const underMenu = await onScreen(overlap.x, overlap.y);
+      const beside = [area.x + area.width - 12, area.x + 12].find(
+        (x) => x < menu.x - 6 || x > menu.x + menu.width + 6 || low > menu.y + menu.height + 6,
+      );
+      const besideMenu = beside === undefined ? null : await onScreen(beside, low);
+      console.log('menu over the picture', { area, menu, underMenu, besideMenu });
+      assert.ok(!orange(underMenu), 'the menu shows over the picture');
+      if (besideMenu) assert.ok(orange(besideMenu), 'the picture shows around the menu');
+      await key('Escape', 'Escape', 27);
+      await until(async () => !(await rect('.context-menu')), 'menu closed');
+      await until(
+        async () => orange(await onScreen(overlap.x, overlap.y)),
+        'the picture back where the menu was',
+      );
+      await raise(terra, true);
+      await screenshot('8-app-picture.png');
       // Used in place: clicks and typing on the frame reach the hidden window,
       // which never comes forward (it stays right behind Terra, not owned).
       const viewport = await read('({ width: innerWidth, height: innerHeight })');
       const spotX = Math.min(area.x + area.width * 0.2, viewport.width - 20);
-      const terraWindow = parked.above;
       // The button fills the lower half of the test window.
       await clickAt(spotX, area.y + area.height * 0.85);
       await until(() => where()?.clicks === 1, 'click reached the app').catch((error) => {
@@ -614,7 +729,7 @@ try {
       );
       const used = where();
       assert.equal(used.owner, '0', 'never owned by Terra while used in place');
-      assert.equal(used.above, terraWindow, 'still right behind Terra');
+      assert.ok(await inFront(terra, used.handle), 'never brought in front of Terra');
       // A click on the board takes the keys back from the app.
       const s = await rect('.canvas-surface');
       await clickAt(s.x + s.width - 40, s.y + s.height - 160);
@@ -633,7 +748,7 @@ try {
           ? w
           : null;
       }, 'window opened over the frame');
-      assert.equal(docked.owner, terraWindow);
+      assert.equal(docked.owner, terra);
       await clickAt(s.x + s.width - 40, s.y + s.height - 160);
       await until(() => where()?.owner === '0', 'window parked again');
       assert.ok(await read(`!document.querySelector('${frameSel}[data-live]')`));

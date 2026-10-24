@@ -38,6 +38,7 @@
     "electron-updater": "6.8.9",
     "fflate": "^0.8.2",
     "icojs": "1.0.1",
+    "koffi": "3.3.2",
     "pdf-lib": "1.17.1",
     "sharp": "0.35.5",
     "zod": "4.6.5"
@@ -100,11 +101,16 @@
       "!node_modules/pdf-lib/{dist,es,src}/**",
       "!node_modules/zod/src/**",
       "!node_modules/@modelcontextprotocol/sdk/dist/esm/**",
-      "!node_modules/**/*.map"
+      "!node_modules/**/*.map",
+      "!node_modules/koffi/{lib,vendor,doc}/**",
+      "!node_modules/koffi/src/koffi/src/abi/**",
+      "!node_modules/koffi/src/koffi/src/*.{cc,hh,inc,def}",
+      "!node_modules/koffi/src/koffi/CMakeLists.txt"
     ],
     "asarUnpack": [
       "node_modules/sharp/**",
-      "node_modules/@img/**"
+      "node_modules/@img/**",
+      "node_modules/@koromix/**"
     ],
     "win": {
       "target": "dir",

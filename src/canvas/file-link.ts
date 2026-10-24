@@ -178,6 +178,11 @@ export type AppInputEvent =
   | { type: 'key'; vk: number; scan?: number; extended?: boolean; down: boolean; mods: number }
   | { type: 'text'; text: string }
   | { type: 'focus'; on: boolean };
+export type AppPicturePart = {
+  dest: [number, number, number, number];
+  src: [number, number, number, number];
+};
+
 export interface FilesBridge {
   list(args: { source: FileSource; sub?: string; hidden?: boolean }): Promise<FileListing>;
   icons(requests: { path: string; size: number; modified: number }[]): Promise<(string | null)[]>;
@@ -204,12 +209,12 @@ export interface FilesBridge {
   focusWindow(args: { id: string; steps: number }): Promise<void>;
   switchDesktop(args: { steps: number }): Promise<void>;
   closeWindow(args: { id: string }): Promise<void>;
-  // App frames. rect: the frame's app area in the page, in CSS pixels; size:
-  // that area at 100% zoom.
+  // App frames. rect: the frame's app area in the page, in CSS pixels;
+  // pixels: the size the window gets, in screen pixels.
   parkWindow(args: {
     id: string;
     rect: { x: number; y: number; width: number; height: number };
-    size: { width: number; height: number };
+    pixels: { width: number; height: number };
   }): Promise<void>;
   dockWindow(args: {
     id: string;
@@ -223,6 +228,16 @@ export interface FilesBridge {
   // what shows of the window; keys as Windows virtual-key codes).
   appInput(args: { id: string; event: AppInputEvent }): void;
   appPopup(args: { id: string }): Promise<boolean>;
+  // Windows' own live picture of an app window, drawn into Terra's window
+  // over the page: whole is the frame's picture area and parts what of it
+  // shows (dest: in the page, src: in the area), in screen pixels.
+  appPicture(args: {
+    frame: string;
+    id: string;
+    whole: [number, number];
+    parts: AppPicturePart[];
+  }): void;
+  appPictures(): Promise<boolean>;
   // Terra's window moved, resized or came back: put app windows in place again.
   onRepark(callback: () => void): () => void;
   source(args: { path: string }): Promise<FileSource>;

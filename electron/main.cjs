@@ -43,6 +43,7 @@ const { createOcr, textRecognitionAvailable } = require('./ocr.cjs');
 const { createHtmlCards, embedRequest, fromEmbed } = require('./html-cards.cjs');
 const { browserSession, hardenWebviews, guestOf } = require('./browser-frames.cjs');
 const { createLocalFiles, registerLocalFiles } = require('./local-files.cjs');
+const { createAppPictures } = require('./app-pictures.cjs');
 const { createShellHelper } = require('./shell-helper.cjs');
 const { acceptLanguages, spellcheckLanguages } = require('./system-languages.cjs');
 const { Worker } = require('node:worker_threads');
@@ -1394,6 +1395,9 @@ app
         process.platform === 'win32'
           ? require('electron').screen.dipToScreenPoint({ x: point.x, y: point.y })
           : point,
+      // Windows draws app frames' pictures straight into Terra's window.
+      pictures: createAppPictures(),
+      pictureTarget: () => Number(win.getNativeWindowHandle().readBigUInt64LE(0)),
     });
     // App windows on the board follow Terra's window: minimized with it, and
     // put back in place (behind it, or over their frame) once it settles after

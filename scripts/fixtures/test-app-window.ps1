@@ -1,7 +1,10 @@
 # A small window for the app-frame check: an orange form whose whole inside
 # is a button counting clicks, with a counter ticking five times a second (so
 # its picture changes), writing where it is, how big, and the click count to a
-# file, so the check can see it parked, docked and given back.
+# file, so the check can see it parked, docked and given back. screen and
+# shot: what the screen shows where the window is (a color low in the button
+# and a fingerprint of the whole area), which while it is parked behind Terra
+# is the picture Windows draws of it into Terra's window.
 param([string]$Report, [string]$Title = 'Terra test app')
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
@@ -30,7 +33,9 @@ $button.FlatStyle = 'Flat'
 $button.BackColor = [System.Drawing.Color]::FromArgb(232, 131, 58)
 $button.ForeColor = [System.Drawing.Color]::White
 $button.Font = New-Object System.Drawing.Font('Segoe UI', 20)
-$button.Add_Click({ $script:clicks++ })
+# Counted on release: a WinForms Click also needs Windows to report the
+# mouse really over the button, and Terra lies over it while in a frame.
+$button.Add_MouseUp({ $script:clicks++ })
 $form.Controls.Add($button)
 # A text box across the top half, for typing.
 $text = New-Object System.Windows.Forms.TextBox
@@ -48,6 +53,18 @@ $timer.Add_Tick({
   [TestAppWin32]::GetWindowRect($form.Handle, [ref]$r) | Out-Null
   $v = New-Object TestAppWin32+RECT
   [TestAppWin32]::DwmGetWindowAttribute($form.Handle, 9, [ref]$v, 16) | Out-Null
+  $sw = [Math]::Max(1, $v.Right - $v.Left)
+  $sh = [Math]::Max(1, $v.Bottom - $v.Top)
+  $shot = New-Object System.Drawing.Bitmap($sw, $sh)
+  $g = [System.Drawing.Graphics]::FromImage($shot)
+  try { $g.CopyFromScreen($v.Left, $v.Top, 0, 0, $shot.Size) } catch {}
+  $g.Dispose()
+  $c = $shot.GetPixel([int]($sw / 2), [int]($sh * 0.85))
+  $ms = New-Object IO.MemoryStream
+  $shot.Save($ms, [System.Drawing.Imaging.ImageFormat]::Bmp)
+  $fingerprint = [BitConverter]::ToString([System.Security.Cryptography.MD5]::Create().ComputeHash($ms.ToArray())).Replace('-', '')
+  $shot.Dispose()
+  $ms.Dispose()
   $owner = [TestAppWin32]::GetWindow($form.Handle, 4).ToInt64()
   # The window just above it in Windows' stacking order (GW_HWNDPREV).
   $above = [TestAppWin32]::GetWindow($form.Handle, 3).ToInt64()
@@ -55,7 +72,8 @@ $timer.Add_Tick({
     ',"visible":{"x":' + $v.Left + ',"y":' + $v.Top + ',"width":' + ($v.Right - $v.Left) + ',"height":' + ($v.Bottom - $v.Top) + '}' +
     ',"owner":"' + $owner + '","above":"' + $above + '","minimized":' + ([TestAppWin32]::IsIconic($form.Handle)).ToString().ToLower() +
     ',"clicks":' + $script:clicks + ',"text":"' + ($text.Text -replace '[^\w ]', '_') + '"' +
-    ',"handle":"' + $form.Handle.ToInt64() + '"}'
+    ',"handle":"' + $form.Handle.ToInt64() + '"' +
+    ',"screen":{"r":' + $c.R + ',"g":' + $c.G + ',"b":' + $c.B + '},"shot":"' + $fingerprint + '"}'
   [IO.File]::WriteAllText($Report, $json)
 })
 $timer.Start()

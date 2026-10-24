@@ -1,9 +1,11 @@
 // App frames (type 'file', kind 'app'): a running program inside the board.
-// Its real window waits hidden just behind Terra's window, and the frame shows
-// a live picture of it (captured by Windows while the frame is on screen).
-// Terra is the app's mouse and keyboard: pointer, wheel and keys on the frame
-// are sent to the hidden window as the input Windows would deliver, and it is
-// told it has the focus, so the app is used in place and never comes forward.
+// Its real window waits hidden right behind the frame, under Terra's window,
+// at the frame's size on screen, and Windows itself draws its live picture
+// into the frame (pixel for pixel, at the screen's refresh rate, never with
+// the mouse pointer in it; see app-pictures.ts). Terra is the app's mouse and
+// keyboard: pointer, wheel and keys on the frame are sent to the hidden
+// window as the input Windows would deliver, and it is told it has the
+// focus, so the app is used in place and never comes forward.
 // "Open as a window" lays the real window over the frame instead, for apps
 // that ignore such input. Deleting the frame, closing the board or Terra
 // gives the window back as it was. The board stores the program only.
@@ -24,12 +26,34 @@ import {
   type AppInputEvent,
   type FileSource,
 } from '../canvas/file-link';
+import { setAppPicture, scheduleAppPictures } from './app-pictures';
 import { AppIcon } from './CanvasDesktops';
 import { appWindowFor, isAppWindowBound, refreshDesktops, useDesktops } from './desktop-windows';
 import { useFileIcons } from './file-icons';
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
-// Captures running at once; frames beyond show the app's icon until one stops.
+// Whether Windows draws the pictures (asked once).
+let pictureSupport: Promise<boolean> | null = null;
+function usePictureSupport() {
+  const files = window.canvas?.files;
+  const [supported, setSupported] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!files?.appPictures) {
+      setSupported(false);
+      return;
+    }
+    pictureSupport ??= files.appPictures().catch(() => false);
+    let live = true;
+    void pictureSupport.then((value) => live && setSupported(value));
+    return () => {
+      live = false;
+    };
+  }, [files]);
+  return supported;
+}
+// Where Windows can't draw them (or the frame is turned), the picture is a
+// capture of the window instead. Captures running at once; frames beyond
+// show the app's icon until one stops.
 const captureLimit = 6;
 const captures = new Set<string>();
 // Keys Windows marks as extended (the arrows and the block above them, and
@@ -94,12 +118,15 @@ export function AppFrame({
   // view too); the board releases it when the frame is deleted or it closes.
   const win = appWindowFor(o.id, exe || null, windows);
 
-  // The live picture.
+  // The live picture: drawn by Windows, or else captured.
+  const rotated = !!(o.rotation && Math.round(o.rotation) % 360);
+  const support = usePictureSupport();
+  const capture = support === false || (support === true && rotated);
   const video = useRef<HTMLVideoElement>(null);
   const [captureError, setCaptureError] = useState('');
   const [capturing, setCapturing] = useState(false);
   const shown = camera.zoom * o.width > 80;
-  const canCapture = !!win && !win.minimized && shown;
+  const canCapture = capture && !!win && !win.minimized && shown;
   useEffect(() => {
     if (!canCapture || !win) return;
     if (captures.size >= captureLimit && !captures.has(o.id)) return;
@@ -143,14 +170,12 @@ export function AppFrame({
     };
   }, [canCapture, win?.id]);
 
-  // Where the real window is. Not in use, it is parked: hidden just behind
-  // Terra's window at the frame's size (at 100% zoom), so Windows keeps
-  // drawing it for the picture. In use, it lies exactly over the frame.
+  // Where the real window is: parked right behind the frame (see park), or
+  // laid over it while opened as a window.
   const body = useRef<HTMLDivElement>(null);
   const [live, setLive] = useState<string | null>(null);
   const liveRef = useRef<string | null>(null);
   liveRef.current = live;
-  const rotated = !!(o.rotation && Math.round(o.rotation) % 360);
   const bodyHeight = Math.max(20, o.height - appLabelHeight);
   const area = () => {
     const r = body.current?.getBoundingClientRect();
@@ -158,10 +183,21 @@ export function AppFrame({
       ? { x: r.left, y: r.top, width: r.width, height: r.height }
       : null;
   };
+  // The window has the frame's size as it shows on screen, so its picture is
+  // pixel for pixel at any zoom (the app lays itself out again after a zoom),
+  // and lies right behind the frame, so menus it opens appear in place.
   const park = (id: string) => {
     const rect = area();
     if (!files || !rect) return Promise.resolve();
-    return files.parkWindow({ id, rect, size: { width: o.width, height: bodyHeight } });
+    const dpr = window.devicePixelRatio || 1;
+    // The frame's own size on screen (its outline, when turned, is larger).
+    const width = rotated ? o.width * camera.zoom : rect.width,
+      height = rotated ? bodyHeight * camera.zoom : rect.height;
+    return files.parkWindow({
+      id,
+      rect,
+      pixels: { width: Math.round(width * dpr), height: Math.round(height * dpr) },
+    });
   };
   const dock = (id: string, activate: boolean, click: { x: number; y: number } | null) => {
     const rect = area();
@@ -179,14 +215,32 @@ export function AppFrame({
     const timer = window.setTimeout(
       () => {
         parkedFor.current = win.id;
+        // A new size: the picture's crop follows the window's new size.
         void park(win.id)
-          .then(() => first && refreshDesktops(300))
+          .then(() => refreshDesktops(first ? 300 : 400))
           .catch(() => {});
       },
-      first ? 0 : 250,
+      first ? 0 : 300,
     );
     return () => window.clearTimeout(timer);
   }, [win?.id, win?.minimized, live, camera.x, camera.y, camera.zoom, o.x, o.y, o.width, o.height]);
+
+  // Windows draws the picture while the window is on the board and shown in
+  // the frame; every change of the board or the frame lays it out again.
+  const drawn = support === true && !rotated && !!win && !win.minimized && shown && !live;
+  useEffect(() => {
+    if (!drawn) return;
+    return () => setAppPicture(o.id, null);
+  }, [drawn, win?.id]);
+  useEffect(() => {
+    if (drawn && win && body.current)
+      setAppPicture(o.id, {
+        body: body.current,
+        id: win.id,
+        revision: `${win.width}x${win.height}`,
+      });
+    else if (drawn) scheduleAppPictures();
+  });
 
   // click: where on the screen a real click on the picture started it.
   const use = (click: { x: number; y: number } | null) => {
@@ -197,10 +251,9 @@ export function AppFrame({
     }
     setLive(win.id);
     liveRef.current = win.id;
-    // At 100% the window already has the frame's size, so the click that
+    // The window already has the frame's size on screen, so the click that
     // started it goes on to what was clicked in the picture.
-    const pass =
-      click && capturing && !win.minimized && Math.abs(camera.zoom - 1) < 0.01 ? click : null;
+    const pass = click && capturing && !win.minimized ? click : null;
     dock(win.id, true, pass).catch((error) => {
       setLive(null);
       liveRef.current = null;
@@ -347,13 +400,14 @@ export function AppFrame({
     lastDown.current = double
       ? { at: 0, x: 0, y: 0, button: -1 }
       : { at: now, x: e.clientX, y: e.clientY, button: e.button };
-    send({
+    const down: AppInputEvent = {
       type: 'mouse',
       kind: double ? 'double' : 'down',
       ...spot,
       button: e.button,
       keys: mouseKeys(e),
-    });
+    };
+    send(down);
   };
   const pointerMove = (e: PointerEvent<HTMLDivElement>) => {
     if (!inPlace) return;
@@ -496,26 +550,32 @@ export function AppFrame({
   else
     content = (
       <>
-        <video
-          ref={video}
-          className="ca-video"
-          autoPlay
-          muted
-          playsInline
-          style={pictureCrop(win.width, win.height, win.border)}
-        />
-        {(win.minimized || !shown || captureError || !capturing) && !live && (
-          <div className="cf-message ca-cover">
-            <AppIcon exe={win.exe} size={56} zoom={camera.zoom} />
-            <p>
-              {win.minimized
-                ? `${name} is minimized. Click to bring it back here.`
-                : captureError
-                  ? `Windows didn’t share a picture of ${name} (${captureError}).`
-                  : name}
-            </p>
-          </div>
+        {capture && (
+          <video
+            ref={video}
+            className="ca-video"
+            autoPlay
+            muted
+            playsInline
+            style={pictureCrop(win.width, win.height, win.border)}
+          />
         )}
+        {(win.minimized ||
+          !shown ||
+          support === null ||
+          (capture && (captureError || !capturing))) &&
+          !live && (
+            <div className="cf-message ca-cover">
+              <AppIcon exe={win.exe} size={56} zoom={camera.zoom} />
+              <p>
+                {win.minimized
+                  ? `${name} is minimized. Click to bring it back here.`
+                  : captureError
+                    ? `Windows didn’t share a picture of ${name} (${captureError}).`
+                    : name}
+              </p>
+            </div>
+          )}
       </>
     );
 

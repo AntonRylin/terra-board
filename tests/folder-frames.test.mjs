@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { clipboardObjects } from '../src/canvas/content.ts';
+import { alpha, subtract } from '../src/components/app-pictures.ts';
 import {
   displayName,
   dropMode,
@@ -485,4 +486,60 @@ test('desktops come from the Windows helper, and only Windows has them', async (
     supported: false,
     message: 'Windows didn’t let Terra read the desktops.',
   });
+});
+
+test('app frame pictures: parts around what covers them, checked before Windows draws them', () => {
+  // A menu over the middle of a frame leaves the parts above, below and beside it.
+  const parts = subtract([{ x0: 0, y0: 0, x1: 100, y1: 50 }], { x0: 40, y0: 10, x1: 60, y1: 30 });
+  assert.deepEqual(parts, [
+    { x0: 0, y0: 0, x1: 100, y1: 10 },
+    { x0: 0, y0: 30, x1: 100, y1: 50 },
+    { x0: 0, y0: 10, x1: 40, y1: 30 },
+    { x0: 60, y0: 10, x1: 100, y1: 30 },
+  ]);
+  assert.deepEqual(subtract(parts, { x0: -5, y0: -5, x1: 200, y1: 200 }), []);
+  assert.equal(alpha('rgba(0, 0, 0, 0)'), 0);
+  assert.equal(alpha('rgb(0, 0, 0)'), 1);
+  assert.equal(alpha('rgba(255, 255, 255, 0.5)'), 0.5);
+  assert.equal(alpha('oklch(0.5 0.1 200 / 0)'), 0);
+  assert.equal(alpha('transparent'), 0);
+
+  const shown = [];
+  const pictures = {
+    show: (key, picture) => (shown.push([key, picture]), true),
+    hide: (key) => shown.push([key, null]),
+  };
+  const files = createLocalFiles({
+    platform: 'win32',
+    getPath: () => tmpdir(),
+    pictures,
+    pictureTarget: () => 42,
+  });
+  assert.equal(files.appPictures(), true);
+  const part = { dest: [10, 20, 110, 70], src: [0, 0, 100, 50] };
+  assert.equal(files.appPicture({ frame: 'f', id: '123', whole: [100, 50], parts: [part] }), true);
+  assert.deepEqual(shown.pop(), [
+    'f',
+    { target: 42, source: 123, whole: [100, 50], parts: [part] },
+  ]);
+  files.appPicture({ frame: 'f', id: '0', whole: [1, 1], parts: [] });
+  assert.deepEqual(shown.pop(), ['f', null]);
+  assert.throws(() => files.appPicture({ frame: 'f', id: 'x', whole: [100, 50], parts: [part] }));
+  assert.throws(() =>
+    files.appPicture({
+      frame: 'f',
+      id: '1',
+      whole: [100, 50],
+      parts: [{ dest: [0, 0, 1], src: [0, 0, 1, 1] }],
+    }),
+  );
+  assert.equal(
+    createLocalFiles({
+      platform: 'linux',
+      getPath: () => tmpdir(),
+      pictures,
+      pictureTarget: () => 1,
+    }).appPictures(),
+    false,
+  );
 });

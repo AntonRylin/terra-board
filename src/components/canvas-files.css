@@ -634,11 +634,14 @@
 .canvas-files[data-interactive='false'] .canvas-app {
   pointer-events: none;
 }
+/* Windows draws the app's picture over this (see app-pictures.ts); it shows
+   only where something of Terra's lies over the frame. */
 .ca-body {
   position: absolute;
   inset: 32px 0 0;
   border-radius: 10px;
   overflow: hidden;
+  background: #eef1f5;
   box-shadow:
     0 0 0 1px rgb(0 0 0 / 0.06),
     0 10px 30px rgb(20 30 45 / 0.16);
@@ -753,6 +756,9 @@
 }
 [data-theme='dark'] .canvas-app {
   color: #e4ebf2;
+}
+[data-theme='dark'] .ca-body {
+  background: #1c222a;
 }
 [data-theme='dark'] .canvas-app .cf-message {
   background: rgb(31 38 48 / 0.92);
