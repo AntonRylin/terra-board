@@ -141,6 +141,7 @@ contextBridge.exposeInMainWorld('canvas', {
     joinBoard: (boardId) => ipcRenderer.invoke('canvas:cloud-join-board', boardId),
     leaveBoard: () => ipcRenderer.invoke('canvas:cloud-leave-board'),
     sendCursor: (data) => ipcRenderer.send('canvas:cloud-cursor', data),
+    sendEdit: (data) => ipcRenderer.send('canvas:cloud-edit', data),
     onPresence: (callback) => {
       const handler = (_event, message) => callback(message);
       ipcRenderer.on('canvas:presence', handler);

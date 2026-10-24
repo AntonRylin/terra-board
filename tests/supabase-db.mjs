@@ -73,6 +73,7 @@ create table realtime.messages (
 );
 alter table realtime.messages enable row level security;
 grant all on realtime.messages to authenticated;
+grant usage on sequence realtime.messages_id_seq to authenticated;
 create function realtime.topic() returns text language sql stable as $$
   select nullif(current_setting('realtime.topic', true), '')
 $$;
@@ -137,8 +138,9 @@ class Person {
   }
 
   // Runs one statement as this person through the API role, with their JWT claims,
-  // inside a transaction like PostgREST does.
-  async query(sql, params = []) {
+  // inside a transaction like PostgREST does. `topic`: the Realtime channel being joined,
+  // which realtime.topic() returns, as when Realtime checks the realtime.messages policies.
+  async query(sql, params = [], { topic } = {}) {
     const claims = JSON.stringify({
       sub: this.id,
       role: 'authenticated',
@@ -151,9 +153,34 @@ class Person {
       await tx.query(`select set_config('request.headers', $1, true)`, [
         JSON.stringify(this.headers),
       ]);
+      if (topic) await tx.query(`select set_config('realtime.topic', $1, true)`, [topic]);
       await tx.exec('set local role authenticated');
       return (await tx.query(sql, params)).rows;
     });
+  }
+
+  // Whether Realtime would let this person receive and send broadcasts on a private channel.
+  async channel(topic) {
+    await this.server.admin(
+      "insert into realtime.messages (topic, extension, payload) values ($1, 'broadcast', '{}')",
+      [topic],
+    );
+    const [{ n }] = await this.query(
+      'select count(*)::int as n from realtime.messages where topic = $1',
+      [topic],
+      { topic },
+    );
+    let send = true;
+    try {
+      await this.query(
+        "insert into realtime.messages (topic, extension, payload) values ($1, 'broadcast', '{}')",
+        [topic],
+        { topic },
+      );
+    } catch {
+      send = false;
+    }
+    return { receive: n > 0, send };
   }
 
   // Calls a function the way supabase.rpc does and returns its value.

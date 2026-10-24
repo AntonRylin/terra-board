@@ -877,6 +877,10 @@ app
       trusted(e);
       cloud.sendCursor(data);
     });
+    ipcMain.on('canvas:cloud-edit', (e, data) => {
+      trusted(e);
+      cloud.sendEdit(data);
+    });
     cloudAction('disable', () => cloud.disable());
     cloudAction('devices', () => cloud.devices());
     cloudAction('remove-device', (id) => cloud.removeDevice(String(id)));

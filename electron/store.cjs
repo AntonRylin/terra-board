@@ -884,6 +884,32 @@ class Store {
   syncStatus() {
     return this.sync.status();
   }
+  // Objects someone on a cloud board just changed (cloud-sync.cjs receiveEdit), checked
+  // like synced ones before the board shows them. Invalid ones are left out. Writes nothing:
+  // sync stores the same edit shortly after.
+  syncLiveObjects({ objects = [], deleted = [] } = {}) {
+    if (
+      !Array.isArray(objects) ||
+      !Array.isArray(deleted) ||
+      objects.length > 2000 ||
+      deleted.length > 2000
+    )
+      throw Error('Invalid live edit');
+    const valid = [];
+    for (const o of objects)
+      try {
+        valid.push(objectValue(o));
+      } catch {}
+    const ids = deleted.filter((id) => {
+      try {
+        idValue(id);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+    return { objects: valid, deleted: ids };
+  }
   syncEnable(args) {
     return this.sync.enable(args);
   }

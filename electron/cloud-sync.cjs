@@ -23,6 +23,11 @@ const { createCloudAuth, userInfo } = require('./cloud-auth.cjs');
 // Where a 0.1.28 computer's anonymous session waits for the claim after signing in.
 const ANONYMOUS_KEY = 'terra-cloud-anonymous';
 const SIGNED_OUT = { state: 'signedOut' };
+// After a change here, how long sync waits before uploading it; after another computer
+// says it uploaded, how long before downloading. Edits on an open board also travel live
+// (sendEdit), so these only decide how soon the change is stored everywhere.
+const PUSH_DELAY = 400;
+const PULL_DELAY = 50;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const iconAssetId = (icon) =>
@@ -1031,6 +1036,11 @@ class CloudSync {
     if (current?.boardId === boardId) {
       // Same board: only the announcement changes, for example a new role.
       if (current.role === role && current.owner === owner) return { active: true, shared };
+      // The server judges who may send edits when the channel is joined: join it again.
+      if (current.role !== role) {
+        await this.leaveEdits(current);
+        if (this.board === current) current.edits = this.joinEdits(boardId, current);
+      }
       current.role = role;
       current.owner = owner;
       current.folderId = board.folderId || null;
@@ -1072,13 +1082,111 @@ class CloudSync {
         next.subscribed = true;
         await channel.track(await this.presenceInfo());
       });
+    next.edits = this.joinEdits(boardId, next);
     return { active: true, shared };
+  }
+
+  // Edits on the open board go straight to the people on it over 'edits:<board id>'; sync
+  // stores them a moment later. Everyone who can see the board hears them, and only people
+  // who may change it can send (migration 20261024150000). A server without that migration
+  // refuses the channel, and edits then arrive through sync alone.
+  joinEdits(boardId, board) {
+    const channel = this.client.channel('edits:' + boardId, {
+      config: { private: true, broadcast: { self: false } },
+    });
+    const edits = { channel, subscribed: false };
+    channel
+      .on('broadcast', { event: 'edit' }, ({ payload }) => this.receiveEdit(boardId, payload))
+      .subscribe((state, error) => {
+        if (board.edits !== edits) return;
+        edits.subscribed = state === 'SUBSCRIBED';
+        // Refused, not a dropped connection (which rejoins by itself): stop asking.
+        if (
+          state === 'CHANNEL_ERROR' &&
+          /unauthori[sz]ed|permission|denied|not allowed/i.test(String(error?.message || ''))
+        ) {
+          board.edits = null;
+          void Promise.resolve(this.client.removeChannel(channel)).catch(() => {});
+        }
+      });
+    return edits;
+  }
+
+  // Finishes once the channel is gone: Realtime keeps one channel per topic, so joining the
+  // same board again before that would get the one being removed.
+  async leaveEdits(board) {
+    const edits = board?.edits;
+    if (!edits) return;
+    board.edits = null;
+    try {
+      await this.client.removeChannel(edits.channel);
+    } catch {}
+  }
+
+  // { boardId, kind: 'edit', upserts, deleted } after an edit here, or { boardId, kind:
+  // 'moving', objects, done } while a drag is under way. Like cursors, only sent while
+  // someone else is on the board.
+  sendEdit(data) {
+    const current = this.board;
+    const edits = current?.edits;
+    if (!edits?.subscribed || current.role !== 'edit' || !current.subscribed) return;
+    if (!data || typeof data !== 'object' || data.boardId !== current.boardId) return;
+    const others = Object.keys(current.channel.presenceState()).some((k) => k !== this.deviceId);
+    if (!others) return;
+    const payload =
+      data.kind === 'moving'
+        ? {
+            key: this.deviceId,
+            kind: 'moving',
+            objects: Array.isArray(data.objects) ? data.objects : [],
+            done: !!data.done,
+          }
+        : {
+            key: this.deviceId,
+            kind: 'edit',
+            upserts: Array.isArray(data.upserts) ? data.upserts : [],
+            deleted: Array.isArray(data.deleted) ? data.deleted : [],
+          };
+    // Realtime refuses large messages; sync brings those edits.
+    if (JSON.stringify(payload).length > 200000) return;
+    void edits.channel.send({ type: 'broadcast', event: 'edit', payload });
+  }
+
+  // An edit from someone on the open board: checked like synced objects, then shown.
+  // One at a time, in the order they came; a drag frame that a newer one from the same
+  // person overtook while waiting is skipped.
+  receiveEdit(boardId, payload) {
+    if (!payload || typeof payload !== 'object' || typeof payload.key !== 'string') return;
+    const moving = payload.kind === 'moving';
+    if (!moving && payload.kind !== 'edit') return;
+    const objects = moving ? payload.objects : payload.upserts;
+    const deleted = moving ? [] : payload.deleted;
+    if (!Array.isArray(objects) || !Array.isArray(deleted)) return;
+    const key = payload.key;
+    this.liveFrames ??= new Map();
+    const frame = moving && !payload.done ? (this.liveFrames.get(key) || 0) + 1 : 0;
+    if (frame) this.liveFrames.set(key, frame);
+    const job = async () => {
+      if (frame && this.liveFrames.get(key) !== frame) return;
+      const checked =
+        objects.length || deleted.length
+          ? await this.call('syncLiveObjects', { objects, deleted })
+          : { objects: [], deleted: [] };
+      if (this.board?.boardId !== boardId) return;
+      this.onPresence?.(
+        moving
+          ? { type: 'moving', boardId, key, objects: checked.objects, done: !!payload.done }
+          : { type: 'edit', boardId, key, upserts: checked.objects, deleted: checked.deleted },
+      );
+    };
+    this.liveQueue = (this.liveQueue || Promise.resolve()).then(job).catch(() => {});
   }
 
   async exitBoard() {
     const current = this.board;
     this.board = null;
     if (!current) return;
+    await this.leaveEdits(current);
     try {
       await current.channel.untrack();
     } catch {}
@@ -1344,12 +1452,12 @@ class CloudSync {
     this.timer = null;
   }
 
-  // People who change a workspace ping its channel; listeners pull within a second.
+  // People who change a workspace ping its channel; listeners pull straight away.
   listen(workspace) {
     if (this.channels.has(workspace)) return;
     const channel = this.client
       .channel('terra:' + workspace, { config: { private: true } })
-      .on('broadcast', { event: 'pushed' }, () => this.schedule(200));
+      .on('broadcast', { event: 'pushed' }, () => this.schedule(PULL_DELAY));
     this.channels.set(workspace, channel);
     void this.authRealtime().then(() => {
       if (this.channels.get(workspace) === channel) channel.subscribe();
@@ -1368,8 +1476,9 @@ class CloudSync {
     void this.channels.get(workspace)?.send({ type: 'broadcast', event: 'pushed', payload: {} });
   }
 
+  // The board saves 350 ms after the last change; this short wait gathers what follows.
   localChanged() {
-    if (this.workspace) this.schedule(1500);
+    if (this.workspace) this.schedule(PUSH_DELAY);
   }
 
   schedule(delay) {
@@ -1417,9 +1526,10 @@ class CloudSync {
             await this.call('syncRejoined');
           }
           const pushed = await this.push();
+          // The others pull while this computer does.
+          for (const ws of pushed) this.ping(ws);
           await this.pull(this.workspace);
           for (const ws of this.foreign) await this.pull(ws);
-          for (const ws of pushed) this.ping(ws);
         } while (this.again && this.workspace);
         await this.retryFetches();
         await this.retireWhenUploaded().catch(() => {});

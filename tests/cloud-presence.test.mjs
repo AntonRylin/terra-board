@@ -34,6 +34,7 @@ function fakeRealtime() {
           return this;
         },
         subscribe(callback) {
+          this.status = callback;
           this.state = 'joining';
           setTimeout(() => {
             if (this.state !== 'joining') return;
@@ -64,9 +65,10 @@ function fakeRealtime() {
   return client;
 }
 
-function sync({ boards = [{ id: 'b1', folderId: null }], sharing } = {}) {
+function sync({ boards = [{ id: 'b1', folderId: null }], sharing, commands = {} } = {}) {
   const s = new CloudSync({
-    call: async (command) => {
+    call: async (command, args) => {
+      if (command in commands) return commands[command](args);
       if (command === 'library')
         return { boards, sharing: sharing || { boards: { b1: { shared: 'owner' } }, folders: {} } };
       if (command === 'syncProfile') return { avatarVersion: 0, songVersion: 0 };
@@ -189,4 +191,148 @@ test('the shares covering a board include its folder share', () => {
     s.sharesCovering({ id: 'b1', folderId: 'f1' }).map((x) => x.shareId),
     ['s-board', 's-folder'],
   );
+});
+
+// --- Live edits ('edits:<board id>') ------------------------------------------
+
+const others = (channel) => {
+  channel.presenceState = () => ({ 'user-me': [{}], 'user-sam': [{}] });
+};
+const editsOf = (s, board = 'b1') => s.client.channels.find((c) => c.topic === 'edits:' + board);
+const hear = (channel, payload) =>
+  channel.handlers
+    .find((h) => h.type === 'broadcast' && h.filter.event === 'edit')
+    .callback({ payload });
+
+test('a board is joined with a private edits channel, left with it', async () => {
+  const s = sync();
+  await s.joinBoard('b1');
+  await tick();
+  const edits = editsOf(s);
+  assert.equal(edits.options.config.private, true);
+  assert.equal(edits.options.config.broadcast.self, false);
+  assert.equal(s.board.edits.subscribed, true);
+  await s.leaveBoard();
+  await tick();
+  await tick();
+  assert.equal(editsOf(s), undefined);
+});
+
+test('edits are sent only by editors, only for the open board, only with someone there', async () => {
+  const s = sync();
+  await s.joinBoard('b1');
+  await tick();
+  const sent = [];
+  editsOf(s).send = (m) => sent.push(m);
+  const edit = { boardId: 'b1', kind: 'edit', upserts: [{ id: 'n1' }], deleted: ['n2'] };
+  s.sendEdit(edit);
+  assert.equal(sent.length, 0, 'nobody else is here');
+  others(s.board.channel);
+  s.sendEdit(edit);
+  s.sendEdit({ ...edit, boardId: 'b2' });
+  s.sendEdit({ boardId: 'b1', kind: 'moving', objects: [{ id: 'n1' }] });
+  s.sendEdit({ boardId: 'b1', kind: 'edit', upserts: [{ text: 'x'.repeat(300000) }], deleted: [] });
+  assert.deepEqual(
+    sent.map((m) => m.payload),
+    [
+      { key: 'user-me', kind: 'edit', upserts: [{ id: 'n1' }], deleted: ['n2'] },
+      { key: 'user-me', kind: 'moving', objects: [{ id: 'n1' }], done: false },
+    ],
+  );
+  assert.ok(sent.every((m) => m.type === 'broadcast' && m.event === 'edit'));
+
+  const viewer = sync({ sharing: { boards: { b1: { shared: 'view' } }, folders: {} } });
+  await viewer.joinBoard('b1');
+  await tick();
+  others(viewer.board.channel);
+  const viewerSent = [];
+  editsOf(viewer).send = (m) => viewerSent.push(m);
+  viewer.sendEdit(edit);
+  assert.equal(viewerSent.length, 0);
+});
+
+test('a server without live edits refuses the channel once; a dropped connection keeps it', async () => {
+  const s = sync();
+  await s.joinBoard('b1');
+  await tick();
+  const edits = editsOf(s);
+  edits.status('CHANNEL_ERROR', Error('socket closed: 1006'));
+  assert.ok(s.board.edits, 'it rejoins by itself');
+  edits.status('SUBSCRIBED');
+  edits.status(
+    'CHANNEL_ERROR',
+    Error('Unauthorized: You do not have permissions to read from this Channel topic: edits:b1'),
+  );
+  assert.equal(s.board.edits, null);
+  await tick();
+  assert.equal(editsOf(s), undefined);
+  others(s.board.channel);
+  s.sendEdit({ boardId: 'b1', kind: 'edit', upserts: [], deleted: ['n1'] });
+});
+
+test('edits that arrive are checked by the store, in order, skipping overtaken drag frames', async () => {
+  const checked = [];
+  let release;
+  const gate = new Promise((r) => (release = r));
+  const s = sync({
+    commands: {
+      async syncLiveObjects({ objects, deleted }) {
+        checked.push(objects.map((o) => o.x ?? o.id));
+        await gate;
+        return { objects: objects.filter((o) => o.valid !== false), deleted };
+      },
+    },
+  });
+  const events = [];
+  s.onPresence = (e) => e.type !== 'people' && events.push(e);
+  await s.joinBoard('b1');
+  await tick();
+  const edits = editsOf(s);
+  hear(edits, { key: 'sam', kind: 'moving', objects: [{ id: 'a', x: 1 }] });
+  hear(edits, { key: 'sam', kind: 'moving', objects: [{ id: 'a', x: 2 }] });
+  hear(edits, { key: 'sam', kind: 'moving', objects: [{ id: 'a', x: 3 }] });
+  hear(edits, {
+    key: 'sam',
+    kind: 'edit',
+    upserts: [
+      { id: 'a', x: 4 },
+      { id: 'bad', valid: false },
+    ],
+    deleted: ['c'],
+  });
+  hear(edits, { key: 'sam', kind: 'moving', objects: [], done: true });
+  hear(edits, { key: 'sam', kind: 'nonsense' });
+  hear(edits, null);
+  release();
+  for (let i = 0; i < 5; i++) await tick();
+  assert.deepEqual(checked, [[3], [4, 'bad']], 'frames 1 and 2 were overtaken before their turn');
+  assert.deepEqual(
+    events.map((e) => [
+      e.type,
+      e.key,
+      e.objects?.map((o) => o.x) ?? e.upserts.map((o) => o.x),
+      e.done ?? e.deleted,
+    ]),
+    [
+      ['moving', 'sam', [3], false],
+      ['edit', 'sam', [4], ['c']],
+      ['moving', 'sam', [], true],
+    ],
+  );
+  assert.ok(events.every((e) => e.boardId === 'b1'));
+});
+
+test('a new role on the open board joins the edits channel again', async () => {
+  const sharing = { boards: { b1: { shared: 'edit', owner: 'Sam' } }, folders: {} };
+  const s = sync({ sharing });
+  await s.joinBoard('b1');
+  await tick();
+  const first = editsOf(s);
+  sharing.boards.b1.shared = 'view';
+  await s.joinBoard('b1');
+  await tick();
+  await tick();
+  assert.equal(s.board.role, 'view');
+  assert.notEqual(s.board.edits.channel, first);
+  assert.equal(s.client.channels.filter((c) => c.topic === 'edits:b1').length, 1);
 });

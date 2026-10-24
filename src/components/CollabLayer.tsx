@@ -110,6 +110,8 @@ export default function CollabLayer({
         }));
         return;
       }
+      // Edits are the board's (Whiteboard.tsx).
+      if (event.type !== 'people') return;
       setOwner(!!event.owner);
       const byPerson = new Map<string, Person>();
       for (const p of event.people) {

@@ -166,6 +166,8 @@ interface Callbacks {
   composers?: (objects: CanvasObject[], camera: Camera) => void;
   objectDrag?: (objects: CanvasObject[], point: Point | null) => void;
   objectDrop?: (objects: CanvasObject[], point: Point) => boolean;
+  // The objects a move, resize or turn changes, on every frame; null when it ends.
+  live?: (objects: CanvasObject[] | null) => void;
   tool?: (tool: Tool) => void;
   edit: (e: Edit) => void;
   camera: (c: Camera) => void;
@@ -1282,6 +1284,7 @@ export class Engine {
     } else if (g.mode === 'drawArrow' || g.mode === 'arrowPoint') {
       g.arrowPointer = p;
       this.updateArrowPreview(e.shiftKey, e.ctrlKey, e.altKey);
+      if (g.mode === 'arrowPoint') this.emitLive(g);
     } else if (g.mode === 'pan') {
       if (g.secondary && !g.changed) return;
       this.camera = { ...g.camera, x: g.camera.x + dx, y: g.camera.y + dy };
@@ -1307,6 +1310,7 @@ export class Engine {
           keepArrowEnds({ ...o, x: o.x + delta.x, y: o.y + delta.y }, (id) => moving.has(id)),
         );
       this.followHeld(g);
+      this.emitLive(g);
       this.callbacks.objectDrag?.(g.original, moved ? this.screenPoint(p) : null);
       this.invalidate();
     } else if (g.mode === 'rotate') {
@@ -1316,6 +1320,7 @@ export class Engine {
         rotation: rotationFromDrag(o, g.world, this.screenPoint(p), e.shiftKey),
       });
       this.followHeld(g);
+      this.emitLive(g);
       this.invalidate();
     } else if (g.mode === 'resize') {
       let delta = { x: dx / g.camera.zoom, y: dy / g.camera.zoom };
@@ -1376,6 +1381,7 @@ export class Engine {
         } else this.preview(resized);
       }
       this.followHeld(g);
+      this.emitLive(g);
       this.invalidate();
     } else {
       const w = this.screenPoint(p);
@@ -1389,6 +1395,13 @@ export class Engine {
     }
   };
   private up = (e: PointerEvent) => {
+    try {
+      this.finishGesture(e);
+    } finally {
+      if (!this.gesture) this.endLive();
+    }
+  };
+  private finishGesture(e: PointerEvent) {
     if (this.releaseTouch(e)) return;
     const g = this.gesture;
     if (!g || g.clickToPlace) return;
@@ -1502,9 +1515,10 @@ export class Engine {
       }
     }
     this.invalidate();
-  };
+  }
   private cancel = () => {
     this.callbacks.objectDrag?.([], null);
+    this.endLive();
     const g = this.gesture;
     this.snapGuides = [];
     this.gesture = null;
@@ -1991,6 +2005,39 @@ export class Engine {
             : this.tool === 'select'
               ? 'default'
               : 'crosshair';
+  }
+  private liveGesture = false;
+  // What the current move, resize or turn has changed so far, for the other people on the board.
+  private emitLive(g: Gesture) {
+    if (!this.callbacks.live || !g.changed) return;
+    const ids = [...g.original.map((o) => o.id), ...(g.held?.keys() ?? [])];
+    const objects = ids.flatMap((id) => {
+      const o = this.objects.get(id);
+      return o ? [o] : [];
+    });
+    this.liveGesture = true;
+    this.callbacks.live(objects);
+  }
+  private endLive() {
+    if (!this.liveGesture) return;
+    this.liveGesture = false;
+    this.callbacks.live?.(null);
+  }
+  /** Shows objects where someone else has them mid-drag: no history, nothing saved. */
+  previewRemote(objects: CanvasObject[]) {
+    const own = new Set(this.gesture?.original.map((o) => o.id));
+    let changed = false;
+    for (const o of objects)
+      if (this.objects.has(o.id) && !own.has(o.id)) {
+        this.preview(o);
+        changed = true;
+      }
+    if (changed) this.invalidate();
+  }
+  /** Whether the gesture in progress here moves, resizes or turns this object. */
+  inGesture(id: string) {
+    const g = this.gesture;
+    return !!g && (g.original.some((o) => o.id === id) || !!g.held?.has(id));
   }
   private preview(o: CanvasObject) {
     o = this.withDocumentPreview(o);

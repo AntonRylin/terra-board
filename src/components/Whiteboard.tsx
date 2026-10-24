@@ -181,6 +181,7 @@ import { textLayout, fitTextObject, fitTextToView } from '../canvas/text-layout'
 import { textPlacement } from '../canvas/text-alignment';
 import { localToWorld, worldToLocal, objectBounds, containsObject } from '../canvas/transform';
 import { SaveQueue, CameraSaveQueue, type SaveState } from '../canvas/save-queue';
+import { LiveReceiver, LiveSender } from '../canvas/live-edits';
 import {
   importFiles,
   pickMedia,
@@ -244,7 +245,8 @@ import ExportControls, { type ExportProgress, type ExportResult } from './Export
 import { nightInk, type ResolvedTheme } from '../appearance';
 export interface WhiteboardHandle {
   prepareExternal: () => Promise<void>;
-  finishExternal: (doc?: Document) => void;
+  // `source`: 'cloud' for sync, 'guest' for Wi-Fi guests, none for AI edits.
+  finishExternal: (doc?: Document, source?: string) => void;
   flush: () => Promise<void>;
   importMedia: () => void;
   fit: () => void;
@@ -478,6 +480,10 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     [exportResult],
   );
   const syncingExternal = useRef(false);
+  // Edits travelling live to and from the other people on a cloud board (live-edits.ts).
+  const liveSender = useRef<LiveSender | null>(null);
+  const liveReceiver = useRef<LiveReceiver | null>(null);
+  const othersHere = useRef(false);
   const arrowDraft = useRef<{ flush: () => void }>(null);
   const host = useRef<HTMLDivElement>(null),
     engine = useRef<Engine | null>(null),
@@ -2082,6 +2088,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             : null;
         setPdfDropTarget((previous) => (previous?.id === target?.id ? previous : target));
       },
+      live: (objects) => liveSender.current?.moving(objects),
       objectDrop: (objects, point) => {
         if (external.current || !objects.length || !objects.every(isPdfComposerInput)) return false;
         const target = pdfComposerTargetAt(e.all, point, new Set(objects.map((o) => o.id)));
@@ -2116,7 +2123,12 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         }
       },
       edit: (edit) => {
-        if (!syncingExternal.current) queue.current!.enqueue(edit);
+        if (!syncingExternal.current) {
+          queue.current!.enqueue(edit);
+          // The other people on a cloud board see it now; sync stores it shortly after.
+          liveSender.current?.edit(edit);
+          liveReceiver.current?.local(edit);
+        }
         if (pinning && screenPins().some((pin) => pin.boardId === doc.board.id))
           setPinSource(e.all);
         setCount(e.objects.size);
@@ -2243,6 +2255,27 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     });
     engine.current = e;
     e.imageAdded = newImageAdded;
+    const boardId = doc.board.id;
+    const cloud = cloudApi;
+    // Nothing travels while nobody else is here (the sync engine checks again).
+    liveSender.current = cloud
+      ? new LiveSender((message) => {
+          if (othersHere.current) cloud.sendEdit({ boardId, ...message });
+        })
+      : null;
+    liveReceiver.current = new LiveReceiver({
+      get: (id) => e.objects.get(id),
+      show: (objects) => e.previewRemote(objects),
+      accept: (edit) => {
+        syncingExternal.current = true;
+        try {
+          e.acceptExternalEdit(edit);
+        } finally {
+          syncingExternal.current = false;
+        }
+      },
+      busy: (id) => editingSession.current?.object.id === id || e.inGesture(id),
+    });
     const applyInput = () => {
       const { wheel, zoomSpeed, snapping } = getPreferences();
       e.setInputPreferences({ wheel, zoomSpeed, snapping });
@@ -2315,11 +2348,36 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       alive.current = false;
       stopInput();
       documentAbort.current.abort();
+      liveSender.current?.stop();
+      liveReceiver.current?.stop();
+      liveSender.current = liveReceiver.current = null;
       e.destroy();
       engine.current = null;
       queue.current?.flush().catch(error);
       cameraQueue.current?.flush().catch(error);
     };
+  }, []);
+  // Edits other people on this cloud board make, as they make them.
+  useEffect(() => {
+    if (!cloudApi) return;
+    const boardId = doc.board.id;
+    return cloudApi.onPresence((event) => {
+      if (event.boardId !== boardId) return;
+      if (event.type === 'people')
+        othersHere.current = event.people.some((p) => p.key !== event.self);
+      else if (event.type === 'edit')
+        liveReceiver.current?.receive(event.key, {
+          kind: 'edit',
+          upserts: event.upserts,
+          deleted: event.deleted,
+        });
+      else if (event.type === 'moving')
+        liveReceiver.current?.receive(event.key, {
+          kind: 'moving',
+          objects: event.objects,
+          done: event.done,
+        });
+    });
   }, []);
   useLayoutEffect(() => {
     engine.current?.setEditingPreview(editingObject);
@@ -2657,14 +2715,20 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       engine.current?.prepareExternalEdit();
       await flush();
     },
-    finishExternal: (updated) => {
+    finishExternal: (updated, source) => {
       const e = engine.current;
       if (updated && e) {
-        const ids = new Set(updated.objects.map((o) => o.id));
+        // Edits that arrived live stay on screen until sync has stored them too. Other
+        // changes (AI edits, Wi-Fi guests) are newer than anything shown live.
+        const live = liveReceiver.current;
+        const objects = !live
+          ? updated.objects
+          : source === 'cloud'
+            ? live.merge(updated.objects)
+            : live.settle(updated.objects);
+        const ids = new Set(objects.map((o) => o.id));
         const edit = {
-          upserts: updated.objects.filter(
-            (o) => JSON.stringify(e.objects.get(o.id)) !== JSON.stringify(o),
-          ),
+          upserts: objects.filter((o) => JSON.stringify(e.objects.get(o.id)) !== JSON.stringify(o)),
           deleted: e.all.filter((o) => !ids.has(o.id)).map((o) => o.id),
         };
         queue.current = new SaveQueue(doc.board.id, updated.revision, onSave, (args) =>

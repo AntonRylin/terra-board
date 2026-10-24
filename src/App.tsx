@@ -472,7 +472,7 @@ export default function App() {
                   (message.idBoard === board.id || message.boards?.includes(board.id))
                 ) {
                   const updated = await invoke<Document>('loadBoard', { id: board.id });
-                  whiteboard.current?.finishExternal(updated);
+                  whiteboard.current?.finishExternal(updated, message.source);
                   setDoc({ ...updated, board });
                 } else {
                   whiteboard.current?.finishExternal();

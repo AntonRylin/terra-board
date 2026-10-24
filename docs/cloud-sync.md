@@ -117,6 +117,18 @@ When someone connects to a server from Settings, the app first calls its `server
 
 Boards (name, icon, colour, folder, order, background, trash state), folders, every object, and the media those reference. Board camera positions, the last opened board and app preferences stay per computer.
 
+## Live edits on an open board
+
+People on the same cloud board see each other's edits as they happen, like cursors, instead of waiting for sync:
+
+- Each edit (and, while someone drags, resizes or turns objects, those objects up to 20 times a second) goes over the private Realtime channel `edits:<board id>` (`src/canvas/live-edits.ts`, `CloudSync.sendEdit`). Like cursors, it is only sent while someone else is on the board.
+- The receiving app checks the objects with the store's validator (`syncLiveObjects`) and shows them without saving. Sync still uploads and stores the same edit a moment later; until the stored copy has it, a sync that brings an older copy does not move the object back (`LiveReceiver.merge`, up to 20 seconds).
+- Objects that bring a picture or file this computer may not have yet, edits over about 100 KB and drags of more than 200 objects wait for sync, which downloads the files first.
+- What someone is typing into or dragging here is left alone: their own version wins.
+- Everyone who can see the board may join `edits:`, but only people who may change it (workspace owners and editors, people with an edit share) may send on it, checked by Realtime when the channel is joined (migration `20261024150000_live_edits.sql`). A server without that migration refuses the channel; edits then arrive through sync alone.
+
+Sync itself uploads 0.4 seconds after the board saved (the board saves 0.35 seconds after the last change), tells the other computers right after uploading, and they download 50 ms after hearing it.
+
 ## Offline edits
 
 Changes made without internet wait in a local outbox (`sync_outbox`) and upload when the connection is back; nothing is lost. Merging is per object: edits to different objects all survive, and for an object changed on two computers the one that syncs last wins. A pending local change is never overwritten by an incoming one.

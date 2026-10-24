@@ -34,6 +34,7 @@ const methods = new Set([
   'joinBoard',
   'leaveBoard',
   'sendCursor',
+  'sendEdit',
   'pairingCode',
   'devices',
   'removeDevice',

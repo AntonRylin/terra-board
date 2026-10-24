@@ -577,6 +577,8 @@ function fixture(tool = 'select') {
     menus = [],
     saves = [],
     activations = [],
+    // What a drag sends to the other people on a cloud board, with the edits, in order.
+    live = [],
     // Touch long-press timers: kept, and run only when a test says so.
     timers = [];
   class Application {
@@ -704,7 +706,9 @@ function fixture(tool = 'select') {
     {
       edit(edit) {
         edits.push(edit);
+        live.push({ edit: edit.upserts.map((o) => o.id) });
       },
+      live: (objects) => live.push(objects && objects.map((o) => ({ id: o.id, x: o.x }))),
       camera: (c) => saves.push({ ...c }),
       selection() {},
       activate(o) {
@@ -731,7 +735,7 @@ function fixture(tool = 'select') {
   });
   // The finger has been held still long enough.
   const hold = () => timers.findLast(Boolean)?.();
-  return { engine, host, menus, saves, event, activations, edits, tick, motion, hold };
+  return { engine, host, menus, saves, event, activations, edits, tick, motion, hold, live };
 }
 
 test('linked frames select on single click, open on double click, and move without altering their source', () => {
@@ -1527,4 +1531,61 @@ test('Android: holding a finger selects – a box on empty board, objects one by
   f.engine.down(touch(800, 500));
   f.engine.up(touch(800, 500));
   assert.deepEqual([...f.engine.selection], []);
+});
+
+// --- Live edits: what a drag sends to the other people on a cloud board ---------------
+
+const liveNote = { id: 'a', type: 'note', x: 100, y: 100, width: 100, height: 100, z: 1 };
+// The engine runs in its own VM context: compare plain copies.
+const sent = (f) => JSON.parse(JSON.stringify(f.live));
+const drag = (f, from, to) => {
+  f.engine.down(f.event(from.x, from.y, 0));
+  for (const p of to) f.engine.move({ ...f.event(p.x, p.y, 0), altKey: true });
+};
+
+test('a drag sends what it moves on every frame, then where it landed, then its end', () => {
+  const f = fixture();
+  f.engine.camera = { x: 0, y: 0, zoom: 1 };
+  f.engine.apply({ upserts: [liveNote], deleted: [] });
+  f.live.length = 0;
+  drag(f, { x: 150, y: 150 }, [
+    { x: 160, y: 150 },
+    { x: 190, y: 150 },
+  ]);
+  f.engine.up({ ...f.event(190, 150, 0), altKey: true });
+  assert.deepEqual(sent(f), [[{ id: 'a', x: 110 }], [{ id: 'a', x: 140 }], { edit: ['a'] }, null]);
+});
+
+test('a click sends nothing; a cancelled drag ends without an edit', () => {
+  const f = fixture();
+  f.engine.camera = { x: 0, y: 0, zoom: 1 };
+  f.engine.apply({ upserts: [liveNote], deleted: [] });
+  f.live.length = 0;
+  f.engine.down(f.event(150, 150, 0));
+  f.engine.up(f.event(150, 150, 0));
+  assert.deepEqual(sent(f), []);
+  drag(f, { x: 150, y: 150 }, [{ x: 200, y: 150 }]);
+  f.engine.prepareExternalEdit();
+  assert.deepEqual(sent(f), [[{ id: 'a', x: 150 }], null]);
+  assert.equal(f.engine.objects.get('a').x, 100);
+});
+
+test("someone else's drag is shown without an edit, but not on what is being dragged here", () => {
+  const f = fixture();
+  f.engine.camera = { x: 0, y: 0, zoom: 1 };
+  const b = { ...liveNote, id: 'b', x: 400 };
+  f.engine.apply({ upserts: [liveNote, b], deleted: [] });
+  const edits = f.edits.length;
+  f.engine.previewRemote([
+    { ...liveNote, x: 120 },
+    { ...liveNote, id: 'unknown' },
+  ]);
+  assert.equal(f.engine.objects.get('a').x, 120);
+  assert.equal(f.engine.objects.has('unknown'), false, 'only objects on this board');
+  assert.equal(f.edits.length, edits, 'nothing is saved');
+  drag(f, { x: 450, y: 150 }, [{ x: 470, y: 150 }]);
+  assert.equal(f.engine.inGesture('b'), true);
+  assert.equal(f.engine.inGesture('a'), false);
+  f.engine.previewRemote([{ ...b, x: 0 }]);
+  assert.equal(f.engine.objects.get('b').x, 420, 'the drag here wins');
 });

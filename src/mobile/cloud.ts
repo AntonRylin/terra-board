@@ -31,6 +31,7 @@ export const cloud: CloudBridge = {
   joinBoard: (boardId) => run('joinBoard', boardId),
   leaveBoard: () => run('leaveBoard'),
   sendCursor: (data) => void run('sendCursor', data).catch(() => {}),
+  sendEdit: (data) => void run('sendEdit', data).catch(() => {}),
   onPresence: (callback) => onWorker('presence', callback),
   // A phone stays in its workspace until it signs out (signOut below).
   disable: notOnPhone,

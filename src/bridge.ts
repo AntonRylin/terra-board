@@ -100,7 +100,14 @@ export type PresenceEvent =
       owner?: boolean;
       people: PresencePerson[];
     }
-  | { type: 'cursor'; boardId: string; key: string; x: number; y: number; view: ViewRect };
+  | { type: 'cursor'; boardId: string; key: string; x: number; y: number; view: ViewRect }
+  // Edits someone on the board just made (canvas/live-edits.ts), checked by this app's store.
+  | { type: 'edit'; boardId: string; key: string; upserts: CanvasObject[]; deleted: string[] }
+  | { type: 'moving'; boardId: string; key: string; objects: CanvasObject[]; done: boolean };
+// What this person's board sends to the others on it (canvas/live-edits.ts LiveMessage).
+export type LiveEditOut =
+  | { boardId: string; kind: 'edit'; upserts: CanvasObject[]; deleted: string[] }
+  | { boardId: string; kind: 'moving'; objects: CanvasObject[]; done?: boolean };
 export interface SharePerson {
   id: string;
   name: string;
@@ -347,6 +354,7 @@ interface DesktopBridge {
     joinBoard(boardId: string): Promise<{ active: boolean; shared?: boolean }>;
     leaveBoard(): Promise<void>;
     sendCursor(data: { x: number; y: number; view: ViewRect }): void;
+    sendEdit(data: LiveEditOut): void;
     onPresence(callback: (event: PresenceEvent) => void): () => void;
     disable(): Promise<CloudStatus>;
     devices(): Promise<CloudDevice[]>;

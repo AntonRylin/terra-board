@@ -53,6 +53,7 @@ const allowed = new Set([
   'syncMissingAssets',
   'syncApply',
   'syncImportAsset',
+  'syncLiveObjects',
 ]);
 let chain = Promise.resolve();
 const assetJobs = new Set();
