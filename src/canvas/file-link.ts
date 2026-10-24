@@ -304,6 +304,51 @@ export function extensionOf(name: string) {
   const dot = name.lastIndexOf('.');
   return dot > 0 ? name.slice(dot + 1).toLowerCase() : '';
 }
+// The address bar of a folder frame: the frame's own folder first (target
+// null), then each folder below it down to `dir`, like Explorer's. In This PC
+// frames (base '::computer') that is the drive and every folder on it.
+export interface PathCrumb {
+  label: string;
+  target: string | null;
+}
+export function pathCrumbs(
+  dir: string,
+  base: string,
+  baseLabel: string,
+  windows = true,
+): PathCrumb[] {
+  const crumbs: PathCrumb[] = [{ label: baseLabel, target: null }];
+  const sep = windows ? '\\' : '/';
+  const norm = windows ? dir.replace(/\//g, '\\') : dir;
+  if (norm === base || (windows && norm.toLowerCase() === base.toLowerCase())) return crumbs;
+  const tail = (file: string) =>
+    file
+      .split(/[\\/]+/)
+      .filter(Boolean)
+      .pop() || file;
+  let at: string, rest: string;
+  if (base === '::computer') {
+    const start = (windows ? /^([a-z]:\\?|\\\\[^\\]+\\[^\\]+\\?)/i : /^\//).exec(norm);
+    if (!start) return [...crumbs, { label: tail(norm), target: norm }];
+    at = start[0].endsWith(sep) ? start[0] : start[0] + sep;
+    crumbs.push({ label: at === '/' ? '/' : at.replace(/\\+$/, ''), target: at });
+    rest = norm.slice(start[0].length);
+  } else {
+    const b = windows ? base.replace(/\//g, '\\').replace(/\\+$/, '') : base.replace(/\/+$/, '');
+    const inside = windows
+      ? norm.toLowerCase().startsWith(b.toLowerCase() + sep)
+      : norm.startsWith(b + sep);
+    if (!inside) return [...crumbs, { label: tail(norm), target: norm }];
+    at = b;
+    rest = norm.slice(b.length + 1);
+  }
+  for (const part of rest.split(/[\\/]+/).filter(Boolean)) {
+    at = at.endsWith(sep) ? at + part : at + sep + part;
+    crumbs.push({ label: part, target: at });
+  }
+  return crumbs;
+}
+
 export function typeLabel(item: FileItem) {
   if (item.drive) return 'Drive';
   if (item.folder) return 'File folder';

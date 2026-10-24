@@ -11,8 +11,45 @@ import {
   dropMode,
   fileLinkValue,
   iconTier,
+  pathCrumbs,
   sortItems,
 } from '../src/canvas/file-link.ts';
+
+test('the address bar splits a path into folders to click', () => {
+  const pc = (dir) => pathCrumbs(dir, '::computer', 'This PC');
+  assert.deepEqual(pc('::computer'), [{ label: 'This PC', target: null }]);
+  assert.deepEqual(pc('C:\\'), [
+    { label: 'This PC', target: null },
+    { label: 'C:', target: 'C:\\' },
+  ]);
+  assert.deepEqual(
+    pc('C:\\Users\\anton\\OneDrive\\Desktop').map((c) => c.target),
+    [
+      null,
+      'C:\\',
+      'C:\\Users',
+      'C:\\Users\\anton',
+      'C:\\Users\\anton\\OneDrive',
+      'C:\\Users\\anton\\OneDrive\\Desktop',
+    ],
+  );
+  assert.deepEqual(
+    pc('\\\\nas\\share\\Films').map((c) => c.label),
+    ['This PC', '\\\\nas\\share', 'Films'],
+  );
+  // A frame of a known folder starts at that folder.
+  const desk = pathCrumbs('C:\\Users\\a\\Desktop\\Work\\2026', 'C:\\Users\\a\\Desktop', 'Desktop');
+  assert.deepEqual(desk, [
+    { label: 'Desktop', target: null },
+    { label: 'Work', target: 'C:\\Users\\a\\Desktop\\Work' },
+    { label: '2026', target: 'C:\\Users\\a\\Desktop\\Work\\2026' },
+  ]);
+  assert.equal(pathCrumbs('c:\\users\\a\\desktop', 'C:\\Users\\a\\Desktop', 'Desktop').length, 1);
+  assert.deepEqual(
+    pathCrumbs('/home/a/Music', '/home/a', 'Home', false).map((c) => c.target),
+    [null, '/home/a/Music'],
+  );
+});
 const require = createRequire(import.meta.url);
 const { objectValue, fileLinkValue: storeFileLinkValue } = require('../electron/store.cjs');
 const {

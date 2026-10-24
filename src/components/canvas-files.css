@@ -99,6 +99,62 @@
   font-weight: 400;
   color: #6b7888;
 }
+/* The address bar: the path as buttons; a click beside them types a path. */
+.cf-path {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  border-radius: 8px;
+  cursor: text;
+  padding: 0 6px;
+}
+.cf-path:hover {
+  background: rgb(130 150 170 / 0.1);
+}
+.cf-crumb-link {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 0;
+  border-radius: 6px;
+  padding: 3px 5px;
+  background: transparent;
+  color: #6b7888;
+  font: inherit;
+  font-weight: 400;
+  cursor: pointer;
+}
+.cf-crumb-link:hover {
+  background: rgb(130 150 170 / 0.18);
+  color: #29313b;
+}
+.cf-crumb-link[data-current] {
+  flex-shrink: 0;
+  max-width: 60%;
+  color: inherit;
+  font-weight: 600;
+}
+.cf-path .cf-crumb-sep {
+  flex: none;
+  margin: 0 1px;
+}
+.cf-address {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  box-sizing: border-box;
+  margin: 0 4px;
+  padding: 0 10px;
+  border: 1px solid #4486d9;
+  border-radius: 8px;
+  background: #fff;
+  color: #29313b;
+  font: inherit;
+  font-size: 14px;
+  outline: none;
+}
 .cf-crumb-sep {
   margin: 0 6px;
   color: #9aa7b8;
@@ -441,6 +497,19 @@
   color: #a9b5c3;
 }
 [data-theme='dark'] .cf-name {
+  color: #e4ebf2;
+}
+[data-theme='dark'] .cf-crumb-link {
+  color: #9aa7b8;
+}
+[data-theme='dark'] .cf-crumb-link:hover {
+  color: #fff;
+}
+[data-theme='dark'] .cf-crumb-link[data-current] {
+  color: #e4ebf2;
+}
+[data-theme='dark'] .cf-address {
+  background: #11161c;
   color: #e4ebf2;
 }
 [data-theme='dark'] .cf-columns {

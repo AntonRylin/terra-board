@@ -3,6 +3,7 @@
 // board stores only which folder to show and how; see src/canvas/file-link.ts.
 import { TelegramCard } from './telegram/TelegramCard';
 import {
+  Fragment,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -63,6 +64,7 @@ import {
   iconLayouts,
   iconTier,
   listRow,
+  pathCrumbs,
   sortItems,
   typeLabel,
   type FileItem,
@@ -531,7 +533,9 @@ function FolderCard({
       void load();
     }
   };
-  const navigate = (dir: string) => {
+  // dir null: the frame's own folder.
+  const navigate = (dir: string | null) => {
+    if (dir === sub || (dir && sub && samePath(dir, sub))) return;
     setHistory((h) => [...h, sub]);
     setSub(dir);
     selectOnly([]);
@@ -556,6 +560,61 @@ function FolderCard({
   const open = (item: FileItem) => {
     if (item.folder) navigate(item.path);
     else void files?.open({ path: item.path }).catch((error) => onError(message(error)));
+  };
+  // The address bar as text (null when it shows the path as buttons). Like
+  // Explorer's: paste or type a path and press Enter; a path without a drive is
+  // taken from the folder shown.
+  const [address, setAddress] = useState<string | null>(null);
+  const editAddress = () => {
+    if (!listing) return;
+    setAddress(
+      listing.state === 'folder' && listing.dir === '::computer' ? 'This PC' : listing.dir,
+    );
+  };
+  const goToPath = async (text: string) => {
+    if (!files || !listing) return false;
+    let value = text
+      .trim()
+      .replace(/^"(.*)"$/, '$1')
+      .trim();
+    const computer = link.root === 'computer';
+    if (!value) return true;
+    if (computer && /^(this pc|computer|my computer)$/i.test(value)) {
+      navigate(null);
+      return true;
+    }
+    if (windowsPaths()) {
+      value = value.replace(/\//g, '\\');
+      if (/^[a-z]:$/i.test(value)) value += '\\';
+    }
+    const absolutePath = windowsPaths() ? /^([a-z]:\\|\\\\)/i.test(value) : value.startsWith('/');
+    if (!absolutePath) {
+      if (listing.dir === '::computer' || listing.state === 'missing') {
+        flash(`Type a full path, like C:\\Users`);
+        return false;
+      }
+      value = listing.dir.replace(/[\\/]+$/, '') + (windowsPaths() ? '\\' : '/') + value;
+    }
+    try {
+      const next = await files.list({ source, sub: value, hidden: !!link.hidden });
+      if (next.state === 'folder') {
+        navigate(samePath(next.dir, next.base) ? null : next.dir);
+        return true;
+      }
+      if (next.state === 'file') {
+        await files.open({ path: next.dir });
+        return true;
+      }
+      flash(`Can’t find “${value}”`);
+    } catch (error) {
+      const text = message(error);
+      flash(
+        /invalid folder/i.test(text)
+          ? `That’s outside ${fileLinkLabel(link, o.text)}. Choose This PC in “…” to go anywhere.`
+          : text,
+      );
+    }
+    return false;
   };
   // This PC frames reach any folder, so they get a quick jump to the Desktop.
   const goDesktop = () => {
@@ -948,6 +1007,12 @@ function FolderCard({
     } else if (mod && event.shiftKey && event.code === 'KeyN') {
       handled();
       newFolder();
+    } else if (
+      (mod && event.key.toLowerCase() === 'l') ||
+      (event.altKey && event.key.toLowerCase() === 'd')
+    ) {
+      handled();
+      editAddress();
     } else if (event.key === 'Backspace' || (event.altKey && event.key === 'ArrowLeft')) {
       handled();
       goBack();
@@ -1299,7 +1364,7 @@ function FolderCard({
       <header
         className="cf-header"
         onPointerDown={(event) => {
-          if ((event.target as HTMLElement).closest('button')) return;
+          if ((event.target as HTMLElement).closest('button, input, .cf-path')) return;
           card.current?.focus({ preventScroll: true });
           forward(event);
         }}
@@ -1335,20 +1400,68 @@ function FolderCard({
         <span className="cf-title-icon">
           {RootIcon ? <RootIcon size={18} /> : <Glyph size={22} />}
         </span>
-        <span
-          className="cf-title"
-          title={listing && listing.state !== 'missing' ? listing.dir : undefined}
-        >
-          {sub && listing?.state === 'folder' ? (
-            <>
-              <span className="cf-crumb">{fileLinkLabel(link, o.text)}</span>
-              <span className="cf-crumb-sep">›</span>
-              {title}
-            </>
-          ) : (
-            title
-          )}
-        </span>
+        {address !== null ? (
+          <input
+            className="cf-address"
+            value={address}
+            autoFocus
+            spellCheck={false}
+            aria-label="Address"
+            onFocus={(event) => event.currentTarget.select()}
+            onChange={(event) => setAddress(event.target.value)}
+            onPointerDown={(event) => event.stopPropagation()}
+            onBlur={() => setAddress(null)}
+            onKeyDown={(event) => {
+              event.stopPropagation();
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                const typed = address;
+                void goToPath(typed).then((ok) => {
+                  if (!ok) return;
+                  setAddress(null);
+                  card.current?.focus({ preventScroll: true });
+                });
+              } else if (event.key === 'Escape') {
+                event.preventDefault();
+                setAddress(null);
+                card.current?.focus({ preventScroll: true });
+              }
+            }}
+          />
+        ) : (
+          <span
+            className="cf-title cf-path"
+            title={
+              listing && listing.state !== 'missing' && listing.dir !== '::computer'
+                ? `${listing.dir}\nClick to type a path`
+                : 'Click to type a path'
+            }
+            onClick={(event) => {
+              if (!(event.target as HTMLElement).closest('.cf-crumb-link')) editAddress();
+            }}
+          >
+            {listing?.state === 'folder'
+              ? pathCrumbs(
+                  listing.dir,
+                  listing.base,
+                  fileLinkLabel(link, o.text),
+                  windowsPaths(),
+                ).map((crumb, index, all) => (
+                  <Fragment key={crumb.target ?? ''}>
+                    {index > 0 && <span className="cf-crumb-sep">›</span>}
+                    <button
+                      className="cf-crumb-link"
+                      data-current={index === all.length - 1 || undefined}
+                      title={crumb.target ?? fileLinkLabel(link, o.text)}
+                      onClick={() => navigate(crumb.target)}
+                    >
+                      {crumb.label}
+                    </button>
+                  </Fragment>
+                ))
+              : title}
+          </span>
+        )}
         {files && listing?.state === 'folder' && (
           <>
             <button
