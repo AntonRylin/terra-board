@@ -201,12 +201,7 @@ import {
   type GalleryTarget,
 } from '../canvas/gallery';
 import { textAppearance } from '../canvas/text-style';
-import {
-  textLayout,
-  fitTextObject,
-  fitTextToView,
-  widenNoteForWords,
-} from '../canvas/text-layout';
+import { textLayout, fitTextObject, fitTextToView, widenNoteForWords } from '../canvas/text-layout';
 import { textPlacement } from '../canvas/text-alignment';
 import { localToWorld, worldToLocal, objectBounds, containsObject } from '../canvas/transform';
 import { SaveQueue, CameraSaveQueue, type SaveState } from '../canvas/save-queue';
@@ -980,16 +975,10 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
           right = Math.min(board.right, window.innerWidth) - 16,
           room = window.innerHeight - 16;
         const dx =
-          target.right > right
-            ? right - target.right
-            : target.left < left
-              ? left - target.left
-              : 0;
+          target.right > right ? right - target.right : target.left < left ? left - target.left : 0;
         // Up far enough for the caret's end of the text, never past the top of the view.
         const dy =
-          target.bottom > room
-            ? -Math.min(target.bottom - room, Math.max(0, target.top - 72))
-            : 0;
+          target.bottom > room ? -Math.min(target.bottom - room, Math.max(0, target.top - 72)) : 0;
         if (dx || dy) engine.current?.panBy(dx, dy);
       });
     keepVisible();
@@ -1922,6 +1911,12 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     const fitted = Math.max(1, Math.min(width, view - 32));
     return { left: Math.min(Math.max(left, 16), view - 16 - fitted), width: fitted };
   })();
+  // A name is typed on the line above its frame, picture or document and grows upward as it
+  // wraps (narrower than the frame on a phone, so with more lines than on the board).
+  const nameBottom =
+    editing && isName(editing) && editorOrigin && editingPlacement
+      ? (editorOrigin.y + editingPlacement.height) * camera.zoom + camera.y
+      : null;
   const setSelectionColor = (color: string, restoreFocus = true) => {
     const session = editingSession.current;
     if (session) {
@@ -2225,9 +2220,22 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     // The pen draws strokes itself; it never places an object here.
     if (t === 'pen') return;
     const type = t === 'hand' || t === 'select' ? 'text' : t;
+    // Zoomed out, a new object is made larger so it shows at a readable size on screen
+    // (24 px text at 25 % zoom would be 6 px). Sizes are raised to a minimum on screen
+    // rather than multiplied, because new objects copy the size of the last one.
+    const zoom = e.camera.zoom;
     let box = sizedTypes.includes(type)
       ? lastShapeSize(e, type)
       : { width: type === 'frame' ? 520 : 360, height: type === 'frame' ? 360 : 72 };
+    const grow = Math.min(
+      10,
+      Math.max(
+        1,
+        sizedTypes.includes(type) ? 120 / (Math.min(box.width, box.height) * zoom) : 1 / zoom,
+      ),
+    );
+    box = { width: box.width * grow, height: box.height * grow };
+    const textSize = Math.min(300, Math.max(lastTextSize.current!, Math.round(16 / zoom)));
     let at = { x: p.x, y: p.y };
     // Dropped into a frame, it shrinks to fit inside rather than spilling over the edge.
     const frame = type === 'frame' ? undefined : e.frameAt(p);
@@ -2259,7 +2267,9 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       // Notes leave the size out: their text grows and shrinks to fill them.
       ...(type === 'note'
         ? {}
-        : { fontSize: type === 'frame' ? 14 : type === 'text' ? lastTextSize.current! : 24 }),
+        : {
+            fontSize: type === 'frame' ? 14 : type === 'text' ? textSize : Math.round(24 * grow),
+          }),
     };
     rememberShape(o);
     e.apply({ upserts: [o], deleted: [] });
@@ -2725,10 +2735,12 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
       el.style.height = `${editingPlacement.height * camera.zoom}px`;
       return;
     }
-    if (
-      (editing.centerY || ['frame', 'image', 'document'].includes(editing.type)) &&
-      editingPlacement
-    ) {
+    // A name above a frame, picture or document grows upward with its lines (nameBottom).
+    if (isName(editing)) {
+      el.style.height = '';
+      return;
+    }
+    if (editing.centerY && editingPlacement) {
       const available =
         (editingObject || editing).height - editingPlacement.top - editingAppearance.padding;
       el.style.height = `${Math.max(1, Math.min(editingPlacement.height, available)) * camera.zoom}px`;
@@ -4981,8 +4993,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             whiteSpace: editing.type === 'text' && !editing.textBox ? 'pre' : 'pre-wrap',
             overflowWrap: editing.type === 'text' && !editing.textBox ? 'normal' : 'break-word',
             left: editorBox!.left,
-            top: (editorOrigin?.y ?? editing.y) * camera.zoom + camera.y,
-            transform: `rotate(${editing.rotation || 0}deg)`,
+            top: nameBottom ?? (editorOrigin?.y ?? editing.y) * camera.zoom + camera.y,
+            transform: `rotate(${editing.rotation || 0}deg)${nameBottom !== null ? ' translateY(-100%)' : ''}`,
             transformOrigin: '0 0',
             textAlign: !isName(editing) && editing.centerX ? 'center' : 'left',
             width: editorBox!.width,
@@ -5109,7 +5121,14 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
             { id: 'html', label: 'HTML embed', icon: CodeXml, action: () => createHtml() },
             { id: 'browser', label: 'Browser', icon: Globe, action: () => createBrowser() },
             ...(window.canvas?.files
-              ? [{ id: 'folder' as const, label: 'Folder', icon: FolderOpen, action: () => createFolder() }]
+              ? [
+                  {
+                    id: 'folder' as const,
+                    label: 'Folder',
+                    icon: FolderOpen,
+                    action: () => createFolder(),
+                  },
+                ]
               : []),
             ...(window.canvas?.files && window.canvas.platform === 'win32'
               ? [

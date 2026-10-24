@@ -97,9 +97,9 @@ export default function CanvasToolbar({
                   ? 'Folder'
                   : id === 'desktops'
                     ? 'Desktops'
-                : id === 'media'
-                  ? 'Images and video'
-                  : item.label;
+                    : id === 'media'
+                      ? 'Images and video'
+                      : item.label;
     const Icon = item.icon;
     return (
       <div
@@ -163,7 +163,9 @@ export default function CanvasToolbar({
         role="toolbar"
         aria-label="Canvas tools"
         data-reordering={!!dragging || undefined}
-        style={{ '--tool-count': layout.bar.length } as CSSProperties}
+        style={
+          { '--tool-count': layout.bar.filter((id) => toolsById.has(id)).length } as CSSProperties
+        }
       >
         <div ref={surface} className="toolbar-glass glass-surface" aria-hidden="true" />
         <div ref={bar} className="toolbar-slots" data-tool-zone="bar">
@@ -217,7 +219,7 @@ export default function CanvasToolbar({
               </button>
             )}
             {layout.inventory.map((id) => renderTool(id, 'inventory'))}
-            {!layout.inventory.length && (
+            {!layout.inventory.some((id) => toolsById.has(id)) && (
               <SquareDashed className="inventory-empty" size={24} aria-hidden="true" />
             )}
           </div>

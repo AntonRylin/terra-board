@@ -232,6 +232,12 @@ On Android:
   starts a selection box to drag out (lifting without dragging still opens the board menu), held
   on an object it adds that object to the selection, or takes it out again. Panning keeps the
   selection; a tap on empty board clears it. The selection toolbar then offers Lock and the rest.
+- A tap inside a frame selects the frame, and a finger then drags it from anywhere inside; its
+  edges are wider for a finger (20 px on screen). A frame's name is edited on the line above it,
+  growing upward and kept within the screen; a new frame's "Untitled frame" is selected so
+  typing replaces it.
+- New text, notes, shapes and frames made while zoomed out are made larger, so they show at a
+  readable size on screen (text at least 16 px).
 - Outside the canvas (the rows of the home screen), `src/mobile/index.ts` turns a
   long-press into the `contextmenu` a right-click sends, replacing the WebView's own long-press.
 

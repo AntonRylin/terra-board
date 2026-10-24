@@ -1589,3 +1589,22 @@ test("someone else's drag is shown without an edit, but not on what is being dra
   f.engine.previewRemote([{ ...b, x: 0 }]);
   assert.equal(f.engine.objects.get('b').x, 420, 'the drag here wins');
 });
+
+test('Android: a tap inside a frame selects it, and a finger then drags it', () => {
+  const f = fixture();
+  f.engine.setTouchGestures(true);
+  f.engine.camera = { x: 0, y: 0, zoom: 1 };
+  const touch = (x, y) => ({ ...f.event(x, y, 0), pointerType: 'touch', pointerId: 1 });
+  f.engine.apply({
+    upserts: [{ id: 'f', type: 'frame', x: 100, y: 100, width: 400, height: 300, z: -1, text: 'Plan' }],
+    deleted: [],
+  });
+  f.engine.down(touch(300, 250));
+  f.engine.up(touch(300, 250));
+  assert.deepEqual([...f.engine.selection], ['f']);
+  f.tick(1000);
+  f.engine.down(touch(300, 250));
+  f.engine.move(touch(340, 270));
+  f.engine.up(touch(340, 270));
+  assert.deepEqual([f.engine.objects.get('f').x, f.engine.objects.get('f').y], [140, 120]);
+});

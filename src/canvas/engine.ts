@@ -627,6 +627,8 @@ export class Engine {
         }
         if (hitsFrameLabel(o, q, this.camera.zoom)) return true;
         if (q.x < 0 || q.y < 0 || q.x > o.width || q.y > o.height) return false;
+        // A frame is grabbed by its edges; a finger needs them wider than a mouse does.
+        const edge = this.touchInput ? Math.max(10, 20 / this.camera.zoom) : 10;
         if (
           o.type === 'ellipse' &&
           ((q.x - o.width / 2) / (o.width / 2)) ** 2 +
@@ -638,10 +640,10 @@ export class Engine {
           o.type !== 'frame' ||
           !!o.pdfComposer ||
           !!o.frameLink ||
-          q.x < 10 ||
-          q.x > o.width - 10 ||
-          q.y < 32 ||
-          q.y > o.height - 10 ||
+          q.x < edge ||
+          q.x > o.width - edge ||
+          q.y < Math.max(32, edge) ||
+          q.y > o.height - edge ||
           this.views
             .get(o.id)
             ?.container.children.some(
@@ -1478,7 +1480,12 @@ export class Engine {
     } else if (g.secondary && !g.changed) this.openContext(e);
     else if (g.mode === 'pan') {
       this.callbacks.camera({ ...this.camera });
-      if (g.tapClears && !g.dragged) this.setSelection([]);
+      // A tap inside a frame selects the frame, so a finger can then drag it; elsewhere a
+      // tap clears the selection.
+      if (g.tapClears && !g.dragged) {
+        const frame = this.frameAt(g.world);
+        this.setSelection(frame ? this.members(frame) : []);
+      }
     } else if (g.holdAt && (!g.box || (g.box.width + g.box.height) * this.camera.zoom < 12)) {
       // Held on empty board and lifted without dragging: the board's menu, as before.
       this.longPressOpened = performance.now();
