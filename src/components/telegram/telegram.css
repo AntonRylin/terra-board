@@ -1756,3 +1756,175 @@
 .tg-upload .tg-file-progress {
   flex: 1;
 }
+
+/* Motion: things appear, move and change smoothly instead of at once. */
+.canvas-telegram {
+  --tg-ease: cubic-bezier(0.2, 0.8, 0.25, 1);
+}
+.canvas-telegram .cf-button,
+.tg-chat,
+.tg-tabs button,
+.tg-button,
+.tg-link,
+.tg-search,
+.tg-composer textarea,
+.tg-file,
+.tg-play,
+.tg-voice-play,
+.tg-keyboard button,
+.tg-reply-keyboard button,
+.tg-sticker-sets button,
+.tg-emoji-grid button,
+.tg-sticker-cell,
+.tg-gif-cell,
+.tg-forward-chat,
+.tg-search-result,
+.tg-poll-choice,
+.tg-latest,
+.tg-chip,
+.tg-reactions button {
+  transition:
+    background-color 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease,
+    box-shadow 0.18s ease,
+    opacity 0.18s ease,
+    transform 0.16s var(--tg-ease);
+}
+.canvas-telegram .cf-button:active:not(:disabled),
+.tg-button:active,
+.tg-reactions button:active,
+.tg-keyboard button:active,
+.tg-latest:active {
+  transform: scale(0.93);
+}
+.tg-menu-reactions button {
+  transition:
+    transform 0.16s var(--tg-ease),
+    background-color 0.16s ease;
+}
+.tg-menu-reactions button:active {
+  transform: scale(0.9);
+}
+.tg-conversation {
+  animation: tg-slide-in 0.24s var(--tg-ease);
+}
+.tg-row {
+  animation: tg-row-in 0.26s var(--tg-ease) backwards;
+}
+.tg-row[data-out] .tg-bubble {
+  transform-origin: bottom right;
+}
+.tg-bubble {
+  transform-origin: bottom left;
+}
+.tg-reactions button {
+  animation: tg-pop 0.28s var(--tg-ease) backwards;
+}
+.tg-badge {
+  animation: tg-pop 0.24s var(--tg-ease) backwards;
+}
+.tg-visual img,
+.tg-visual video,
+.tg-sticker,
+.tg-file-thumb,
+.tg-reaction-custom,
+.tg-gif-cell img,
+.tg-sticker-cell img {
+  animation: tg-fade 0.3s ease backwards;
+}
+.tg-dialog-backdrop {
+  animation: tg-fade 0.18s ease;
+}
+.tg-dialog {
+  animation: tg-rise 0.24s var(--tg-ease);
+}
+.tg-picker {
+  animation: tg-rise 0.22s var(--tg-ease);
+  transform-origin: bottom left;
+}
+.tg-composer-reply,
+.tg-pinned-bar,
+.tg-error,
+.tg-keyboard,
+.tg-reply-keyboard,
+.tg-call-banner,
+.tg-pending {
+  animation: tg-drop 0.22s var(--tg-ease);
+}
+.tg-search-panel,
+.tg-forward,
+.tg-scheduled,
+.tg-story-viewer,
+.tg-drop-hint {
+  animation: tg-fade 0.2s ease;
+}
+.tg-latest,
+.tg-send,
+.tg-mic {
+  animation: tg-pop 0.22s var(--tg-ease);
+}
+.tg-notice {
+  animation: tg-notice-in 0.24s var(--tg-ease);
+}
+.tg-poll-bar {
+  transition: width 0.45s var(--tg-ease);
+}
+.tg-tabs button {
+  transition:
+    color 0.2s ease,
+    border-color 0.25s ease;
+}
+.tg-list-empty,
+.tg-empty > *,
+.tg-setup {
+  animation: tg-fade 0.3s ease;
+}
+@keyframes tg-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes tg-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(10px);
+  }
+}
+@keyframes tg-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+}
+@keyframes tg-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+}
+@keyframes tg-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+  }
+}
+@keyframes tg-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+@keyframes tg-notice-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 6px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .canvas-telegram *:not(.tg-spin):not(.tg-rec-dot),
+  .tg-pinned *:not(.tg-spin) {
+    animation: none !important;
+    transition: none !important;
+  }
+}

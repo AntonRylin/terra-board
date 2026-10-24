@@ -29,6 +29,10 @@ export interface History {
 }
 
 const histories = new Map<number, History>();
+// A sent message keeps the key it had while sending, so it stays on screen
+// as the same element (no second appearing animation).
+const sentKeys = new Map<number, number>();
+export const messageKey = (m: TdMessage) => sentKeys.get(m.id) ?? m.id;
 const chats = new Map<number, TdChat>();
 const users = new Map<number, TdUser>();
 const files = new Map<number, TdFile>();
@@ -128,6 +132,7 @@ function apply(batch: TelegramBatch) {
         break;
       case 'updateMessageSendSucceeded': {
         const history = histories.get(event.message.chat_id);
+        sentKeys.set(event.message.id, sentKeys.get(event.old_message_id) ?? event.old_message_id);
         if (history?.messages.has(event.old_message_id)) {
           history.messages.delete(event.old_message_id);
           history.ids = history.ids.filter((id) => id !== event.old_message_id);

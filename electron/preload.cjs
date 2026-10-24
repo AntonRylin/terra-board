@@ -73,6 +73,8 @@ contextBridge.exposeInMainWorld('canvas', {
     invoke: (query) => ipcRenderer.invoke('canvas:telegram-invoke', query),
     stage: (sources) => ipcRenderer.invoke('canvas:telegram-stage', sources),
     voice: (bytes) => ipcRenderer.invoke('canvas:telegram-voice', bytes),
+    pasted: (file) => ipcRenderer.invoke('canvas:telegram-pasted', file),
+    edit: (action) => ipcRenderer.invoke('canvas:telegram-edit', action),
     pick: () => ipcRenderer.invoke('canvas:telegram-pick'),
     download: (id) => ipcRenderer.invoke('canvas:telegram-download', id),
     setCredentials: (input) => ipcRenderer.invoke('canvas:telegram-credentials', input),

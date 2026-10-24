@@ -805,6 +805,29 @@ function createTelegram({
     return { path: file, seconds };
   }
 
+  // Something pasted that is no file on this computer (a screenshot, a
+  // copied picture): saved like a voice message, ready to send.
+  async function pasted(input) {
+    const bytes = input?.bytes instanceof Uint8Array ? input.bytes : null;
+    if (!bytes || !bytes.length) throw Error('There is nothing to paste.');
+    if (bytes.length > 512 * 1024 * 1024) throw Error('That is too large to paste; attach it.');
+    const type = typeof input.type === 'string' ? input.type : '';
+    const name = fileName(
+      typeof input.name === 'string' && input.name && input.name !== 'image.png'
+        ? input.name
+        : type.startsWith('image/')
+          ? 'Pasted image'
+          : 'Pasted file',
+      type,
+    );
+    const folder = path.join(outgoingDir, randomUUID());
+    await fs.promises.mkdir(folder, { recursive: true });
+    const file = path.join(folder, name);
+    await fs.promises.writeFile(file, bytes);
+    staged.add(file);
+    return { path: file, name, size: bytes.length };
+  }
+
   // Copies made for sending stay until Telegram has uploaded them; anything
   // older than a day goes at start or after a send.
   function sweepOutgoing() {
@@ -932,6 +955,7 @@ function createTelegram({
     invoke,
     stage,
     voice,
+    pasted,
     download,
     localFile,
     setCredentials,
@@ -1019,6 +1043,12 @@ function registerTelegram({ ipcMain, trusted, telegram, dialog, getWindow, dragI
   handle('invoke', (query) => telegram.invoke(query));
   handle('stage', (sources) => telegram.stage(sources));
   handle('voice', (bytes) => telegram.voice(bytes));
+  handle('pasted', (file) => telegram.pasted(file));
+  // Cut, copy, paste and select all for the message field's menu: the page
+  // itself may not read the clipboard.
+  handle('edit', (action, event) => {
+    if (['cut', 'copy', 'paste', 'selectAll'].includes(action)) event.sender[action]();
+  });
   handle('download', (id) => telegram.download(id));
   handle('credentials', (input) => telegram.setCredentials(input));
   handle('log-out', () => telegram.logOut());

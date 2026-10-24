@@ -113,6 +113,10 @@ export interface TelegramBridge {
   pick(): Promise<StagedFile[]>;
   /** A recorded voice message (WebM Opus) saved for sending as Ogg Opus. */
   voice(bytes: Uint8Array): Promise<{ path: string; seconds: number }>;
+  /** A pasted picture or file that isn't on disk (a screenshot), saved for sending. */
+  pasted(file: { bytes: Uint8Array; name: string; type: string }): Promise<StagedFile>;
+  /** Cut, copy, paste or select all in the focused field. */
+  edit(action: 'cut' | 'copy' | 'paste' | 'selectAll'): Promise<void>;
   download(id: number): Promise<string>;
   setCredentials(input: { apiId: string; apiHash: string }): Promise<TelegramStatus>;
   logOut(): Promise<TelegramStatus>;

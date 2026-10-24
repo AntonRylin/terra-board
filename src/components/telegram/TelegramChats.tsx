@@ -15,6 +15,10 @@ import {
   ArrowDown,
   ArrowLeft,
   CalendarClock,
+  ClipboardPaste,
+  Copy,
+  Scissors,
+  TextSelect,
   Keyboard,
   PenSquare,
   Smile,
@@ -76,6 +80,7 @@ import {
   historyOf,
   loadNewer,
   loadOlder,
+  messageKey,
   myUserId,
   showLatest,
   pinnedVersion,
@@ -508,6 +513,30 @@ function ChatList({
   const list = q ? all.filter(({ chat }) => chatTitle(chat).toLowerCase().includes(q)) : all;
   // The list scrolls in what is left below the stories, tabs and search.
   const viewport = height;
+  // Chats that move (a new message lifts one to the top) slide to their new place.
+  const rows = useRef<HTMLDivElement>(null);
+  const order = useRef({ key: '', index: new Map<number, number>() });
+  useLayoutEffect(() => {
+    const key = `${listName}|${q}`,
+      before = order.current;
+    const index = new Map(list.map(({ chat }, i) => [chat.id, i]));
+    order.current = { key, index };
+    if (before.key !== key || !moving()) return;
+    for (const el of rows.current?.querySelectorAll<HTMLElement>('[data-chat-id]') ?? []) {
+      const id = Number(el.dataset.chatId),
+        was = before.index.get(id),
+        now = index.get(id);
+      if (now === undefined || was === now) continue;
+      const shift = was === undefined ? 0 : (was - now) * rowHeight;
+      if (shift && Math.abs(shift) <= viewport)
+        el.animate([{ transform: `translateY(${shift}px)` }, { transform: 'none' }], glide);
+      else
+        el.animate(
+          [{ opacity: 0, transform: `translateY(${-rowHeight / 3}px)` }, { opacity: 1, transform: 'none' }],
+          glide,
+        );
+    }
+  });
   const first = Math.max(0, Math.floor(scroll / rowHeight) - 4);
   const last = Math.min(list.length, Math.ceil((scroll + viewport) / rowHeight) + 4);
   return (
@@ -549,7 +578,10 @@ function ChatList({
         }}
       >
         <div style={{ height: list.length * rowHeight, position: 'relative' }}>
-          <div style={{ position: 'absolute', top: first * rowHeight, left: 0, right: 0 }}>
+          <div
+            ref={rows}
+            style={{ position: 'absolute', top: first * rowHeight, left: 0, right: 0 }}
+          >
             {list.slice(first, last).map(({ chat, pinned }) => (
               <ChatRow
                 key={chat.id}
@@ -579,6 +611,10 @@ function ChatList({
     </div>
   );
 }
+
+/** Animations are on (the system's reduced-motion setting is off). */
+const moving = () => !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+const glide = { duration: 260, easing: 'cubic-bezier(0.2, 0.8, 0.25, 1)' };
 
 // Whether the open chat is on screen and Terra is in front, so its messages
 // count as seen.
@@ -631,7 +667,7 @@ function Conversation({
   const scroller = useRef<HTMLDivElement>(null);
   const content = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
-  const previous = useRef({ first: 0, height: 0 });
+  const previous = useRef({ first: 0, last: 0, height: 0 });
   const [sponsored, setSponsored] = useState<Td | null>(null);
   const [canPost, setCanPost] = useState(!isChannel(chat));
   const [replyTo, setReplyTo] = useState<TdMessage | null>(null);
@@ -769,12 +805,22 @@ function Conversation({
   useLayoutEffect(() => {
     const el = scroller.current;
     if (!el) return;
-    const first = ids[0] || 0;
+    const first = ids[0] || 0,
+      last = ids[ids.length - 1] || 0;
     const before = previous.current;
-    if (stick.current) el.scrollTop = el.scrollHeight;
-    else if (before.first && first && first < before.first)
+    if (stick.current) {
+      const top = el.scrollTop;
+      el.scrollTop = el.scrollHeight;
+      // A new message at the bottom: the ones above glide up to make room.
+      const moved = el.scrollTop - top;
+      if (before.last && last > before.last && moved > 0 && moved < el.clientHeight && moving())
+        content.current?.animate(
+          [{ transform: `translateY(${moved}px)` }, { transform: 'none' }],
+          glide,
+        );
+    } else if (before.first && first && first < before.first)
       el.scrollTop += el.scrollHeight - before.height;
-    previous.current = { first, height: el.scrollHeight };
+    previous.current = { first, last, height: el.scrollHeight };
   });
   useEffect(() => {
     const el = scroller.current,
@@ -925,7 +971,7 @@ function Conversation({
               sender(previous) === sender(m) &&
               m.date - previous.date < 300;
             return (
-              <div key={m.id} data-message-id={m.id}>
+              <div key={messageKey(m)} data-message-id={m.id}>
                 {newDay && <div className="tg-day">{dayLabel(m.date)}</div>}
                 <Bubble
                   message={m}
@@ -999,6 +1045,7 @@ function Conversation({
             if (!history.latest) void showLatest(chatId);
           }}
           onPick={() => void pick()}
+          onFiles={(files) => setSending((current) => [...(current || []), ...files].slice(0, 20))}
         />
       ) : (
         <div className="tg-readonly">
@@ -2066,6 +2113,7 @@ function Composer({
   setError,
   onSent,
   onPick,
+  onFiles,
 }: {
   hasKeyboard: boolean;
   toggleKeyboard: () => void;
@@ -2079,6 +2127,8 @@ function Composer({
   setError: (text: string) => void;
   onSent: () => void;
   onPick: () => void;
+  /** Files pasted into the field, for the send dialog. */
+  onFiles: (files: StagedFile[]) => void;
 }) {
   const bridge = telegramBridge()!;
   const editText = (
@@ -2301,6 +2351,59 @@ function Composer({
       else field.current?.blur();
     }
   };
+  // Pictures and files from the clipboard (a screenshot, files copied in
+  // Explorer) go to the send dialog, as Telegram's apps do; text pastes as text.
+  const paste = (event: React.ClipboardEvent) => {
+    event.stopPropagation();
+    const data = event.clipboardData;
+    const files = [...data.files];
+    if (!files.length || data.getData('text/plain').trim()) return;
+    event.preventDefault();
+    void (async () => {
+      try {
+        const found = files.map((file) => ({ file, path: window.canvas?.filePath(file) || '' }));
+        const onDisk = found.filter((f) => f.path).map((f) => ({ path: f.path }));
+        const staged = onDisk.length ? await bridge.stage(onDisk) : [];
+        for (const { file } of found.filter((f) => !f.path))
+          staged.push(
+            await bridge.pasted({
+              bytes: new Uint8Array(await file.arrayBuffer()),
+              name: file.name,
+              type: file.type,
+            }),
+          );
+        if (staged.length) onFiles(staged);
+      } catch (e) {
+        setError(message(e));
+      }
+    })();
+  };
+  // Right-click in the field: cut, copy, paste, select all.
+  const fieldMenu = (event: React.MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const el = field.current;
+    if (!el) return;
+    const start = el.selectionStart,
+      end = el.selectionEnd;
+    const run = (action: 'cut' | 'copy' | 'paste' | 'selectAll') => () => {
+      el.focus();
+      el.setSelectionRange(start, end);
+      void bridge.edit(action).catch((e) => setError(message(e)));
+    };
+    const selected = end > start;
+    openMenu({
+      x: event.clientX,
+      y: event.clientY,
+      items: [
+        { label: 'Cut', icon: <Scissors />, action: run('cut'), disabled: !selected },
+        { label: 'Copy', icon: <Copy />, action: run('copy'), disabled: !selected },
+        { label: 'Paste', icon: <ClipboardPaste />, action: run('paste') },
+        null,
+        { label: 'Select all', icon: <TextSelect />, action: run('selectAll'), disabled: !text },
+      ],
+    });
+  };
   const peak = Math.max(0.02, ...(recordState?.levels ?? []));
   return (
     <div
@@ -2431,6 +2534,8 @@ function Composer({
             placeholder="Message"
             onChange={(e) => setText(e.target.value)}
             onKeyDown={keyDown}
+            onPaste={paste}
+            onContextMenu={fieldMenu}
           />
           {text.trim() || busy || editing ? (
             <button

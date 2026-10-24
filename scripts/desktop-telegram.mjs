@@ -440,6 +440,39 @@ try {
   );
   await screenshot('08-sent.png');
 
+  // Pasting into the message field (this replaces the clipboard's text):
+  // Paste from the field's right-click menu puts copied text in; a picture
+  // that is no file (a screenshot) opens the send dialog.
+  await read(`window.canvas.copyText('pasted from the clipboard')`);
+  const field = await until(() => rect('.tg-composer textarea'), 'message field');
+  await clickAt(field.x + 20, field.y + field.height / 2);
+  await mouse('mousePressed', field.x + 20, field.y + field.height / 2, 2, 1, 'right');
+  await mouse('mouseReleased', field.x + 20, field.y + field.height / 2, 0, 1, 'right');
+  await clickText('.context-menu button', 'Paste');
+  await until(
+    () => read(`document.querySelector('.tg-composer textarea').value === 'pasted from the clipboard'`),
+    'text pasted from the menu',
+  );
+  await key('Enter', 'Enter', 13);
+  await until(
+    async () => (await textOf('.tg-messages')).includes('pasted from the clipboard'),
+    'pasted text sent',
+  );
+  await read(`(async()=>{
+    const bytes = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='), (c) => c.charCodeAt(0));
+    const data = new DataTransfer();
+    data.items.add(new File([bytes], 'image.png', { type: 'image/png' }));
+    const field = document.querySelector('.tg-composer textarea');
+    field.focus();
+    field.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+    return true;
+  })()`);
+  await until(() => rect('.tg-dialog'), 'send dialog for a pasted picture');
+  assert.match(await textOf('.tg-dialog'), /Pasted image\.png/);
+  await closeUp('.canvas-telegram[data-file-id="tg"]', 'closeup-16-pasted-picture.png');
+  await clickText('.tg-dialog-actions button', 'Send');
+  await until(async () => !(await rect('.tg-dialog')), 'pasted picture sent');
+
   // A file from Explorer dropped on a chat in the list opens the same dialog.
   const alex = await until(
     () =>
