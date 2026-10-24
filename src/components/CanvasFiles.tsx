@@ -255,8 +255,30 @@ function FolderCard({
   const editable = !readOnly && !o.locked;
   const source = useMemo(() => sourceOf(link), [link.root, link.path]);
   const sourceKey = JSON.stringify(source);
-  const [sub, setSub] = useState<string | null>(null);
-  const [history, setHistory] = useState<(string | null)[]>([]);
+  // The folder open in the frame (and its Back history) is remembered on this
+  // computer only, so switching boards or restarting comes back to it.
+  const openKey = `terra.folder-open.${o.id}`;
+  const saved = useMemo(() => {
+    try {
+      const value = JSON.parse(localStorage.getItem(openKey) || 'null');
+      if (
+        value &&
+        value.source === sourceKey &&
+        (value.sub === null || typeof value.sub === 'string')
+      )
+        return {
+          sub: value.sub as string | null,
+          history: Array.isArray(value.history)
+            ? (value.history as unknown[]).filter(
+                (h): h is string | null => h === null || typeof h === 'string',
+              )
+            : [],
+        };
+    } catch {}
+    return null;
+  }, []);
+  const [sub, setSub] = useState<string | null>(saved?.sub ?? null);
+  const [history, setHistory] = useState<(string | null)[]>(saved?.history ?? []);
   const [listing, setListing] = useState<FileListing | null>(null);
   const [selection, setSelection] = useState<Set<string>>(() => new Set());
   const anchor = useRef<string | null>(null);
@@ -283,12 +305,25 @@ function FolderCard({
   useEffect(() => () => window.clearTimeout(statusTimer.current), []);
 
   // A different folder starts over at its top.
+  const shownSource = useRef(sourceKey);
   useEffect(() => {
+    if (shownSource.current === sourceKey) return;
+    shownSource.current = sourceKey;
     setSub(null);
     setHistory([]);
     setSelection(new Set());
     setListing(null);
   }, [sourceKey]);
+  useEffect(() => {
+    try {
+      if (sub === null && !history.length) localStorage.removeItem(openKey);
+      else
+        localStorage.setItem(
+          openKey,
+          JSON.stringify({ source: sourceKey, sub, history: history.slice(-50) }),
+        );
+    } catch {}
+  }, [openKey, sourceKey, sub, history]);
 
   const load = useCallback(async () => {
     if (!files) return;
