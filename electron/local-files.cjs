@@ -153,6 +153,8 @@ function createLocalFiles({
   // A frame's rectangle in the page (CSS pixels) to Terra's window handle and
   // physical screen pixels.
   dockGeometry = null,
+  // A screen point in CSS pixels to physical pixels.
+  screenPoint = null,
   send = () => {},
   pollMs = 5000,
 } = {}) {
@@ -840,57 +842,87 @@ function createLocalFiles({
     await helper.closeWindow(windowId(id));
   }
 
-  // App frames: the real window laid over its frame while someone uses it.
-  const docked = new Set();
-  async function dockWindow({ id, rect, activate = false } = {}) {
+  // App frames. A program's window on the board is "parked" while nobody uses
+  // it (just behind Terra's window, restored, so Windows keeps capturing it
+  // for the frame's picture), laid over its frame while used, and released
+  // (back as it was) when its frame is deleted, the board closes or Terra
+  // closes. Which windows are on the board, and how, is kept here.
+  const managed = new Map();
+  const validRect = (rect) =>
+    !!rect &&
+    ['x', 'y', 'width', 'height'].every((k) => Number.isFinite(rect[k])) &&
+    rect.width >= 1 &&
+    rect.height >= 1 &&
+    rect.width <= 20000 &&
+    rect.height <= 20000;
+  const appFrames = () => {
     if (!windows || !helper?.available || !dockGeometry)
       throw Error('App frames need Terra Board for Windows.');
+  };
+  const track = (id, state) => {
+    if (state) managed.set(id, state);
+    else managed.delete(id);
+    helper.hold(managed.size > 0);
+  };
+  // rect: the frame's app area on screen; size: its size at 100% zoom (CSS
+  // pixels). Parked at that size, kept inside Terra's window so it stays hidden.
+  async function parkWindow({ id, rect, size } = {}) {
+    appFrames();
     windowId(id);
-    if (
-      !rect ||
-      !['x', 'y', 'width', 'height'].every((k) => Number.isFinite(rect[k])) ||
-      rect.width < 1 ||
-      rect.height < 1 ||
-      rect.width > 20000 ||
-      rect.height > 20000
-    )
-      throw Error('Invalid frame');
-    const geometry = dockGeometry(rect);
-    docked.add(id);
-    helper.hold(true);
+    if (!validRect(rect) || !validRect({ x: 0, y: 0, ...size })) throw Error('Invalid frame');
+    const at = dockGeometry(rect);
+    const want = dockGeometry({ x: rect.x, y: rect.y, width: size.width, height: size.height });
+    const area = at.content;
+    const fit = Math.min(1, area.width / want.width, area.height / want.height);
+    const width = Math.max(1, Math.round(want.width * fit)),
+      height = Math.max(1, Math.round(want.height * fit));
+    const x = Math.min(Math.max(at.x, area.x), area.x + area.width - width),
+      y = Math.min(Math.max(at.y, area.y), area.y + area.height - height);
+    track(id, 'parked');
     try {
-      await helper.dockWindow(id, geometry.owner, geometry, activate === true);
+      await helper.parkWindow(id, at.owner, { x, y, width, height });
     } catch (error) {
-      docked.delete(id);
-      if (!docked.size) helper.hold(false);
+      track(id, null);
       throw Error(friendly(error));
     }
   }
-  // A window not in use gets its frame's size (CSS pixels at zoom 1), so its
-  // picture is sharp.
-  async function sizeWindow({ id, width, height } = {}) {
-    if (!windows || !helper?.available || !dockGeometry) return;
+  // click: where (screen, CSS pixels) a click started using it, passed on to
+  // the app once its window lies there.
+  async function dockWindow({ id, rect, activate = false, click = null } = {}) {
+    appFrames();
     windowId(id);
-    if (![width, height].every((v) => Number.isFinite(v) && v >= 1 && v <= 20000))
-      throw Error('Invalid size');
-    if (docked.has(id)) return;
-    const geometry = dockGeometry({ x: 0, y: 0, width, height });
-    await helper.sizeWindow(id, geometry.width, geometry.height);
-  }
-  async function undockWindow({ id } = {}) {
-    windowId(id);
-    if (!docked.has(id)) return;
-    docked.delete(id);
+    if (!validRect(rect)) throw Error('Invalid frame');
+    const geometry = dockGeometry(rect);
+    const point =
+      click && Number.isFinite(click.x) && Number.isFinite(click.y) && screenPoint
+        ? screenPoint(click)
+        : null;
+    track(id, 'docked');
     try {
-      await helper.undockWindow(id);
-    } finally {
-      if (!docked.size) helper.hold(false);
-      send('canvas:files-undocked', id);
+      await helper.dockWindow(id, geometry.owner, geometry, activate === true, point);
+    } catch (error) {
+      track(id, null);
+      throw Error(friendly(error));
     }
   }
-  async function undockAll() {
-    for (const id of [...docked]) await undockWindow({ id }).catch(() => {});
+  async function releaseWindow({ id } = {}) {
+    windowId(id);
+    if (!managed.has(id)) return;
+    track(id, null);
+    await helper.releaseWindow(id).catch(() => {});
   }
+  async function releaseAll() {
+    for (const id of [...managed.keys()]) await releaseWindow({ id });
+  }
+  // Terra minimized: its app windows go with it, and come back when it does.
+  async function hideAll() {
+    for (const [id, state] of managed)
+      if (state !== 'hidden') {
+        managed.set(id, 'hidden');
+        await helper.hideWindow(id).catch(() => {});
+      }
+  }
+  const isDocked = (id) => managed.get(id) === 'docked';
 
   async function choose({ defaultPath } = {}) {
     const start = typeof defaultPath === 'string' && defaultPath ? defaultPath : knownPath('home');
@@ -941,10 +973,12 @@ function createLocalFiles({
     focusWindow,
     switchDesktop,
     closeWindow,
+    parkWindow,
     dockWindow,
-    undockWindow,
-    sizeWindow,
-    undockAll,
+    releaseWindow,
+    releaseAll,
+    hideAll,
+    isDocked,
     dragIcon,
     absolute,
     paths,
@@ -975,16 +1009,16 @@ function registerLocalFiles({ ipcMain, trusted, files }) {
     'focus-window': files.focusWindow,
     'switch-desktop': files.switchDesktop,
     'close-window': files.closeWindow,
+    'park-window': files.parkWindow,
     'dock-window': files.dockWindow,
-    'undock-window': files.undockWindow,
-    'size-window': files.sizeWindow,
+    'release-window': files.releaseWindow,
     source: ({ path: file } = {}) => files.sourceFor(file),
     watch: ({ key, dirs } = {}) => files.watch(key, dirs),
     unwatch: ({ key } = {}) => files.unwatch(key),
     // A page (re)load: watches and docked windows from before it are let go.
     reset: async () => {
       files.unwatchAll();
-      await files.undockAll();
+      await files.releaseAll();
     },
   };
   for (const [name, handler] of Object.entries(handlers))

@@ -42,13 +42,13 @@ contextBridge.exposeInMainWorld('canvas', {
     focusWindow: (args) => ipcRenderer.invoke('canvas:files-focus-window', args),
     switchDesktop: (args) => ipcRenderer.invoke('canvas:files-switch-desktop', args),
     closeWindow: (args) => ipcRenderer.invoke('canvas:files-close-window', args),
+    parkWindow: (args) => ipcRenderer.invoke('canvas:files-park-window', args),
     dockWindow: (args) => ipcRenderer.invoke('canvas:files-dock-window', args),
-    undockWindow: (args) => ipcRenderer.invoke('canvas:files-undock-window', args),
-    sizeWindow: (args) => ipcRenderer.invoke('canvas:files-size-window', args),
-    onUndocked: (callback) => {
-      const handler = (_event, id) => callback(id);
-      ipcRenderer.on('canvas:files-undocked', handler);
-      return () => ipcRenderer.removeListener('canvas:files-undocked', handler);
+    releaseWindow: (args) => ipcRenderer.invoke('canvas:files-release-window', args),
+    onRepark: (callback) => {
+      const handler = () => callback();
+      ipcRenderer.on('canvas:files-repark', handler);
+      return () => ipcRenderer.removeListener('canvas:files-repark', handler);
     },
     source: (args) => ipcRenderer.invoke('canvas:files-source', args),
     watch: (args) => ipcRenderer.invoke('canvas:files-watch', args),

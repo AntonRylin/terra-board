@@ -58,8 +58,23 @@ const bindings = new Map<string, string>();
 export function bindAppWindow(frameId: string, windowId: string) {
   bindings.set(frameId, windowId);
 }
-export function releaseAppWindow(frameId: string) {
-  bindings.delete(frameId);
+/**
+ * Frames deleted from the board (or the board closing): their windows go back
+ * where and as they were before they joined it.
+ */
+export function releaseAppFrames(frameIds: Iterable<string>) {
+  const files = window.canvas?.files;
+  for (const frameId of frameIds) {
+    const windowId = bindings.get(frameId);
+    if (!windowId) continue;
+    bindings.delete(frameId);
+    void files?.releaseWindow({ id: windowId }).catch(() => {});
+  }
+}
+export const isAppWindowBound = (frameId: string, windowId: string) =>
+  bindings.get(frameId) === windowId;
+export function releaseAllAppFrames() {
+  releaseAppFrames([...bindings.keys()]);
 }
 
 const samePath = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();

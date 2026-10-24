@@ -12,7 +12,7 @@ import CanvasFiles, {
   type FilesView,
 } from './CanvasFiles';
 import { requestAppUse } from './CanvasApps';
-import { bindAppWindow } from './desktop-windows';
+import { bindAppWindow, releaseAllAppFrames, releaseAppFrames } from './desktop-windows';
 import {
   appFrameSize,
   appLabelHeight,
@@ -2097,6 +2097,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
     htmlTimer.current = window.setTimeout(captureWebCards, 600);
   };
   useEffect(() => () => window.clearTimeout(htmlTimer.current), []);
+  // Leaving the board: app windows on it go back as they were.
+  useEffect(() => () => releaseAllAppFrames(), [doc.board.id]);
   const activate = (o: CanvasObject, intent?: 'title') => {
     if (o.frameLink) {
       void openOriginalFrame(o).catch(error);
@@ -2383,6 +2385,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, Props>(function Whiteboard(
         }
       },
       edit: (edit) => {
+        // App frames deleted: their windows go back as they were.
+        if (edit.deleted.length) releaseAppFrames(edit.deleted);
         if (!syncingExternal.current) {
           queue.current!.enqueue(edit);
           // The other people on a cloud board see it now; sync stores it shortly after.

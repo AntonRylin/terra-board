@@ -191,15 +191,23 @@ export interface FilesBridge {
   focusWindow(args: { id: string; steps: number }): Promise<void>;
   switchDesktop(args: { steps: number }): Promise<void>;
   closeWindow(args: { id: string }): Promise<void>;
-  // rect: the frame's area in the page, in CSS pixels.
+  // App frames. rect: the frame's app area in the page, in CSS pixels; size:
+  // that area at 100% zoom.
+  parkWindow(args: {
+    id: string;
+    rect: { x: number; y: number; width: number; height: number };
+    size: { width: number; height: number };
+  }): Promise<void>;
   dockWindow(args: {
     id: string;
     rect: { x: number; y: number; width: number; height: number };
     activate?: boolean;
+    // Where (screen, CSS pixels) a real click started using it.
+    click?: { x: number; y: number } | null;
   }): Promise<void>;
-  undockWindow(args: { id: string }): Promise<void>;
-  sizeWindow(args: { id: string; width: number; height: number }): Promise<void>;
-  onUndocked(callback: (id: string) => void): () => void;
+  releaseWindow(args: { id: string }): Promise<void>;
+  // Terra's window moved, resized or came back: put app windows in place again.
+  onRepark(callback: () => void): () => void;
   source(args: { path: string }): Promise<FileSource>;
   watch(args: { key: string; dirs: string[] }): Promise<void>;
   unwatch(args: { key: string }): Promise<void>;

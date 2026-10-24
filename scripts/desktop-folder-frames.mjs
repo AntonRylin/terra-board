@@ -456,8 +456,9 @@ try {
     await sleep(1500);
     await screenshot('6-desktops.png');
 
-    // 12. A window put on the board shows live, docks over its frame while
-    // used, goes back when the board is clicked, and closes from the frame.
+    // 12. A window put on the board waits hidden behind Terra and shows live
+    // in its frame, docks over the frame while used, goes back behind when the
+    // board is clicked, and returns as it was when the frame is deleted.
     // Uses a small window of its own (scripts/fixtures/test-app-window.ps1).
     const report = join(root, 'test-app.json');
     const app = spawn(
@@ -548,49 +549,83 @@ try {
       });
       assert.ok(Math.abs(afterMove.x - beforeMove.x + 120) < 3, 'moved 120 units left');
       assert.ok(Math.abs(afterMove.y - beforeMove.y - 40) < 3, 'moved 40 units down');
-      // Use it: the real window moves over the frame.
-      // The window takes its frame's size (sharp picture), then a click in
-      // the frame lays it exactly over the frame's app area.
-      await sleep(1500);
-      const before = where();
+      // Not in use, the real window is parked: not owned by Terra, restored,
+      // at the frame's size and hidden behind Terra's window, and the frame's
+      // picture keeps changing with it.
       const dpr = await read('window.devicePixelRatio');
       const area = await rect(`${frameSel} .ca-body`);
+      const parked = await until(() => {
+        const w = where();
+        return w &&
+          w.owner === '0' &&
+          !w.minimized &&
+          Math.abs(w.visible.width - area.width * dpr) <= 3 &&
+          Math.abs(w.visible.height - area.height * dpr) <= 3 &&
+          (Math.abs(w.visible.x - home.visible.x) > 20 ||
+            Math.abs(w.visible.y - home.visible.y) > 20)
+          ? w
+          : null;
+      }, 'window parked behind Terra').catch((error) => {
+        console.error('Frame area', area, 'dpr', dpr, 'window', where());
+        throw error;
+      });
+      const picture = () =>
+        read(`(()=>{
+          const v = document.querySelector('${frameSel} video');
+          const c = document.createElement('canvas');
+          c.width = 48; c.height = 32;
+          c.getContext('2d').drawImage(v, 0, 0, 48, 32);
+          return c.toDataURL();
+        })()`);
+      const first = await picture();
+      await until(async () => (await picture()) !== first, 'picture follows the parked window');
+      // Using it: the click (made by the page, not a person) docks the window
+      // over the frame without passing a click on.
       await read(
         `document.querySelector('${frameSel} .ca-body').dispatchEvent(new MouseEvent('click', { bubbles: true }))`,
       );
       const docked = await until(() => {
         const w = where();
-        const moved =
-          Math.abs(w?.visible.x - before.visible.x) > 20 ||
-          Math.abs(w?.visible.y - before.visible.y) > 20;
         return w &&
-          moved &&
+          w.owner !== '0' &&
           Math.abs(w.visible.width - area.width * dpr) <= 3 &&
           Math.abs(w.visible.height - area.height * dpr) <= 3
           ? w
           : null;
-      }, 'window docked exactly over the frame').catch((error) => {
-        console.error('Frame area', area, 'dpr', dpr, 'window', where());
-        throw error;
-      });
+      }, 'window docked over the frame');
       assert.ok(await read(`!!document.querySelector('${frameSel}[data-live]')`));
-      // A click on the board gives it back where it was.
+      // Parked, it was directly behind Terra's window (now its owner).
+      assert.equal(parked.above, docked.owner, 'parked just behind Terra');
+      await sleep(400);
+      assert.equal(where().clicks, 0, 'no click passed on without a real cursor there');
+      // A click on the board parks it again.
       const s = await rect('.canvas-surface');
       await clickAt(s.x + s.width - 40, s.y + s.height - 160);
+      await until(() => where()?.owner === '0', 'window parked again');
+      assert.ok(await read(`!document.querySelector('${frameSel}[data-live]')`));
+      // Deleting the frame gives the window back as it was.
+      const name = await rect(`${frameSel} .ca-name`);
+      await clickAt(name.x + name.width / 2, name.y + name.height / 2);
+      await key('Delete', 'Delete', 46);
+      await until(
+        async () => !(await objects()).some((o) => o.id === appFrame.id),
+        'app frame deleted',
+      );
       const back = await until(() => {
         const w = where();
         return w &&
-          Math.abs(w.x - before.x) <= 2 &&
-          Math.abs(w.y - before.y) <= 2 &&
-          Math.abs(w.width - before.width) <= 2
+          w.owner === '0' &&
+          Math.abs(w.x - home.x) <= 2 &&
+          Math.abs(w.y - home.y) <= 2 &&
+          Math.abs(w.width - home.width) <= 2 &&
+          Math.abs(w.height - home.height) <= 2
           ? w
           : null;
-      }, 'window given back');
-      assert.ok(await read(`!document.querySelector('${frameSel}[data-live]')`));
-      // Close it from the frame.
-      await read(`document.querySelector('${frameSel} [aria-label^="Close "]').click()`);
-      await until(() => app.exitCode !== null, 'test app closed', 15000);
-      console.log('app frame', { home, before, docked, back });
+      }, 'window given back as it was').catch((error) => {
+        console.error('Home', home, 'window', where());
+        throw error;
+      });
+      console.log('app frame', { home, parked, docked, back });
     } finally {
       if (app.exitCode === null) app.kill();
     }

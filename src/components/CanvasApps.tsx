@@ -1,17 +1,18 @@
 // App frames (type 'file', kind 'app'): a running program's window on the
-// board. While nobody uses it, the board shows a live picture of the window
-// (captured by Windows, only while the frame is on screen). Using it lays the
-// real window exactly over the frame, owned by Terra's window, so typing,
-// scrolling and video are the app's own; any click back on the board hands
-// the window back to where it was. The board stores the program, never the
-// window or what it shows.
+// board. While nobody uses it, the real window waits hidden just behind
+// Terra's window and the frame shows a live picture of it (captured by
+// Windows, only while the frame is on screen). A click lays the real window
+// exactly over the frame, owned by Terra's window, so typing, scrolling and
+// video are the app's own; a click back on the board puts it behind again.
+// Deleting the frame, closing the board or Terra gives the window back as it
+// was. The board stores the program, never the window or what it shows.
 import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react';
 import { AppWindow, Check, MousePointerClick, Play, X } from 'lucide-react';
 import type { Camera, CanvasObject } from '../model';
 import { localToWorld } from '../canvas/transform';
 import { appLabelHeight, fileLinkLabel, type FileSource } from '../canvas/file-link';
 import { AppIcon } from './CanvasDesktops';
-import { appWindowFor, refreshDesktops, releaseAppWindow, useDesktops } from './desktop-windows';
+import { appWindowFor, isAppWindowBound, refreshDesktops, useDesktops } from './desktop-windows';
 import { useFileIcons } from './file-icons';
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
@@ -55,8 +56,9 @@ export function AppFrame({
       .catch(() => setExe(false));
   }, [files, sourceKey]);
   const windows = state?.supported ? state.windows : [];
+  // The window stays this frame's while it is on the board (scrolled out of
+  // view too); the board releases it when the frame is deleted or it closes.
   const win = appWindowFor(o.id, exe || null, windows);
-  useEffect(() => () => releaseAppWindow(o.id), [o.id]);
 
   // The live picture.
   const video = useRef<HTMLVideoElement>(null);
@@ -78,8 +80,8 @@ export function AppFrame({
           mandatory: {
             chromeMediaSource: 'desktop',
             chromeMediaSourceId: `window:${win.id}:0`,
-            maxWidth: 2560,
-            maxHeight: 1600,
+            maxWidth: 3840,
+            maxHeight: 2400,
             maxFrameRate: 30,
           },
         } as MediaTrackConstraints,
@@ -107,22 +109,53 @@ export function AppFrame({
     };
   }, [canCapture, win?.id]);
 
-  // Using the app: its real window over the frame.
+  // Where the real window is. Not in use, it is parked: hidden just behind
+  // Terra's window at the frame's size (at 100% zoom), so Windows keeps
+  // drawing it for the picture. In use, it lies exactly over the frame.
   const body = useRef<HTMLDivElement>(null);
   const [live, setLive] = useState<string | null>(null);
   const liveRef = useRef<string | null>(null);
   liveRef.current = live;
   const rotated = !!(o.rotation && Math.round(o.rotation) % 360);
-  const place = (activate: boolean) => {
+  const bodyHeight = Math.max(20, o.height - appLabelHeight);
+  const area = () => {
     const r = body.current?.getBoundingClientRect();
-    if (!files || !win || !r) return Promise.resolve();
-    return files.dockWindow({
-      id: win.id,
-      rect: { x: r.left, y: r.top, width: r.width, height: r.height },
-      activate,
-    });
+    return r && r.width > 0 && r.height > 0
+      ? { x: r.left, y: r.top, width: r.width, height: r.height }
+      : null;
   };
-  const use = () => {
+  const park = (id: string) => {
+    const rect = area();
+    if (!files || !rect) return Promise.resolve();
+    return files.parkWindow({ id, rect, size: { width: o.width, height: bodyHeight } });
+  };
+  const dock = (id: string, activate: boolean, click: { x: number; y: number } | null) => {
+    const rect = area();
+    if (!files || !rect) return Promise.resolve();
+    return files.dockWindow({ id, rect, activate, click });
+  };
+  // Parked when the frame (or its window) appears, and again after the board,
+  // the frame or Terra's window settles. A window someone minimized after it
+  // was parked here stays minimized until the frame is clicked.
+  const parkedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!files || !win || live) return;
+    if (win.minimized && parkedFor.current === win.id) return;
+    const first = parkedFor.current !== win.id;
+    const timer = window.setTimeout(
+      () => {
+        parkedFor.current = win.id;
+        void park(win.id)
+          .then(() => first && refreshDesktops(300))
+          .catch(() => {});
+      },
+      first ? 0 : 250,
+    );
+    return () => window.clearTimeout(timer);
+  }, [win?.id, win?.minimized, live, camera.x, camera.y, camera.zoom, o.x, o.y, o.width, o.height]);
+
+  // click: where on the screen a real click on the picture started it.
+  const use = (click: { x: number; y: number } | null) => {
     if (!files || !win || liveRef.current) return;
     if (rotated) {
       onError('Straighten the frame to use the app in it.');
@@ -130,72 +163,68 @@ export function AppFrame({
     }
     setLive(win.id);
     liveRef.current = win.id;
-    place(true).catch((error) => {
+    // At 100% the window already has the frame's size, so the click that
+    // started it goes on to what was clicked in the picture.
+    const pass =
+      click && capturing && !win.minimized && Math.abs(camera.zoom - 1) < 0.01 ? click : null;
+    dock(win.id, true, pass).catch((error) => {
       setLive(null);
+      liveRef.current = null;
       onError(message(error));
     });
   };
   const stop = () => {
-    if (!files || !live) return;
-    const id = live;
+    const id = liveRef.current;
+    if (!files || !id) return;
     setLive(null);
-    void files.undockWindow({ id }).catch(() => {});
+    liveRef.current = null;
+    void park(id).catch(() => {});
   };
-  // Any press on the board (outside the app's window) gives it back.
+  // Any press on the board (outside the app's window) puts it back behind.
   useEffect(() => {
-    if (!live || !files) return;
+    if (!live) return;
     const press = (event: globalThis.PointerEvent) => {
       if ((event.target as HTMLElement).closest(`[data-file-id="${o.id}"] .ca-keep`)) return;
       stop();
     };
-    const off = files.onUndocked((id) => id === live && setLive(null));
     window.addEventListener('pointerdown', press, true);
-    return () => {
-      off();
-      window.removeEventListener('pointerdown', press, true);
-    };
+    return () => window.removeEventListener('pointerdown', press, true);
   }, [live]);
-  // Not in use, the window keeps its frame's size (at 100% zoom), so the
-  // picture is the window pixel for pixel rather than stretched.
-  const bodyHeight = Math.max(20, o.height - appLabelHeight);
-  useEffect(() => {
-    if (!files || !win || live || win.minimized) return;
-    const scale = window.devicePixelRatio || 1;
-    if (
-      Math.abs(win.width - o.width * scale) <= 2 &&
-      Math.abs(win.height - bodyHeight * scale) <= 2
-    )
-      return;
-    const timer = window.setTimeout(
-      () =>
-        void files
-          .sizeWindow({ id: win.id, width: o.width, height: bodyHeight })
-          .then(() => refreshDesktops(300))
-          .catch(() => {}),
-      400,
-    );
-    return () => window.clearTimeout(timer);
-  }, [win?.id, win?.width, win?.height, win?.minimized, live, o.width, bodyHeight]);
-  // The frame moved, resized or the board zoomed while in use: follow it.
+  // In use while the frame moves or the board zooms: the window follows.
   useEffect(() => {
     if (!live) return;
-    const frame = requestAnimationFrame(() => void place(false).catch(() => {}));
+    const frame = requestAnimationFrame(() => void dock(live, false, null).catch(() => {}));
     return () => cancelAnimationFrame(frame);
   }, [live, camera.x, camera.y, camera.zoom, o.x, o.y, o.width, o.height]);
-  // Gone from the board, or its window closed: hand it back.
+  // Terra's window moved, resized or came back from being minimized.
+  useEffect(
+    () =>
+      files?.onRepark(() => {
+        if (liveRef.current) void dock(liveRef.current, false, null).catch(() => {});
+        else if (win) void park(win.id).catch(() => {});
+      }),
+    [files, win?.id, o.x, o.y, o.width, o.height],
+  );
+  // Its window closed while in use.
   useEffect(() => {
-    if (live && win?.id !== live) stop();
+    if (live && win?.id !== live) {
+      setLive(null);
+      liveRef.current = null;
+    }
   }, [win?.id]);
+  // Scrolled out of view or the board closing while in use: behind Terra again.
   useEffect(
     () => () => {
-      if (liveRef.current) void files?.undockWindow({ id: liveRef.current }).catch(() => {});
+      // Unless the board already gave the window back (deleted or closing).
+      if (liveRef.current && isAppWindowBound(o.id, liveRef.current))
+        void park(liveRef.current).catch(() => {});
     },
     [],
   );
   // The board's own double-click (see Whiteboard activate) asks to use it.
   useEffect(() => {
     const request = (event: Event) => {
-      if ((event as CustomEvent<string>).detail === o.id) use();
+      if ((event as CustomEvent<string>).detail === o.id) use(null);
     };
     window.addEventListener('terra-use-app', request);
     return () => window.removeEventListener('terra-use-app', request);
@@ -263,7 +292,7 @@ export function AppFrame({
             <AppIcon exe={win.exe} size={56} zoom={camera.zoom} />
             <p>
               {win.minimized
-                ? `${name} is minimized. Use it to bring it back.`
+                ? `${name} is minimized. Click to show it here.`
                 : captureError
                   ? `Windows didn’t share a picture of ${name} (${captureError}).`
                   : name}
@@ -307,7 +336,7 @@ export function AppFrame({
       onClick={(event) => {
         const target = event.target as HTMLElement;
         if (!win || target.closest('button') || !target.closest('.ca-body')) return;
-        use();
+        use(event.isTrusted ? { x: event.screenX, y: event.screenY } : null);
       }}
       onContextMenu={(event) => {
         event.preventDefault();
@@ -338,7 +367,11 @@ export function AppFrame({
                 <Check size={14} />
               </button>
             ) : (
-              <button title="Use the app (or click it)" aria-label="Use the app" onClick={use}>
+              <button
+                title="Use the app (or click it)"
+                aria-label="Use the app"
+                onClick={() => use(null)}
+              >
                 <MousePointerClick size={14} />
               </button>
             )}

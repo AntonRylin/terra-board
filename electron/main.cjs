@@ -1381,16 +1381,35 @@ app
           width: Math.round(rect.width),
           height: Math.round(rect.height),
         };
-        const physical =
-          process.platform === 'win32' ? require('electron').screen.dipToScreenRect(win, dip) : dip;
-        return { owner: win.getNativeWindowHandle().readBigUInt64LE(0).toString(), ...physical };
+        const toScreen = (r) =>
+          process.platform === 'win32' ? require('electron').screen.dipToScreenRect(win, r) : r;
+        return {
+          owner: win.getNativeWindowHandle().readBigUInt64LE(0).toString(),
+          ...toScreen(dip),
+          // Terra's page area, where a parked app window stays hidden.
+          content: toScreen(bounds),
+        };
       },
+      screenPoint: (point) =>
+        process.platform === 'win32'
+          ? require('electron').screen.dipToScreenPoint({ x: point.x, y: point.y })
+          : point,
     });
-    // A docked app window belongs to Terra's window while it is used: hand it
-    // back before that window moves, minimizes or closes.
-    for (const event of ['minimize', 'move', 'resize', 'enter-full-screen', 'leave-full-screen'])
-      win.on(event, () => void localFiles.undockAll());
-    win.webContents.on('render-process-gone', () => void localFiles.undockAll());
+    // App windows on the board follow Terra's window: minimized with it, and
+    // put back in place (behind it, or over their frame) once it settles after
+    // a move, resize or restore.
+    let repark = null;
+    const reparkSoon = () => {
+      clearTimeout(repark);
+      repark = setTimeout(() => {
+        if (win && !win.isDestroyed() && !win.isMinimized())
+          win.webContents.send('canvas:files-repark');
+      }, 200);
+    };
+    win.on('minimize', () => void localFiles.hideAll());
+    for (const event of ['restore', 'move', 'resize', 'enter-full-screen', 'leave-full-screen'])
+      win.on(event, reparkSoon);
+    win.webContents.on('render-process-gone', () => void localFiles.releaseAll());
     registerLocalFiles({ ipcMain, trusted, files: localFiles });
     ipcMain.handle('canvas:open-folder', async (e, which) => {
       trusted(e);
@@ -1459,7 +1478,7 @@ app
     ipcMain.on('canvas:close-ready', async (e) => {
       trusted(e);
       // Windows destroys owned windows with their owner: give app windows back first.
-      await localFiles?.undockAll().catch(() => {});
+      await localFiles?.releaseAll().catch(() => {});
       closed = true;
       win.close();
     });

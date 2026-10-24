@@ -92,11 +92,16 @@ export function DesktopsCard({
     { label: 'Switch to window', icon: <MonitorUp />, action: () => focus(w) },
     ...(w.exe
       ? [
-          {
-            label: 'Put window on the board',
-            icon: <AppWindow />,
-            action: () => addAppFrame(w),
-          },
+          // Terra's own window can't sit inside itself.
+          ...(/[\\/]Terra Board\.exe$/i.test(w.exe)
+            ? []
+            : [
+                {
+                  label: 'Put window on the board',
+                  icon: <AppWindow />,
+                  action: () => addAppFrame(w),
+                },
+              ]),
           {
             label: 'Add app icon to board',
             icon: <Link2 />,
