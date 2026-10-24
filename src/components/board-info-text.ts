@@ -114,17 +114,17 @@ export function boardPlace(input: PlaceInput): BoardPlace | null {
 export function placeText(place: BoardPlace) {
   switch (place.kind) {
     case 'local':
-      return 'Only on this computer';
+      return 'Local board';
     case 'kept':
-      return 'Kept on this computer — removed from the cloud';
+      return 'Local board, removed from the cloud';
     case 'library':
-      return 'In the cloud — synced with your library';
+      return 'Cloud board, synced to your devices';
     case 'owner':
       return place.board || !place.folder
-        ? 'In the cloud — shared by you'
-        : `In the cloud — shared by you through the folder “${place.folder.name}”`;
+        ? 'Cloud board, shared by you'
+        : `Cloud board, shared through the folder “${place.folder.name}”`;
     case 'received':
-      return `Shared with you by ${place.owner} — you can ${place.role}`;
+      return `Shared with you by ${place.owner}, you can ${place.role}`;
   }
 }
 

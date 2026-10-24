@@ -52,7 +52,7 @@ function Where({ item }: { item: PlacedBoard }) {
   return (
     <span className="board-where" data-group="local">
       <HardDrive size={14} />
-      This computer
+      Local
     </span>
   );
 }
@@ -177,7 +177,7 @@ function BoardAccess({
       <div className="st-callout">
         <span>
           Remove “{name}” from the cloud? Everyone you shared it with loses it and the cloud copy is
-          deleted. It stays on this computer.
+          deleted. It stays here as a local board.
         </span>
         <span className="st-callout-actions">
           <button type="button" className="st-button" onClick={() => setRemoving(false)}>
@@ -320,8 +320,8 @@ function BoardDetails({
       <div className="board-access-head">
         <span>
           {item.place.kind === 'kept'
-            ? 'You removed this board from the cloud. Nobody else can open it.'
-            : 'Nobody else can open this board. It is not uploaded anywhere.'}
+            ? 'Removed from the cloud. Only you can open it.'
+            : 'Local board. Only you can open it, and it isn’t synced.'}
         </span>
         {signedIn && onManageShare ? (
           <button
@@ -402,7 +402,7 @@ export function BoardsSettings({
   const signedIn = status?.account.state === 'signedIn';
   const filters: { id: Filter; label: string; count: number }[] = [
     { id: 'all', label: 'All', count: all.length },
-    { id: 'local', label: 'This computer', count: counts.local },
+    { id: 'local', label: 'Local', count: counts.local },
     { id: 'cloud', label: 'Cloud', count: counts.cloud },
     { id: 'received', label: 'Shared with you', count: counts.received },
   ];
@@ -412,8 +412,7 @@ export function BoardsSettings({
       {status?.configured && !signedIn && (
         <div className="st-callout boards-signin">
           <span>
-            Sign in to put boards in the cloud and share them. Boards you don't share stay on this
-            computer.
+            Sign in to sync boards to the cloud and share them. Your local boards stay local.
           </span>
           {onSignIn && (
             <button type="button" className="st-button primary" onClick={onSignIn}>
@@ -479,7 +478,7 @@ export function BoardsSettings({
               : filter === 'received'
                 ? 'Nobody has shared a board with you yet.'
                 : filter === 'cloud'
-                  ? 'No boards in the cloud yet. Share a board to put it there.'
+                  ? 'No cloud boards yet. Share a board to put it in the cloud.'
                   : 'No boards here.'}
           </p>
         )}

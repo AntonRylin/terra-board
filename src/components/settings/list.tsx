@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { ChevronRight, MoreHorizontal } from 'lucide-react';
 import { ContextMenu, type MenuItem } from '../Dialogs';
 
@@ -65,21 +65,55 @@ export function ListRow({
         )}
         {menu && <MoreMenu items={menu} label="More" />}
       </div>
-      {open && children && <div className="st-list-detail">{children}</div>}
+      {children && <Collapse open={!!open}>{children}</Collapse>}
+    </div>
+  );
+}
+
+// Opens and closes by sliding its height (grid rows 0fr ↔ 1fr). The content stays mounted
+// while it closes, so the slide can finish, and is dropped afterwards.
+function Collapse({ open, children }: { open: boolean; children: ReactNode }) {
+  const [mounted, setMounted] = useState(open);
+  const [shown, setShown] = useState(open);
+  useEffect(() => {
+    if (open) {
+      setMounted(true);
+      // One frame closed first, so the opening slides too.
+      const frame = requestAnimationFrame(() => requestAnimationFrame(() => setShown(true)));
+      return () => cancelAnimationFrame(frame);
+    }
+    setShown(false);
+    const timer = setTimeout(() => setMounted(false), 260);
+    return () => clearTimeout(timer);
+  }, [open]);
+  if (!mounted) return null;
+  return (
+    <div className="st-collapse" data-open={shown || undefined}>
+      <div className="st-collapse-inner">
+        <div className="st-list-detail">{children}</div>
+      </div>
     </div>
   );
 }
 
 // "⋯": the actions a row has besides opening it.
-export function MoreMenu({ items, label }: { items: (MenuItem | null)[]; label: string }) {
+export function MoreMenu({
+  items,
+  label,
+  buttonClass = 'st-icon-button',
+}: {
+  items: (MenuItem | null)[];
+  label: string;
+  buttonClass?: string;
+}) {
   const [at, setAt] = useState<{ x: number; y: number } | null>(null);
   // No actions: an empty slot of the same width keeps the rows' values lined up.
-  if (!items.some(Boolean)) return <span className="st-icon-button" aria-hidden="true" />;
+  if (!items.some(Boolean)) return <span className={buttonClass} aria-hidden="true" />;
   return (
     <>
       <button
         type="button"
-        className="st-icon-button"
+        className={buttonClass}
         aria-label={label}
         title={label}
         aria-haspopup="menu"

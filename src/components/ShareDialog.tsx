@@ -1,8 +1,21 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Check, Copy, X } from 'lucide-react';
+import {
+  Check,
+  CloudOff,
+  Copy,
+  Eye,
+  Folder as FolderIcon,
+  LogOut,
+  Pencil,
+  UserMinus,
+  UserPlus,
+  UserX,
+} from 'lucide-react';
 import type { CloudStatus, SharePerson, ShareRole } from '../bridge';
 import { cloudApi } from '../bridge';
 import type { Library } from '../model';
+import { AppIcon } from './Launcher';
+import { Avatar, MoreMenu } from './settings/list';
 import './live-share.css';
 
 export function useCloudStatus() {
@@ -45,44 +58,80 @@ export function RoleSwitch({
   );
 }
 
-export function PeopleList({
-  title,
-  people,
+type Step = 'people' | 'invite' | 'code' | 'stop' | 'remove' | 'leave';
+
+// Someone with access: initials, name, what they can do, and a ⋯ menu to remove them.
+function PersonRow({
+  person,
   busy,
   onRole,
   onRemove,
 }: {
-  title: string;
-  people: SharePerson[];
+  person: SharePerson;
   busy: boolean;
-  onRole: (person: SharePerson, role: ShareRole) => void;
-  onRemove: (person: SharePerson) => void;
+  onRole: (role: ShareRole) => void;
+  onRemove: () => void;
 }) {
-  if (!people.length) return null;
   return (
-    <div className="live-list">
-      <h3>{title}</h3>
-      {people.map((p) => (
-        <div className="live-person" key={p.id}>
-          <span className="live-name">{p.name}</span>
-          <RoleSwitch value={p.role} label={`${p.name} can`} onChange={(next) => onRole(p, next)} />
-          <button
-            type="button"
-            className="icon-button"
-            aria-label={`Remove ${p.name}`}
-            title="Remove access"
-            disabled={busy}
-            onClick={() => onRemove(p)}
-          >
-            <X size={15} />
-          </button>
-        </div>
-      ))}
+    <div className="share-person">
+      <Avatar name={person.name} size={32} />
+      <span className="share-person-name">{person.name}</span>
+      <RoleSwitch value={person.role} label={`${person.name} can`} onChange={onRole} />
+      <MoreMenu
+        label={`More for ${person.name}`}
+        buttonClass="icon-button"
+        items={[
+          {
+            label: 'Remove access',
+            icon: <UserMinus />,
+            danger: true,
+            disabled: busy,
+            action: onRemove,
+          },
+        ]}
+      />
     </div>
   );
 }
 
-// Who can see a folder or board, invites for more people, and leaving things others shared.
+// A yes/no step inside the dialog for something that can't be undone.
+function Confirm({
+  text,
+  action,
+  busy,
+  error,
+  onBack,
+  onConfirm,
+}: {
+  text: string;
+  action: string;
+  busy: boolean;
+  error: string;
+  onBack: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <>
+      <p className="share-text">{text}</p>
+      {error && (
+        <p className="live-error" role="alert">
+          {error}
+        </p>
+      )}
+      <div className="dialog-actions">
+        <button type="button" className="button" disabled={busy} onClick={onBack}>
+          Cancel
+        </button>
+        <button type="button" className="button danger" disabled={busy} onClick={onConfirm}>
+          {busy ? 'Working…' : action}
+        </button>
+      </div>
+    </>
+  );
+}
+
+// Sharing a folder or board, one step at a time: who has access, inviting someone, the
+// invite code, and confirm steps for stopping or leaving.
 export function ShareDialog({
   kind,
   id,
@@ -99,7 +148,8 @@ export function ShareDialog({
   onSignIn?: () => void;
 }) {
   const cloud = cloudApi;
-  const [people, setPeople] = useState<SharePerson[]>([]);
+  const [step, setStep] = useState<Step>('people');
+  const [people, setPeople] = useState<SharePerson[] | null>(null);
   const [shareId, setShareId] = useState<string | null>(null);
   // A board in a shared folder: the people who reach it through the folder.
   const [folderAccess, setFolderAccess] = useState<{
@@ -112,12 +162,12 @@ export function ShareDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
-  const [removing, setRemoving] = useState(false);
   const item =
     kind === 'folder'
       ? library.folders.find((f) => f.id === id)
       : library.boards.find((b) => b.id === id);
   const board = kind === 'board' ? library.boards.find((b) => b.id === id) : undefined;
+  const itemName = item?.name || (kind === 'folder' ? 'this folder' : 'this board');
   const mark =
     kind === 'folder'
       ? library.sharing?.folders[id]
@@ -131,9 +181,12 @@ export function ShareDialog({
     library.sharing?.folders[board.folderId]?.shared === 'owner'
       ? library.folders.find((f) => f.id === board.folderId)
       : undefined;
+  const inCloud =
+    !localOnly &&
+    (!!mark || !!sharedFolder || (!!status?.identity && !!status?.library && kind === 'board'));
 
   const load = useCallback(async () => {
-    if (!cloud || !status?.identity || received) return;
+    if (!cloud || !status?.identity || received) return setPeople([]);
     try {
       const result = await cloud.sharePeople(kind, id);
       setShareId(result.shareId);
@@ -145,6 +198,7 @@ export function ShareDialog({
       );
     } catch (e) {
       setError(message(e));
+      setPeople([]);
     }
   }, [cloud, status?.identity, kind, id, received, sharedFolder?.id]);
   useEffect(() => {
@@ -156,11 +210,17 @@ export function ShareDialog({
     setError('');
     try {
       await job();
+      return true;
     } catch (e) {
       setError(message(e));
+      return false;
     } finally {
       setBusy(false);
     }
+  };
+  const go = (next: Step) => {
+    setError('');
+    setStep(next);
   };
 
   if (!cloud) return <p className="quiet">Sharing works in the desktop app.</p>;
@@ -169,38 +229,76 @@ export function ShareDialog({
   if (!status.identity && status.account.state === 'signedOut')
     return <SignInFirst onSignIn={onSignIn} onClose={onClose} what="share" />;
 
+  const heading = (
+    <div className="share-item">
+      {board ? (
+        <AppIcon board={board} />
+      ) : (
+        <span className="share-item-folder">
+          <FolderIcon size={18} />
+        </span>
+      )}
+      <span className="share-item-text">
+        <strong>{itemName}</strong>
+        <span>
+          {received
+            ? `Shared by ${mark.owner || 'someone'}`
+            : inCloud
+              ? kind === 'folder'
+                ? 'Cloud folder'
+                : 'Cloud'
+              : 'Local'}
+        </span>
+      </span>
+    </div>
+  );
+
   if (received) {
     const share = status.sharedWithMe.find(
       (s) =>
         (s.kind === 'folder' && (s.targetId === id || s.targetId === board?.folderId)) ||
         (s.kind === 'board' && s.targetId === id),
     );
+    if (step === 'leave' && share)
+      return (
+        <Confirm
+          text={`Leave “${itemName}”? It disappears from your devices. ${mark.owner || 'The owner'} can invite you again.`}
+          action="Leave"
+          busy={busy}
+          error={error}
+          onBack={() => go('people')}
+          onConfirm={() => void run(() => cloud.leave(share.shareId)).then((ok) => ok && onClose())}
+        />
+      );
     return (
       <>
-        <p className="quiet">
-          {mark.owner || 'Someone'} shared {kind === 'folder' ? 'this folder' : 'this board'} with
-          you. You can {mark.shared === 'edit' ? 'view and edit it' : 'view it'}.
-        </p>
+        {heading}
+        <div className="share-person">
+          <Avatar name={mark.owner || 'Someone'} size={32} />
+          <span className="share-person-name">
+            {mark.owner || 'Someone'}
+            <small>Owner</small>
+          </span>
+          <span className="share-person-role">
+            {mark.shared === 'edit' ? 'You can edit' : 'You can view'}
+          </span>
+        </div>
         {error && <p className="live-error">{error}</p>}
         <div className="dialog-actions">
-          <button type="button" className="button" onClick={onClose}>
-            Close
-          </button>
           {share && (
             <button
               type="button"
-              className="button"
+              className="button share-left"
               disabled={busy}
-              onClick={() =>
-                run(async () => {
-                  await cloud.leave(share.shareId);
-                  onClose();
-                })
-              }
+              onClick={() => go('leave')}
             >
+              <LogOut size={15} />
               Leave
             </button>
           )}
+          <button type="button" className="button primary" onClick={onClose}>
+            Done
+          </button>
         </div>
       </>
     );
@@ -210,114 +308,125 @@ export function ShareDialog({
   if (status.account.state !== 'signedIn')
     return <SignInFirst onSignIn={onSignIn} onClose={onClose} what="share" />;
 
-  if (removing)
+  if (step === 'remove')
+    return (
+      <Confirm
+        text={`Remove “${itemName}” from the cloud? Everyone you shared it with loses it, and the cloud copy is deleted. It stays on this computer as a local board.`}
+        action="Remove from cloud"
+        busy={busy}
+        error={error}
+        onBack={() => go('people')}
+        onConfirm={() =>
+          void run(async () => {
+            await cloud.removeFromCloud(id);
+            setShareId(null);
+            setPeople([]);
+            setStep('people');
+          })
+        }
+      />
+    );
+  if (step === 'stop')
+    return (
+      <Confirm
+        text={`Stop sharing “${itemName}”? Everyone you invited loses access, and it leaves their devices on their next sync. It stays in your cloud.`}
+        action="Stop sharing"
+        busy={busy}
+        error={error}
+        onBack={() => go('people')}
+        onConfirm={() =>
+          void run(async () => {
+            await cloud.stopSharing(shareId!);
+            setShareId(null);
+            setPeople([]);
+            setStep('people');
+          })
+        }
+      />
+    );
+
+  // The name defaults to the account's; people may set another.
+  const needsName = !status.identity && !status.account.name;
+  if (step === 'invite')
     return (
       <>
-        <p className="quiet">
-          Remove “{item?.name || 'this board'}” from the cloud? People you shared it with lose it,
-          and its copy on the server is deleted. The board stays on this computer, and changes to it
-          are no longer synced.
+        <p className="share-text">
+          {kind === 'folder'
+            ? `Invite someone to “${itemName}”. Boards in this folder are shared with them; your other boards stay private.`
+            : `Invite someone to “${itemName}”. Your other boards stay private.`}
         </p>
+        <div className="share-roles" role="radiogroup" aria-label="They can">
+          {(
+            [
+              ['edit', 'Can edit', 'Add and change things', Pencil],
+              ['view', 'Can view', 'Look and follow along', Eye],
+            ] as const
+          ).map(([value, title, text, Icon]) => (
+            <button
+              key={value}
+              type="button"
+              role="radio"
+              aria-checked={role === value}
+              onClick={() => setRole(value)}
+            >
+              <Icon size={18} />
+              <span>
+                <strong>{title}</strong>
+                <span>{text}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+        {needsName && (
+          <label className="share-name">
+            Your name, shown to the people you invite
+            <input
+              value={name}
+              maxLength={60}
+              autoFocus
+              placeholder="Your name"
+              onChange={(e) => setName(e.target.value)}
+            />
+          </label>
+        )}
+        {localOnly && (
+          <p className="live-note">This is a local board. Inviting someone puts it in the cloud.</p>
+        )}
         {error && (
           <p className="live-error" role="alert">
             {error}
           </p>
         )}
         <div className="dialog-actions">
-          <button
-            type="button"
-            className="button"
-            disabled={busy}
-            onClick={() => setRemoving(false)}
-          >
-            Cancel
+          <button type="button" className="button" disabled={busy} onClick={() => go('people')}>
+            Back
           </button>
           <button
             type="button"
             className="button primary"
-            disabled={busy}
+            disabled={busy || (needsName && !name.trim())}
             onClick={() =>
-              run(async () => {
-                await cloud.removeFromCloud(id);
-                setRemoving(false);
-                setShareId(null);
-                setPeople([]);
-                setCode('');
+              void run(async () => {
+                setCode(await cloud.invite(kind, id, role, needsName ? name.trim() : undefined));
+                await load();
+                setStep('code');
               })
             }
           >
-            {busy ? 'Removing…' : 'Remove from cloud'}
+            {busy ? 'Creating…' : 'Create invite code'}
           </button>
         </div>
       </>
     );
 
-  // The name defaults to the account's; people may set another.
-  const needsName = !status.identity && !status.account.name;
-  return (
-    <>
-      <p className="quiet">
-        {kind === 'folder'
-          ? `Invite people to “${item?.name || 'this folder'}”. Boards you move into this folder are shared too; your other boards stay private.`
-          : `Invite people to “${item?.name || 'this board'}”. Your other boards stay private.`}
-      </p>
-      {localOnly && (
-        <p className="live-note">
-          This board is only on this computer. Creating an invite code puts it in the cloud again.
+  if (step === 'code')
+    return (
+      <>
+        <p className="share-text">
+          Send this code to the person you want to invite. In Terra Board they choose Join with a
+          code. It works once, for 7 days.
         </p>
-      )}
-      {needsName && (
-        <label className="share-name">
-          Your name, shown to the people you invite
-          <input
-            value={name}
-            maxLength={60}
-            autoFocus
-            placeholder="Your name"
-            onChange={(e) => setName(e.target.value)}
-          />
-        </label>
-      )}
-      <PeopleList
-        title="People with access"
-        people={people}
-        busy={busy}
-        onRole={(p, next) =>
-          run(async () => {
-            await cloud.setPersonRole(shareId!, p.id, next);
-            await load();
-          })
-        }
-        onRemove={(p) =>
-          run(async () => {
-            await cloud.removePerson(shareId!, p.id);
-            await load();
-          })
-        }
-      />
-      <PeopleList
-        title={`Through the folder “${sharedFolder?.name || 'Folder'}”`}
-        people={folderAccess.people}
-        busy={busy}
-        onRole={(p, next) =>
-          run(async () => {
-            await cloud.setPersonRole(folderAccess.shareId!, p.id, next);
-            await load();
-          })
-        }
-        onRemove={(p) =>
-          run(async () => {
-            await cloud.removePerson(folderAccess.shareId!, p.id);
-            await load();
-          })
-        }
-      />
-      <div className="live-row">
-        <span>Invite someone who can</span>
-        <RoleSwitch value={role} onChange={setRole} label="Invited person can" />
-      </div>
-      {code ? (
-        <div className="share-code">
+        <div className="share-code-big">
           <code>{code.slice(0, 5) + '-' + code.slice(5)}</code>
           <button
             type="button"
@@ -332,60 +441,96 @@ export function ShareDialog({
             {copied ? <Check size={15} /> : <Copy size={15} />}
             {copied ? 'Copied' : 'Copy'}
           </button>
-          <p className="live-note">
-            Send this code to one person. In Terra Board they choose “Join with a code”. It works
-            once, for 7 days.
-          </p>
         </div>
-      ) : null}
+        <p className="share-hint">
+          They can {role === 'edit' ? 'edit' : 'view'} “{itemName}”.
+        </p>
+        <div className="dialog-actions">
+          <button type="button" className="button" onClick={() => go('invite')}>
+            Invite another
+          </button>
+          <button type="button" className="button primary" onClick={() => go('people')}>
+            Done
+          </button>
+        </div>
+      </>
+    );
+
+  const changeRole = (share: string, p: SharePerson, next: ShareRole) =>
+    void run(async () => {
+      await cloud.setPersonRole(share, p.id, next);
+      await load();
+    });
+  const removePerson = (share: string, p: SharePerson) =>
+    void run(async () => {
+      await cloud.removePerson(share, p.id);
+      await load();
+    });
+  const nobody = people !== null && !people.length && !folderAccess.people.length;
+  return (
+    <>
+      <div className="share-head">
+        {heading}
+        <MoreMenu
+          label="More sharing options"
+          buttonClass="icon-button"
+          items={[
+            shareId ? { label: 'Stop sharing…', icon: <UserX />, action: () => go('stop') } : null,
+            kind === 'board' && status.identity && inCloud
+              ? {
+                  label: 'Remove from cloud…',
+                  icon: <CloudOff />,
+                  danger: true,
+                  action: () => go('remove'),
+                }
+              : null,
+          ]}
+        />
+      </div>
+      <h3 className="share-section">People with access</h3>
+      {people === null ? (
+        <p className="share-empty">Loading…</p>
+      ) : nobody ? (
+        <p className="share-empty">Only you. Invite someone to work on it together.</p>
+      ) : (
+        <>
+          {people.map((p) => (
+            <PersonRow
+              key={p.id}
+              person={p}
+              busy={busy}
+              onRole={(next) => changeRole(shareId!, p, next)}
+              onRemove={() => removePerson(shareId!, p)}
+            />
+          ))}
+          {folderAccess.people.length > 0 && (
+            <>
+              <h3 className="share-section">Through the folder “{sharedFolder?.name}”</h3>
+              {folderAccess.people.map((p) => (
+                <PersonRow
+                  key={p.id}
+                  person={p}
+                  busy={busy}
+                  onRole={(next) => changeRole(folderAccess.shareId!, p, next)}
+                  onRemove={() => removePerson(folderAccess.shareId!, p)}
+                />
+              ))}
+            </>
+          )}
+        </>
+      )}
       {error && (
         <p className="live-error" role="alert">
           {error}
         </p>
       )}
       <div className="dialog-actions">
-        {kind === 'board' && status.identity && !localOnly && (
-          <button
-            type="button"
-            className="button"
-            disabled={busy}
-            onClick={() => {
-              setError('');
-              setRemoving(true);
-            }}
-          >
-            Remove from cloud
-          </button>
-        )}
-        {shareId && (
-          <button
-            type="button"
-            className="button"
-            disabled={busy}
-            onClick={() =>
-              run(async () => {
-                await cloud.stopSharing(shareId);
-                setShareId(null);
-                setPeople([]);
-                setCode('');
-              })
-            }
-          >
-            Stop sharing
-          </button>
-        )}
-        <button
-          type="button"
-          className="button primary"
-          disabled={busy || (needsName && !name.trim())}
-          onClick={() =>
-            run(async () => {
-              setCode(await cloud.invite(kind, id, role, needsName ? name.trim() : undefined));
-              await load();
-            })
-          }
-        >
-          {busy ? 'Working…' : code ? 'New invite code' : 'Create invite code'}
+        <button type="button" className="button" onClick={onClose}>
+          Done
+        </button>
+        <button type="button" className="button primary" onClick={() => go('invite')}>
+          <UserPlus size={15} />
+          Invite
         </button>
       </div>
     </>

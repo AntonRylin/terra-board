@@ -111,8 +111,7 @@ export const sections: Section[] = [
     label: 'Boards',
     group: 'Data',
     icon: LayoutGrid,
-    subtitle:
-      'Which boards are only on this computer, which are in the cloud, and who can open them.',
+    subtitle: 'Local and cloud boards, and who can open them.',
   },
   {
     id: 'cloud',
@@ -314,8 +313,7 @@ export const rows = {
   boardsList: {
     section: 'boards',
     title: 'Your boards',
-    description:
-      'Every board, whether it is only on this computer or in the cloud, and who can open it.',
+    description: 'Every board, local or cloud, and who can open it.',
     keywords: 'boards local cloud private shared people access revoke remove role edit view',
   },
   accountDelete: {

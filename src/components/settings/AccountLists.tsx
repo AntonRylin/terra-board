@@ -165,11 +165,11 @@ export function BoardSummary({
   const lines: { group: PlaceGroup; label: string; icon: ReactNode; count: number }[] = [
     {
       group: 'local',
-      label: 'On this computer',
+      label: 'Local',
       icon: <HardDrive size={18} />,
       count: counts.local,
     },
-    { group: 'cloud', label: 'In the cloud', icon: <Cloud size={18} />, count: counts.cloud },
+    { group: 'cloud', label: 'Cloud', icon: <Cloud size={18} />, count: counts.cloud },
     {
       group: 'received',
       label: 'Shared with you',

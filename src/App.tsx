@@ -619,7 +619,7 @@ export default function App() {
     library.sharing?.boards[b.id] ||
     (b.folderId ? library.sharing?.folders[b.folderId] : undefined);
   const shareItem = (shareKind: 'folder' | 'board', id: string, received: boolean): MenuItem => ({
-    label: received ? 'Shared with you…' : 'Invite over cloud…',
+    label: received ? 'Shared with you…' : 'Share…',
     icon: <Users />,
     action: () => ask({ kind: 'share', shareKind, id }),
   });
@@ -891,7 +891,7 @@ export default function App() {
     help: 'Make yourself at home',
     'confirm-trash': 'Move to Trash?',
     live: 'Share over Wi-Fi',
-    share: 'Invite over cloud',
+    share: 'Share',
     join: 'Join with a code',
     miro: 'Import from Miro',
     settings: 'Settings',

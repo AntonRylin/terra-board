@@ -1425,3 +1425,28 @@ span.st-icon-button {
 span.st-icon-button:hover {
   background: none;
 }
+.st-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 200ms ease;
+}
+.st-collapse[data-open] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+.st-collapse-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+.st-list-row[data-open] > .st-list-line .st-list-main {
+  border-radius: 13px 13px 0 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .st-collapse,
+  .st-list-chevron {
+    transition: none;
+  }
+}

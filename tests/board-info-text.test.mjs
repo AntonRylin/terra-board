@@ -68,12 +68,12 @@ const place = (over) =>
 
 test('boardPlace reads where a board lives', () => {
   assert.equal(place({ configured: undefined }), null, 'unknown until the cloud status loads');
-  assert.equal(placeText(place({ configured: false, librarySync: true })), 'Only on this computer');
-  assert.equal(placeText(place({})), 'Only on this computer');
+  assert.equal(placeText(place({ configured: false, librarySync: true })), 'Local board');
+  assert.equal(placeText(place({})), 'Local board');
   assert.equal(place({ librarySync: true, syncs: undefined }), null);
   assert.equal(
     placeText(place({ librarySync: true, syncs: true })),
-    'In the cloud — synced with your library',
+    'Cloud board, synced to your devices',
   );
   assert.equal(
     placeText(
@@ -83,11 +83,11 @@ test('boardPlace reads where a board lives', () => {
         library: library({ boards: {}, folders: {}, local: ['b1'] }),
       }),
     ),
-    'Kept on this computer — removed from the cloud',
+    'Local board, removed from the cloud',
   );
   assert.equal(
     placeText(place({ library: library({ boards: { b1: { shared: 'owner' } }, folders: {} }) })),
-    'In the cloud — shared by you',
+    'Cloud board, shared by you',
   );
   const viaFolder = place({
     folderId: 'f1',
@@ -98,14 +98,14 @@ test('boardPlace reads where a board lives', () => {
     board: false,
     folder: { id: 'f1', name: 'Work' },
   });
-  assert.equal(placeText(viaFolder), 'In the cloud — shared by you through the folder “Work”');
+  assert.equal(placeText(viaFolder), 'Cloud board, shared through the folder “Work”');
   assert.equal(
     placeText(
       place({
         library: library({ boards: { b1: { shared: 'edit', owner: 'Anna' } }, folders: {} }),
       }),
     ),
-    'Shared with you by Anna — you can edit',
+    'Shared with you by Anna, you can edit',
   );
   assert.equal(
     placeText(
@@ -114,7 +114,7 @@ test('boardPlace reads where a board lives', () => {
         library: library({ boards: {}, folders: { f1: { shared: 'view' } } }),
       }),
     ),
-    'Shared with you by Someone — you can view',
+    'Shared with you by Someone, you can view',
   );
 });
 
