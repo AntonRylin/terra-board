@@ -52,7 +52,8 @@ Terra Board is open source (MIT). The desktop app is free and works fully offlin
 landscape, cut to Play's 2:1 limit. Taken on the emulator with a demo board ("Space & Stars");
 its photos are public-domain NASA images from Wikimedia Commons (Blue Marble, Saturn by Cassini,
 Curiosity on Mars, the Pillars of Creation by Webb, Earthrise, Bruce McCandless's 1984 spacewalk).
-No third-party brands or logos, which Play rejects without permission.
+Board icons: public-domain/CC0 photos (Lisbon tram, Plaza Mayor Madrid, Vienna Palace of
+Justice, dice). No third-party brands or logos, which Play rejects without permission.
 
 ## App content (Policy → App content)
 
