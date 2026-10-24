@@ -224,8 +224,13 @@ On Android:
   back) and starts a pinch: zoom around the midpoint and pan with it. A pan in progress hands its
   camera to the pinch.
 - Drawing tools draw with one finger; two fingers still pinch.
-- Long-press (550 ms, under 8 px of movement) opens the context menu. Double-tap acts as a
-  double-click (edit text, open a frame); Chromium's own tap `dblclick` is ignored so it runs once.
+- Long-press (550 ms, under 8 px of movement) opens the context menu with the other tools. Double-tap
+  acts as a double-click (edit text, open a frame); Chromium's own tap `dblclick` is ignored so it
+  runs once.
+- With the Select tool a long-press selects instead (a short vibration): held on empty board it
+  starts a selection box to drag out (lifting without dragging still opens the board menu), held
+  on an object it adds that object to the selection, or takes it out again. Panning keeps the
+  selection; a tap on empty board clears it. The selection toolbar then offers Lock and the rest.
 - Outside the canvas (the rows of the home screen), `src/mobile/index.ts` turns a
   long-press into the `contextmenu` a right-click sends, replacing the WebView's own long-press.
 

@@ -576,7 +576,9 @@ function fixture(tool = 'select') {
     edits = [],
     menus = [],
     saves = [],
-    activations = [];
+    activations = [],
+    // Touch long-press timers: kept, and run only when a test says so.
+    timers = [];
   class Application {
     canvas = canvas;
     stage = { addChild() {} };
@@ -663,9 +665,10 @@ function fixture(tool = 'select') {
       addEventListener() {},
       removeEventListener() {},
       matchMedia: () => motion,
-      // Touch long-press timers; tests never wait for them.
-      setTimeout: () => 1,
-      clearTimeout() {},
+      setTimeout: (callback) => timers.push(callback),
+      clearTimeout: (id) => {
+        timers[id - 1] = null;
+      },
     },
     document: { documentElement: { dataset: { theme: 'light' } } },
     devicePixelRatio: 1,
@@ -676,6 +679,11 @@ function fixture(tool = 'select') {
     cancelAnimationFrame: (id) => frames.delete(id),
     performance: { now: () => now },
     crypto,
+    MouseEvent: class {
+      constructor(type, init) {
+        Object.assign(this, { type }, init);
+      }
+    },
   };
   vm.runInNewContext(code, context);
   const host = {
@@ -721,7 +729,9 @@ function fixture(tool = 'select') {
     pointerId: 1,
     preventDefault() {},
   });
-  return { engine, host, menus, saves, event, activations, edits, tick, motion };
+  // The finger has been held still long enough.
+  const hold = () => timers.findLast(Boolean)?.();
+  return { engine, host, menus, saves, event, activations, edits, tick, motion, hold };
 }
 
 test('linked frames select on single click, open on double click, and move without altering their source', () => {
@@ -1475,4 +1485,46 @@ test('finger gestures are Android-only: desktop touch still box-selects, Android
   phone.engine.up(touch(phone, 2, 380, 210));
   phone.engine.up(touch(phone, 1, 180, 210));
   phone.engine.destroy?.();
+});
+
+test('Android: holding a finger selects – a box on empty board, objects one by one', () => {
+  const f = fixture();
+  f.engine.setTouchGestures(true);
+  f.engine.camera = { x: 0, y: 0, zoom: 1 };
+  const touch = (x, y) => ({ ...f.event(x, y, 0), pointerType: 'touch', pointerId: 1 });
+  const note = (id, x) => ({ id, type: 'note', x, y: 100, width: 80, height: 80, z: 1 });
+  f.engine.apply({ upserts: [note('a', 100), note('b', 300), note('c', 500)], deleted: [] });
+  // Held on empty board, then dragged: a selection box instead of the menu.
+  f.engine.down(touch(50, 50));
+  f.hold();
+  assert.equal(f.engine.gesture.mode, 'box');
+  f.engine.move(touch(420, 250));
+  f.engine.up(touch(420, 250));
+  assert.deepEqual([...f.engine.selection].sort(), ['a', 'b']);
+  assert.equal(f.menus.length, 0);
+  // Panning keeps the selection; holding another object adds it, holding it again takes it out.
+  f.engine.down(touch(700, 400));
+  f.engine.move(touch(720, 420));
+  f.engine.up(touch(720, 420));
+  f.engine.camera = { x: 0, y: 0, zoom: 1 };
+  assert.deepEqual([...f.engine.selection].sort(), ['a', 'b']);
+  f.engine.down(touch(540, 140));
+  f.hold();
+  f.engine.up(touch(540, 140));
+  assert.deepEqual([...f.engine.selection].sort(), ['a', 'b', 'c']);
+  f.engine.down(touch(140, 140));
+  f.hold();
+  f.engine.up(touch(140, 140));
+  assert.deepEqual([...f.engine.selection].sort(), ['b', 'c']);
+  assert.equal(f.engine.objects.get('a').x, 100);
+  // Held on empty board and lifted without dragging: the board's menu, as before.
+  f.engine.down(touch(800, 600));
+  f.hold();
+  f.engine.up(touch(800, 600));
+  assert.equal(f.menus.length, 1);
+  // A tap on empty board clears the selection.
+  f.tick(1000);
+  f.engine.down(touch(800, 500));
+  f.engine.up(touch(800, 500));
+  assert.deepEqual([...f.engine.selection], []);
 });

@@ -225,6 +225,10 @@ type Gesture = {
   editOnClick?: string;
   dragged?: boolean;
   snap?: { bounds: Bounds; targets: SnapTargets; state: SnapState };
+  // Touch: a finger panning empty board clears the selection only if it was a tap.
+  tapClears?: boolean;
+  // Touch: a selection box begun by holding a finger still, and where it was held.
+  holdAt?: Point;
 };
 const composerPreviewKey = (o: CanvasObject) =>
   `composer:${JSON.stringify(o.pdfComposer)}:${o.width}:${o.height}`;
@@ -428,6 +432,8 @@ export class Engine {
   private touchInput = false;
   private longPress = 0;
   private longPressOpened = 0;
+  // The selection before the current finger came down; holding an object adds to it.
+  private touchSelectionBefore: string[] = [];
   private lastTap: { at: number; point: Point } | null = null;
   // Finger gestures are on only in the Android app for now; desktop
   // touchscreens keep their mouse-like behaviour until tested there.
@@ -840,6 +846,7 @@ export class Engine {
     if (this.touchInput && (overlay || e.target === this.app.canvas)) {
       this.touches.set(e.pointerId, this.point(e));
       this.clearLongPress();
+      if (this.touches.size === 1) this.touchSelectionBefore = [...this.selection];
       if (this.touches.size >= 2 || this.pinch) {
         e.preventDefault();
         if (!this.pinch) this.startPinch();
@@ -1040,14 +1047,15 @@ export class Engine {
             original: this.moveObjects(),
           };
         } else if (this.touchInput) {
-          // A finger on empty board pans; a tap there still clears the selection.
-          this.setSelection([]);
+          // A finger on empty board pans; a tap there clears the selection (on release,
+          // so panning keeps a selection built up by holding).
           this.gesture = {
             mode: 'pan',
             start: p,
             world: w,
             camera: { ...this.camera },
             original: [],
+            tapClears: true,
           };
         } else {
           if (!additive) this.setSelection([]);
@@ -1093,10 +1101,42 @@ export class Engine {
     window.clearTimeout(this.longPress);
     this.longPress = 0;
   }
-  // Long-press: the context menu where a right-click would open it.
+  // Long-press. With the Select tool it selects, as a phone's board should: held on
+  // empty board it starts a selection box (drag it out; lifting without dragging opens
+  // the board menu), held on an object it adds that object to the selection (or takes
+  // it out again). Elsewhere: the context menu where a right-click would open it.
   private touchContext(at: { x: number; y: number }) {
     this.longPress = 0;
     if (this.touches.size !== 1 || this.pinch) return;
+    const g = this.gesture;
+    if (this.tool === 'select' && g && ((g.mode === 'pan' && g.tapClears) || g.mode === 'move')) {
+      globalThis.navigator?.vibrate?.(20);
+      this.longPressOpened = performance.now();
+      if (g.mode === 'pan') {
+        this.camera = { ...g.camera };
+        this.gesture = {
+          mode: 'box',
+          start: g.start,
+          world: g.world,
+          camera: { ...g.camera },
+          original: this.selected,
+          holdAt: at,
+        };
+        this.invalidate();
+        return;
+      }
+      const hit = this.hit(g.world);
+      this.cancel();
+      if (!hit) return;
+      const ids = this.members(hit),
+        before = this.touchSelectionBefore.filter((id) => this.objects.has(id)),
+        next = new Set(before);
+      const remove = ids.every((id) => next.has(id)) && before.length > ids.length;
+      for (const id of ids) remove ? next.delete(id) : next.add(id);
+      this.setSelection([...next]);
+      this.invalidate();
+      return;
+    }
     this.cancel();
     this.longPressOpened = performance.now();
     this.openContext(new MouseEvent('contextmenu', { clientX: at.x, clientY: at.y }));
@@ -1352,7 +1392,7 @@ export class Engine {
     if (this.releaseTouch(e)) return;
     const g = this.gesture;
     if (!g || g.clickToPlace) return;
-    if (this.isTouch(e) && !g.dragged && this.doubleTap(e)) {
+    if (this.isTouch(e) && !g.dragged && !g.holdAt && this.doubleTap(e)) {
       this.gesture = null;
       for (const o of g.original) this.preview(o);
       this.invalidate();
@@ -1404,8 +1444,14 @@ export class Engine {
       this.setTool('select');
       this.callbacks.tool?.('select');
     } else if (g.secondary && !g.changed) this.openContext(e);
-    else if (g.mode === 'pan') this.callbacks.camera({ ...this.camera });
-    else if (g.mode === 'box' && g.box) {
+    else if (g.mode === 'pan') {
+      this.callbacks.camera({ ...this.camera });
+      if (g.tapClears && !g.dragged) this.setSelection([]);
+    } else if (g.holdAt && (!g.box || (g.box.width + g.box.height) * this.camera.zoom < 12)) {
+      // Held on empty board and lifted without dragging: the board's menu, as before.
+      this.longPressOpened = performance.now();
+      this.openContext(new MouseEvent('contextmenu', { clientX: g.holdAt.x, clientY: g.holdAt.y }));
+    } else if (g.mode === 'box' && g.box) {
       const next = new Set(g.original.map((o) => o.id));
       const hits = new Set(
         this.index
