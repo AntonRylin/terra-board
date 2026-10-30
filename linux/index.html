@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Terra Board for Linux (beta) – free offline whiteboard</title>
+<meta name="description" content="Terra Board for Linux, beta: a free whiteboard as a .deb for Ubuntu and Debian, or an AppImage for other distributions. Works offline.">
+<link rel="canonical" href="https://antonrylin.github.io/terra-board/linux/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Terra Board">
+<meta property="og:title" content="Terra Board for Linux (beta)">
+<meta property="og:description" content="A free whiteboard for Linux. .deb for Ubuntu and Debian, AppImage for other distributions.">
+<meta property="og:url" content="https://antonrylin.github.io/terra-board/linux/">
+<meta property="og:image" content="https://antonrylin.github.io/terra-board/img/og-image.png">
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<link rel="icon" href="../favicon-32.png" type="image/png" sizes="32x32">
+<link rel="apple-touch-icon" href="../apple-touch-icon.png">
+<link rel="stylesheet" href="../style.css?v=2026-10-23b">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="../"><img src="../favicon.svg" alt="" width="30" height="30">Terra Board</a>
+    <nav class="site-nav" aria-label="Main">
+      <a href="../#features">Features</a>
+      <a href="https://github.com/AntonRylin/terra-board">GitHub</a>
+      <a href="https://discord.com/invite/kfTbsN7eF7">Discord</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="wrap article">
+    <h1>Terra Board for Linux <span style="font-weight:500;color:#64748b">(beta)</span></h1>
+    <p class="lead" style="margin-left:0">The same free whiteboard as on Windows, for 64-bit Linux. It works offline and keeps your boards in <code>~/.local/share/Terra Board</code>.</p>
+
+    <h2>Ubuntu, Debian, Linux Mint, Pop!_OS</h2>
+    <div class="download-box">
+      <a class="button" data-linux-file="terra-board_amd64.deb" href="https://github.com/AntonRylin/terra-board/releases/download/v0.1.50/terra-board_amd64.deb">Download the .deb</a>
+      <p class="small">Recommended · x64 · install it with your software centre, or in a terminal:</p>
+    </div>
+    <pre><code>sudo apt install ./terra-board_amd64.deb</code></pre>
+
+    <h2>Other distributions: AppImage</h2>
+    <p>One file that runs on most distributions and updates itself. It needs FUSE 2 (on Ubuntu 24.04: <code>sudo apt install libfuse2t64</code>).</p>
+    <div class="download-box">
+      <a class="button" data-linux-file="Terra-Board-x86_64.AppImage" href="https://github.com/AntonRylin/terra-board/releases/download/v0.1.50/Terra-Board-x86_64.AppImage">Download the AppImage</a>
+    </div>
+    <pre><code>chmod +x Terra-Board-x86_64.AppImage
+./Terra-Board-x86_64.AppImage</code></pre>
+    <p class="small">On Ubuntu 24.04 and later the AppImage starts with Chromium's sandbox turned off, because the system blocks it for apps outside a package. If you add web pages to your boards, use the .deb.</p>
+
+    <h2>What's different on Linux</h2>
+    <ul class="plain-list">
+      <li><strong>Beta:</strong> it passes our automated tests on Ubuntu 24.04, but fewer people use it than the Windows version. Tell us what breaks on <a href="https://github.com/AntonRylin/terra-board/issues">GitHub</a> or <a href="https://discord.com/invite/kfTbsN7eF7">Discord</a>.</li>
+      <li><strong>Updates:</strong> the AppImage updates itself. The .deb tells you when a new version is out.</li>
+      <li><strong>Office files</strong> need LibreOffice installed (<code>sudo apt install libreoffice</code>).</li>
+      <li><strong>Copy text from images</strong> needs Tesseract (<code>sudo apt install tesseract-ocr</code>).</li>
+      <li>The handwriting font is only on Windows; Linux uses a fallback font.</li>
+    </ul>
+    <p class="small"><a class="linux-version" data-linux-page href="https://github.com/AntonRylin/terra-board/releases/tag/v0.1.50">Version 0.1.50 · What’s new</a> · Checksums: <a data-linux-file="SHA256SUMS-linux.txt" href="https://github.com/AntonRylin/terra-board/releases/download/v0.1.50/SHA256SUMS-linux.txt">SHA256SUMS-linux.txt</a> · <a data-linux-page href="https://github.com/AntonRylin/terra-board/releases/tag/v0.1.50">All files of this release</a></p>
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <p>Terra Board by Social Artworks · Free to use</p>
+    <nav aria-label="Footer">
+      <a href="../">Home</a>
+      <a href="mailto:montiesprache@gmail.com">Contact</a>
+      <a href="../privacy/">Privacy</a>
+      <a href="../impressum/">Impressum</a>
+    </nav>
+  </div>
+</footer>
+</body>
+</html>

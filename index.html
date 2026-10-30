@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Terra Board – free offline whiteboard for Windows</title>
+<meta name="description" content="Terra Board is a free whiteboard for Windows: notes, images, PDFs, tables and freehand ink on one infinite canvas. Works offline, works with Claude and Codex over MCP.">
+<link rel="canonical" href="https://antonrylin.github.io/terra-board/">
+<meta name="google-site-verification" content="CxQBFtb3vVfPJvrSy08DgT6OLRcYz6QcBjVpDERE5S8">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Terra Board">
+<meta property="og:title" content="Terra Board – free offline whiteboard for Windows">
+<meta property="og:description" content="Free. Works offline, no account, no analytics or tracking of our own. Notes, frames, tables, PDFs and images on an infinite canvas.">
+<meta property="og:url" content="https://antonrylin.github.io/terra-board/">
+<meta property="og:image" content="https://antonrylin.github.io/terra-board/img/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="A board in Terra Board with notes, a task table, a Road to a million checklist and a sports car photo">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png" type="image/png" sizes="32x32">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="stylesheet" href="site.css?v=2026-10-28e">
+<script src="site.js?v=2026-10-28f" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="./" aria-label="Terra Board home"><img src="img/boards/terra.webp" alt="" width="34" height="34"><span class="brand-text"><b>Terra Board</b><small>by Social Artworks</small></span></a>
+    <nav class="nav" aria-label="Main">
+      <a class="social" href="https://github.com/AntonRylin/terra-board" target="_blank" rel="noopener" aria-label="GitHub"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 .3a12 12 0 0 0-3.8 23.38c.6.12.83-.26.83-.57l-.01-2.04c-3.34.72-4.04-1.61-4.04-1.61-.55-1.39-1.34-1.76-1.34-1.76-1.08-.74.09-.73.09-.73 1.2.09 1.84 1.24 1.84 1.24 1.07 1.83 2.8 1.3 3.49 1 .1-.78.42-1.31.76-1.6-2.67-.3-5.47-1.34-5.47-5.94 0-1.31.47-2.38 1.24-3.22-.14-.3-.54-1.52.1-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 0 1 6 0c2.28-1.55 3.29-1.23 3.29-1.23.64 1.66.24 2.88.12 3.18a4.65 4.65 0 0 1 1.23 3.22c0 4.61-2.8 5.63-5.48 5.92.42.36.81 1.1.81 2.22l-.01 3.29c0 .32.21.69.82.57A12 12 0 0 0 12 .3"/></svg><span>GitHub</span></a>
+      <a class="social discord" href="https://discord.com/invite/kfTbsN7eF7" target="_blank" rel="noopener" aria-label="Discord"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M20.32 4.37a19.8 19.8 0 0 0-4.89-1.52.07.07 0 0 0-.08.04c-.21.38-.44.87-.6 1.25a18.27 18.27 0 0 0-5.49 0 12.6 12.6 0 0 0-.62-1.25.08.08 0 0 0-.08-.04 19.74 19.74 0 0 0-4.88 1.52.07.07 0 0 0-.03.03C.53 9.05-.32 13.58.1 18.06a.08.08 0 0 0 .03.05 19.9 19.9 0 0 0 6 3.03.08.08 0 0 0 .08-.03c.46-.63.87-1.3 1.23-1.99a.08.08 0 0 0-.04-.11 13.1 13.1 0 0 1-1.87-.89.08.08 0 0 1-.01-.13l.37-.29a.07.07 0 0 1 .08-.01 14.2 14.2 0 0 0 12.06 0 .07.07 0 0 1 .08.01l.37.29a.08.08 0 0 1 0 .13 12.3 12.3 0 0 1-1.88.89.08.08 0 0 0-.04.11c.36.7.77 1.36 1.23 1.99a.08.08 0 0 0 .08.03 19.84 19.84 0 0 0 6-3.03.08.08 0 0 0 .04-.06c.5-5.18-.84-9.67-3.55-13.66a.06.06 0 0 0-.03-.03zM8.02 15.33c-1.18 0-2.16-1.09-2.16-2.42s.96-2.42 2.16-2.42c1.21 0 2.18 1.1 2.16 2.42 0 1.33-.96 2.42-2.16 2.42zm7.97 0c-1.18 0-2.15-1.09-2.15-2.42s.95-2.42 2.15-2.42c1.21 0 2.18 1.1 2.16 2.42 0 1.33-.95 2.42-2.16 2.42z"/></svg><span>Discord</span></a>
+      <a class="mcp-link" href="#mcp"><span>MCP</span><span class="mcp-logos"><svg class="app-logo claude-logo" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z"/></svg><svg class="app-logo codex-logo" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z"/></svg></span></a>
+      <a class="ent" href="#enterprise">Enterprise</a>
+      <a class="get" href="https://github.com/AntonRylin/terra-board/releases/latest/download/Terra-Board-Setup-x64.exe">Download</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <section class="wrap hero hint-wrap" aria-labelledby="title">
+    <h1 class="obj" id="title" data-name="Title" data-edit>Your whole project on one board.</h1>
+    <p class="obj lede" data-name="Text" data-edit>A free whiteboard for Windows, Linux and Android. Notes, images, PDFs, tables and freehand ink on one infinite canvas. Works offline, and your files stay yours.</p>
+    <div class="cta">
+      <a class="button" id="download" href="https://github.com/AntonRylin/terra-board/releases/latest/download/Terra-Board-Setup-x64.exe" data-name="Button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/></svg><span>Download for Windows</span></a>
+      <a class="button secondary" id="android" href="android/" data-name="Button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/></svg><span>Get the Android app</span></a>
+    </div>
+    <p class="obj fine" data-name="Text" data-edit>The app is free forever · <a class="latest-version" href="https://github.com/AntonRylin/terra-board/releases/latest">Version 0.1.45 · What’s new</a> · No account · Windows 10 and 11 · <a href="linux/">Linux (beta)</a> · <a href="android/">Android (closed testing, anyone can join)</a></p>
+    <p class="fine on-phone">On an Android phone? <a href="android/">Get the Android app</a>: it's in closed testing on Google Play, and anyone can join.</p>
+    <div class="obj hint" data-name="Note" data-edit>Psst: this whole page is a Terra board. Grab anything and move it. Double-click text to edit it.</div>
+    <figure class="obj hero-shot" data-name="Image">
+      <img class="shot-light" src="img/hero-light-1200.webp" srcset="img/hero-light-1200.webp 1200w, img/hero-light-2400.webp 2400w" sizes="(max-width: 1080px) 100vw, 1040px" alt="A board in Terra Board: notes in a frame, a task table, a Road to a million checklist and a photo of a red sports car, with the board panel on the left." width="2400" height="1500" fetchpriority="high">
+      <img class="shot-dark" src="img/hero-dark-1200.webp" srcset="img/hero-dark-1200.webp 1200w, img/hero-dark-2400.webp 2400w" sizes="(max-width: 1080px) 100vw, 1040px" alt="The same board on the night board." width="2400" height="1500">
+    </figure>
+  </section>
+
+  <div class="wrap facts">
+    <span class="obj" data-name="Text"><b>Free</b>, no account needed</span>
+    <span class="obj" data-name="Text"><b>Offline</b> first</span>
+    <span class="obj" data-name="Text"><b>No</b> account</span>
+    <span class="obj" data-name="Text">Made in <b>Austria</b></span>
+  </div>
+
+  <div class="wrap rows" id="features">
+    <section class="row">
+      <div class="row-text">
+        <h2 class="obj" data-name="Title" data-edit>Everything in one place.</h2>
+        <p class="obj" data-name="Text" data-edit>Drop in images, PDFs, links and videos. Add notes, tables with owners and due dates, checklists and frames. Zoom out to see the whole project, zoom in to work.</p>
+      </div>
+      <div class="row-visual">
+        <figure class="obj row-shot" data-name="Image" style="margin:0">
+          <img class="shot-light" src="img/lisbon-light-1200.webp" srcset="img/lisbon-light-1200.webp 1200w, img/lisbon-light-2400.webp 2400w" sizes="(max-width: 820px) 100vw, 600px" loading="lazy" alt="A Lisbon in May board with real photos of Lisbon, handwritten notes and a packing list, with the board dock in minimal mode on the right." width="2400" height="1500">
+          <img class="shot-dark" src="img/lisbon-dark-1200.webp" srcset="img/lisbon-dark-1200.webp 1200w, img/lisbon-dark-2400.webp 2400w" sizes="(max-width: 820px) 100vw, 600px" loading="lazy" alt="" width="2400" height="1500">
+        </figure>
+      </div>
+    </section>
+
+    <section class="row flip">
+      <div class="row-text">
+        <h2 class="obj" data-name="Title" data-edit>Draw like on paper.</h2>
+        <p class="obj" data-name="Text" data-edit>A smooth freehand pen and a highlighter. Sketch an idea, circle what matters, mark up a screenshot or a PDF page.</p>
+      </div>
+      <div class="row-visual">
+        <div class="obj scene" data-name="Board">
+          <div class="note y" style="left:7%;top:12%;transform:rotate(-2deg)">Launch in May</div>
+          <div class="note b" style="left:40%;top:22%;transform:rotate(1.5deg)">New home page</div>
+          <div class="note g" style="left:70%;top:10%;transform:rotate(-1deg)">Real photos</div>
+          <svg viewBox="0 0 600 340" aria-hidden="true">
+            <path d="M60 250 Q120 200 180 240 T300 230 T430 250" fill="none" stroke="#2563eb" stroke-width="4" stroke-linecap="round"/>
+            <ellipse cx="320" cy="120" rx="110" ry="62" fill="none" stroke="#dc2626" stroke-width="3.5" transform="rotate(-4 320 120)"/>
+            <path d="M80 300 L500 300" stroke="#ffe14d" stroke-width="22" stroke-opacity=".5" stroke-linecap="round"/>
+          </svg>
+        </div>
+      </div>
+    </section>
+
+    <section class="row" id="mcp">
+      <div class="row-text">
+        <h2 class="obj" data-name="Title" data-edit>Your AI works right on the board.</h2>
+        <p class="obj" data-name="Text" data-edit>Terra has a built-in MCP server. Switch it on and Claude, Codex or any other MCP app on your PC can read your boards and build on them: notes, tables, picture cards, even live web pages. Ask for a grammar map, get one.</p>
+        <div class="apps"><span class="obj app-chip" data-name="Text"><svg class="app-logo claude-logo" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z"/></svg>Claude</span><span class="obj app-chip" data-name="Text"><svg class="app-logo codex-logo" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z"/></svg>Codex</span><span class="obj app-chip more" data-name="Text">+ any MCP app</span></div>
+        <p class="obj fine" data-name="Text" data-edit>Runs on your PC, off until you switch it on.</p>
+      </div>
+      <div class="row-visual">
+        <div class="obj scene gscene" data-name="Board">
+          <div class="gmap">
+            <svg class="glines" viewBox="0 0 780 520" aria-hidden="true">
+              <path d="M300 226 C 272 226, 266 150, 254 118" stroke="#2f6690"/>
+              <path d="M480 226 C 508 226, 514 150, 526 118" stroke="#7b2d8e"/>
+              <path d="M318 276 C 290 296, 268 306, 254 322" stroke="#0f7173"/>
+              <path d="M462 276 C 486 296, 496 306, 500 322" stroke="#b4440f"/>
+            </svg>
+            <div class="gcard" style="--c:#2f6690;left:14px;top:16px;width:240px">
+              <div class="tag">Palabras</div><h4>Artículos</h4>
+              <table><thead><tr><th></th><th>masculino</th><th>femenino</th></tr></thead><tbody>
+                <tr><td class="who">the</td><td><b>el</b> libro</td><td><b>la</b> casa</td></tr>
+                <tr><td class="who">the (pl.)</td><td><b>los</b> libros</td><td><b>las</b> casas</td></tr>
+                <tr><td class="who">a / an</td><td><b>un</b> libro</td><td><b>una</b> casa</td></tr>
+              </tbody></table>
+            </div>
+            <div class="gcard" style="--c:#7b2d8e;left:526px;top:16px;width:240px">
+              <div class="tag">Pasado</div><h4>Pretérito indefinido</h4>
+              <table><thead><tr><th></th><th>hablar</th><th>comer</th><th>vivir</th></tr></thead><tbody>
+                <tr><td class="who">yo</td><td>habl<b>é</b></td><td>com<b>í</b></td><td>viv<b>í</b></td></tr>
+                <tr><td class="who">tú</td><td>habl<b>aste</b></td><td>com<b>iste</b></td><td>viv<b>iste</b></td></tr>
+                <tr><td class="who">él</td><td>habl<b>ó</b></td><td>com<b>ió</b></td><td>viv<b>ió</b></td></tr>
+              </tbody></table>
+            </div>
+            <div class="ghub"><div class="big">Español</div><small>Gramática A1 → C1</small></div>
+            <div class="gcard" style="--c:#0f7173;left:14px;top:322px;width:240px">
+              <div class="tag">Futuro y modos</div><h4>Futuro y condicional</h4>
+              <table><thead><tr><th></th><th>futuro</th><th>condicional</th></tr></thead><tbody>
+                <tr><td class="who">yo</td><td>hablar<b>é</b></td><td>hablar<b>ía</b></td></tr>
+                <tr><td class="who">tú</td><td>hablar<b>ás</b></td><td>hablar<b>ías</b></td></tr>
+                <tr><td class="who">ellos</td><td>hablar<b>án</b></td><td>hablar<b>ían</b></td></tr>
+              </tbody></table>
+            </div>
+            <div class="gcard" style="--c:#b4440f;left:500px;top:322px;width:266px">
+              <div class="tag">Verbos · presente</div><h4>Ser y estar</h4>
+              <table><thead><tr><th>ser</th><th>estar</th></tr></thead><tbody>
+                <tr><td><b>Soy</b> Ana.</td><td><b>Estoy</b> en casa.</td></tr>
+                <tr><td><b>Es</b> médica.</td><td><b>Está</b> cansado.</td></tr>
+                <tr><td><b>Somos</b> de Lima.</td><td><b>Estamos</b> bien.</td></tr>
+              </tbody></table>
+            </div>
+            <div class="gchat">
+              <div class="me">Turn my Spanish notes into a grammar map.</div>
+              <span class="tool">read_board <span class="ok">✓</span></span>
+              <span class="tool">edit_board <span class="ok">✓</span></span>
+              <p>Done: 4 branches, 19 cards.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="row flip">
+      <div class="row-text">
+        <h2 class="obj" data-name="Title" data-edit>Work on it together, live.</h2>
+        <p class="obj" data-name="Text" data-edit>Share a board over Wi-Fi or the cloud. See everyone's cursor move, follow a colleague's view, and pick up where they left off.</p>
+      </div>
+      <div class="row-visual">
+        <div class="obj scene" data-name="Board">
+          <div class="note p" style="left:10%;top:16%">Workshop plan</div>
+          <div class="note r" style="left:44%;top:30%">Agenda</div>
+          <div class="note y" style="left:72%;top:14%">Questions</div>
+          <div class="cursor" style="left:36%;top:22%"><svg width="16" height="18" viewBox="0 0 16 18" style="position:static;width:16px;height:18px"><path d="M1 1 L14 9 L8 10 L5 16 Z" fill="#d9488f"/></svg><span style="background:#d9488f">Lena</span></div>
+          <div class="cursor" style="left:66%;top:64%"><svg width="16" height="18" viewBox="0 0 16 18" style="position:static;width:16px;height:18px"><path d="M1 1 L14 9 L8 10 L5 16 Z" fill="#2f9e6e"/></svg><span style="background:#2f9e6e">Max</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="row">
+      <div class="row-text">
+        <h2 class="obj" data-name="Title" data-edit>Private by default.</h2>
+        <p class="obj" data-name="Text" data-edit>Your boards are files on your PC. No sign-up, no analytics or tracking of our own, and the cloud stays off until you want it. <a href="privacy/">Privacy policy</a></p>
+      </div>
+      <div class="row-visual privacy">
+        <div class="obj note g" data-name="Note"><b>No account</b>Install and start.</div>
+        <div class="obj note b" data-name="Note"><b>Your files</b>In a folder you own.</div>
+        <div class="obj note y" data-name="Note"><b>Offline</b>On a plane, on a train.</div>
+        <div class="obj note p" data-name="Note"><b>No tracking</b>No analytics of our own.</div>
+      </div>
+    </section>
+
+    <section class="row flip" id="enterprise">
+      <div class="row-text">
+        <h2 class="obj" data-name="Title" data-edit>Terra for your company.</h2>
+        <p class="obj" data-name="Text" data-edit>Run your own Terra sync server and keep shared boards inside your company network. IT can preset the server on every PC, or lock it.</p>
+        <p class="obj fine" data-name="Text" data-edit>People sign in with an email code, Google or Microsoft; single sign-on with your own identity provider is still being built.</p>
+        <button type="button" class="button" id="contact-open" data-name="Button" aria-haspopup="dialog" aria-controls="contact" style="width:max-content;font-size:1rem;padding:12px 20px"><span>Interested for your company? Get in touch</span></button>
+      </div>
+      <div class="row-visual">
+        <div class="obj scene" data-name="Board">
+          <div class="note b" style="left:8%;top:14%">Own server</div>
+          <div class="note g" style="left:38%;top:24%">Live cursors</div>
+          <div class="note r" style="right:5%;top:12%">Preset on every PC</div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <section class="wrap final" id="install">
+    <h2 class="obj" data-name="Title" data-edit>Start your first board in a minute.</h2>
+    <div class="cta">
+      <a class="button" href="https://github.com/AntonRylin/terra-board/releases/latest/download/Terra-Board-Setup-x64.exe" data-name="Button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/></svg><span>Download for Windows</span></a>
+      <a class="button secondary" href="android/" data-name="Button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/></svg><span>Get the Android app</span></a>
+    </div>
+    <p class="obj fine" data-name="Text" data-edit>Free · <a class="latest-version" href="https://github.com/AntonRylin/terra-board/releases/latest">Version 0.1.45 · What’s new</a> · Updates itself · Also for <a href="linux/">Linux (beta)</a> · Android is in closed testing: <a href="android/">anyone can join</a></p>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Terra Board by Social Artworks · Made in Austria</span>
+    <span>Photos on the boards: Jan Helebrant, Isabel Gutierrez, KafleG, Wikimedia Commons and Flickr (CC0 and public domain)</span>
+    <span><a href="https://github.com/AntonRylin/terra-board">GitHub</a> · <a href="https://discord.com/invite/kfTbsN7eF7">Discord</a> · <a href="https://github.com/AntonRylin/terra-board/releases">What's new</a> · <a href="microsoft-whiteboard-alternative/">Microsoft Whiteboard alternative</a> · <a href="free-miro-alternative/">Miro alternative</a> · <a href="mailto:montiesprache@gmail.com">Contact</a> · <a href="linux/">Linux</a> · <a href="android/">Android</a> · <a href="privacy/">Privacy</a> · <a href="impressum/">Impressum</a></span>
+  </div>
+</footer>
+
+    <dialog class="contact" id="contact" aria-labelledby="contact-title">
+      <button type="button" class="contact-close" id="contact-close" aria-label="Close">&times;</button>
+      <form id="contact-form" action="https://formsubmit.co/montiesprache@gmail.com" method="POST">
+        <h2 id="contact-title">Get in touch</h2>
+        <p class="fine">Leave your email and a message, and we'll write back.</p>
+        <label>Your email<input name="email" type="email" autocomplete="email" required></label>
+        <label>Message<textarea name="message" rows="5" maxlength="5000" required></textarea></label>
+        <input type="text" name="_honey" class="honey" tabindex="-1" autocomplete="off" aria-hidden="true">
+        <input type="hidden" name="_subject" value="Terra Board: new message from the website">
+        <input type="hidden" name="_template" value="table">
+        <button type="submit" class="button" id="contact-send" style="width:max-content;font-size:1rem;padding:11px 22px"><span>Send</span></button>
+        <p class="contact-status" id="contact-status" role="status"></p>
+        <p class="fine small-print">Sent to us by email through FormSubmit. <a href="privacy/#contact">Privacy</a></p>
+      </form>
+      <div class="contact-done" id="contact-done" hidden>
+        <svg class="contact-check" viewBox="0 0 52 52" aria-hidden="true"><circle cx="26" cy="26" r="23"/><path d="M15.5 27.5l7 7 14-15"/></svg>
+        <h2 id="contact-done-title">Message sent</h2>
+        <p id="contact-done-text"></p>
+        <button type="button" class="button" id="contact-done-close" style="font-size:1rem;padding:11px 26px"><span>Close</span></button>
+      </div>
+    </dialog>
+
+<div class="selection" id="selection" aria-hidden="true"><b id="sel-name">Title</b><i data-h="nw"></i><i data-h="ne"></i><i data-h="sw"></i><i data-h="se"></i></div>
+</body>
+</html>
