@@ -1,0 +1,1544 @@
+/* Terra Board home page, "Aurora": night by default, day for people whose computer is set to light.
+   Every piece of content marked .obj is a board object you can move, resize and edit. */
+:root {
+  --bg: #07090e;
+  --paper: #0c1018;
+  --panel: #151b25;
+  --glass: rgb(255 255 255 / 5%);
+  --line: rgb(255 255 255 / 9%);
+  --ink: #f2f5fa;
+  --muted: #8f9aab;
+  --accent: #9ac5fa;
+  --accent-ink: #07090e;
+  --select: #7fb0ee;
+  --btn: #f2f5fa;
+  --btn-ink: #07090e;
+  --head-a: #ffffff;
+  --head-b: #9aa6b8;
+  --ok: #4ade80;
+  --dot: #1f2733;
+  --yellow: #f8efd4;
+  --aurora: 1;
+  --shadow: 0 50px 120px -30px rgb(0 0 0 / 80%);
+  --font-display: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Display', 'Segoe UI', system-ui, sans-serif;
+  --font-ui: 'SF Pro Text', -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  --font-hand: 'Segoe Print', 'Bradley Hand', 'Comic Sans MS', cursive;
+  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', Consolas, monospace;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme='dark']) {
+    --bg: #fbfcfe;
+    --paper: #ffffff;
+    --panel: #f1f4f8;
+    --glass: rgb(255 255 255 / 72%);
+    --line: rgb(15 25 40 / 10%);
+    --ink: #0e131b;
+    --muted: #5d6878;
+    --accent: #2f6fbf;
+    --accent-ink: #ffffff;
+    --select: #4486d9;
+    --btn: #0e131b;
+    --btn-ink: #ffffff;
+    --head-a: #0e131b;
+    --head-b: #56627a;
+    --ok: #1f8a4c;
+    --dot: #d5dbe3;
+    --aurora: 0.45;
+    --shadow: 0 40px 90px -30px rgb(20 40 80 / 30%);
+    color-scheme: light;
+  }
+}
+:root[data-theme='light'] {
+  --bg: #fbfcfe;
+  --paper: #ffffff;
+  --panel: #f1f4f8;
+  --glass: rgb(255 255 255 / 72%);
+  --line: rgb(15 25 40 / 10%);
+  --ink: #0e131b;
+  --muted: #5d6878;
+  --accent: #2f6fbf;
+  --accent-ink: #ffffff;
+  --select: #4486d9;
+  --btn: #0e131b;
+  --btn-ink: #ffffff;
+  --head-a: #0e131b;
+  --head-b: #56627a;
+  --ok: #1f8a4c;
+  --dot: #d5dbe3;
+  --aurora: 0.45;
+  --shadow: 0 40px 90px -30px rgb(20 40 80 / 30%);
+  color-scheme: light;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 17px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  /* Objects can be dragged or scaled past the edge; never scroll the page sideways. */
+  overflow-x: clip;
+}
+a {
+  color: inherit;
+}
+img {
+  max-width: 100%;
+}
+.skip {
+  position: absolute;
+  left: -999px;
+}
+.skip:focus {
+  left: 12px;
+  top: 12px;
+  z-index: 1002;
+  background: var(--bg);
+  padding: 8px 12px;
+  border-radius: 8px;
+}
+:focus-visible {
+  outline: 2px solid var(--select);
+  outline-offset: 3px;
+}
+/* Light and night pictures of the app follow the page. */
+.shot-light {
+  display: none !important;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme='dark']) .shot-light {
+    display: block !important;
+  }
+  :root:not([data-theme='dark']) .shot-dark {
+    display: none !important;
+  }
+}
+:root[data-theme='light'] .shot-light {
+  display: block !important;
+}
+:root[data-theme='light'] .shot-dark {
+  display: none !important;
+}
+
+/* The board grid, invisible until someone grabs an object. */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-image: radial-gradient(var(--dot) 1.2px, transparent 1.3px);
+  background-size: 24px 24px;
+  opacity: 0;
+  transition: opacity 500ms ease;
+  pointer-events: none;
+}
+body.boarding::after {
+  opacity: 1;
+}
+.wrap {
+  max-width: 1160px;
+  margin: 0 auto;
+  padding-left: max(20px, env(safe-area-inset-left, 0px));
+  padding-right: max(20px, env(safe-area-inset-right, 0px));
+}
+
+/* Top bar: a glass pill that stays at the top */
+.top {
+  position: sticky;
+  top: env(safe-area-inset-top, 0px);
+  z-index: 1000;
+  padding-block: 14px;
+}
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0 0 auto;
+  height: env(safe-area-inset-top, 0px);
+  z-index: 1001;
+  background: var(--bg);
+}
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 7px 7px 16px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  backdrop-filter: blur(16px) saturate(1.4);
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-right: auto;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.brand img {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+}
+.brand b {
+  font: 650 15px var(--font-display);
+  letter-spacing: -0.01em;
+}
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.nav a {
+  text-decoration: none;
+}
+.nav .text {
+  padding: 7px 12px;
+  border-radius: 999px;
+  font-size: 14px;
+  color: var(--muted);
+  transition: color 160ms ease;
+}
+.nav .text:hover {
+  color: var(--ink);
+}
+.nav .social {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px;
+  border-radius: 999px;
+  color: var(--muted);
+}
+.nav .social:hover {
+  color: var(--ink);
+}
+.nav .social svg {
+  width: 18px;
+  height: 18px;
+}
+.nav .social span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.nav .get {
+  margin-left: 6px;
+  padding: 8px 17px;
+  border-radius: 999px;
+  background: var(--btn);
+  color: var(--btn-ink);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* Hero */
+.hero {
+  position: relative;
+  padding-block: 84px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+/* Terra's note colours as a soft aurora behind the board */
+.aurora {
+  position: absolute;
+  left: 50%;
+  top: 120px;
+  width: 1500px;
+  height: 950px;
+  translate: -50% 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: var(--aurora);
+  filter: blur(30px);
+  background:
+    radial-gradient(closest-side at 30% 50%, rgb(56 122 202 / 50%), transparent),
+    radial-gradient(closest-side at 70% 45%, rgb(139 111 214 / 42%), transparent),
+    radial-gradient(closest-side at 50% 75%, rgb(47 158 110 / 30%), transparent),
+    radial-gradient(closest-side at 62% 30%, rgb(232 163 61 / 22%), transparent);
+}
+.eyebrow {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 4px 8px;
+  margin: 0;
+  padding: 5px 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--glass);
+  font-size: 13px;
+  color: var(--muted);
+}
+.eyebrow i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ok);
+  box-shadow: 0 0 10px var(--ok);
+}
+.eyebrow a {
+  color: var(--ink);
+  font-weight: 500;
+  text-decoration: none;
+}
+.eyebrow a:hover {
+  text-decoration: underline;
+}
+h1 {
+  margin: 26px 0 0;
+  max-width: 15ch;
+  font: 700 clamp(2.9rem, 7.8vw, 6.25rem) / 0.98 var(--font-display);
+  letter-spacing: -0.045em;
+  text-wrap: balance;
+  background: linear-gradient(180deg, var(--head-a) 30%, var(--head-b));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+h1[contenteditable='true'] {
+  color: var(--ink);
+  background: none;
+}
+.lede {
+  margin: 24px 0 0;
+  max-width: 34em;
+  font-size: clamp(1.05rem, 1.6vw, 1.2rem);
+  color: var(--muted);
+  text-wrap: balance;
+}
+
+/* Download: a switch already set to the visitor's computer, one big button, phones below. */
+.dl {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  margin-top: 34px;
+}
+.osw {
+  display: inline-flex;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--glass);
+}
+.osw button {
+  padding: 7px 18px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--muted);
+  font: 500 14px var(--font-ui);
+  cursor: pointer;
+}
+.osw button:hover {
+  color: var(--ink);
+}
+.osw button[aria-pressed='true'] {
+  background: var(--line);
+  color: var(--ink);
+}
+.button {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 52px;
+  padding: 0 28px;
+  border-radius: 999px;
+  background: var(--btn);
+  color: var(--btn-ink);
+  font-size: 16px;
+  font-weight: 600;
+  text-decoration: none;
+}
+/* Open in browser: an outlined button beside the download button (the web app at app.terraboard.app). */
+.cta-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+}
+.button.ghost {
+  background: var(--glass);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.button.ghost:hover {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.button[hidden],
+.req[hidden] {
+  display: none;
+}
+.button svg {
+  width: 19px;
+  height: 19px;
+}
+.req {
+  margin: -4px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.phones {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+/* Apple's own "Download on the App Store" badge, as supplied: not recoloured or redrawn. */
+.store-badge {
+  display: inline-flex;
+  border-radius: 8px;
+  transition:
+    scale 160ms cubic-bezier(0.3, 1.6, 0.5, 1),
+    filter 220ms ease;
+}
+.store-badge img {
+  display: block;
+  height: 44px;
+  width: auto;
+  border-radius: 8px;
+  box-shadow: 0 0 0 1px var(--line);
+}
+.store-badge:hover {
+  scale: 1.035;
+  filter: brightness(1.12);
+}
+.store-badge:active {
+  scale: 0.97;
+}
+.android {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--glass);
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+.android:hover {
+  border-color: var(--accent);
+}
+.android svg {
+  width: 15px;
+  height: 15px;
+}
+.fine {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+.on-phone {
+  display: none;
+}
+/* On a phone the store buttons lead, the one for this phone first; there is nothing to pick. */
+.is-phone .osw,
+.is-phone .desk {
+  display: none !important;
+}
+.is-phone .phones {
+  margin-top: 0;
+}
+.is-phone .phones-label {
+  display: none;
+}
+.is-phone .store-badge img,
+.is-phone .android {
+  height: 48px;
+}
+.is-android .android {
+  order: -1;
+}
+.is-android .on-phone {
+  display: block;
+}
+
+/* The board, tilted toward you, with a note on it */
+.shot-area {
+  position: relative;
+  width: 100%;
+  margin-top: 64px;
+  perspective: 2200px;
+}
+.hero-shot {
+  margin: 0;
+  width: 100%;
+}
+.tilt {
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--glass);
+  box-shadow: var(--shadow);
+  transform: rotateX(16deg) scale(0.97);
+  transform-origin: 50% 0;
+  position: relative;
+}
+.tilt::after {
+  content: '';
+  position: absolute;
+  inset: auto -1px -1px;
+  height: 38%;
+  border-radius: 0 0 20px 20px;
+  background: linear-gradient(180deg, transparent, var(--bg));
+  pointer-events: none;
+}
+.tilt img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 13px;
+  pointer-events: none;
+}
+.hint {
+  position: absolute;
+  right: 2%;
+  top: -26px;
+  z-index: 3;
+  width: 200px;
+  padding: 14px 16px;
+  background: var(--yellow);
+  color: #2b2a27;
+  text-align: left;
+  font: 400 15px/1.4 var(--font-hand);
+  rotate: 3deg;
+  box-shadow: 0 16px 30px -12px rgb(0 0 0 / 45%);
+}
+.facts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  width: 100%;
+  margin-top: 8px;
+  font-size: 14px;
+  color: var(--muted);
+}
+.facts b {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* Sections */
+.sec {
+  padding-block: 120px 0;
+}
+.sec > h2,
+.final h2 {
+  margin: 0 auto;
+  max-width: 18ch;
+  text-align: center;
+  font: 700 clamp(2rem, 4.4vw, 3.3rem) / 1.02 var(--font-display);
+  letter-spacing: -0.04em;
+  text-wrap: balance;
+}
+.sub {
+  max-width: 34em;
+  margin: 16px auto 0;
+  text-align: center;
+  color: var(--muted);
+}
+.cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 48px;
+}
+.card {
+  position: relative;
+  min-width: 0;
+  padding: 26px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--glass);
+  overflow: hidden;
+}
+.card::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 2px;
+  background: var(--k);
+}
+.card > svg {
+  width: 22px;
+  height: 22px;
+  color: var(--accent);
+}
+.card h3 {
+  margin: 18px 0 6px;
+  font: 650 18px var(--font-display);
+  letter-spacing: -0.02em;
+}
+.card p {
+  margin: 0;
+  font-size: 15px;
+  color: var(--muted);
+}
+.card a,
+.wide a:not(.app-chip) {
+  color: var(--accent);
+}
+.wide {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 36px;
+  align-items: center;
+  margin-top: 14px;
+  padding: 30px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--paper);
+  scroll-margin-top: 100px;
+}
+.wide-text {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.wide h3 {
+  margin: 0;
+  font: 700 26px/1.15 var(--font-display);
+  letter-spacing: -0.03em;
+}
+.wide p {
+  margin: 0;
+  font-size: 15px;
+  color: var(--muted);
+}
+.apps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.app-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.app-chip.more {
+  color: var(--muted);
+}
+.app-logo {
+  width: 15px;
+  height: 15px;
+  flex: none;
+}
+.claude-logo {
+  color: #e8906f;
+}
+.codex-logo {
+  color: var(--ink);
+}
+/* The example chat in "Your AI works right on the board": a copy of how Claude looks,
+   in real text. The steps are plain HTML; site.js only animates them. */
+.cc {
+  --c-bg: #262624;
+  --c-ink: #faf9f5;
+  --c-muted: #9c9a92;
+  --c-faint: #6f6d66;
+  --c-line: #3b3a37;
+  --c-bubble: #1b1b19;
+  --c-card: #2b2a28;
+  --c-orange: #d97757;
+  --c-shadow: 0 40px 80px -30px rgb(0 0 0 / 80%);
+  --c-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+  padding: 22px 22px 18px;
+  border: 1px solid var(--c-line);
+  border-radius: 20px;
+  background: var(--c-bg);
+  color: var(--c-ink);
+  box-shadow: var(--c-shadow);
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme='dark']) .cc {
+    --c-bg: #faf9f5;
+    --c-ink: #141413;
+    --c-muted: #73726c;
+    --c-faint: #b1ada1;
+    --c-line: #e8e6dc;
+    --c-bubble: #f0eee6;
+    --c-card: #ffffff;
+    --c-shadow: 0 36px 70px -32px rgb(60 50 30 / 35%);
+  }
+}
+:root[data-theme='light'] .cc {
+  --c-bg: #faf9f5;
+  --c-ink: #141413;
+  --c-muted: #73726c;
+  --c-faint: #b1ada1;
+  --c-line: #e8e6dc;
+  --c-bubble: #f0eee6;
+  --c-card: #ffffff;
+  --c-shadow: 0 36px 70px -32px rgb(60 50 30 / 35%);
+}
+.cc-you {
+  justify-self: end;
+  max-width: 88%;
+  padding: 9px 16px;
+  border-radius: 14px;
+  background: var(--c-bubble);
+  font-size: 15px;
+  line-height: 1.45;
+}
+.cc-tasks {
+  display: grid;
+  gap: 11px;
+  margin: 0;
+  padding: 16px 18px;
+  list-style: none;
+  border: 1px solid var(--c-line);
+  border-radius: 16px;
+  background: var(--c-card);
+}
+.cc-tasks li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 15px;
+  color: var(--c-faint);
+  transition: color 0.4s;
+}
+.cc-tasks li.done {
+  color: var(--c-muted);
+}
+.cc-tasks li.now {
+  color: var(--c-ink);
+}
+.cc-ic {
+  position: relative;
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+.cc-ic svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.cc-ic .ring {
+  fill: none;
+  stroke: var(--c-faint);
+  stroke-width: 1.5;
+  stroke-dasharray: 2.4 3;
+  transition: opacity 0.3s;
+}
+.cc-ic .fill {
+  fill: var(--c-muted);
+  transform-origin: 50% 50%;
+  transform: scale(0);
+  transition: transform 0.45s var(--c-ease);
+}
+.cc-ic .tick {
+  fill: none;
+  stroke: var(--c-bg);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 14;
+  stroke-dashoffset: 14;
+  transition: stroke-dashoffset 0.4s 0.16s var(--c-ease);
+}
+.cc-ic .track {
+  fill: none;
+  stroke: var(--c-line);
+  stroke-width: 2;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+.cc-ic .spin {
+  fill: none;
+  stroke: var(--c-ink);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-dasharray: 14 60;
+  opacity: 0;
+  transform-origin: 50% 50%;
+  transition: opacity 0.3s;
+}
+.cc-tasks li.done .ring,
+.cc-tasks li.now .ring {
+  opacity: 0;
+}
+.cc-tasks li.done .fill {
+  transform: scale(1);
+}
+.cc-tasks li.done .tick {
+  stroke-dashoffset: 0;
+}
+.cc-tasks li.now .spin {
+  opacity: 1;
+  animation: cc-spin 0.9s linear infinite;
+}
+.cc-tasks li.now .track {
+  opacity: 1;
+}
+@keyframes cc-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes cc-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.cc-foot {
+  position: relative;
+  min-height: 50px;
+}
+.cc-tool,
+.cc-reply {
+  position: absolute;
+  inset: 0 0 auto 0;
+  transition:
+    opacity 0.45s,
+    transform 0.55s var(--c-ease);
+}
+.cc-tool {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 2px 4px;
+  font-size: 15px;
+  color: var(--c-muted);
+}
+.cc-tool i {
+  width: 6px;
+  height: 6px;
+  margin: 0 6px 0 5px;
+  border-radius: 50%;
+  background: var(--c-orange);
+  flex: none;
+  animation: cc-pulse 1.6s ease-in-out infinite;
+}
+.cc-secs {
+  color: var(--c-faint);
+  font-variant-numeric: tabular-nums;
+}
+.cc-secs::after {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 14px;
+  border: solid var(--c-muted);
+  border-width: 2px 2px 0 0;
+  transform: rotate(45deg);
+}
+.cc-reply {
+  display: flex;
+  gap: 12px;
+  font-size: 15px;
+  line-height: 1.5;
+  opacity: 0;
+  transform: translateY(8px);
+}
+.cc-reply svg {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  margin-top: 3px;
+  color: var(--c-orange);
+}
+.cc-reply b {
+  font-weight: 600;
+}
+.cc.finished .cc-tool {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+.cc.finished .cc-reply {
+  opacity: 1;
+  transform: none;
+}
+.cc-composer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 12px 12px 16px;
+  border: 1px solid var(--c-line);
+  border-radius: 16px;
+  background: var(--c-card);
+  color: var(--c-faint);
+  font-size: 14.5px;
+}
+.cc-composer span {
+  flex: 1;
+}
+.cc-composer i {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: var(--c-orange);
+}
+.cc-composer svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: #fff;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+@media (max-width: 520px) {
+  .cc {
+    padding: 16px 16px 14px;
+  }
+  .cc-foot {
+    min-height: 74px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cc-tasks li.now .spin,
+  .cc-tool i {
+    animation: none;
+  }
+}
+.wide-shot {
+  margin: 0;
+  min-width: 0;
+}
+.wide-shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  pointer-events: none;
+}
+.wide-action {
+  justify-self: end;
+}
+button.button {
+  border: 0;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* Final call */
+.final {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding-block: 140px 100px;
+  text-align: center;
+  scroll-margin-top: 80px;
+}
+.final .dl {
+  margin-top: 28px;
+}
+.final > .fine {
+  max-width: 46em;
+  margin-top: 28px;
+}
+.final .fine a,
+.facts a {
+  color: var(--ink);
+}
+
+footer {
+  border-top: 1px solid var(--line);
+  padding-block: 28px 40px;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+footer .wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  justify-content: space-between;
+}
+footer a {
+  color: var(--muted);
+}
+footer a:hover {
+  color: var(--ink);
+}
+section[id] {
+  scroll-margin-top: 90px;
+}
+
+@media (max-width: 860px) {
+  .nav .text {
+    display: none;
+  }
+  .hero {
+    padding-block: 48px 0;
+  }
+  .aurora {
+    width: 800px;
+    top: 260px;
+  }
+  .cards,
+  .wide {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .wide {
+    padding: 24px;
+  }
+  .wide-action {
+    justify-self: start;
+  }
+  .facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .hint {
+    display: none;
+  }
+  .tilt {
+    transform: none;
+  }
+  .shot-area {
+    margin-top: 44px;
+  }
+  .sec {
+    padding-block: 80px 0;
+  }
+  .final {
+    padding-block: 100px 72px;
+  }
+}
+@media (max-width: 460px) {
+  .brand b {
+    display: none;
+  }
+}
+/* Wide screens: the page is laid out for 1440 px, so grow it with the window instead of
+   leaving a small column in the middle. The selection frame (outside these) stays 1:1. */
+@media (min-width: 1600px) {
+  .top,
+  main,
+  footer {
+    zoom: 1.12;
+  }
+}
+@media (min-width: 1800px) {
+  .top,
+  main,
+  footer {
+    zoom: 1.25;
+  }
+}
+@media (min-width: 2200px) {
+  .top,
+  main,
+  footer {
+    zoom: 1.4;
+  }
+}
+@media (min-width: 2700px) {
+  .top,
+  main,
+  footer {
+    zoom: 1.6;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .hero > .eyebrow,
+  .hero > h1,
+  .hero > .lede,
+  .hero > .dl {
+    animation: rise 700ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+  .hero > h1 {
+    animation-delay: 60ms;
+  }
+  .hero > .lede {
+    animation-delay: 120ms;
+  }
+  .hero > .dl {
+    animation-delay: 180ms;
+  }
+  @keyframes rise {
+    from {
+      translate: 0 10px;
+      opacity: 0.001;
+    }
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  body::after {
+    transition: none;
+  }
+}
+
+/* Board objects: select, move, resize, edit (site.js). */
+.obj {
+  position: relative;
+  transform: translate(var(--x, 0px), var(--y, 0px)) scale(var(--s, 1));
+  transform-origin: 0 0;
+  cursor: grab;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: pan-y;
+}
+.obj.selected {
+  touch-action: none;
+  z-index: 15;
+}
+.obj.dragging {
+  cursor: grabbing;
+}
+.obj [contenteditable='true'],
+.obj[contenteditable='true'] {
+  -webkit-user-select: text;
+  user-select: text;
+  cursor: text;
+  outline: none;
+}
+/* The app's selection box, drawn over the selected object */
+.selection {
+  position: absolute;
+  z-index: 999;
+  border: 1.5px solid var(--select);
+  pointer-events: none;
+  display: none;
+}
+.selection.on {
+  display: block;
+}
+.selection i {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: var(--bg);
+  border: 1.5px solid var(--select);
+  border-radius: 2px;
+  pointer-events: auto;
+  touch-action: none;
+}
+.selection i[data-h='nw'] {
+  left: -6px;
+  top: -6px;
+  cursor: nwse-resize;
+}
+.selection i[data-h='ne'] {
+  right: -6px;
+  top: -6px;
+  cursor: nesw-resize;
+}
+.selection i[data-h='sw'] {
+  left: -6px;
+  bottom: -6px;
+  cursor: nesw-resize;
+}
+.selection i[data-h='se'] {
+  right: -6px;
+  bottom: -6px;
+  cursor: nwse-resize;
+}
+.selection b {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  font: 500 12px/1 var(--font-ui);
+  color: #fff;
+  background: var(--select);
+  padding: 4px 7px;
+  border-radius: 5px;
+  white-space: nowrap;
+}
+
+/* Buttons respond to the hand: lift on hover, press in, a ripple from where you clicked. */
+.button,
+.nav .get,
+.nav .social,
+.nav .mcp-link {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  transition:
+    scale 160ms cubic-bezier(0.3, 1.6, 0.5, 1),
+    box-shadow 220ms ease,
+    filter 220ms ease;
+}
+.button:hover,
+.nav .get:hover {
+  scale: 1.035;
+  filter: brightness(1.06);
+  box-shadow: 0 14px 34px rgb(56 122 202 / 38%);
+}
+.nav .social:hover,
+.nav .mcp-link:hover {
+  scale: 1.05;
+}
+.button:active,
+.nav .get:active,
+.nav .social:active,
+.nav .mcp-link:active,
+.pressed {
+  scale: 0.94;
+  transition-duration: 70ms;
+}
+.ripple {
+  position: absolute;
+  z-index: -1;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.35;
+  pointer-events: none;
+  animation: ripple 650ms ease-out forwards;
+}
+@keyframes ripple {
+  to {
+    transform: scale(var(--grow, 40));
+    opacity: 0;
+  }
+}
+/* Download: the arrow drops into the tray a few times while the file starts. */
+.button.working svg {
+  animation: drop 700ms cubic-bezier(0.5, 0, 0.5, 1) 3;
+}
+@keyframes drop {
+  0% {
+    translate: 0 0;
+  }
+  45% {
+    translate: 0 6px;
+  }
+  55% {
+    translate: 0 6px;
+    scale: 1.15 0.85;
+  }
+  100% {
+    translate: 0 0;
+  }
+}
+.button.working {
+  animation: glow 1.4s ease-out;
+}
+@keyframes glow {
+  0% {
+    box-shadow: 0 0 0 0 rgb(56 122 202 / 55%);
+  }
+  100% {
+    box-shadow: 0 0 0 22px rgb(56 122 202 / 0%);
+  }
+}
+.button .label-swap {
+  display: inline-block;
+  animation: swap-in 260ms ease-out;
+}
+@keyframes swap-in {
+  from {
+    opacity: 0;
+    translate: 0 8px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .button,
+  .nav .get,
+  .nav .social,
+  .nav .mcp-link {
+    transition: none;
+  }
+  .ripple,
+  .button.working,
+  .button.working svg,
+  .button .label-swap {
+    animation: none;
+  }
+  .ripple {
+    display: none;
+  }
+}
+
+.button.secondary:hover {
+  box-shadow:
+    inset 0 0 0 2px var(--accent),
+    0 10px 26px rgb(56 122 202 / 22%);
+}
+
+/* Get in touch: the address plus ways to write, for people without an email app. */
+button.button {
+  border: 0;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+.contact {
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  padding: 26px 26px 22px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--bg);
+  color: var(--ink);
+  box-shadow: var(--shadow);
+  box-sizing: border-box;
+}
+.contact::backdrop {
+  background: rgb(10 15 22 / 45%);
+  backdrop-filter: blur(3px);
+}
+.contact[open] {
+  animation: contact-in 160ms ease-out;
+}
+@keyframes contact-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+}
+.contact h2 {
+  margin: 0 0 6px;
+  font-size: 1.5rem;
+}
+.contact-close {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.6rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.contact-close:hover {
+  background: var(--panel);
+  color: var(--ink);
+}
+.contact p {
+  margin: 0 0 12px;
+}
+.contact-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.chip {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.95rem;
+  padding: 7px 14px;
+  border-radius: 999px;
+  text-decoration: none;
+  cursor: pointer;
+}
+.chip:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.contact form,
+.contact label {
+  display: grid;
+  gap: 6px;
+}
+.contact form {
+  gap: 12px;
+}
+.contact label {
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+.contact-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+}
+.contact input,
+.contact textarea {
+  font: inherit;
+  font-weight: 400;
+  font-size: 1rem;
+  color: inherit;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 9px 12px;
+  width: 100%;
+  box-sizing: border-box;
+}
+.contact textarea {
+  resize: vertical;
+}
+.contact input:focus,
+.contact textarea:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 0;
+  border-color: transparent;
+}
+.contact .honey {
+  position: absolute;
+  left: -9999px;
+}
+.contact-status:empty {
+  display: none;
+}
+.contact-status.error {
+  color: #c2410c;
+}
+.contact-direct {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.contact .small-print {
+  font-size: 0.8rem;
+}
+.contact:focus,
+.contact:focus-visible {
+  outline: none;
+}
+.contact-done {
+  display: grid;
+  justify-items: center;
+  text-align: center;
+  gap: 10px;
+  padding: 18px 0 6px;
+}
+.contact-done[hidden] {
+  display: none;
+}
+.contact-done h2 {
+  margin: 4px 0 0;
+}
+.contact-done p {
+  margin: 0 0 8px;
+  color: var(--muted);
+  max-width: 26em;
+}
+.contact-done b {
+  color: var(--ink);
+  word-break: break-all;
+}
+.contact-check {
+  width: 76px;
+  height: 76px;
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  animation: contact-pop 420ms cubic-bezier(0.3, 1.6, 0.5, 1) both;
+}
+.contact-check circle {
+  stroke-dasharray: 145;
+  stroke-dashoffset: 145;
+  animation: contact-draw 520ms ease-out 80ms forwards;
+}
+.contact-check path {
+  stroke-width: 3.6;
+  stroke-dasharray: 40;
+  stroke-dashoffset: 40;
+  animation: contact-draw 320ms ease-out 480ms forwards;
+}
+.contact-done h2,
+.contact-done p,
+.contact-done .button {
+  animation: contact-rise 360ms ease-out both;
+}
+.contact-done p {
+  animation-delay: 60ms;
+}
+.contact-done .button {
+  animation-delay: 120ms;
+}
+@keyframes contact-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes contact-pop {
+  from {
+    scale: 0.6;
+    opacity: 0;
+  }
+}
+@keyframes contact-rise {
+  from {
+    opacity: 0;
+    translate: 0 8px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .contact-check,
+  .contact-check circle,
+  .contact-check path,
+  .contact-done h2,
+  .contact-done p,
+  .contact-done .button {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+}
+.contact form[hidden] {
+  display: none;
+}
+/* While sending: the circle spins as an arc, the tick waits. */
+.contact-done.sending .contact-check {
+  animation: contact-spin 900ms linear infinite;
+}
+.contact-done.sending .contact-check circle {
+  animation: none;
+  stroke-dasharray: 36 145;
+  stroke-dashoffset: 0;
+}
+.contact-done.sending .contact-check path {
+  animation: none;
+  opacity: 0;
+}
+.contact-done.sending .button {
+  background: transparent;
+  color: var(--accent);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+@keyframes contact-spin {
+  to {
+    rotate: 360deg;
+  }
+}
+
+/* The note sits on the board picture; dragging still works. */
+.obj.hint {
+  position: absolute;
+}

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="blue" x1="0" y1="0" x2="0.6" y2="1"><stop offset="0" stop-color="#93b8e6"/><stop offset="1" stop-color="#6c98d3"/></linearGradient>
+    <linearGradient id="white" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#f3f7fd"/></linearGradient>
+    <linearGradient id="sage" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#b9cdb9"/><stop offset="1" stop-color="#93b098"/></linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="16"/></filter>
+    <mask id="ring" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024"><rect width="1024" height="1024" fill="#fff"/><circle cx="713" cy="344" r="100" fill="#000"/></mask>
+  </defs>
+  <g transform="translate(512 512) scale(1.69) translate(-512 -512)">
+    <circle cx="512" cy="512" r="262" fill="none" stroke="url(#blue)" stroke-width="60" mask="url(#ring)"/>
+    <circle cx="512" cy="530" r="150" fill="#3f6aa8" opacity="0.3" filter="url(#shadow)"/>
+    <circle cx="512" cy="512" r="150" fill="url(#white)" stroke="#b7cbe8" stroke-width="5"/>
+    <circle cx="713" cy="344" r="76" fill="url(#sage)"/>
+  </g>
+</svg>
